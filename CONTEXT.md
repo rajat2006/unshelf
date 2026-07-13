@@ -18,7 +18,27 @@ _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 **Item**:
 A single piece of learning material captured into Unshelf — an article, video,
 course, YouTube playlist, or (offline) book — usually added by pasting its link.
+Captured once and referenced everywhere: the same Item may appear in many Stops,
+but there is only ever one of it.
 _Avoid_: Bookmark, Link, Resource, Content
+
+**Type**:
+The kind of material an Item is — one of _article_, _video_, _playlist_,
+_course_, _book_, or _other_. Chosen by the User at capture; a label on the Item,
+not a separate kind of record.
+_Avoid_: Kind, Category, Format
+
+**Status**:
+An Item's item-level progress — _not started_, _in progress_, or _done_. There is
+one Status per Item, shared across every Stop the Item appears in; v1 tracks
+progress here and nowhere finer (no chapter or lesson check-off).
+_Avoid_: Progress, State
+
+**Source**:
+The optional link to where an Item lives, stored as the User captured it. Absent
+for offline Items such as books, which are added by title alone — the title, not
+the Source, is what identifies an Item.
+_Avoid_: Link, URL, Bookmark
 
 **All**:
 The single catch-all folder every captured Item lands in — the raw dump. In v1
