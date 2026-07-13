@@ -17,9 +17,11 @@ _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 
 **Item**:
 A single piece of learning material captured into Unshelf — an article, video,
-course, YouTube playlist, or (offline) book — usually added by pasting its link.
-Captured once and referenced everywhere: the same Item may appear in many Stops,
-but there is only ever one of it.
+course, YouTube playlist, or (offline) book — added by hand: paste a link or type
+a title. Referenced, not copied: one Item can appear in many Stops, but they all
+point at the single stored record. "Only one of it" is about model identity —
+one row per capture — not source-uniqueness: capture the same link twice and you
+have two Items (v1 does not dedupe).
 _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:
@@ -56,6 +58,15 @@ The optional link to where an Item lives, stored as the User captured it. Absent
 for offline Items such as books, which are added by title alone — the title, not
 the Source, is what identifies an Item.
 _Avoid_: Link, URL, Bookmark
+
+**Capture**:
+The act of adding an Item to Unshelf — one uniform manual entry (required title,
+chosen Type, optional Source) landing in **All**. v1 has a single capture: no
+metadata is fetched (you type the title), and there is no bulk **import** from
+other tools. Pasting a link and adding an offline book by title are the same
+capture — the link just fills Source, which is stored verbatim and unvalidated.
+_Avoid_: Import, Ingest, Add, Save (Import means a bulk pull from an external
+tool — a deferred sibling of Capture, not a synonym)
 
 **All**:
 The single catch-all folder every captured Item lands in — the raw dump. In v1
