@@ -47,11 +47,14 @@ pulling Items into Stops, not by creating more folders.
 _Avoid_: Inbox, Library, All-items, Dump
 
 **Stop**:
-A unit the User forms by pulling one or more Items together (e.g. "Learn CSS",
-"Self-hosting", "Build the API"). The single organising concept — a Stop is also
-what appears as a node on the Trail, and it may hold learning material or a
-project.
-_Avoid_: Group, Collection, Bucket, Milestone, Node (a Stop is _shown_ as a node)
+A flat grouping the User forms by pulling one or more Items together — the single
+organising concept in v1 (no tags, sub-Stops, or extra folders). Its Items are an
+unordered set; ordering between Stops is expressed on the Trail, not within a Stop.
+One uniform kind of Stop serves every purpose: whether it stands for a topic to
+learn ("Learn CSS") or a project to build ("Build the API") is how the User uses
+it, not a type the model distinguishes. A Stop is also what appears as a node on
+the Trail.
+_Avoid_: Group, Collection, Bucket, Milestone, Tag, Topic, Node (a Stop is _shown_ as a node)
 
 **Trail**:
 A visual arrangement of Stops in sequence (Stop 1 → Stop 2 → …) with forks where
