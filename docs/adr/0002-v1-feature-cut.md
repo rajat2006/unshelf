@@ -18,7 +18,10 @@ organise-once promise — so they wait.
 - **Reminders** (revision / backlog) — heaviest infrastructure (delivery
   channels, scheduling) for an occasional-use feature. Out of v1. (#7)
 - **Dates / timeline / calendar** — the Trail expresses "what to do first /
-  next" as *topology* only. Ordering yes, calendar no. (#6)
+  next" as *topology* only. Ordering yes, calendar no. (#6) _Refined by
+  ADR-0005: a soft, passive **target date** (and a captured completion date) do
+  land in v1 as fields on the Item — it is the scheduling **engine**, calendar
+  slotting, and delivery/nudges that stay deferred, not "when" wholesale._
 - **Sub-item check-off** (chapters, lessons, videos) and the **auto-fetch** that
   would populate those lists — a direct departure from the brief's "the app
   creates the list of chapters and you check them off." v1 tracks at the item

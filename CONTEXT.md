@@ -34,6 +34,23 @@ one Status per Item, shared across every Stop the Item appears in; v1 tracks
 progress here and nowhere finer (no chapter or lesson check-off).
 _Avoid_: Progress, State
 
+**Target date**:
+The User's optional, soft "by when" for an Item — one nullable date per Item,
+shared across every Stop it appears in (like Status). It is passive: Unshelf never
+reaches out about it. When the date is past and the Item is not yet done, the Item
+shows a derived _past target_ state; once done, that state clears but the date
+stays as history. There is no Timeline or Schedule record — this field plus the
+Trail's ordering are the whole of "when".
+_Avoid_: Deadline, Due date, Schedule, Timeline, Overdue, Late (a target is soft
+and never nags; anything that _reaches out_ is a Reminder, deferred with #7)
+
+**Completion date**:
+When an Item entered _done_ — set on that transition, cleared if the Item is moved
+back out of done, so it always reflects the most recent completion. Nothing in v1
+reads it; it is captured because completion history cannot be backfilled and it
+seeds future revision.
+_Avoid_: Finished on, Done date
+
 **Source**:
 The optional link to where an Item lives, stored as the User captured it. Absent
 for offline Items such as books, which are added by title alone — the title, not
