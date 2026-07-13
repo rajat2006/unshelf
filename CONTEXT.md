@@ -78,3 +78,20 @@ A visual arrangement of Stops in sequence (Stop 1 → Stop 2 → …) with forks
 threads run in parallel. It expresses "what to do first / next" as topology; in
 v1 it carries no dates or calendar.
 _Avoid_: Map, Roadmap, Timeline, Schedule, Graph
+
+### Reminders (deferred from v1)
+
+**Reminder**:
+Anything Unshelf sends _out_ to prompt the User — the whole "reaches out" family:
+a due-nudge on a Target date, a backlog/staleness nudge ("untouched for 3 weeks"),
+or a Revision prompt. Deferred entirely from v1 (#7): v1 is passive — the User
+consults Unshelf, never the reverse. A backlog _pile_ needs no term of its own — it
+is simply the _not started_ Items in **All**.
+_Avoid_: Notification, Nudge, Alert, Backlog (a backlog nudge is one kind of Reminder)
+
+**Revision**:
+Returning to a _done_ Item later to reinforce it — the spaced-repetition flavour of
+Reminder. Deferred (#7); v1 banks only the Completion date (ADR-0005) so a future
+Revision feature has the finish-history it cannot backfill. Staleness, by contrast,
+is a rolling signal a future Reminder observes live — v1 stores nothing for it.
+_Avoid_: Review, Repetition, Recall, Spaced repetition
