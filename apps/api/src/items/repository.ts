@@ -56,10 +56,7 @@ export async function createItem(
   return toItem(rows[0]!);
 }
 
-/**
- * All for a User: every Item where `user_id = me` and only that User's (ADR-0003).
- * There is no folder machinery — this query *is* All.
- */
+/** All for a User: every Item where `user_id = me`, and only that User's. */
 export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
   const { rows } = await pool.query<ItemRow>(
     `SELECT ${ITEM_PROJECTION}
