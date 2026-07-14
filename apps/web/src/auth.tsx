@@ -1,19 +1,18 @@
 import {
   ClerkProvider,
-  SignedIn,
-  SignedOut,
+  Show,
   SignInButton,
   UserButton,
   useAuth,
   useUser,
-} from "@clerk/clerk-react";
-import type { ReactNode } from "react";
+} from "@clerk/react";
+import { useMemo, type ReactNode } from "react";
 
 /**
  * The one place Clerk is imported on the web (ADR-0009 guardrail). Everything the
  * rest of the app needs — the provider, the current-User hook, and the sign-in /
  * signed-in gate primitives — is re-exported from here, so no other module ever
- * touches `@clerk/clerk-react`. Google is the only enabled sign-in method
+ * touches `@clerk/react`. Google is the only enabled sign-in method
  * (Clerk-dashboard config, ADR-0001): no password is created or managed.
  */
 
@@ -47,13 +46,25 @@ export interface CurrentUser {
 export function useCurrentUser(): CurrentUser {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const { user } = useUser();
-  return {
-    isLoaded,
-    isSignedIn: isSignedIn ?? false,
-    email: user?.primaryEmailAddress?.emailAddress ?? null,
-    name: user?.fullName ?? null,
-    getToken: () => getToken(),
-  };
+  const email = user?.primaryEmailAddress?.emailAddress ?? null;
+  const name = user?.fullName ?? null;
+  // Consumers hang effects off this object — `getToken` goes through untouched
+  // (Clerk keeps it stable across renders) and the whole thing is memoized, so a
+  // render never mints fresh identities that would re-fire those effects forever.
+  return useMemo(
+    () => ({ isLoaded, isSignedIn: isSignedIn ?? false, email, name, getToken }),
+    [isLoaded, isSignedIn, email, name, getToken],
+  );
 }
 
-export { SignedIn, SignedOut, SignInButton, UserButton };
+/** Render children only when a User is signed in. */
+export function SignedIn({ children }: { children: ReactNode }) {
+  return <Show when="signed-in">{children}</Show>;
+}
+
+/** Render children only when no User is signed in. */
+export function SignedOut({ children }: { children: ReactNode }) {
+  return <Show when="signed-out">{children}</Show>;
+}
+
+export { SignInButton, UserButton };
