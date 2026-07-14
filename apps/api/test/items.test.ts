@@ -62,7 +62,7 @@ describe("POST /api/items — capture", () => {
     expect(item.status).toBe("not_started");
     expect(item.targetDate).toBeNull();
     expect(item.completedAt).toBeNull();
-    expect(typeof item.createdAt).toBe("string");
+    expect(item).not.toHaveProperty("createdAt");
   });
 
   it("adds an offline Item by title alone — source is optional", async () => {
@@ -87,6 +87,17 @@ describe("POST /api/items — capture", () => {
     const item = res.body as Item;
     expect(item.source).toBe(messy);
     expect(item.title).toBe("  spaces around the title kept  ");
+  });
+
+  it("preserves an explicitly supplied blank source", async () => {
+    const res = await capture("clerk_cap_blank_source", {
+      title: "Blank source",
+      type: "other",
+      source: "",
+    });
+
+    expect(res.status).toBe(201);
+    expect((res.body as Item).source).toBe("");
   });
 
   it("does not dedupe — the same link captured twice yields two distinct Items", async () => {
@@ -156,6 +167,24 @@ describe("shared Item vocabulary", () => {
       expect(all[0]!.status).toBe(status);
     },
   );
+
+  it("preserves a target date as a calendar date", async () => {
+    const clerkUserId = "clerk_target_date_contract";
+    const captured = await capture(clerkUserId, {
+      title: "Target date contract",
+      type: "course",
+    });
+    const item = captured.body as Item;
+
+    await harness.pool.query("UPDATE items SET target_date = $1 WHERE id = $2", [
+      "2026-01-02",
+      item.id,
+    ]);
+
+    const all = (await listAll(clerkUserId)).body as Item[];
+    expect(all).toHaveLength(1);
+    expect(all[0]!.targetDate).toBe("2026-01-02");
+  });
 });
 
 describe("GET /api/items — All", () => {

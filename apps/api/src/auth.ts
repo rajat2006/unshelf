@@ -1,7 +1,7 @@
 import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, RequestHandler } from "express";
 import type { Pool } from "pg";
-import type { User } from "@unshelf/shared";
+import type { ClerkUserId, User } from "@unshelf/shared";
 import { provisionUser } from "./users";
 
 /**
@@ -23,7 +23,9 @@ declare global {
 }
 
 /** Extract the external Clerk user id for a request, or null if unauthenticated. */
-export type Identify = (req: Request) => string | null | Promise<string | null>;
+export type Identify = (
+  req: Request,
+) => ClerkUserId | null | Promise<ClerkUserId | null>;
 
 /**
  * Build the middleware that turns an authenticated request into a current User:
@@ -48,7 +50,8 @@ export function createAuthMiddleware(
 }
 
 /** Production `Identify` — reads the Clerk session established by `clerkMiddleware`. */
-const clerkIdentify: Identify = (req) => getAuth(req).userId ?? null;
+const clerkIdentify: Identify = (req) =>
+  (getAuth(req).userId as ClerkUserId | null) ?? null;
 
 /**
  * Production auth chain: Clerk parses the session/token, then our middleware

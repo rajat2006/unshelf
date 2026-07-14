@@ -8,22 +8,22 @@ import type { CurrentUser } from "./auth";
  * `useCurrentUser()` handle rather than importing Clerk here.
  */
 
-async function authedFetch(
+async function requestJson<ResponseBody>(
   user: CurrentUser,
   path: string,
   init?: RequestInit,
-): Promise<Response> {
+): Promise<ResponseBody> {
   const token = await user.getToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(path, { ...init, headers });
+  const response = await fetch(path, { ...init, headers });
+  if (!response.ok) throw new Error(`api responded ${response.status}`);
+  return (await response.json()) as ResponseBody;
 }
 
 /** Fetch All — every Item belonging to the current User. */
 export async function fetchAll(user: CurrentUser): Promise<Item[]> {
-  const res = await authedFetch(user, "/api/items");
-  if (!res.ok) throw new Error(`api responded ${res.status}`);
-  return (await res.json()) as Item[];
+  return requestJson<Item[]>(user, "/api/items");
 }
 
 /** Capture an Item — the one uniform insert (ADR-0007). Returns the new Item. */
@@ -31,11 +31,9 @@ export async function captureItem(
   user: CurrentUser,
   input: CreateItemRequest,
 ): Promise<Item> {
-  const res = await authedFetch(user, "/api/items", {
+  return requestJson<Item>(user, "/api/items", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(`api responded ${res.status}`);
-  return (await res.json()) as Item;
 }

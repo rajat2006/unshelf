@@ -2,9 +2,9 @@ import express, { type Express, type RequestHandler } from "express";
 import type { Pool } from "pg";
 import {
   ITEM_TYPES,
+  Type,
   type CreateItemRequest,
   type HealthResponse,
-  type ItemType,
 } from "@unshelf/shared";
 import { createItem, listItems } from "./items";
 
@@ -75,8 +75,8 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
   return app;
 }
 
-const isItemType = (value: unknown): value is ItemType =>
-  ITEM_TYPES.includes(value as ItemType);
+const isType = (value: unknown): value is Type =>
+  ITEM_TYPES.includes(value as Type);
 
 /**
  * Validate a capture payload at the HTTP boundary: `title` must be a non-blank
@@ -88,7 +88,7 @@ function parseCreateItem(body: unknown): CreateItemRequest | null {
   if (typeof body !== "object" || body === null) return null;
   const { title, type, source } = body as Record<string, unknown>;
   if (typeof title !== "string" || title.trim().length === 0) return null;
-  if (!isItemType(type)) return null;
+  if (!isType(type)) return null;
   if (source !== undefined && source !== null && typeof source !== "string") {
     return null;
   }
