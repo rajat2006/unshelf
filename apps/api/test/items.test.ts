@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Item } from "@unshelf/shared";
+import {
+  ITEM_STATUSES,
+  ITEM_TYPES,
+  type Item,
+} from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -110,12 +114,48 @@ describe("POST /api/items — capture", () => {
     ).toBe(400);
   });
 
+  it.each(ITEM_TYPES)(
+    "keeps the shared %s type aligned with the database constraint",
+    async (type) => {
+      const res = await capture(`clerk_type_contract_${type}`, {
+        title: `Contract: ${type}`,
+        type,
+      });
+
+      expect(res.status).toBe(201);
+      expect((res.body as Item).type).toBe(type);
+    },
+  );
+
   it("refuses an unauthenticated capture", async () => {
     const res = await request(app)
       .post("/api/items")
       .send({ title: "Anon", type: "article" });
     expect(res.status).toBe(401);
   });
+});
+
+describe("shared Item vocabulary", () => {
+  it.each(ITEM_STATUSES)(
+    "keeps the shared %s status aligned with the database constraint",
+    async (status) => {
+      const clerkUserId = `clerk_status_contract_${status}`;
+      const captured = await capture(clerkUserId, {
+        title: `Contract: ${status}`,
+        type: "article",
+      });
+      const item = captured.body as Item;
+
+      await harness.pool.query("UPDATE items SET status = $1 WHERE id = $2", [
+        status,
+        item.id,
+      ]);
+
+      const all = (await listAll(clerkUserId)).body as Item[];
+      expect(all).toHaveLength(1);
+      expect(all[0]!.status).toBe(status);
+    },
+  );
 });
 
 describe("GET /api/items — All", () => {
