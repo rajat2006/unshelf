@@ -35,16 +35,15 @@ export function createAuthMiddleware(
   pool: Pool,
   identify: Identify,
 ): RequestHandler {
-  return (req, res, next) => {
-    void (async () => {
-      const clerkUserId = await identify(req);
-      if (!clerkUserId) {
-        res.status(401).json({ error: "unauthenticated" });
-        return;
-      }
-      req.user = await provisionUser(pool, clerkUserId);
-      next();
-    })().catch(next);
+  // Express 5 routes a rejected promise from an async handler to `next` itself.
+  return async (req, res, next) => {
+    const clerkUserId = await identify(req);
+    if (!clerkUserId) {
+      res.status(401).json({ error: "unauthenticated" });
+      return;
+    }
+    req.user = await provisionUser(pool, clerkUserId);
+    next();
   };
 }
 

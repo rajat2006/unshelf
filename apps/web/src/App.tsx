@@ -44,7 +44,7 @@ export function App() {
       <SignedOut>
         <section style={{ marginTop: "2rem" }}>
           <p>An invite-only place to organise your learning. Sign in to begin.</p>
-          <SignInButton mode="modal">
+          <SignInButton>
             <button
               type="button"
               style={{

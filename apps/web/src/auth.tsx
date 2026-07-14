@@ -1,19 +1,19 @@
 import {
   ClerkProvider,
   Show,
-  SignInButton,
-  UserButton,
+  SignInButton as ClerkSignInButton,
+  UserButton as ClerkUserButton,
   useAuth,
-  useUser,
 } from "@clerk/react";
 import { useMemo, type ReactNode } from "react";
 
 /**
  * The one place Clerk is imported on the web (ADR-0009 guardrail). Everything the
  * rest of the app needs — the provider, the current-User hook, and the sign-in /
- * signed-in gate primitives — is re-exported from here, so no other module ever
- * touches `@clerk/react`. Google is the only enabled sign-in method
- * (Clerk-dashboard config, ADR-0001): no password is created or managed.
+ * signed-in gate primitives — is defined here with our own props, so no other
+ * module touches `@clerk/react` or depends on its component contracts. Google is
+ * the only enabled sign-in method (Clerk-dashboard config, ADR-0001 — see
+ * docs/clerk-setup.md): no password is created or managed.
  */
 
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -28,33 +28,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** The current signed-in User as the app sees it, plus a token getter for the api. */
+/** The current signed-in User as the app sees it: a token getter for the api. */
 export interface CurrentUser {
-  /** Whether Clerk has finished loading the session. */
-  isLoaded: boolean;
-  /** Whether a User is signed in. */
-  isSignedIn: boolean;
-  /** The User's primary email, when signed in. */
-  email: string | null;
-  /** The User's display name, when signed in. */
-  name: string | null;
   /** Fetch a bearer token to authenticate api requests. */
   getToken: () => Promise<string | null>;
 }
 
 /** The thin current-User wrapper the app uses instead of importing Clerk. */
 export function useCurrentUser(): CurrentUser {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
-  const { user } = useUser();
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
-  const name = user?.fullName ?? null;
+  const { getToken } = useAuth();
   // Consumers hang effects off this object — `getToken` goes through untouched
-  // (Clerk keeps it stable across renders) and the whole thing is memoized, so a
+  // (Clerk keeps it stable across renders) and the object is memoized, so a
   // render never mints fresh identities that would re-fire those effects forever.
-  return useMemo(
-    () => ({ isLoaded, isSignedIn: isSignedIn ?? false, email, name, getToken }),
-    [isLoaded, isSignedIn, email, name, getToken],
-  );
+  return useMemo(() => ({ getToken }), [getToken]);
 }
 
 /** Render children only when a User is signed in. */
@@ -67,4 +53,12 @@ export function SignedOut({ children }: { children: ReactNode }) {
   return <Show when="signed-out">{children}</Show>;
 }
 
-export { SignInButton, UserButton };
+/** Open the sign-in flow from `children`, our own trigger element. */
+export function SignInButton({ children }: { children: ReactNode }) {
+  return <ClerkSignInButton mode="modal">{children}</ClerkSignInButton>;
+}
+
+/** The signed-in User's account menu: manage account, sign out. */
+export function UserButton() {
+  return <ClerkUserButton />;
+}

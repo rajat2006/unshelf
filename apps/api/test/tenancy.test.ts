@@ -62,4 +62,26 @@ describe("GET /api/me — tenancy through the auth seam", () => {
     expect(bobAgain.body.id).toBe(bob.body.id);
     expect(bobAgain.body.id).not.toBe(alice.body.id);
   });
+
+  it("provisioning one User never affects another's row", async () => {
+    const rowOf = async (clerkUserId: string) =>
+      (
+        await harness.pool.query(
+          "SELECT id, clerk_user_id, created_at FROM users WHERE clerk_user_id = $1",
+          [clerkUserId],
+        )
+      ).rows;
+
+    await asUser("clerk_carol");
+    const before = await rowOf("clerk_carol");
+    expect(before).toHaveLength(1);
+
+    // Provisioning is v1's only write path; first-time and repeat provisioning
+    // of another identity must leave Carol's row untouched, column for column.
+    // Later tickets' domain writes extend this same assertion to their tables.
+    await asUser("clerk_dan");
+    await asUser("clerk_dan");
+
+    expect(await rowOf("clerk_carol")).toEqual(before);
+  });
 });
