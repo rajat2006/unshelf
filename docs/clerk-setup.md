@@ -14,6 +14,7 @@ sign-in silently break with no failing test.
 2. **Sign-up is restricted to invited identities** — the invite gate. Under
    *Restrictions*: set sign-up mode to **Restricted**, so only invited or
    allowlisted identities are admitted. Invite from *Users → Invitations*.
-3. **Keys** — copy from *API keys* into the environment (see `.env.example`):
-   `CLERK_SECRET_KEY` (api, server-side only), `CLERK_PUBLISHABLE_KEY` (api),
-   and `VITE_CLERK_PUBLISHABLE_KEY` (web build).
+3. **Keys** — copy from *API keys* into each app's `.env` (templates:
+   `apps/api/.env.example`, `apps/web/.env.example`): `CLERK_SECRET_KEY` (api,
+   server-side only), `CLERK_PUBLISHABLE_KEY` (api), and
+   `VITE_CLERK_PUBLISHABLE_KEY` (web build — the same publishable key).
