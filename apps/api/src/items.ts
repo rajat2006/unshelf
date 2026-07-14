@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import type {
   CreateItemRequest,
   Item,
+  ItemId,
   Status,
   Type,
   UserId,
@@ -18,8 +19,11 @@ interface ItemRow {
   completed_at: Date | null;
 }
 
+const ITEM_PROJECTION = `id, user_id, title, source, type, status,
+                         target_date::text AS target_date, completed_at`;
+
 const toItem = (row: ItemRow): Item => ({
-  id: row.id,
+  id: row.id as ItemId,
   userId: row.user_id as UserId,
   title: row.title,
   source: row.source,
@@ -46,8 +50,7 @@ export async function createItem(
   const { rows } = await pool.query<ItemRow>(
     `INSERT INTO items (user_id, title, source, type)
      VALUES ($1, $2, $3, $4)
-     RETURNING id, user_id, title, source, type, status,
-               target_date::text AS target_date, completed_at`,
+     RETURNING ${ITEM_PROJECTION}`,
     [userId, input.title, source, input.type],
   );
   return toItem(rows[0]!);
@@ -59,8 +62,7 @@ export async function createItem(
  */
 export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
   const { rows } = await pool.query<ItemRow>(
-    `SELECT id, user_id, title, source, type, status,
-            target_date::text AS target_date, completed_at
+    `SELECT ${ITEM_PROJECTION}
      FROM items
      WHERE user_id = $1`,
     [userId],

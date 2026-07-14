@@ -45,6 +45,10 @@ export type ClerkUserId = string & {
   readonly [identifierBrand]: "ClerkUserId";
 };
 
+export type ItemId = string & {
+  readonly [identifierBrand]: "ItemId";
+};
+
 /**
  * A single captured piece of learning material — the shared spine every later
  * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
@@ -54,7 +58,7 @@ export type ClerkUserId = string & {
  */
 export interface Item {
   /** This Item's id (uuid). */
-  id: string;
+  id: ItemId;
   /** The owning User — the tenancy anchor this Item is scoped to. */
   userId: UserId;
   /** The Item's identity — required, stored exactly as typed (ADR-0003). */

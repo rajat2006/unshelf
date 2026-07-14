@@ -107,7 +107,9 @@ describe("POST /api/items — capture", () => {
 
     expect(first.id).not.toBe(second.id);
     const all = (await listAll("clerk_cap_dupe")).body as Item[];
-    expect(all.filter((i) => i.source === "https://dup.example")).toHaveLength(2);
+    expect(
+      all.filter((item) => item.source === "https://dup.example"),
+    ).toHaveLength(2);
   });
 
   it("requires a title", async () => {
@@ -194,7 +196,7 @@ describe("GET /api/items — All", () => {
 
     const res = await listAll("clerk_all_owner");
     expect(res.status).toBe(200);
-    const titles = (res.body as Item[]).map((i) => i.title);
+    const titles = (res.body as Item[]).map((item) => item.title);
     expect(titles).toContain("One");
     expect(titles).toContain("Two");
   });
@@ -212,17 +214,17 @@ describe("per-User isolation", () => {
     const aliceAll = (await listAll("clerk_iso_alice")).body as Item[];
     const bobAll = (await listAll("clerk_iso_bob")).body as Item[];
 
-    const aliceTitles = aliceAll.map((i) => i.title);
+    const aliceTitles = aliceAll.map((item) => item.title);
     expect(aliceTitles).toContain("Alice's item");
     expect(aliceTitles).not.toContain("Bob's item");
 
-    const bobTitles = bobAll.map((i) => i.title);
+    const bobTitles = bobAll.map((item) => item.title);
     expect(bobTitles).toContain("Bob's item");
     expect(bobTitles).not.toContain("Alice's item");
 
     // Every Item in Alice's All is stamped with Alice's own anchor id.
     const aliceId = aliceAll[0]!.userId;
-    expect(aliceAll.every((i) => i.userId === aliceId)).toBe(true);
-    expect(bobAll.every((i) => i.userId !== aliceId)).toBe(true);
+    expect(aliceAll.every((item) => item.userId === aliceId)).toBe(true);
+    expect(bobAll.every((item) => item.userId !== aliceId)).toBe(true);
   });
 });
