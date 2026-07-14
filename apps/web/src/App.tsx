@@ -1,35 +1,110 @@
 import { useEffect, useState } from "react";
-import type { HealthResponse } from "@unshelf/shared";
+import type { User } from "@unshelf/shared";
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+  useCurrentUser,
+} from "./auth";
 
 /**
- * The walking skeleton's one screen: fetch `/api/health` (web → api → Postgres →
- * back) and render what came out the far end, using the same `HealthResponse`
- * type the API produces — proving there is no client/server drift.
+ * The v1 shell, gated by Google sign-in. A signed-out visitor sees only the
+ * sign-in call to action (Clerk's allowlist + invitations decide whether that
+ * sign-in is admitted); a signed-in User sees their space, proving the tenancy
+ * round-trip: the app calls `/api/me` with a Clerk token and the api answers with
+ * *this* User's own `users` row. The layout reflows to phone width (ADR-0008).
  */
 export function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  return (
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: "40rem",
+        margin: "0 auto",
+        padding: "clamp(1rem, 4vw, 2rem)",
+        boxSizing: "border-box",
+      }}
+    >
+      <header
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "1rem",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <h1 style={{ margin: 0 }}>Unshelf</h1>
+        <SignedIn>
+          <UserButton />
+        </SignedIn>
+      </header>
+
+      <SignedOut>
+        <section style={{ marginTop: "2rem" }}>
+          <p>An invite-only place to organise your learning. Sign in to begin.</p>
+          <SignInButton>
+            <button
+              type="button"
+              style={{
+                fontSize: "1rem",
+                padding: "0.75rem 1.25rem",
+                minHeight: "44px",
+                cursor: "pointer",
+              }}
+            >
+              Sign in with Google
+            </button>
+          </SignInButton>
+        </section>
+      </SignedOut>
+
+      <SignedIn>
+        <CurrentSpace />
+      </SignedIn>
+    </main>
+  );
+}
+
+/** The signed-in view: fetch and show the current User from the api. */
+function CurrentSpace() {
+  const { getToken } = useCurrentUser();
+  const [me, setMe] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((res) => res.json() as Promise<HealthResponse>)
-      .then(setHealth)
-      .catch((e: unknown) => setError(String(e)));
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch("/api/me", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) {
+          throw new Error(`api responded ${res.status}`);
+        }
+        const body = (await res.json()) as User;
+        if (!cancelled) setMe(body);
+      } catch (e: unknown) {
+        if (!cancelled) setError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-      <h1>Unshelf</h1>
-      {error && <p>Failed to reach the API: {error}</p>}
-      {!health && !error && <p>Checking the stack…</p>}
-      {health && (
+    <section style={{ marginTop: "2rem" }}>
+      {error && <p>Could not reach your space: {error}</p>}
+      {!me && !error && <p>Loading your space…</p>}
+      {me && (
         <ul>
-          <li>API status: {health.status}</li>
-          <li>Database: {health.db}</li>
-          <li>Message: {health.message}</li>
-          <li>Server time: {health.time}</li>
+          <li>You are signed in.</li>
+          <li>User id: {me.id}</li>
         </ul>
       )}
-    </main>
+    </section>
   );
 }

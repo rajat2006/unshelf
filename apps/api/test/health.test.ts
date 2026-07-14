@@ -1,14 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
 import type { Express } from "express";
-import type { Pool } from "pg";
-import { createApp } from "../src/app";
-import { createPool } from "../src/db";
-import { applySchema } from "../src/schema";
+import { startTestApp, type TestApp } from "./harness";
 
 /**
  * The primary test seam: drive the Express HTTP boundary against a real,
@@ -16,20 +9,16 @@ import { applySchema } from "../src/schema";
  * ticket copies — a throwaway database, the schema applied, the app built around
  * that pool, and assertions on the actual HTTP response.
  */
-let container: StartedPostgreSqlContainer;
-let pool: Pool;
+let harness: TestApp;
 let app: Express;
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:16-alpine").start();
-  pool = createPool(container.getConnectionUri());
-  await applySchema(pool);
-  app = createApp(pool);
+  harness = await startTestApp();
+  app = harness.app;
 });
 
 afterAll(async () => {
-  await pool?.end();
-  await container?.stop();
+  await harness?.stop();
 });
 
 describe("GET /api/health", () => {

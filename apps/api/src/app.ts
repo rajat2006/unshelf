@@ -1,14 +1,16 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import type { Pool } from "pg";
 import type { HealthResponse } from "@unshelf/shared";
 
 /**
- * Build the Express app around an injected Postgres pool. Taking the pool as an
- * argument (rather than reaching for a global) is the seam the test harness
- * relies on: tests pass a pool pointed at a throwaway database, production passes
- * the real one. Every later ticket's routes hang off this same factory.
+ * Build the Express app around an injected Postgres pool and auth chain. Both are
+ * arguments (rather than globals) so the test harness can drive the real routes:
+ * tests pass a pool pointed at a throwaway database and an auth chain that injects
+ * a current User without Clerk; production passes the real pool and the
+ * Clerk-backed chain. Every later ticket's routes hang off this same factory and
+ * scope their data to `req.user`.
  */
-export function createApp(pool: Pool): Express {
+export function createApp(pool: Pool, auth: RequestHandler[]): Express {
   const app = express();
   app.use(express.json());
 
@@ -34,6 +36,14 @@ export function createApp(pool: Pool): Express {
       };
       res.status(503).json(body);
     }
+  });
+
+  // The current User, scoped by the auth chain. Its purpose here is to prove the
+  // tenancy seam end to end — every request resolves to exactly the caller's own
+  // `users` row and never another's; later tickets scope their domain routes the
+  // same way (`...auth`, then read/write against `req.user.id`).
+  app.get("/api/me", ...auth, (req, res) => {
+    res.json(req.user);
   });
 
   return app;
