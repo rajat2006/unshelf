@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/express": "^2.1.40",
     "@unshelf/shared": "workspace:*",
     "express": "^5.1.0",
     "pg": "^8.13.1"
