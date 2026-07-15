@@ -25,6 +25,12 @@ const capture = (clerkUserId: string, body: object) =>
 const listAll = (clerkUserId: string) =>
   request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId);
 
+const setStatus = (clerkUserId: string, itemId: string, status: string) =>
+  request(app)
+    .patch(`/api/items/${itemId}/status`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ status });
+
 beforeAll(async () => {
   harness = await startTestApp();
   app = harness.app;
@@ -186,6 +192,101 @@ describe("shared Item vocabulary", () => {
     const all = (await listAll(clerkUserId)).body as Item[];
     expect(all).toHaveLength(1);
     expect(all[0]!.targetDate).toBe("2026-01-02");
+  });
+});
+
+describe("PATCH /api/items/:itemId/status — track Status", () => {
+  it.each(ITEM_STATUSES)("sets Status to %s", async (status) => {
+    const clerkUserId = `clerk_set_status_${status}`;
+    const item = (
+      await capture(clerkUserId, {
+        title: `Set ${status}`,
+        type: "article",
+      })
+    ).body as Item;
+
+    const res = await setStatus(clerkUserId, item.id, status);
+
+    expect(res.status).toBe(200);
+    expect((res.body as Item).status).toBe(status);
+  });
+
+  it("banks the completion moment only on the transition into done", async () => {
+    const clerkUserId = "clerk_status_done";
+    const item = (
+      await capture(clerkUserId, { title: "Finish me", type: "course" })
+    ).body as Item;
+
+    const done = await setStatus(clerkUserId, item.id, "done");
+
+    expect(done.status).toBe(200);
+    const completedAt = (done.body as Item).completedAt;
+    expect(completedAt).not.toBeNull();
+    expect(Number.isNaN(Date.parse(completedAt!))).toBe(false);
+
+    const stillDone = await setStatus(clerkUserId, item.id, "done");
+    expect((stillDone.body as Item).completedAt).toBe(completedAt);
+  });
+
+  it.each(["not_started", "in_progress"])(
+    "clears the completion moment on the transition from done to %s",
+    async (status) => {
+      const clerkUserId = `clerk_status_reopen_${status}`;
+      const item = (
+        await capture(clerkUserId, { title: "Reopen me", type: "book" })
+      ).body as Item;
+      expect(
+        ((await setStatus(clerkUserId, item.id, "done")).body as Item)
+          .completedAt,
+      ).not.toBeNull();
+
+      const reopened = await setStatus(clerkUserId, item.id, status);
+
+      expect(reopened.status).toBe(200);
+      expect((reopened.body as Item).status).toBe(status);
+      expect((reopened.body as Item).completedAt).toBeNull();
+    },
+  );
+
+  it("reads the changed Status from the single Item shared by every view", async () => {
+    const clerkUserId = "clerk_status_shared_item";
+    const item = (
+      await capture(clerkUserId, { title: "Shared Item", type: "video" })
+    ).body as Item;
+
+    await setStatus(clerkUserId, item.id, "in_progress");
+
+    const all = (await listAll(clerkUserId)).body as Item[];
+    expect(all.find((listed) => listed.id === item.id)?.status).toBe(
+      "in_progress",
+    );
+  });
+
+  it("rejects an unknown Status", async () => {
+    const clerkUserId = "clerk_status_invalid";
+    const item = (
+      await capture(clerkUserId, { title: "Invalid", type: "other" })
+    ).body as Item;
+
+    const res = await setStatus(clerkUserId, item.id, "almost_done");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("cannot change another User's Item", async () => {
+    const item = (
+      await capture("clerk_status_owner", {
+        title: "Owner only",
+        type: "playlist",
+      })
+    ).body as Item;
+
+    const res = await setStatus("clerk_status_intruder", item.id, "done");
+
+    expect(res.status).toBe(404);
+    const ownerAll = (await listAll("clerk_status_owner")).body as Item[];
+    expect(ownerAll[0]?.status).toBe("not_started");
+    expect(ownerAll[0]?.completedAt).toBeNull();
   });
 });
 

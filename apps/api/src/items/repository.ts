@@ -66,3 +66,30 @@ export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
   );
   return rows.map(toItem);
 }
+
+/**
+ * Change an Item's single shared Status. Completion is banked only when entering
+ * done and cleared when leaving it; writing the current Status again preserves
+ * the original completion moment. The User predicate makes a foreign Item
+ * indistinguishable from a missing one at the API boundary.
+ */
+export async function updateItemStatus(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+  status: Status,
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `UPDATE items
+     SET completed_at = CASE
+           WHEN status <> 'done' AND $3 = 'done' THEN now()
+           WHEN status = 'done' AND $3 <> 'done' THEN NULL
+           ELSE completed_at
+         END,
+         status = $3
+     WHERE id = $1 AND user_id = $2
+     RETURNING ${ITEM_PROJECTION}`,
+    [itemId, userId, status],
+  );
+  return rows[0] ? toItem(rows[0]) : null;
+}

@@ -1,4 +1,10 @@
-import type { CreateItemRequest, Item } from "@unshelf/shared";
+import type {
+  CreateItemRequest,
+  Item,
+  ItemId,
+  Status,
+  UpdateItemStatusRequest,
+} from "@unshelf/shared";
 import type { CurrentUser } from "./auth";
 
 /**
@@ -35,5 +41,19 @@ export async function captureItem(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+/** Change the Item-level Status shared by every place the Item appears. */
+export async function updateItemStatus(
+  user: CurrentUser,
+  itemId: ItemId,
+  status: Status,
+): Promise<Item> {
+  const body: UpdateItemStatusRequest = { status };
+  return requestJson<Item>(user, `/api/items/${itemId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }

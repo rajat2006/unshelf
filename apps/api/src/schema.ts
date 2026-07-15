@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- only table capture and All need. \`type\` and \`status\` are text with CHECK
 -- constraints mirroring the shared ITEM_TYPES / ITEM_STATUSES enums (enum values
 -- are cheap to revise, ADR-0003); \`source\`, \`target_date\`, \`completed_at\` are
--- nullable seams later tickets (Track/Stop) write over.
+-- nullable fields later tracking tickets write over.
 CREATE TABLE IF NOT EXISTS items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users (id),
