@@ -44,7 +44,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
   return (
     <div style={ITEM_CONTROL_ROW_STYLE}>
       <label style={ITEM_CONTROL_LABEL_STYLE}>
-        <span style={ITEM_CONTROL_CAPTION_STYLE}>Target</span>
+        <span style={ITEM_CONTROL_CAPTION_STYLE}>Target date</span>
         <input
           type="date"
           value={item.targetDate ?? ""}

@@ -114,11 +114,13 @@ const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * Whether a string is a real calendar date in `YYYY-MM-DD`. Unlike `source`,
  * which is kept verbatim (ADR-0007), a Target date is a structured value, so the
  * seam is strict: the pattern rejects other notations Postgres would otherwise
- * interpret for us, and the round-trip rejects well-formed dates that do not
- * exist (2026-02-30), which would reach the `date` column as an error.
+ * interpret for us, year zero is rejected to match Postgres' calendar, and the
+ * round-trip rejects well-formed dates that do not exist (2026-02-30), which
+ * would reach the `date` column as an error.
  */
 function isCalendarDate(value: string): boolean {
   if (!CALENDAR_DATE_PATTERN.test(value)) return false;
+  if (value.startsWith("0000-")) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return false;
   return parsed.toISOString().startsWith(value);

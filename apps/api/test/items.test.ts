@@ -78,7 +78,7 @@ describe("POST /api/items — capture", () => {
     expect(item.userId).not.toBe("clerk_cap_basic"); // our anchor id, not Clerk's
   });
 
-  it("lands a new Item at status not started, with no target and nothing banked", async () => {
+  it("lands a new Item at status not started, with no Target date and nothing banked", async () => {
     const res = await capture("clerk_cap_status", {
       title: "Untracked",
       type: "article",
@@ -357,6 +357,7 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
       "01/02/2026",
       "2026-2-3",
       "2026-02-30", // a well-formed date that does not exist
+      "0000-01-01", // JavaScript accepts year zero; PostgreSQL does not
       "",
       42,
       true,
