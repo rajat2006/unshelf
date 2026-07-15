@@ -25,7 +25,7 @@ export const ITEM_TYPES = Object.values(Type);
 /**
  * An Item's item-level progress (ADR-0003, CONTEXT.md *Status*). One Status per
  * Item, shared across every Stop it appears in. A fresh capture lands *not
- * started*; later tickets (Track/Stop) light up the transitions.
+ * started*; the Status API owns its transitions.
  */
 export enum Status {
   NotStarted = "not_started",
@@ -54,7 +54,9 @@ export type ItemId = string & {
  * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
  * ADR-0001). `source` is the optional link, stored verbatim and unvalidated
  * (ADR-0007); `targetDate`/`completedAt` are seams later tickets write, carried
- * here so the spine is the full v1 shape from birth.
+ * here so the spine is the full v1 shape from birth. `completedAt` is deliberately
+ * returned by the API contract for persistence verification but never rendered
+ * by the v1 web app (ADR-0005).
  */
 export interface Item {
   /** This Item's id (uuid). */
@@ -87,6 +89,11 @@ export interface CreateItemRequest {
   type: Type;
   /** Optional link; when supplied, including blank, it is preserved verbatim. */
   source?: string | null;
+}
+
+/** Change the one Status stored on an Item, wherever that Item is shown. */
+export interface UpdateItemStatusRequest {
+  status: Status;
 }
 
 /**

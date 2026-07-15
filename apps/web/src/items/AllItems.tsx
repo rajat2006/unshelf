@@ -1,10 +1,14 @@
 import type { CSSProperties } from "react";
 import type { Item } from "@unshelf/shared";
-import { STATUS_LABELS, TYPE_LABELS } from "./presentation";
+import type { CurrentUser } from "../auth";
+import { ItemStatusSelect } from "./ItemStatusSelect";
+import { TYPE_LABELS } from "./presentation";
 
 interface AllItemsProps {
   items: Item[] | null;
   error: string | null;
+  user: CurrentUser;
+  onItemChanged: (item: Item) => void;
 }
 
 const sourceTextStyle: CSSProperties = {
@@ -13,7 +17,7 @@ const sourceTextStyle: CSSProperties = {
 };
 
 /** All: the query "every Item where user = me", rendered as a list. */
-export function AllItems({ items, error }: AllItemsProps) {
+export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
   return (
     <section style={{ marginTop: "2.5rem" }}>
       <h2 style={{ fontSize: "1.2rem" }}>All</h2>
@@ -36,8 +40,13 @@ export function AllItems({ items, error }: AllItemsProps) {
                 {item.title}
               </div>
               <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
-                {TYPE_LABELS[item.type]} · {STATUS_LABELS[item.status]}
+                {TYPE_LABELS[item.type]}
               </div>
+              <ItemStatusSelect
+                item={item}
+                user={user}
+                onChanged={onItemChanged}
+              />
               {item.source && <Source source={item.source} />}
             </li>
           ))}

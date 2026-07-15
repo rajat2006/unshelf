@@ -24,10 +24,21 @@ export function CurrentSpace() {
     void refresh();
   }, [refresh]);
 
+  const replaceItem = useCallback((changed: Item) => {
+    setItems((current) =>
+      current?.map((item) => (item.id === changed.id ? changed : item)) ?? null,
+    );
+  }, []);
+
   return (
     <section style={{ marginTop: "2rem" }}>
       <AddItemForm user={user} onCaptured={refresh} />
-      <AllItems items={items} error={error} />
+      <AllItems
+        items={items}
+        error={error}
+        user={user}
+        onItemChanged={replaceItem}
+      />
     </section>
   );
 }
