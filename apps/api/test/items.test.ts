@@ -31,6 +31,26 @@ const setStatus = (clerkUserId: string, itemId: string, status: string) =>
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ status });
 
+const setTargetDate = (clerkUserId: string, itemId: string, body: object) =>
+  request(app)
+    .patch(`/api/items/${itemId}/target-date`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send(body);
+
+/**
+ * A calendar date relative to *the database's* today. `past target` is derived
+ * against the database clock, so the tests anchor to that same clock rather than
+ * to the test process's — otherwise a timezone gap between the two could make
+ * "yesterday" ambiguous exactly at the boundary the derivation turns on.
+ */
+const databaseDate = async (offsetDays: number): Promise<string> => {
+  const { rows } = await harness.pool.query<{ date: string }>(
+    "SELECT (CURRENT_DATE + $1::integer)::text AS date",
+    [offsetDays],
+  );
+  return rows[0]!.date;
+};
+
 beforeAll(async () => {
   harness = await startTestApp();
   app = harness.app;
@@ -58,7 +78,7 @@ describe("POST /api/items — capture", () => {
     expect(item.userId).not.toBe("clerk_cap_basic"); // our anchor id, not Clerk's
   });
 
-  it("lands a new Item at status not started with the deferred seams empty", async () => {
+  it("lands a new Item at status not started, with no target and nothing banked", async () => {
     const res = await capture("clerk_cap_status", {
       title: "Untracked",
       type: "article",
@@ -67,6 +87,7 @@ describe("POST /api/items — capture", () => {
     const item = res.body as Item;
     expect(item.status).toBe("not_started");
     expect(item.targetDate).toBeNull();
+    expect(item.pastTarget).toBe(false);
     expect(item.completedAt).toBeNull();
     expect(item).not.toHaveProperty("createdAt");
   });
@@ -175,24 +196,6 @@ describe("shared Item vocabulary", () => {
       expect(all[0]!.status).toBe(status);
     },
   );
-
-  it("preserves a target date as a calendar date", async () => {
-    const clerkUserId = "clerk_target_date_contract";
-    const captured = await capture(clerkUserId, {
-      title: "Target date contract",
-      type: "course",
-    });
-    const item = captured.body as Item;
-
-    await harness.pool.query("UPDATE items SET target_date = $1 WHERE id = $2", [
-      "2026-01-02",
-      item.id,
-    ]);
-
-    const all = (await listAll(clerkUserId)).body as Item[];
-    expect(all).toHaveLength(1);
-    expect(all[0]!.targetDate).toBe("2026-01-02");
-  });
 });
 
 describe("PATCH /api/items/:itemId/status — track Status", () => {
@@ -287,6 +290,223 @@ describe("PATCH /api/items/:itemId/status — track Status", () => {
     const ownerAll = (await listAll("clerk_status_owner")).body as Item[];
     expect(ownerAll[0]?.status).toBe("not_started");
     expect(ownerAll[0]?.completedAt).toBeNull();
+  });
+});
+
+describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => {
+  it("sets, changes, and clears the one soft date", async () => {
+    const clerkUserId = "clerk_target_lifecycle";
+    const item = (
+      await capture(clerkUserId, { title: "By when?", type: "course" })
+    ).body as Item;
+    expect(item.targetDate).toBeNull();
+
+    const set = await setTargetDate(clerkUserId, item.id, {
+      targetDate: "2026-03-01",
+    });
+    expect(set.status).toBe(200);
+    expect((set.body as Item).targetDate).toBe("2026-03-01");
+
+    const changed = await setTargetDate(clerkUserId, item.id, {
+      targetDate: "2026-04-15",
+    });
+    expect(changed.status).toBe(200);
+    expect((changed.body as Item).targetDate).toBe("2026-04-15");
+
+    const cleared = await setTargetDate(clerkUserId, item.id, {
+      targetDate: null,
+    });
+    expect(cleared.status).toBe(200);
+    expect((cleared.body as Item).targetDate).toBeNull();
+    expect((cleared.body as Item).pastTarget).toBe(false);
+  });
+
+  it("stores one date on the Item, read back by every view of it", async () => {
+    const clerkUserId = "clerk_target_shared_item";
+    const item = (
+      await capture(clerkUserId, { title: "Shared date", type: "video" })
+    ).body as Item;
+
+    await setTargetDate(clerkUserId, item.id, { targetDate: "2026-05-20" });
+
+    const all = (await listAll(clerkUserId)).body as Item[];
+    expect(all.find((listed) => listed.id === item.id)?.targetDate).toBe(
+      "2026-05-20",
+    );
+  });
+
+  it("leaves the Target date untouched when Status changes", async () => {
+    const clerkUserId = "clerk_target_survives_status";
+    const item = (
+      await capture(clerkUserId, { title: "Date keeper", type: "book" })
+    ).body as Item;
+    await setTargetDate(clerkUserId, item.id, { targetDate: "2026-06-30" });
+
+    const moved = await setStatus(clerkUserId, item.id, "in_progress");
+
+    expect((moved.body as Item).targetDate).toBe("2026-06-30");
+  });
+
+  it("rejects a date that is not a YYYY-MM-DD calendar date", async () => {
+    const clerkUserId = "clerk_target_invalid";
+    const item = (await capture(clerkUserId, { title: "Bad", type: "other" }))
+      .body as Item;
+
+    for (const targetDate of [
+      "next tuesday",
+      "01/02/2026",
+      "2026-2-3",
+      "2026-02-30", // a well-formed date that does not exist
+      "",
+      42,
+      true,
+    ]) {
+      const res = await setTargetDate(clerkUserId, item.id, { targetDate });
+      expect(res.status, `expected 400 for ${JSON.stringify(targetDate)}`).toBe(
+        400,
+      );
+    }
+
+    // The rejected writes left the Item's date alone.
+    expect(((await listAll(clerkUserId)).body as Item[])[0]!.targetDate).toBeNull();
+  });
+
+  it("requires the targetDate field — an empty body is not a clear", async () => {
+    const clerkUserId = "clerk_target_missing_field";
+    const item = (await capture(clerkUserId, { title: "Empty", type: "article" }))
+      .body as Item;
+
+    expect((await setTargetDate(clerkUserId, item.id, {})).status).toBe(400);
+  });
+
+  it("cannot set a Target date on another User's Item", async () => {
+    const item = (
+      await capture("clerk_target_owner", { title: "Owner only", type: "playlist" })
+    ).body as Item;
+
+    const res = await setTargetDate("clerk_target_intruder", item.id, {
+      targetDate: "2026-07-01",
+    });
+
+    expect(res.status).toBe(404);
+    expect(((await listAll("clerk_target_owner")).body as Item[])[0]!.targetDate)
+      .toBeNull();
+  });
+
+  it("refuses an unauthenticated Target date change", async () => {
+    const item = (
+      await capture("clerk_target_anon_owner", { title: "Anon", type: "article" })
+    ).body as Item;
+
+    const res = await request(app)
+      .patch(`/api/items/${item.id}/target-date`)
+      .send({ targetDate: "2026-08-01" });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("past target — derived, never stored, never nagging", () => {
+  it("shows past target once the date is past and the Item is not done", async () => {
+    const clerkUserId = "clerk_past_target_yes";
+    const item = (
+      await capture(clerkUserId, { title: "Slipped", type: "course" })
+    ).body as Item;
+
+    const res = await setTargetDate(clerkUserId, item.id, {
+      targetDate: await databaseDate(-1),
+    });
+
+    expect((res.body as Item).pastTarget).toBe(true);
+  });
+
+  it.each([
+    ["today — a target is not past on the day itself", 0],
+    ["a future date", 1],
+  ])("shows no past target for %s", async (_label, offset) => {
+    const clerkUserId = `clerk_past_target_no_${offset}`;
+    const item = (
+      await capture(clerkUserId, { title: "On track", type: "article" })
+    ).body as Item;
+
+    const res = await setTargetDate(clerkUserId, item.id, {
+      targetDate: await databaseDate(offset),
+    });
+
+    expect((res.body as Item).pastTarget).toBe(false);
+  });
+
+  it("clears past target once done, but keeps the date as history", async () => {
+    const clerkUserId = "clerk_past_target_done";
+    const yesterday = await databaseDate(-1);
+    const item = (
+      await capture(clerkUserId, { title: "Finished after target", type: "book" })
+    ).body as Item;
+    expect(
+      (
+        (await setTargetDate(clerkUserId, item.id, { targetDate: yesterday }))
+          .body as Item
+      ).pastTarget,
+    ).toBe(true);
+
+    const done = (await setStatus(clerkUserId, item.id, "done")).body as Item;
+
+    expect(done.pastTarget).toBe(false);
+    expect(done.targetDate).toBe(yesterday);
+  });
+
+  it.each(["not_started", "in_progress"])(
+    "shows past target again when a done Item is reopened to %s",
+    async (status) => {
+      const clerkUserId = `clerk_past_target_reopen_${status}`;
+      const yesterday = await databaseDate(-1);
+      const item = (
+        await capture(clerkUserId, { title: "Reopened", type: "video" })
+      ).body as Item;
+      await setTargetDate(clerkUserId, item.id, { targetDate: yesterday });
+      await setStatus(clerkUserId, item.id, "done");
+
+      const reopened = (await setStatus(clerkUserId, item.id, status))
+        .body as Item;
+
+      expect(reopened.pastTarget).toBe(true);
+      expect(reopened.targetDate).toBe(yesterday);
+    },
+  );
+
+  it("derives past target live on read — no stored flag, no job", async () => {
+    const clerkUserId = "clerk_past_target_derived";
+    const item = (
+      await capture(clerkUserId, { title: "Derived", type: "other" })
+    ).body as Item;
+    await setTargetDate(clerkUserId, item.id, {
+      targetDate: await databaseDate(1),
+    });
+    expect(((await listAll(clerkUserId)).body as Item[])[0]!.pastTarget).toBe(
+      false,
+    );
+
+    // Nothing ran in between: moving the stored date into the past is enough for
+    // the very next read to report it, because the state is computed, not kept.
+    await harness.pool.query(
+      "UPDATE items SET target_date = CURRENT_DATE - 1 WHERE id = $1",
+      [item.id],
+    );
+
+    expect(((await listAll(clerkUserId)).body as Item[])[0]!.pastTarget).toBe(
+      true,
+    );
+  });
+
+  it("keeps no past-target column to go stale", async () => {
+    const { rows } = await harness.pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'items'`,
+    );
+    const columns = rows.map((row) => row.column_name);
+
+    expect(columns).toContain("target_date");
+    expect(columns.some((name) => /past|overdue|late/.test(name))).toBe(false);
   });
 });
 

@@ -2,7 +2,14 @@ import { useState } from "react";
 import { ITEM_STATUSES, type Item, type Status } from "@unshelf/shared";
 import { updateItemStatus } from "../api";
 import type { CurrentUser } from "../auth";
-import { STATUS_LABELS } from "./presentation";
+import {
+  ITEM_CONTROL_CAPTION_STYLE,
+  ITEM_CONTROL_ERROR_STYLE,
+  ITEM_CONTROL_LABEL_STYLE,
+  ITEM_CONTROL_ROW_STYLE,
+  ITEM_CONTROL_STYLE,
+  STATUS_LABELS,
+} from "./presentation";
 
 interface ItemStatusSelectProps {
   item: Item;
@@ -32,26 +39,14 @@ export function ItemStatusSelect({
   }
 
   return (
-    <div style={{ marginTop: "0.35rem" }}>
-      <label
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-        }}
-      >
-        <span style={{ fontSize: "0.85rem" }}>Status</span>
+    <div style={ITEM_CONTROL_ROW_STYLE}>
+      <label style={ITEM_CONTROL_LABEL_STYLE}>
+        <span style={ITEM_CONTROL_CAPTION_STYLE}>Status</span>
         <select
           value={item.status}
           disabled={saving}
           onChange={(event) => void change(event.target.value as Status)}
-          style={{
-            fontSize: "1rem",
-            minHeight: "44px",
-            maxWidth: "100%",
-            padding: "0.5rem",
-          }}
+          style={ITEM_CONTROL_STYLE}
         >
           {ITEM_STATUSES.map((status) => (
             <option key={status} value={status}>
@@ -59,10 +54,10 @@ export function ItemStatusSelect({
             </option>
           ))}
         </select>
-        {saving && <span style={{ fontSize: "0.85rem" }}>Saving…</span>}
+        {saving && <span style={ITEM_CONTROL_CAPTION_STYLE}>Saving…</span>}
       </label>
       {error && (
-        <div role="alert" style={{ color: "crimson", fontSize: "0.85rem" }}>
+        <div role="alert" style={ITEM_CONTROL_ERROR_STYLE}>
           Could not change Status: {error}
         </div>
       )}

@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Item } from "@unshelf/shared";
 import type { CurrentUser } from "../auth";
 import { ItemStatusSelect } from "./ItemStatusSelect";
+import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
 
 interface AllItemsProps {
@@ -43,6 +44,11 @@ export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
                 {TYPE_LABELS[item.type]}
               </div>
               <ItemStatusSelect
+                item={item}
+                user={user}
+                onChanged={onItemChanged}
+              />
+              <ItemTargetDate
                 item={item}
                 user={user}
                 onChanged={onItemChanged}

@@ -29,8 +29,13 @@ CREATE TABLE IF NOT EXISTS users (
 -- not a table — it is the query "every item where user_id = me", so this is the
 -- only table capture and All need. \`type\` and \`status\` are text with CHECK
 -- constraints mirroring the shared ITEM_TYPES / ITEM_STATUSES enums (enum values
--- are cheap to revise, ADR-0003); \`source\`, \`target_date\`, \`completed_at\` are
--- nullable fields later tracking tickets write over.
+-- are cheap to revise, ADR-0003). \`source\`, \`target_date\` and \`completed_at\`
+-- are all nullable: a link, a soft "by when", and a banked completion are each
+-- optional facts about an Item, not preconditions for capturing one.
+--
+-- There is deliberately no \`past_target\` column beside \`target_date\`: that state
+-- is a question about *today*, so it is derived on every read instead (ADR-0005,
+-- see ITEM_PROJECTION). A column would need a job to stay true at midnight.
 CREATE TABLE IF NOT EXISTS items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users (id),
