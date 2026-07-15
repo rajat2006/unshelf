@@ -1,6 +1,7 @@
 import express, { type Express, type RequestHandler } from "express";
 import type { Pool } from "pg";
 import type { HealthResponse } from "@unshelf/shared";
+import { createItemsRouter } from "./items/router";
 
 /**
  * Build the Express app around an injected Postgres pool and auth chain. Both are
@@ -45,6 +46,8 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
   app.get("/api/me", ...auth, (req, res) => {
     res.json(req.user);
   });
+
+  app.use("/api/items", createItemsRouter(pool, auth));
 
   return app;
 }

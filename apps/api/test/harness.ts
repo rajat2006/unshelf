@@ -4,6 +4,7 @@ import {
 } from "@testcontainers/postgresql";
 import type { Express } from "express";
 import type { Pool } from "pg";
+import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/auth";
 import { createPool } from "../src/db";
@@ -34,7 +35,7 @@ export async function startTestApp(): Promise<TestApp> {
 
   const auth = createAuthMiddleware(pool, (req) => {
     const header = req.header(TEST_USER_HEADER);
-    return header && header.length > 0 ? header : null;
+    return header && header.length > 0 ? (header as ClerkUserId) : null;
   });
   const app = createApp(pool, [auth]);
 

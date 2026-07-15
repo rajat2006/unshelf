@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { User } from "@unshelf/shared";
+import type { ClerkUserId, User, UserId } from "@unshelf/shared";
 
 interface UserRow {
   id: string;
@@ -8,8 +8,8 @@ interface UserRow {
 }
 
 const toUser = (row: UserRow): User => ({
-  id: row.id,
-  clerkUserId: row.clerk_user_id,
+  id: row.id as UserId,
+  clerkUserId: row.clerk_user_id as ClerkUserId,
   createdAt: row.created_at.toISOString(),
 });
 
@@ -24,7 +24,7 @@ const toUser = (row: UserRow): User => ({
  */
 export async function provisionUser(
   pool: Pool,
-  clerkUserId: string,
+  clerkUserId: ClerkUserId,
 ): Promise<User> {
   const { rows } = await pool.query<UserRow>(
     `INSERT INTO users (clerk_user_id)
