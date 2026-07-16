@@ -205,13 +205,35 @@ export interface TrailEdge {
 }
 
 /**
- * The whole Trail as it reads back: just the edge set (ADR-0010). The nodes are
- * the User's Stops — fetched separately (`GET /api/stops`) because the Trail is
- * not a table but a derived view over Stops — so the client joins the two and
- * derives the layout. An unconnected Stop is still a node; it simply has no edges
- * here yet.
+ * A Stop as it appears on the Trail — a node (CONTEXT.md *Stop*: a Stop is what
+ * appears as a node on the Trail). The Trail is a derived view over the User's
+ * Stops, so this carries what the canvas draws a waypoint from: the Stop's
+ * identity and name, plus its progress — how many of its Items are *done* out of
+ * how many it holds. Progress is *derived* on every read (like `pastTarget`,
+ * ADR-0005), never stored on the Trail; it is what lets the canvas read a thread
+ * as ground already walked versus still ahead.
+ */
+export interface TrailNode {
+  /** The Stop's id — the node's identity, and the endpoint edges reference. */
+  id: StopId;
+  /** The Stop's name, drawn as the waypoint label. */
+  name: string;
+  /** How many of the Stop's Items are *done* (0 when it holds none). */
+  done: number;
+  /** How many Items the Stop holds in total. */
+  total: number;
+}
+
+/**
+ * The whole Trail as it reads back (ADR-0010): the node set — the User's Stops,
+ * each with derived progress — and the edge set between them. The Trail is not a
+ * table but a derived view, so both halves are read fresh; an unconnected Stop is
+ * still a node, it simply has no edges yet. The layout is not here: it is derived
+ * from the edges on the client, never stored.
  */
 export interface TrailView {
+  /** Every Stop, as a Trail node with derived progress. */
+  nodes: TrailNode[];
   /** Every Stop-to-Stop edge belonging to the User. */
   edges: TrailEdge[];
 }

@@ -1,21 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { Stop, StopId, TrailEdge, UserId } from "@unshelf/shared";
+import type { StopId, TrailEdge, TrailNode, UserId } from "@unshelf/shared";
 import { canConnect, layout, reaches } from "./geometry";
 
 const userId = "u" as UserId;
 const id = (n: string) => n as StopId;
-const stop = (n: string): Stop => ({ id: id(n), userId, name: n.toUpperCase() });
+const stop = (n: string): TrailNode => ({
+  id: id(n),
+  name: n.toUpperCase(),
+  done: 0,
+  total: 0,
+});
 const edge = (from: string, to: string): TrailEdge => ({
   userId,
   fromStopId: id(from),
   toStopId: id(to),
 });
 
-/** A Stop's derived column, or undefined if absent. */
+/** A node's derived column, or undefined if absent. */
 const depthOf = (
-  placed: ReturnType<typeof layout>["placed"],
+  placed: ReturnType<typeof layout<TrailNode>>["placed"],
   n: string,
-): number | undefined => placed.find((p) => p.stop.id === id(n))?.depth;
+): number | undefined => placed.find((p) => p.node.id === id(n))?.depth;
 
 describe("layout — derived from topology, never stored", () => {
   it("lays a sequence out left→right by longest-path depth", () => {

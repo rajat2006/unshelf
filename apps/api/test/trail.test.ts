@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Stop, TrailEdge, TrailView } from "@unshelf/shared";
+import type { Item, Stop, TrailEdge, TrailNode, TrailView } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -34,6 +34,28 @@ const disconnect = (clerkUserId: string, fromStopId: string, toStopId: string) =
 
 const getTrail = (clerkUserId: string) =>
   request(app).get("/api/trail").set(TEST_USER_HEADER, clerkUserId);
+
+const capture = (clerkUserId: string, title: string) =>
+  request(app)
+    .post("/api/items")
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ title, type: "article" });
+
+const addToStop = (clerkUserId: string, stopId: string, itemId: string) =>
+  request(app)
+    .post(`/api/stops/${stopId}/items`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ itemId });
+
+const setStatus = (clerkUserId: string, itemId: string, status: string) =>
+  request(app)
+    .patch(`/api/items/${itemId}/status`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ status });
+
+/** A node from the read, by name — the canvas draws a waypoint from this. */
+const nodeNamed = (view: TrailView, name: string): TrailNode | undefined =>
+  view.nodes.find((node) => node.name === name);
 
 /** Create `count` freshly-named Stops for a User and hand back their ids. */
 const givenStops = async (
@@ -71,6 +93,57 @@ describe("GET /api/trail — read the Trail", () => {
 
   it("refuses an unauthenticated read", async () => {
     expect((await request(app).get("/api/trail")).status).toBe(401);
+  });
+});
+
+describe("the Trail's nodes are the User's Stops, with derived progress", () => {
+  it("returns every Stop as a node, even one with no edges", async () => {
+    const clerkUserId = "clerk_trail_nodes";
+    await createStop(clerkUserId, "Alpha");
+    await createStop(clerkUserId, "Beta");
+
+    const view = (await getTrail(clerkUserId)).body as TrailView;
+
+    expect(view.nodes.map((n) => n.name)).toEqual(["Alpha", "Beta"]);
+    expect(view.edges).toEqual([]); // a node needs no edge to exist
+  });
+
+  it("derives each node's done/total from its Items' Status, never storing it", async () => {
+    const clerkUserId = "clerk_trail_progress";
+    const stop = (await createStop(clerkUserId, "React")).body as Stop;
+    const a = (await capture(clerkUserId, "Hooks")).body as Item;
+    const b = (await capture(clerkUserId, "Router")).body as Item;
+    const c = (await capture(clerkUserId, "Suspense")).body as Item;
+    for (const item of [a, b, c]) await addToStop(clerkUserId, stop.id, item.id);
+
+    // Freshly captured Items are not started: 0 of 3 done.
+    expect(nodeNamed((await getTrail(clerkUserId)).body, "React")).toMatchObject({
+      done: 0,
+      total: 3,
+    });
+
+    await setStatus(clerkUserId, a.id, "done");
+
+    // The same derived count the Stop itself would show — 1 of 3, no stored flag.
+    expect(nodeNamed((await getTrail(clerkUserId)).body, "React")).toMatchObject({
+      done: 1,
+      total: 3,
+    });
+  });
+
+  it("reads an empty Stop as 0 of 0", async () => {
+    const clerkUserId = "clerk_trail_empty_stop";
+    await createStop(clerkUserId, "Untouched");
+
+    expect(
+      nodeNamed((await getTrail(clerkUserId)).body, "Untouched"),
+    ).toMatchObject({ done: 0, total: 0 });
+  });
+
+  it("shows a User only their own Stops as nodes", async () => {
+    await createStop("clerk_trail_nodes_owner", "Owner's stop");
+    const view = (await getTrail("clerk_trail_nodes_intruder")).body as TrailView;
+    expect(view.nodes).toEqual([]);
   });
 });
 

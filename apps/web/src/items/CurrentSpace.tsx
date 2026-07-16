@@ -79,11 +79,11 @@ export function CurrentSpace() {
         onItemChanged={replaceItem}
       />
       <TrailSection
-        stops={stops}
         trail={trail}
         error={error}
         user={user}
         onTrailChanged={setTrail}
+        onRefresh={refresh}
       />
       <AllItems
         items={items}

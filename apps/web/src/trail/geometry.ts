@@ -1,28 +1,34 @@
-import type { Stop, StopId, TrailEdge } from "@unshelf/shared";
+import type { StopId, TrailEdge } from "@unshelf/shared";
 
 /**
- * The Trail's layout, derived from its topology — never stored (ADR-0010). The
- * api hands back only the edge set; this turns (Stops + edges) into a grid so the
- * canvas can place each Stop, the same discipline as the derived `pastTarget`
+ * The Trail's layout, derived from its topology — never stored (ADR-0010). Given
+ * the Trail's nodes and its edges, this places each node on a grid so the canvas
+ * can draw a waypoint, the same discipline as the derived `pastTarget`
  * (ADR-0005). Nothing here reaches for the DOM or a position column: canvas
  * position is a pure read off the topology, recomputed on every render.
  *
  * This is the prototype's `layers`/`grid` (issue #21) lifted into the shipped
- * Trail, retyped to the real `Stop` / `TrailEdge` contract.
+ * Trail. It is generic over the node type — it needs only an `id` — so it places
+ * whatever the canvas draws (a `TrailNode` with progress) without owning its shape.
  */
 
-export interface PlacedStop {
-  stop: Stop;
-  /** Longest-path distance from a root — the Stop's column, left to right. */
+/** The minimum a node must expose to be laid out: its identity. */
+export interface HasStopId {
+  id: StopId;
+}
+
+export interface Placed<T extends HasStopId> {
+  node: T;
+  /** Longest-path distance from a root — the node's column, left to right. */
   depth: number;
-  /** Which parallel thread the Stop sits on, within its column. */
+  /** Which parallel thread the node sits on, within its column. */
   lane: number;
 }
 
-export interface TrailLayout {
-  placed: PlacedStop[];
-  byId: Map<StopId, PlacedStop>;
-  /** Number of columns; at least 1 even for a single unconnected Stop. */
+export interface TrailLayout<T extends HasStopId> {
+  placed: Placed<T>[];
+  byId: Map<StopId, Placed<T>>;
+  /** Number of columns; at least 1 even for a single unconnected node. */
   depthCount: number;
   /** Number of parallel lanes; at least 1. */
   laneCount: number;
@@ -90,12 +96,12 @@ export function canConnect(
  * lane when free, else takes the next open one, so the trunk stays straight and
  * forks peel off predictably. Unconnected Stops are roots at depth 0.
  */
-export function layout(
-  stops: readonly Stop[],
+export function layout<T extends HasStopId>(
+  nodes: readonly T[],
   edges: readonly TrailEdge[],
-): TrailLayout {
+): TrailLayout<T> {
   const { incoming } = adjacency(edges);
-  const known = new Set(stops.map((s) => s.id));
+  const known = new Set(nodes.map((n) => n.id));
   // Only consider edges whose endpoints are Stops we hold, so a stale edge never
   // throws the layout off (the api cascades, but a mid-flight read could differ).
   const parentsOf = (id: StopId): StopId[] =>
@@ -118,9 +124,9 @@ export function layout(
   };
 
   const columns: StopId[][] = [];
-  for (const stop of stops) {
-    const d = depthOf(stop.id, new Set());
-    (columns[d] ??= []).push(stop.id);
+  for (const node of nodes) {
+    const d = depthOf(node.id, new Set());
+    (columns[d] ??= []).push(node.id);
   }
 
   const laneOf = new Map<StopId, number>();
@@ -143,12 +149,12 @@ export function layout(
     }
   });
 
-  const placed: PlacedStop[] = stops.map((stop) => ({
-    stop,
-    depth: depthOf(stop.id, new Set()),
-    lane: laneOf.get(stop.id) ?? 0,
+  const placed: Placed<T>[] = nodes.map((node) => ({
+    node,
+    depth: depthOf(node.id, new Set()),
+    lane: laneOf.get(node.id) ?? 0,
   }));
-  const byId = new Map(placed.map((p) => [p.stop.id, p]));
+  const byId = new Map(placed.map((p) => [p.node.id, p]));
   return {
     placed,
     byId,

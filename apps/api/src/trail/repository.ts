@@ -1,5 +1,11 @@
 import type { Pool, PoolClient } from "pg";
-import type { StopId, TrailEdge, TrailView, UserId } from "@unshelf/shared";
+import type {
+  StopId,
+  TrailEdge,
+  TrailNode,
+  TrailView,
+  UserId,
+} from "@unshelf/shared";
 
 /** Either a pool or a live transaction client — both can run a query. */
 type Queryable = Pick<Pool, "query">;
@@ -29,30 +35,65 @@ const toEdge = (row: EdgeRow): TrailEdge => ({
   toStopId: row.to_stop_id as StopId,
 });
 
+interface NodeRow {
+  id: string;
+  name: string;
+  done: number;
+  total: number;
+}
+
+const toNode = (row: NodeRow): TrailNode => ({
+  id: row.id as StopId,
+  name: row.name,
+  done: row.done,
+  total: row.total,
+});
+
 /**
- * Read a User's whole edge set. The order is stable (by endpoints) for the same
- * reason a Stop's Items are ordered — an unordered read is free to shuffle
- * between refreshes, and edges that reorder themselves read as change where
- * nothing changed. Takes any `Queryable` so `connectStops` can re-read inside its
- * own transaction (seeing the just-inserted edge) without a second connection.
+ * Read a User's whole Trail — its nodes and its edges — in one consistent view.
+ * Both are ordered stably (nodes by name like the Stops list, edges by endpoint)
+ * for the same reason a Stop's Items are: an unordered read is free to shuffle
+ * between refreshes, and a list that reorders itself reads as change where nothing
+ * changed. Takes any `Queryable` so `connectStops` can re-read inside its own
+ * transaction (seeing the just-inserted edge) without a second connection.
+ *
+ * The nodes are the User's Stops, each carrying *derived* progress — the count of
+ * its Items that are *done* over its Item count — read here exactly the way All
+ * derives `pastTarget` (ADR-0005), never stored. An empty Stop reads as 0/0. The
+ * two counts are computed in one grouped pass over the same membership the Stops
+ * view uses, so what a Stop shows on the Trail can never drift from what it shows
+ * when opened.
  */
 async function selectTrail(
   queryable: Queryable,
   userId: UserId,
 ): Promise<TrailView> {
-  const { rows } = await queryable.query<EdgeRow>(
+  const nodes = await queryable.query<NodeRow>(
+    `SELECT s.id, s.name,
+            count(i.id)::int AS total,
+            count(i.id) FILTER (WHERE i.status = 'done')::int AS done
+     FROM stops s
+     LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = s.user_id
+     LEFT JOIN items i ON i.id = si.item_id AND i.user_id = s.user_id
+     WHERE s.user_id = $1
+     GROUP BY s.id, s.name
+     ORDER BY s.name`,
+    [userId],
+  );
+  const edges = await queryable.query<EdgeRow>(
     `SELECT user_id, from_stop_id, to_stop_id
      FROM trail_edges
      WHERE user_id = $1
      ORDER BY from_stop_id, to_stop_id`,
     [userId],
   );
-  return { edges: rows.map(toEdge) };
+  return { nodes: nodes.rows.map(toNode), edges: edges.rows.map(toEdge) };
 }
 
 /**
- * The User's whole Trail: every Stop-to-Stop edge, and only theirs. The client
- * derives the layout; this hands back only the topology.
+ * The User's whole Trail: their Stops as nodes (with derived progress) and the
+ * edges between them, and only theirs. The client derives the layout from the
+ * edges; this hands back the topology, never a position.
  */
 export async function getTrail(
   pool: Pool,
