@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import type { HealthResponse } from "@unshelf/shared";
 import { createItemsRouter } from "./items/router";
 import { createStopsRouter } from "./stops/router";
+import { createTrailRouter } from "./trail/router";
 
 /**
  * Build the Express app around an injected Postgres pool and auth chain. Both are
@@ -50,6 +51,7 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
 
   app.use("/api/items", createItemsRouter(pool, auth));
   app.use("/api/stops", createStopsRouter(pool, auth));
+  app.use("/api/trail", createTrailRouter(pool, auth));
 
   return app;
 }

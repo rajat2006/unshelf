@@ -1,8 +1,8 @@
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
  * ends can never drift. In v1 this holds the walking-skeleton health contract,
- * the `Item` spine (ADR-0003) and the `Stop` / `StopItem` organisation model
- * (ADR-0004); the Trail lands here as a later ticket builds it out.
+ * the `Item` spine (ADR-0003), the `Stop` / `StopItem` organisation model
+ * (ADR-0004) and the `TrailEdge` topology (ADR-0010).
  */
 
 /**
@@ -181,6 +181,53 @@ export interface CreateStopRequest {
  */
 export interface AddStopItemRequest {
   itemId: ItemId;
+}
+
+/**
+ * A directed Stop-to-Stop edge — one row of the Trail's adjacency edge list
+ * (ADR-0010). The Trail *is* this edge set scoped to a User: its nodes are the
+ * User's Stops (every Stop is already "what appears as a node on the Trail",
+ * CONTEXT.md *Stop*), its edges are these rows. A fork is a Stop with several
+ * out-edges; a join is a Stop with several in-edges; the whole is a DAG.
+ *
+ * It carries no `x`/`y` and no order among sibling forks: canvas position is
+ * *derived* on read by longest-path layering, never stored (ADR-0010), the same
+ * discipline as the derived `pastTarget` (ADR-0005). And it carries no date — the
+ * Trail is a lightweight topology, never a calendar (ADR-0004).
+ */
+export interface TrailEdge {
+  /** The owning User — constrained to be the owner of both edge ends. */
+  userId: UserId;
+  /** The Stop the edge leads out of. */
+  fromStopId: StopId;
+  /** The Stop the edge leads into. */
+  toStopId: StopId;
+}
+
+/**
+ * The whole Trail as it reads back: just the edge set (ADR-0010). The nodes are
+ * the User's Stops — fetched separately (`GET /api/stops`) because the Trail is
+ * not a table but a derived view over Stops — so the client joins the two and
+ * derives the layout. An unconnected Stop is still a node; it simply has no edges
+ * here yet.
+ */
+export interface TrailView {
+  /** Every Stop-to-Stop edge belonging to the User. */
+  edges: TrailEdge[];
+}
+
+/**
+ * Draw one edge on the Trail: link `fromStopId` ahead of `toStopId`. Refused when
+ * either Stop is not the User's, when the two are the same Stop, or when the link
+ * would close a cycle (the target can already reach the source) — the Trail is a
+ * DAG, and acyclicity is enforced at this write seam (ADR-0010). Adding an edge
+ * that already exists changes nothing: the edge set is a set.
+ */
+export interface ConnectStopsRequest {
+  /** The Stop the new edge leads out of. */
+  fromStopId: StopId;
+  /** The Stop the new edge leads into. */
+  toStopId: StopId;
 }
 
 /**

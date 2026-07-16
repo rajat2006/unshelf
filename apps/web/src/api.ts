@@ -1,5 +1,6 @@
 import type {
   AddStopItemRequest,
+  ConnectStopsRequest,
   CreateItemRequest,
   CreateStopRequest,
   Item,
@@ -8,6 +9,7 @@ import type {
   Stop,
   StopDetail,
   StopId,
+  TrailView,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
@@ -135,4 +137,49 @@ export async function removeItemFromStop(
   return requestJson<StopDetail>(user, `/api/stops/${stopId}/items/${itemId}`, {
     method: "DELETE",
   });
+}
+
+/**
+ * The Trail's topology — every Stop-to-Stop edge (ADR-0010). The nodes are the
+ * User's Stops, read separately via `fetchStops`; the client joins the two and
+ * derives the layout, since the Trail stores no position.
+ */
+export async function fetchTrail(user: CurrentUser): Promise<TrailView> {
+  return requestJson<TrailView>(user, "/api/trail");
+}
+
+/**
+ * Draw one edge on the Trail — place `fromStopId` ahead of `toStopId`. The api
+ * refuses a link that would close a cycle (409) or touch a foreign Stop (404);
+ * on success it returns the Trail's new edge set. Adding an edge that already
+ * exists changes nothing.
+ */
+export async function connectStops(
+  user: CurrentUser,
+  fromStopId: StopId,
+  toStopId: StopId,
+): Promise<TrailView> {
+  const body: ConnectStopsRequest = { fromStopId, toStopId };
+  return requestJson<TrailView>(user, "/api/trail/edges", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Erase one edge, returning the Trail's new edge set. Only the link goes — both
+ * Stops keep their place and their every other edge — which is what makes
+ * rewiring free: moving a Stop is an erase and a redraw.
+ */
+export async function disconnectStops(
+  user: CurrentUser,
+  fromStopId: StopId,
+  toStopId: StopId,
+): Promise<TrailView> {
+  return requestJson<TrailView>(
+    user,
+    `/api/trail/edges/${fromStopId}/${toStopId}`,
+    { method: "DELETE" },
+  );
 }

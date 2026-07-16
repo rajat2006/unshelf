@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Item, Stop, StopDetail } from "@unshelf/shared";
-import { fetchAll, fetchStops } from "../api";
+import type { Item, Stop, StopDetail, TrailView } from "@unshelf/shared";
+import { fetchAll, fetchStops, fetchTrail } from "../api";
 import { useCurrentUser } from "../auth";
 import { StopsSection } from "../stops/StopsSection";
+import { TrailSection } from "../trail/TrailSection";
 import { AddItemForm } from "./AddItemForm";
 import { AllItems } from "./AllItems";
 
@@ -21,16 +22,19 @@ export function CurrentSpace() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [stops, setStops] = useState<Stop[] | null>(null);
   const [openStop, setOpenStop] = useState<StopDetail | null>(null);
+  const [trail, setTrail] = useState<TrailView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [allItems, allStops] = await Promise.all([
+      const [allItems, allStops, theTrail] = await Promise.all([
         fetchAll(user),
         fetchStops(user),
+        fetchTrail(user),
       ]);
       setItems(allItems);
       setStops(allStops);
+      setTrail(theTrail);
       setError(null);
     } catch (caught: unknown) {
       setError(String(caught));
@@ -73,6 +77,13 @@ export function CurrentSpace() {
         onStopOpened={setOpenStop}
         onStopChanged={replaceStop}
         onItemChanged={replaceItem}
+      />
+      <TrailSection
+        stops={stops}
+        trail={trail}
+        error={error}
+        user={user}
+        onTrailChanged={setTrail}
       />
       <AllItems
         items={items}
