@@ -47,12 +47,19 @@ export async function createStop(
   return toStop(rows[0]!);
 }
 
-/** Every Stop belonging to a User, and only that User's. */
+/**
+ * Every Stop belonging to a User, and only that User's. Ordered by name for the
+ * same reason a Stop's Items are: Stops carry no order of their own (that is the
+ * Trail's job, ADR-0004), so this is only a display convenience — but an
+ * unordered read is free to shuffle between refreshes, and a list that reorders
+ * itself under the User reads as change where nothing changed.
+ */
 export async function listStops(pool: Pool, userId: UserId): Promise<Stop[]> {
   const { rows } = await pool.query<StopRow>(
     `SELECT id, user_id, name
      FROM stops
-     WHERE user_id = $1`,
+     WHERE user_id = $1
+     ORDER BY name`,
     [userId],
   );
   return rows.map(toStop);

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import type { Item, ItemId, StopDetail } from "@unshelf/shared";
+import type { Item, ItemId, StopDetail, StopId } from "@unshelf/shared";
 import { removeItemFromStop } from "../api";
 import type { CurrentUser } from "../auth";
-import { ItemStatusSelect } from "../items/ItemStatusSelect";
-import { TYPE_LABELS } from "../items/presentation";
+import { ItemRow } from "../items/ItemRow";
 
 interface StopViewProps {
   stop: StopDetail;
@@ -14,9 +13,10 @@ interface StopViewProps {
 }
 
 /**
- * One Stop's contents: its Items, each with the Status it carries everywhere
- * (story 33). Progress is read off the Item and changed on the Item — the same
- * control All uses — so a Stop shows progress without ever owning it.
+ * One Stop's contents: its Items, each shown exactly as All shows them — the same
+ * `ItemRow`, so the same Status and the same Target date (story 33). A Stop
+ * displays progress without owning any of it; changing it here changes the Item,
+ * which is why it lands in every other Stop at the same time.
  *
  * The list is presented plainly, with no numbering, drag handles, or "next up":
  * a Stop is an unordered set (ADR-0004), and any order shown here is the api's
@@ -64,31 +64,19 @@ export function StopView({
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {stop.items.map((item) => (
-            <li
+            <ItemRow
               key={item.id}
-              style={{
-                padding: "0.75rem 0",
-                borderTop: "1px solid rgba(0,0,0,0.1)",
-              }}
+              item={item}
+              user={user}
+              onChanged={onItemChanged}
             >
-              <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
-                {item.title}
-              </div>
-              <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
-                {TYPE_LABELS[item.type]}
-              </div>
-              <ItemStatusSelect
-                item={item}
-                user={user}
-                onChanged={onItemChanged}
-              />
               <RemoveFromStop
-                stop={stop}
+                stopId={stop.id}
                 itemId={item.id}
                 user={user}
                 onStopChanged={onStopChanged}
               />
-            </li>
+            </ItemRow>
           ))}
         </ul>
       )}
@@ -97,7 +85,7 @@ export function StopView({
 }
 
 interface RemoveFromStopProps {
-  stop: StopDetail;
+  stopId: StopId;
   itemId: ItemId;
   user: CurrentUser;
   onStopChanged: (stop: StopDetail) => void;
@@ -109,7 +97,7 @@ interface RemoveFromStopProps {
  * reorganising free (story 32), and why this needs no confirmation.
  */
 function RemoveFromStop({
-  stop,
+  stopId,
   itemId,
   user,
   onStopChanged,
@@ -121,7 +109,7 @@ function RemoveFromStop({
     setRemoving(true);
     setError(null);
     try {
-      onStopChanged(await removeItemFromStop(user, stop.id, itemId));
+      onStopChanged(await removeItemFromStop(user, stopId, itemId));
     } catch (caught: unknown) {
       setError(String(caught));
     } finally {

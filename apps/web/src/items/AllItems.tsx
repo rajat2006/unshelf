@@ -1,10 +1,7 @@
-import type { CSSProperties } from "react";
 import type { Item, Stop, StopDetail } from "@unshelf/shared";
 import type { CurrentUser } from "../auth";
 import { AddToStopControl } from "../stops/AddToStopControl";
-import { ItemStatusSelect } from "./ItemStatusSelect";
-import { ItemTargetDate } from "./ItemTargetDate";
-import { TYPE_LABELS } from "./presentation";
+import { ItemRow } from "./ItemRow";
 
 interface AllItemsProps {
   items: Item[] | null;
@@ -15,11 +12,6 @@ interface AllItemsProps {
   onItemChanged: (item: Item) => void;
   onStopChanged: (stop: StopDetail) => void;
 }
-
-const sourceTextStyle: CSSProperties = {
-  fontSize: "0.85rem",
-  overflowWrap: "anywhere",
-};
 
 /**
  * All: the query "every Item where user = me", rendered as a list — and the one
@@ -45,70 +37,22 @@ export function AllItems({
       {items && items.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {items.map((item) => (
-            <li
+            <ItemRow
               key={item.id}
-              style={{
-                padding: "0.75rem 0",
-                borderTop: "1px solid rgba(0,0,0,0.1)",
-              }}
+              item={item}
+              user={user}
+              onChanged={onItemChanged}
             >
-              <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
-                {item.title}
-              </div>
-              <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
-                {TYPE_LABELS[item.type]}
-              </div>
-              <ItemStatusSelect
-                item={item}
-                user={user}
-                onChanged={onItemChanged}
-              />
-              <ItemTargetDate
-                item={item}
-                user={user}
-                onChanged={onItemChanged}
-              />
               <AddToStopControl
                 item={item}
                 stops={stops ?? []}
                 user={user}
                 onStopChanged={onStopChanged}
               />
-              {item.source && <Source source={item.source} />}
-            </li>
+            </ItemRow>
           ))}
         </ul>
       )}
     </section>
-  );
-}
-
-/** Render an HTTP Source as a tappable link and every other Source as inert text. */
-function Source({ source }: { source: string }) {
-  let href: string | null = null;
-  try {
-    const url = new URL(source);
-    if (url.protocol === "http:" || url.protocol === "https:") href = source;
-  } catch {
-    href = null;
-  }
-
-  return href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      style={{
-        ...sourceTextStyle,
-        display: "inline-flex",
-        alignItems: "center",
-        minHeight: "44px",
-        minWidth: "44px",
-      }}
-    >
-      {source}
-    </a>
-  ) : (
-    <div style={{ ...sourceTextStyle, opacity: 0.7 }}>{source}</div>
   );
 }
