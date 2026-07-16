@@ -8,8 +8,14 @@ import {
   type CreateItemRequest,
   type ItemId,
   type UpdateItemStatusRequest,
+  type UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
-import { createItem, listItems, updateItemStatus } from "./repository";
+import {
+  createItem,
+  listItems,
+  updateItemStatus,
+  updateItemTargetDate,
+} from "./repository";
 
 /** Mount the authenticated Item HTTP interface at `/api/items`. */
 export function createItemsRouter(
@@ -53,6 +59,27 @@ export function createItemsRouter(
     res.json(item);
   });
 
+  router.patch("/:itemId/target-date", async (req, res) => {
+    const input = parseUpdateItemTargetDate(req.body);
+    if (!input) {
+      res
+        .status(400)
+        .json({ error: "targetDate must be a YYYY-MM-DD date or null" });
+      return;
+    }
+    const item = await updateItemTargetDate(
+      pool,
+      req.user!.id,
+      req.params.itemId as ItemId,
+      input.targetDate,
+    );
+    if (!item) {
+      res.status(404).json({ error: "item not found" });
+      return;
+    }
+    res.json(item);
+  });
+
   return router;
 }
 
@@ -79,4 +106,37 @@ function parseUpdateItemStatus(body: unknown): UpdateItemStatusRequest | null {
   if (typeof body !== "object" || body === null) return null;
   const { status } = body as Record<string, unknown>;
   return isStatus(status) ? { status } : null;
+}
+
+const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Whether a string is a real calendar date in `YYYY-MM-DD`. Unlike `source`,
+ * which is kept verbatim (ADR-0007), a Target date is a structured value, so the
+ * seam is strict: the pattern rejects other notations Postgres would otherwise
+ * interpret for us, year zero is rejected to match Postgres' calendar, and the
+ * round-trip rejects well-formed dates that do not exist (2026-02-30), which
+ * would reach the `date` column as an error.
+ */
+function isCalendarDate(value: string): boolean {
+  if (!CALENDAR_DATE_PATTERN.test(value)) return false;
+  if (value.startsWith("0000-")) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().startsWith(value);
+}
+
+/**
+ * Validate a Target date update. `null` is meaningful — it clears the date — so
+ * an absent field is rejected rather than read as a clear.
+ */
+function parseUpdateItemTargetDate(
+  body: unknown,
+): UpdateItemTargetDateRequest | null {
+  if (typeof body !== "object" || body === null) return null;
+  if (!("targetDate" in body)) return null;
+  const { targetDate } = body as Record<string, unknown>;
+  if (targetDate === null) return { targetDate: null };
+  if (typeof targetDate !== "string" || !isCalendarDate(targetDate)) return null;
+  return { targetDate };
 }

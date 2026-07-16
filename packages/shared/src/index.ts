@@ -53,10 +53,9 @@ export type ItemId = string & {
  * A single captured piece of learning material — the shared spine every later
  * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
  * ADR-0001). `source` is the optional link, stored verbatim and unvalidated
- * (ADR-0007); `targetDate`/`completedAt` are seams later tickets write, carried
- * here so the spine is the full v1 shape from birth. `completedAt` is deliberately
- * returned by the API contract for persistence verification but never rendered
- * by the v1 web app (ADR-0005).
+ * (ADR-0007); `targetDate` is the soft "by when" the Target date API owns.
+ * `completedAt` is deliberately returned by the API contract for persistence
+ * verification but never rendered by the v1 web app (ADR-0005).
  */
 export interface Item {
   /** This Item's id (uuid). */
@@ -71,8 +70,19 @@ export interface Item {
   type: Type;
   /** Item-level progress; a fresh capture is *not started*. */
   status: Status;
-  /** The User's optional soft "by when", ISO-8601 date or null. */
+  /**
+   * The User's optional soft "by when" as a calendar date (`YYYY-MM-DD`), or
+   * null. One value per Item, shared across every Stop it appears in.
+   */
   targetDate: string | null;
+  /**
+   * Whether the target date has passed while the Item is not yet done — read
+   * only, and *derived* on every read from (`targetDate` is past AND `status` is
+   * not done). There is no stored flag and no job behind it (ADR-0005), and
+   * nothing ever reaches out about it: the User consults this, never the reverse.
+   * Clears once the Item is done, while `targetDate` stays as history.
+   */
+  pastTarget: boolean;
   /** When the Item entered *done*, ISO-8601, or null while not done. */
   completedAt: string | null;
 }
@@ -94,6 +104,15 @@ export interface CreateItemRequest {
 /** Change the one Status stored on an Item, wherever that Item is shown. */
 export interface UpdateItemStatusRequest {
   status: Status;
+}
+
+/**
+ * Set, change, or clear the one soft Target date stored on an Item (ADR-0005).
+ * A calendar date (`YYYY-MM-DD`) sets or changes it; `null` clears it. Like
+ * Status, the value is shared by every Stop the Item appears in.
+ */
+export interface UpdateItemTargetDateRequest {
+  targetDate: string | null;
 }
 
 /**

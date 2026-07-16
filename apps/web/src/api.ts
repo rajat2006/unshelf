@@ -4,6 +4,7 @@ import type {
   ItemId,
   Status,
   UpdateItemStatusRequest,
+  UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
 import type { CurrentUser } from "./auth";
 
@@ -52,6 +53,23 @@ export async function updateItemStatus(
 ): Promise<Item> {
   const body: UpdateItemStatusRequest = { status };
   return requestJson<Item>(user, `/api/items/${itemId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Set, change, or clear the Item's one soft Target date — `null` clears it.
+ * Returns the Item, whose `pastTarget` the api has recomputed for this read.
+ */
+export async function updateItemTargetDate(
+  user: CurrentUser,
+  itemId: ItemId,
+  targetDate: string | null,
+): Promise<Item> {
+  const body: UpdateItemTargetDateRequest = { targetDate };
+  return requestJson<Item>(user, `/api/items/${itemId}/target-date`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

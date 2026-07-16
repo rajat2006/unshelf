@@ -16,11 +16,25 @@ interface ItemRow {
   type: Type;
   status: Status;
   target_date: string | null;
+  past_target: boolean;
   completed_at: Date | null;
 }
 
+/**
+ * Every read of an Item goes through this one projection, so *past target* is
+ * computed the same way everywhere and can never disagree with itself.
+ *
+ * It is derived here, in the read, rather than stored (ADR-0005): the state is a
+ * question about today, and today moves on its own. A column would need a job to
+ * keep it honest at midnight — this needs nothing, because there is nothing to go
+ * stale. `COALESCE` makes a missing date simply not past, rather than unknown.
+ * "Today" is the database's, the single clock all Users are compared against.
+ */
 const ITEM_PROJECTION = `id, user_id, title, source, type, status,
-                         target_date::text AS target_date, completed_at`;
+                         target_date::text AS target_date,
+                         (COALESCE(target_date < CURRENT_DATE, false)
+                          AND status <> 'done') AS past_target,
+                         completed_at`;
 
 const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
@@ -30,6 +44,7 @@ const toItem = (row: ItemRow): Item => ({
   type: row.type,
   status: row.status,
   targetDate: row.target_date,
+  pastTarget: row.past_target,
   completedAt: row.completed_at ? row.completed_at.toISOString() : null,
 });
 
@@ -90,6 +105,29 @@ export async function updateItemStatus(
      WHERE id = $1 AND user_id = $2
      RETURNING ${ITEM_PROJECTION}`,
     [itemId, userId, status],
+  );
+  return rows[0] ? toItem(rows[0]) : null;
+}
+
+/**
+ * Set, change, or clear an Item's one soft Target date — `null` clears it. The
+ * date is only ever written here: Status changes leave it alone, so a finished
+ * Item keeps the date as history (ADR-0005). Nothing is scheduled off this write;
+ * *past target* follows from the stored date on the next read. The User predicate
+ * makes a foreign Item indistinguishable from a missing one at the API boundary.
+ */
+export async function updateItemTargetDate(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+  targetDate: string | null,
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `UPDATE items
+     SET target_date = $3::date
+     WHERE id = $1 AND user_id = $2
+     RETURNING ${ITEM_PROJECTION}`,
+    [itemId, userId, targetDate],
   );
   return rows[0] ? toItem(rows[0]) : null;
 }
