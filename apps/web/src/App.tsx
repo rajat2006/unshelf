@@ -1,6 +1,5 @@
 import { CurrentSpace } from "./items/CurrentSpace";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "./auth";
-import { ResponsiveAppShell } from "./ResponsiveAppShell";
 
 /**
  * The v1 shell, gated by Google sign-in. A signed-out visitor sees only the
@@ -12,7 +11,15 @@ import { ResponsiveAppShell } from "./ResponsiveAppShell";
  */
 export function App() {
   return (
-    <ResponsiveAppShell>
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: "40rem",
+        margin: "0 auto",
+        padding: "clamp(1rem, 4vw, 2rem)",
+        boxSizing: "border-box",
+      }}
+    >
       <header
         style={{
           display: "flex",
@@ -50,6 +57,6 @@ export function App() {
       <SignedIn>
         <CurrentSpace />
       </SignedIn>
-    </ResponsiveAppShell>
+    </main>
   );
 }
