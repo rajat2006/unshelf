@@ -4,9 +4,10 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "./auth";
 /**
  * The v1 shell, gated by Google sign-in. A signed-out visitor sees only the
  * sign-in call to action (Clerk's allowlist + invitations decide whether that
- * sign-in is admitted); a signed-in User sees their space: capture an Item and
- * browse All (issue #17). Everything reflows to phone width so an Item can be
- * captured the moment it is found (ADR-0008).
+ * sign-in is admitted); a signed-in User sees their space: capture an Item,
+ * browse All (issue #17), and group Items into Stops (issue #20). Everything
+ * reflows to phone width so an Item can be captured the moment it is found
+ * (ADR-0008).
  */
 export function App() {
   return (

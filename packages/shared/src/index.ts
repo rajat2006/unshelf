@@ -1,8 +1,8 @@
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
- * ends can never drift. In v1 this holds the walking-skeleton health contract and
- * the `Item` spine (ADR-0003); Stop, StopItem, and the Trail land here as later
- * tickets build them out.
+ * ends can never drift. In v1 this holds the walking-skeleton health contract,
+ * the `Item` spine (ADR-0003) and the `Stop` / `StopItem` organisation model
+ * (ADR-0004); the Trail lands here as a later ticket builds it out.
  */
 
 /**
@@ -47,6 +47,10 @@ export type ClerkUserId = string & {
 
 export type ItemId = string & {
   readonly [identifierBrand]: "ItemId";
+};
+
+export type StopId = string & {
+  readonly [identifierBrand]: "StopId";
 };
 
 /**
@@ -113,6 +117,70 @@ export interface UpdateItemStatusRequest {
  */
 export interface UpdateItemTargetDateRequest {
   targetDate: string | null;
+}
+
+/**
+ * A grouping the User forms by pulling Items together — the single organising
+ * primitive in v1 (ADR-0004, CONTEXT.md *Stop*). There is deliberately no `kind`
+ * or `type`: one uniform Stop serves both "a topic to learn" and "a project to
+ * build", because nothing in v1 makes the two behave differently. Scoped to a
+ * User like every other domain record (ADR-0001).
+ */
+export interface Stop {
+  /** This Stop's id (uuid). */
+  id: StopId;
+  /** The owning User — the tenancy anchor this Stop is scoped to. */
+  userId: UserId;
+  /** What the User calls this Stop — required, stored exactly as typed. */
+  name: string;
+}
+
+/**
+ * Membership: this User's Item is in that User's Stop. A bare many-to-many join
+ * plus the tenancy anchor every domain record carries (ADR-0001, ADR-0004,
+ * ADR-0009) — the two ends are the whole membership.
+ *
+ * It carries no `position`, because a Stop is an unordered set and all sequencing
+ * lives on the Trail; and no `status`, because Status is one value on the Item
+ * itself, shared by every Stop that Item appears in. Both are cheap to add later
+ * if they ever earn their place; neither can be half-modelled now without giving
+ * the User two places to keep the same fact true.
+ */
+export interface StopItem {
+  /** The owning User — constrained to be the owner of both membership ends. */
+  userId: UserId;
+  /** The Stop end of the membership. */
+  stopId: StopId;
+  /** The Item end of the membership. */
+  itemId: ItemId;
+}
+
+/**
+ * One Stop with its contents — a flat, unordered set of the Items pulled into it
+ * (ADR-0004). Each Item is the single shared record, carrying the one Status and
+ * Target date every other view of it reads, so progress shows here without ever
+ * being stored on the membership.
+ */
+export interface StopDetail extends Stop {
+  /**
+   * The Stop's Items. Unordered as a matter of model: any order the api returns
+   * them in is a display convenience the client must not read meaning into.
+   */
+  items: Item[];
+}
+
+/** Create a Stop. `name` is required; the Stop starts empty. */
+export interface CreateStopRequest {
+  name: string;
+}
+
+/**
+ * Pull one Item from All into a Stop. The Item is referenced, never copied — the
+ * same Item can be added to any number of Stops (CONTEXT.md *Item*) — and adding
+ * one that is already in the Stop changes nothing, because membership is a set.
+ */
+export interface AddStopItemRequest {
+  itemId: ItemId;
 }
 
 /**

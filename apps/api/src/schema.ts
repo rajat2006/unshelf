@@ -53,6 +53,97 @@ ALTER TABLE items DROP COLUMN IF EXISTS created_at;
 
 -- All lists a User's Items; every read is scoped by user_id, so index it.
 CREATE INDEX IF NOT EXISTS items_user_id_idx ON items (user_id);
+
+-- Composite owner keys let membership reference an Item together with its User.
+-- id remains the model identity; this index exists only for tenant-consistency
+-- foreign keys on cross-domain joins.
+CREATE UNIQUE INDEX IF NOT EXISTS items_id_user_id_idx ON items (id, user_id);
+
+-- Stops: the single organising primitive (ADR-0004), scoped to a User like every
+-- other domain table. There is deliberately no \`kind\` column — one uniform Stop
+-- serves both a topic to learn and a project to build, because v1 makes the two
+-- behave identically. Names are not unique: two Stops may share one, since a Stop
+-- is identified by its id and the User is free to name their space as they like.
+CREATE TABLE IF NOT EXISTS stops (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users (id),
+  name text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS stops_user_id_idx ON stops (user_id);
+
+-- As for Items, expose the owner beside the id so StopItem can prove both ends
+-- belong to the User recorded on the membership.
+CREATE UNIQUE INDEX IF NOT EXISTS stops_id_user_id_idx ON stops (id, user_id);
+
+-- StopItem: membership plus its mandatory tenancy anchor, and nothing else
+-- (ADR-0001, ADR-0004, ADR-0009). The composite primary key makes the two ends
+-- the membership identity and a Stop's contents a set, so the same Item cannot
+-- be held twice however it is added. There is no \`position\` (a Stop is
+-- unordered; sequencing lives on the Trail) and no \`status\` (one Status lives
+-- on the Item, shared by every Stop holding it) — either column would be a second
+-- place to keep the same domain fact true.
+--
+-- user_id is deliberately repeated as a security constraint: the paired foreign
+-- keys below make disagreement impossible at the database boundary, even for a
+-- write that bypasses the repository. Every domain table therefore points at our
+-- User anchor, as ADR-0009 requires.
+CREATE TABLE IF NOT EXISTS stop_items (
+  user_id uuid,
+  stop_id uuid NOT NULL REFERENCES stops (id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES items (id) ON DELETE CASCADE,
+  PRIMARY KEY (stop_id, item_id)
+);
+
+-- Upgrade databases that booted an earlier version of this branch. Backfill from
+-- the Stop owner, then make the anchor mandatory before adding the constraints.
+ALTER TABLE stop_items ADD COLUMN IF NOT EXISTS user_id uuid;
+
+UPDATE stop_items AS membership
+SET user_id = stops.user_id
+FROM stops
+WHERE membership.stop_id = stops.id AND membership.user_id IS NULL;
+
+ALTER TABLE stop_items ALTER COLUMN user_id SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'stop_items_user_id_fkey'
+      AND conrelid = 'stop_items'::regclass
+  ) THEN
+    ALTER TABLE stop_items
+      ADD CONSTRAINT stop_items_user_id_fkey
+      FOREIGN KEY (user_id) REFERENCES users (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'stop_items_stop_owner_fk'
+      AND conrelid = 'stop_items'::regclass
+  ) THEN
+    ALTER TABLE stop_items
+      ADD CONSTRAINT stop_items_stop_owner_fk
+      FOREIGN KEY (stop_id, user_id) REFERENCES stops (id, user_id)
+      ON DELETE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'stop_items_item_owner_fk'
+      AND conrelid = 'stop_items'::regclass
+  ) THEN
+    ALTER TABLE stop_items
+      ADD CONSTRAINT stop_items_item_owner_fk
+      FOREIGN KEY (item_id, user_id) REFERENCES items (id, user_id)
+      ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- The primary key already indexes stop_id (a Stop's contents); this covers the
+-- other direction — every Stop holding a given Item.
+CREATE INDEX IF NOT EXISTS stop_items_item_id_idx ON stop_items (item_id);
 `;
 
 /** Apply the schema to a database. Idempotent. */

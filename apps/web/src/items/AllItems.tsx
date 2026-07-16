@@ -1,24 +1,31 @@
-import type { CSSProperties } from "react";
-import type { Item } from "@unshelf/shared";
+import type { Item, Stop, StopDetail } from "@unshelf/shared";
 import type { CurrentUser } from "../auth";
-import { ItemStatusSelect } from "./ItemStatusSelect";
-import { ItemTargetDate } from "./ItemTargetDate";
-import { TYPE_LABELS } from "./presentation";
+import { AddToStopControl } from "../stops/AddToStopControl";
+import { ItemRow } from "./ItemRow";
 
 interface AllItemsProps {
   items: Item[] | null;
+  /** The User's Stops — what an Item in All can be pulled into. */
+  stops: Stop[] | null;
   error: string | null;
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
+  onStopChanged: (stop: StopDetail) => void;
 }
 
-const sourceTextStyle: CSSProperties = {
-  fontSize: "0.85rem",
-  overflowWrap: "anywhere",
-};
-
-/** All: the query "every Item where user = me", rendered as a list. */
-export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
+/**
+ * All: the query "every Item where user = me", rendered as a list — and the one
+ * place Items are pulled from into a Stop (story 28). Adding to a Stop never
+ * takes an Item out of this list: All is where every capture lands and stays.
+ */
+export function AllItems({
+  items,
+  stops,
+  error,
+  user,
+  onItemChanged,
+  onStopChanged,
+}: AllItemsProps) {
   return (
     <section style={{ marginTop: "2.5rem" }}>
       <h2 style={{ fontSize: "1.2rem" }}>All</h2>
@@ -30,64 +37,22 @@ export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
       {items && items.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {items.map((item) => (
-            <li
+            <ItemRow
               key={item.id}
-              style={{
-                padding: "0.75rem 0",
-                borderTop: "1px solid rgba(0,0,0,0.1)",
-              }}
+              item={item}
+              user={user}
+              onChanged={onItemChanged}
             >
-              <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
-                {item.title}
-              </div>
-              <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
-                {TYPE_LABELS[item.type]}
-              </div>
-              <ItemStatusSelect
+              <AddToStopControl
                 item={item}
+                stops={stops ?? []}
                 user={user}
-                onChanged={onItemChanged}
+                onStopChanged={onStopChanged}
               />
-              <ItemTargetDate
-                item={item}
-                user={user}
-                onChanged={onItemChanged}
-              />
-              {item.source && <Source source={item.source} />}
-            </li>
+            </ItemRow>
           ))}
         </ul>
       )}
     </section>
-  );
-}
-
-/** Render an HTTP Source as a tappable link and every other Source as inert text. */
-function Source({ source }: { source: string }) {
-  let href: string | null = null;
-  try {
-    const url = new URL(source);
-    if (url.protocol === "http:" || url.protocol === "https:") href = source;
-  } catch {
-    href = null;
-  }
-
-  return href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      style={{
-        ...sourceTextStyle,
-        display: "inline-flex",
-        alignItems: "center",
-        minHeight: "44px",
-        minWidth: "44px",
-      }}
-    >
-      {source}
-    </a>
-  ) : (
-    <div style={{ ...sourceTextStyle, opacity: 0.7 }}>{source}</div>
   );
 }

@@ -17,11 +17,12 @@ export const STATUS_LABELS: Record<Status, string> = {
 };
 
 /**
- * The shared chrome for the per-Item controls (Status, Target date). One app,
- * one layout, desktop and phone alike (ADR-0008) — so the rules that make a
- * control usable on a phone live here once, rather than in each control:
- * a 44px touch target, text large enough not to trigger an input zoom, and
- * wrapping rather than overflowing when the viewport is narrow.
+ * The shared chrome for every control that sits on an Item's row — the Item's own
+ * (Status, Target date) and those a list adds to it (add to a Stop). One app, one
+ * layout, desktop and phone alike (ADR-0008) — so the rules that make a control
+ * usable on a phone live here once, rather than in each control: a 44px touch
+ * target, text large enough not to trigger an input zoom, and wrapping rather
+ * than overflowing when the viewport is narrow.
  */
 export const ITEM_CONTROL_ROW_STYLE: CSSProperties = {
   marginTop: "0.35rem",
