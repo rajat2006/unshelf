@@ -136,8 +136,9 @@ export interface Stop {
 }
 
 /**
- * Membership: this Item is in that Stop. A bare many-to-many join and nothing
- * more (ADR-0004) — the two ends are the whole record.
+ * Membership: this User's Item is in that User's Stop. A bare many-to-many join
+ * plus the tenancy anchor every domain record carries (ADR-0001, ADR-0004,
+ * ADR-0009) — the two ends are the whole membership.
  *
  * It carries no `position`, because a Stop is an unordered set and all sequencing
  * lives on the Trail; and no `status`, because Status is one value on the Item
@@ -146,6 +147,8 @@ export interface Stop {
  * the User two places to keep the same fact true.
  */
 export interface StopItem {
+  /** The owning User — constrained to be the owner of both membership ends. */
+  userId: UserId;
   /** The Stop end of the membership. */
   stopId: StopId;
   /** The Item end of the membership. */

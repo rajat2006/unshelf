@@ -103,7 +103,9 @@ async function listItemsIn(
     `SELECT ${ITEM_PROJECTION}
      FROM items
      WHERE user_id = $1
-       AND id IN (SELECT item_id FROM stop_items WHERE stop_id = $2)
+       AND id IN (
+         SELECT item_id FROM stop_items WHERE stop_id = $2 AND user_id = $1
+       )
      ORDER BY title`,
     [userId, stopId],
   );
@@ -133,12 +135,12 @@ export async function addItemToStop(
   itemId: ItemId,
 ): Promise<StopDetail | null> {
   const { rows } = await pool.query(
-    `INSERT INTO stop_items (stop_id, item_id)
-     SELECT stops.id, items.id
+    `INSERT INTO stop_items (user_id, stop_id, item_id)
+     SELECT $3, stops.id, items.id
      FROM stops, items
      WHERE stops.id = $1 AND items.id = $2
        AND stops.user_id = $3 AND items.user_id = $3
-     ON CONFLICT (stop_id, item_id) DO UPDATE SET stop_id = EXCLUDED.stop_id
+     ON CONFLICT (stop_id, item_id) DO UPDATE SET user_id = EXCLUDED.user_id
      RETURNING stop_id`,
     [stopId, itemId, userId],
   );
@@ -156,10 +158,10 @@ export async function addItemToStop(
  * Stop") that already holds — a set has no notion of removing something twice.
  * A Stop that is not this User's is the one real failure, and it 404s.
  *
- * The delete names its User through the Stop, so a foreign Stop matches nothing
- * and nothing is removed; the `getStop` that follows then reports that same
- * Stop as missing. One User's request can therefore neither read nor alter
- * another's membership, and the two statements cannot disagree about which.
+ * The delete names the User directly on the membership. Composite owner foreign
+ * keys guarantee that this is also the User on both the Stop and Item, while the
+ * `getStop` that follows reports a foreign Stop as missing. One User's request can
+ * therefore neither read nor alter another's membership.
  */
 export async function removeItemFromStop(
   pool: Pool,
@@ -169,8 +171,7 @@ export async function removeItemFromStop(
 ): Promise<StopDetail | null> {
   await pool.query(
     `DELETE FROM stop_items
-     WHERE item_id = $2
-       AND stop_id = (SELECT id FROM stops WHERE id = $1 AND user_id = $3)`,
+     WHERE stop_id = $1 AND item_id = $2 AND user_id = $3`,
     [stopId, itemId, userId],
   );
   return getStop(pool, userId, stopId);

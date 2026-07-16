@@ -401,16 +401,17 @@ describe("one Status, read through every Stop that holds the Item", () => {
 });
 
 describe("StopItem — a bare join and nothing more", () => {
-  it("carries no position and no status", async () => {
+  it("carries only its User anchor and membership ends — no position or status", async () => {
     const { rows } = await harness.pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'stop_items'`,
     );
     const columns = rows.map((row) => row.column_name).sort();
 
-    // The two ends are the whole record: ordering lives on the Trail, Status on
-    // the Item. A column here would be a second place to keep either one true.
-    expect(columns).toEqual(["item_id", "stop_id"]);
+    // user_id is the tenancy guardrail ADR-0009 requires on every domain table.
+    // The two membership ends still carry no domain fact of their own: ordering
+    // lives on the Trail, and Status lives on the Item.
+    expect(columns).toEqual(["item_id", "stop_id", "user_id"]);
   });
 
   it("cannot hold the same Item in the same Stop twice, at the database", async () => {
@@ -421,10 +422,32 @@ describe("StopItem — a bare join and nothing more", () => {
     // Set semantics are the schema's guarantee, not just the route's.
     await expect(
       harness.pool.query(
-        "INSERT INTO stop_items (stop_id, item_id) VALUES ($1, $2)",
-        [stop.id, item.id],
+        `INSERT INTO stop_items (user_id, stop_id, item_id)
+         VALUES ($1, $2, $3)`,
+        [stop.userId, stop.id, item.id],
       ),
     ).rejects.toThrow();
+  });
+
+  it("rejects a cross-User membership at the database boundary", async () => {
+    const alice = await givenItemAndStop(
+      "clerk_stop_item_tenant_alice",
+      "Alice's item",
+      "Alice's stop",
+    );
+    const bob = await givenItemAndStop(
+      "clerk_stop_item_tenant_bob",
+      "Bob's item",
+      "Bob's stop",
+    );
+
+    await expect(
+      harness.pool.query(
+        `INSERT INTO stop_items (user_id, stop_id, item_id)
+         VALUES ($1, $2, $3)`,
+        [alice.stop.userId, alice.stop.id, bob.item.id],
+      ),
+    ).rejects.toThrow(/stop_items_item_owner_fk/);
   });
 });
 
