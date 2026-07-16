@@ -1,15 +1,19 @@
 import type { CSSProperties } from "react";
-import type { Item } from "@unshelf/shared";
+import type { Item, Stop, StopDetail } from "@unshelf/shared";
 import type { CurrentUser } from "../auth";
+import { AddToStopControl } from "../stops/AddToStopControl";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
 
 interface AllItemsProps {
   items: Item[] | null;
+  /** The User's Stops — what an Item in All can be pulled into. */
+  stops: Stop[] | null;
   error: string | null;
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
+  onStopChanged: (stop: StopDetail) => void;
 }
 
 const sourceTextStyle: CSSProperties = {
@@ -17,8 +21,19 @@ const sourceTextStyle: CSSProperties = {
   overflowWrap: "anywhere",
 };
 
-/** All: the query "every Item where user = me", rendered as a list. */
-export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
+/**
+ * All: the query "every Item where user = me", rendered as a list — and the one
+ * place Items are pulled from into a Stop (story 28). Adding to a Stop never
+ * takes an Item out of this list: All is where every capture lands and stays.
+ */
+export function AllItems({
+  items,
+  stops,
+  error,
+  user,
+  onItemChanged,
+  onStopChanged,
+}: AllItemsProps) {
   return (
     <section style={{ marginTop: "2.5rem" }}>
       <h2 style={{ fontSize: "1.2rem" }}>All</h2>
@@ -52,6 +67,12 @@ export function AllItems({ items, error, user, onItemChanged }: AllItemsProps) {
                 item={item}
                 user={user}
                 onChanged={onItemChanged}
+              />
+              <AddToStopControl
+                item={item}
+                stops={stops ?? []}
+                user={user}
+                onStopChanged={onStopChanged}
               />
               {item.source && <Source source={item.source} />}
             </li>

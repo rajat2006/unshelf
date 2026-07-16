@@ -8,7 +8,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 
-interface ItemRow {
+export interface ItemRow {
   id: string;
   user_id: string;
   title: string;
@@ -22,21 +22,27 @@ interface ItemRow {
 
 /**
  * Every read of an Item goes through this one projection, so *past target* is
- * computed the same way everywhere and can never disagree with itself.
+ * computed the same way everywhere and can never disagree with itself. Reading an
+ * Item inside a Stop is the same read as reading it in All — the Stop repository
+ * imports this rather than writing its own, so a Stop can never show a User an
+ * Item that disagrees with All about its own state.
  *
  * It is derived here, in the read, rather than stored (ADR-0005): the state is a
  * question about today, and today moves on its own. A column would need a job to
  * keep it honest at midnight — this needs nothing, because there is nothing to go
  * stale. `COALESCE` makes a missing date simply not past, rather than unknown.
  * "Today" is the database's, the single clock all Users are compared against.
+ *
+ * The columns are unqualified, so a query using this must have exactly one `items`
+ * in scope — select from `items` and put any Stop membership in a subquery.
  */
-const ITEM_PROJECTION = `id, user_id, title, source, type, status,
+export const ITEM_PROJECTION = `id, user_id, title, source, type, status,
                          target_date::text AS target_date,
                          (COALESCE(target_date < CURRENT_DATE, false)
                           AND status <> 'done') AS past_target,
                          completed_at`;
 
-const toItem = (row: ItemRow): Item => ({
+export const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
   userId: row.user_id as UserId,
   title: row.title,

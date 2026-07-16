@@ -53,6 +53,39 @@ ALTER TABLE items DROP COLUMN IF EXISTS created_at;
 
 -- All lists a User's Items; every read is scoped by user_id, so index it.
 CREATE INDEX IF NOT EXISTS items_user_id_idx ON items (user_id);
+
+-- Stops: the single organising primitive (ADR-0004), scoped to a User like every
+-- other domain table. There is deliberately no \`kind\` column — one uniform Stop
+-- serves both a topic to learn and a project to build, because v1 makes the two
+-- behave identically. Names are not unique: two Stops may share one, since a Stop
+-- is identified by its id and the User is free to name their space as they like.
+CREATE TABLE IF NOT EXISTS stops (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users (id),
+  name text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS stops_user_id_idx ON stops (user_id);
+
+-- StopItem: membership, and nothing else (ADR-0004). The composite primary key IS
+-- the model — it makes the two ends the whole record, and makes a Stop's contents
+-- a set at the database, so the same Item cannot be held twice however it is
+-- added. There is no \`position\` (a Stop is unordered; sequencing lives on the
+-- Trail) and no \`status\` (one Status lives on the Item, shared by every Stop
+-- holding it) — either column would be a second place to keep the same fact true.
+--
+-- No user_id either: membership inherits its tenancy from both ends, which are
+-- always checked to be the same User's before a row is written. Storing it a
+-- third time would let the three disagree.
+CREATE TABLE IF NOT EXISTS stop_items (
+  stop_id uuid NOT NULL REFERENCES stops (id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES items (id) ON DELETE CASCADE,
+  PRIMARY KEY (stop_id, item_id)
+);
+
+-- The primary key already indexes stop_id (a Stop's contents); this covers the
+-- other direction — every Stop holding a given Item.
+CREATE INDEX IF NOT EXISTS stop_items_item_id_idx ON stop_items (item_id);
 `;
 
 /** Apply the schema to a database. Idempotent. */

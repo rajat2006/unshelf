@@ -1,8 +1,13 @@
 import type {
+  AddStopItemRequest,
   CreateItemRequest,
+  CreateStopRequest,
   Item,
   ItemId,
   Status,
+  Stop,
+  StopDetail,
+  StopId,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
@@ -73,5 +78,61 @@ export async function updateItemTargetDate(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+/** Every Stop belonging to the current User. */
+export async function fetchStops(user: CurrentUser): Promise<Stop[]> {
+  return requestJson<Stop[]>(user, "/api/stops");
+}
+
+/** Create a Stop. It starts empty; Items are pulled into it from All. */
+export async function createStop(
+  user: CurrentUser,
+  input: CreateStopRequest,
+): Promise<Stop> {
+  return requestJson<Stop>(user, "/api/stops", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+/** One Stop with its Items, each carrying the Status every view of it shares. */
+export async function fetchStop(
+  user: CurrentUser,
+  stopId: StopId,
+): Promise<StopDetail> {
+  return requestJson<StopDetail>(user, `/api/stops/${stopId}`);
+}
+
+/**
+ * Pull an Item from All into a Stop — a reference, never a copy, so the Item
+ * stays in All and in any other Stop. Returns the Stop's new contents.
+ */
+export async function addItemToStop(
+  user: CurrentUser,
+  stopId: StopId,
+  itemId: ItemId,
+): Promise<StopDetail> {
+  const body: AddStopItemRequest = { itemId };
+  return requestJson<StopDetail>(user, `/api/stops/${stopId}/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Take an Item out of a Stop. Only the membership goes — the Item itself, its
+ * Status, and its other Stops are untouched. Returns the Stop's new contents.
+ */
+export async function removeItemFromStop(
+  user: CurrentUser,
+  stopId: StopId,
+  itemId: ItemId,
+): Promise<StopDetail> {
+  return requestJson<StopDetail>(user, `/api/stops/${stopId}/items/${itemId}`, {
+    method: "DELETE",
   });
 }
