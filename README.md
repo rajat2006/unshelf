@@ -11,3 +11,9 @@ pnpm dev
 
 The api expects Postgres at `DATABASE_URL`. Tests need no `.env` at all —
 `pnpm test` spins up a throwaway Postgres via testcontainers (Docker required).
+
+## Deployment
+
+Production runs on a Hostinger VPS via Dokploy (ADR-0009). The Dockerfiles,
+`docker-compose.yml` (Dokploy), and the operator runbook live in
+[docs/deploy.md](docs/deploy.md).

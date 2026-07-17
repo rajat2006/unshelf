@@ -1,0 +1,86 @@
+# Self-contained local stack for verifying the production images end to end
+# WITHOUT a VPS. It builds the same apps/api + apps/web Dockerfiles and runs a
+# throwaway Traefik that mirrors production's path routing (/api → api, rest →
+# web) over plain HTTP on :8080 — no TLS, no external network, no real secrets.
+#
+# Usage:
+#   CLERK_SECRET_KEY=sk_test_... \
+#   CLERK_PUBLISHABLE_KEY=pk_test_... \
+#   VITE_CLERK_PUBLISHABLE_KEY=pk_test_... \
+#   docker compose -f docker-compose.local.yml up --build
+#
+# Then: open http://localhost:8080 (SPA) and http://localhost:8080/api/health.
+# This is the "prove one deploy end to end" check that does not need the VPS.
+
+services:
+  proxy:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - "8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - edge
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: unshelf
+      POSTGRES_PASSWORD: unshelf
+      POSTGRES_DB: unshelf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unshelf -d unshelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://unshelf:unshelf@db:5432/unshelf
+      PORT: 3001
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=unshelf_edge
+      - traefik.http.routers.api-local.rule=PathPrefix(`/api`)
+      - traefik.http.routers.api-local.entrypoints=web
+      - traefik.http.routers.api-local.priority=10
+      - traefik.http.services.api-local.loadbalancer.server.port=3001
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+    depends_on:
+      - api
+    networks:
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=unshelf_edge
+      - traefik.http.routers.web-local.rule=PathPrefix(`/`)
+      - traefik.http.routers.web-local.entrypoints=web
+      - traefik.http.routers.web-local.priority=1
+      - traefik.http.services.web-local.loadbalancer.server.port=80
+
+networks:
+  internal:
+  edge:
