@@ -144,6 +144,41 @@ END $$;
 -- The primary key already indexes stop_id (a Stop's contents); this covers the
 -- other direction — every Stop holding a given Item.
 CREATE INDEX IF NOT EXISTS stop_items_item_id_idx ON stop_items (item_id);
+
+-- trail_edges: the Trail's adjacency edge list (ADR-0010). One row per directed
+-- Stop-to-Stop edge, scoped to a User. The Trail is not a table — like All it is
+-- a derived view: its nodes are the User's Stops, its edges are these rows. "One
+-- Trail per User" needs no \`trails\` row; the edge set scoped to a User *is* the
+-- Trail. There is deliberately no \`position\` and no \`x\`/\`y\`: parallel forks are
+-- unordered and canvas layout is derived from topology on read (like the derived
+-- \`past_target\`), so the Trail stays a lightweight topology and there is no
+-- second place for the plan to drift.
+--
+-- The shape mirrors stop_items exactly: a mandatory tenancy anchor plus composite
+-- owner foreign keys \`(from_stop_id, user_id)\` and \`(to_stop_id, user_id)\` into
+-- \`stops (id, user_id)\`, so an edge can only ever join two of the *same* User's
+-- Stops — there is no pairing of Stops belonging to different Users this table can
+-- hold. Both cascade, so deleting a Stop takes every edge touching it with it.
+-- The primary key makes the edge set a set (no duplicate edge), and the CHECK
+-- forbids a self-loop at the database. Acyclicity is the one invariant the schema
+-- cannot cheaply declare, so the repository owns it at the API write seam.
+CREATE TABLE IF NOT EXISTS trail_edges (
+  user_id uuid NOT NULL REFERENCES users (id),
+  from_stop_id uuid NOT NULL,
+  to_stop_id uuid NOT NULL,
+  PRIMARY KEY (user_id, from_stop_id, to_stop_id),
+  CHECK (from_stop_id <> to_stop_id),
+  FOREIGN KEY (from_stop_id, user_id)
+    REFERENCES stops (id, user_id) ON DELETE CASCADE,
+  FOREIGN KEY (to_stop_id, user_id)
+    REFERENCES stops (id, user_id) ON DELETE CASCADE
+);
+
+-- The primary key indexes out-edges (a Stop's successors, keyed from the front);
+-- this covers the other direction — every edge leading into a given Stop, which
+-- the layout's longest-path layering walks.
+CREATE INDEX IF NOT EXISTS trail_edges_to_stop_id_idx
+  ON trail_edges (user_id, to_stop_id);
 `;
 
 /** Apply the schema to a database. Idempotent. */

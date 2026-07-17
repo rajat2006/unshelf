@@ -1,8 +1,8 @@
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
  * ends can never drift. In v1 this holds the walking-skeleton health contract,
- * the `Item` spine (ADR-0003) and the `Stop` / `StopItem` organisation model
- * (ADR-0004); the Trail lands here as a later ticket builds it out.
+ * the `Item` spine (ADR-0003), the `Stop` / `StopItem` organisation model
+ * (ADR-0004) and the `TrailEdge` topology (ADR-0010).
  */
 
 /**
@@ -181,6 +181,75 @@ export interface CreateStopRequest {
  */
 export interface AddStopItemRequest {
   itemId: ItemId;
+}
+
+/**
+ * A directed Stop-to-Stop edge — one row of the Trail's adjacency edge list
+ * (ADR-0010). The Trail *is* this edge set scoped to a User: its nodes are the
+ * User's Stops (every Stop is already "what appears as a node on the Trail",
+ * CONTEXT.md *Stop*), its edges are these rows. A fork is a Stop with several
+ * out-edges; a join is a Stop with several in-edges; the whole is a DAG.
+ *
+ * It carries no `x`/`y` and no order among sibling forks: canvas position is
+ * *derived* on read by longest-path layering, never stored (ADR-0010), the same
+ * discipline as the derived `pastTarget` (ADR-0005). And it carries no date — the
+ * Trail is a lightweight topology, never a calendar (ADR-0004).
+ */
+export interface TrailEdge {
+  /** The owning User — constrained to be the owner of both edge ends. */
+  userId: UserId;
+  /** The Stop the edge leads out of. */
+  fromStopId: StopId;
+  /** The Stop the edge leads into. */
+  toStopId: StopId;
+}
+
+/**
+ * A Stop as it appears on the Trail — a node (CONTEXT.md *Stop*: a Stop is what
+ * appears as a node on the Trail). The Trail is a derived view over the User's
+ * Stops, so this carries what the canvas draws a waypoint from: the Stop's
+ * identity and name, plus its progress — how many of its Items are *done* out of
+ * how many it holds. Progress is *derived* on every read (like `pastTarget`,
+ * ADR-0005), never stored on the Trail; it is what lets the canvas read a thread
+ * as ground already walked versus still ahead.
+ */
+export interface TrailNode {
+  /** The Stop's id — the node's identity, and the endpoint edges reference. */
+  id: StopId;
+  /** The Stop's name, drawn as the waypoint label. */
+  name: string;
+  /** How many of the Stop's Items are *done* (0 when it holds none). */
+  done: number;
+  /** How many Items the Stop holds in total. */
+  total: number;
+}
+
+/**
+ * The whole Trail as it reads back (ADR-0010): the node set — the User's Stops,
+ * each with derived progress — and the edge set between them. The Trail is not a
+ * table but a derived view, so both halves are read fresh; an unconnected Stop is
+ * still a node, it simply has no edges yet. The layout is not here: it is derived
+ * from the edges on the client, never stored.
+ */
+export interface TrailView {
+  /** Every Stop, as a Trail node with derived progress. */
+  nodes: TrailNode[];
+  /** Every Stop-to-Stop edge belonging to the User. */
+  edges: TrailEdge[];
+}
+
+/**
+ * Draw one edge on the Trail: link `fromStopId` ahead of `toStopId`. Refused when
+ * either Stop is not the User's, when the two are the same Stop, or when the link
+ * would close a cycle (the target can already reach the source) — the Trail is a
+ * DAG, and acyclicity is enforced at this write seam (ADR-0010). Adding an edge
+ * that already exists changes nothing: the edge set is a set.
+ */
+export interface ConnectStopsRequest {
+  /** The Stop the new edge leads out of. */
+  fromStopId: StopId;
+  /** The Stop the new edge leads into. */
+  toStopId: StopId;
 }
 
 /**
