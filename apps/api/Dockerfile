@@ -8,7 +8,6 @@
 
 # ── base ──────────────────────────────────────────────────────────────────────
 FROM node:22-slim AS base
-ENV CI=true
 RUN corepack enable
 WORKDIR /app
 
