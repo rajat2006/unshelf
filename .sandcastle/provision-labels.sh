@@ -38,7 +38,7 @@ for entry in "${labels[@]}"; do
     --color "$colour" \
     --description "$description" \
     --force \
-    "${repo_arg[@]}"
+    ${repo_arg[@]+"${repo_arg[@]}"} # +-guard: empty-array expansion is safe under `set -u` on Bash 3.2 (macOS)
 done
 
 echo "Done — ${#labels[@]} agent:* labels provisioned."
