@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# Provision the `agent:*` label set for the Sandcastle autonomous-agent platform
+# (spec #52, §D). Idempotent: `gh label create --force` creates-or-updates, so
+# re-running only reconciles colours/descriptions. Triage and wayfinder labels are
+# NOT touched here — they are provisioned separately (docs/agents/triage-labels.md).
+#
+# Usage:  ./.sandcastle/provision-labels.sh [owner/repo]
+# Default repo is the current directory's origin.
+
+set -euo pipefail
+
+REPO="${1:-}"
+repo_arg=()
+if [[ -n "$REPO" ]]; then
+  repo_arg=(--repo "$REPO")
+fi
+
+# name | colour (hex, no #) | description
+# Three layers per spec §D: one provider label, then the agent state machine.
+# There is deliberately NO `agent:claude` label — absence of `agent:codex` is Claude.
+labels=(
+  "agent:codex|8250df|Provider (optional): run this issue on Codex/gpt-5.6-sol instead of the default Claude Code"
+  "agent:implement|0e8a16|Human trigger: start an autonomous implementation run on this issue"
+  "agent:in-progress|fbca04|Machine: a run is actively working this issue (added on start, removed on finish)"
+  "agent:review|1d76db|Machine: an implement run finished; fire the automated PR review"
+  "agent:implement-pr|006b75|Trigger: ask an agent to address review comments on this PR"
+  "agent:update-branch|5319e7|Trigger: refresh this stale PR branch against main"
+  "agent:to-issues|c5def5|Trigger: expand this PRD issue into agent-sized child issues"
+  "agent:queued|d4c5f9|Machine: blocked by another open issue; auto-promotes to agent:implement when the blocker closes"
+  "agent:blocked|b60205|Machine: a run stopped (crash, timeout, or the agent asked for a human); see the linked run"
+)
+
+for entry in "${labels[@]}"; do
+  IFS='|' read -r name colour description <<<"$entry"
+  echo "→ ${name}"
+  gh label create "$name" \
+    --color "$colour" \
+    --description "$description" \
+    --force \
+    "${repo_arg[@]}"
+done
+
+echo "Done — ${#labels[@]} agent:* labels provisioned."

@@ -14,6 +14,10 @@ If a ticket is a wayfinder ticket (labelled `wayfinder:*`), consult the `/wayfin
 
 Default five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
+### Sandcastle agent platform
+
+Autonomous coding agents via Sandcastle on the Actions runner (spec #52). Label taxonomy (`agent:*`) and secrets provisioning: `docs/agents/sandcastle.md`. Runner seam: `.sandcastle/README.md`.
+
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
