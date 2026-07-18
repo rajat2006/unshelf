@@ -2,9 +2,10 @@
 # the Hostinger VPS: each apps/* is its own service behind Dokploy's Traefik
 # proxy, and Postgres runs as a service on the same box.
 #
-# Routing (one domain, path-based — mirrors the dev Vite proxy):
-#   PathPrefix(`/api`) → api service   (priority 10, matched first)
-#   everything else    → web service   (the SPA + its history fallback)
+# Routing (one domain, path-based — mirrors the dev Vite proxy). The two router
+# rules are mutually exclusive, so the split is explicit, not priority-based:
+#   PathPrefix(`/api`)  → api service   (Host && PathPrefix(`/api`))
+#   everything else     → web service   (Host && !PathPrefix(`/api`))
 #
 # Config comes from Dokploy's Environment settings (this file reads them; it
 # hardcodes no secrets). Required env: DOMAIN, POSTGRES_PASSWORD,
@@ -51,7 +52,6 @@ services:
       - traefik.http.routers.unshelf-api.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.unshelf-api.entrypoints=websecure
       - traefik.http.routers.unshelf-api.tls.certresolver=letsencrypt
-      - traefik.http.routers.unshelf-api.priority=10
       - traefik.http.services.unshelf-api.loadbalancer.server.port=3001
 
   web:
@@ -68,10 +68,9 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.unshelf-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.unshelf-web.rule=Host(`${DOMAIN}`) && !PathPrefix(`/api`)
       - traefik.http.routers.unshelf-web.entrypoints=websecure
       - traefik.http.routers.unshelf-web.tls.certresolver=letsencrypt
-      - traefik.http.routers.unshelf-web.priority=1
       - traefik.http.services.unshelf-web.loadbalancer.server.port=80
 
 volumes:

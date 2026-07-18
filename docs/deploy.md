@@ -18,7 +18,6 @@ issue #23 is `ready-for-human`).
 | `apps/web/Caddyfile` | Static serving + SPA history fallback (does **not** proxy `/api`). |
 | `.dockerignore` | Keeps the (repo-root) build context small and reproducible. |
 | `docker-compose.yml` | **The Dokploy production stack** — db + api + web with Traefik labels. |
-| `docker-compose.local.yml` | Local end-to-end verification harness (throwaway Traefik, no VPS). |
 
 Both images build from the **repo root** as context (they need the pnpm
 workspace lockfile and `packages/shared`), so the compose services set
@@ -29,8 +28,12 @@ workspace lockfile and `packages/shared`), so the compose services set
 One domain, path-based — the same shape as the dev Vite proxy, so the browser
 always talks to a single origin:
 
-- `PathPrefix(`/api`)` → **api** service (Traefik router priority 10)
-- everything else → **web** service (priority 1; the SPA + its history fallback)
+- `PathPrefix(`/api`)` → **api** service (rule `Host && PathPrefix(`/api`)`)
+- everything else → **web** service (rule `Host && !PathPrefix(`/api`)`; the SPA + its history fallback)
+
+The two router rules are **mutually exclusive** — the web router explicitly
+excludes `/api` — so the split is stated in the rules themselves rather than
+resolved by Traefik priority. No `priority` labels are needed.
 
 ```
               Internet
@@ -99,24 +102,19 @@ The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
 The API applies its schema on boot (`applySchema`, idempotent), so there is no
 separate migration step for v1.
 
-## Verifying locally without the VPS
+## Local development and verification
 
-`docker-compose.local.yml` builds the **same** production images behind a
-throwaway Traefik on `:8080` (plain HTTP, no external network, no real secrets)
-to prove containers + routing before trusting the VPS:
+**Everyday local development is `pnpm dev`** (see the README) — Vite + `tsx watch`
+with hot reload, and Vite's dev proxy already gives the single-origin `/api`
+routing the browser sees in production.
 
-```sh
-CLERK_SECRET_KEY=sk_test_... \
-CLERK_PUBLISHABLE_KEY=pk_test_... \
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_... \
-docker compose -f docker-compose.local.yml up --build
-# → http://localhost:8080          (SPA)
-# → http://localhost:8080/api/health (API through the same origin)
-```
-
-This is a verification harness, not a dev loop. **Everyday local development is
-`pnpm dev`** (see the README) — Vite + `tsx watch` with hot reload; Docker gives
-none of that inner-loop speed.
+There is intentionally **no local Docker harness** that simulates the Dokploy
+stack. A hand-rolled local Traefik can only ever *approximate* the platform's
+proxy (its TLS, entrypoints, and network are Dokploy's, not ours), so it adds
+maintenance and drift without proving the thing that actually matters. The
+production images and their routing are verified where they run: on **deploy**,
+via the end-to-end check in "First deploy" step 6 (and, once a hosted dev/staging
+environment exists, there first).
 
 ## Backups — a tracked, time-boxed risk
 
