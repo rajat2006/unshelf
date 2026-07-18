@@ -1,5 +1,5 @@
 # The React SPA (ADR-0008/0009), built from the monorepo root as its build
-# context and served as static files by nginx. This is the Dokploy service for
+# context and served as static files by Caddy. This is the Dokploy service for
 # apps/web; Traefik routes everything except /api to it.
 #
 # Build context is the REPO ROOT (workspace lockfile + packages/shared). Vite
@@ -30,7 +30,7 @@ ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 RUN pnpm --filter @unshelf/web... build
 
 # ── runtime ───────────────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS runtime
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+FROM caddy:2-alpine AS runtime
+COPY apps/web/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/apps/web/dist /usr/share/caddy
 EXPOSE 80

@@ -14,8 +14,8 @@ issue #23 is `ready-for-human`).
 | Artifact | Purpose |
 | --- | --- |
 | `apps/api/Dockerfile` | Builds the Express API image (multi-stage; `pnpm deploy` → prod-only tree). |
-| `apps/web/Dockerfile` | Builds the SPA and serves it via nginx. |
-| `apps/web/nginx.conf` | Static serving + SPA history fallback (does **not** proxy `/api`). |
+| `apps/web/Dockerfile` | Builds the SPA and serves it via Caddy. |
+| `apps/web/Caddyfile` | Static serving + SPA history fallback (does **not** proxy `/api`). |
 | `.dockerignore` | Keeps the (repo-root) build context small and reproducible. |
 | `docker-compose.yml` | **The Dokploy production stack** — db + api + web with Traefik labels. |
 | `docker-compose.local.yml` | Local end-to-end verification harness (throwaway Traefik, no VPS). |
@@ -32,7 +32,7 @@ always talks to a single origin:
 - `PathPrefix(`/api`)` → **api** service (Traefik router priority 10)
 - everything else → **web** service (priority 1; the SPA + its history fallback)
 
-nginx in the web image therefore never proxies `/api`; Traefik owns that split.
+Caddy in the web image therefore never proxies `/api`; Traefik owns that split.
 
 ## Environment (set in Dokploy → the Compose service's Environment)
 
