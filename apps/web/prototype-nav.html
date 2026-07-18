@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Navigation model (prototype #56)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #56 "Navigation model: sidebar, top bar, or
+  tabs — and the primary destinations", a wayfinder:grilling child of the web-redesign
+  map #53. Answers ONE open question: how Capture shows up on Home, INSIDE the already
+  locked "slim top bar / Home-as-hub" model.
+
+  Locked already (do not relitigate here):
+    - chrome = slim top bar (mark = link home, left; Capture + account, right)
+    - primary destination = Home is the single persistent hub; All & each Trail are
+      launched into FROM Home (no permanent nav slot); Trail is a drill-down.
+    - Capture never navigates: a non-navigating overlay reachable from every surface.
+
+  Theme = Quiet Focus (Direction C, issue #55): cool near-neutral greyscale + one
+  indigo accent, 4px grid, radius 6/8/10, system-ui (zero webfont), light + dark peers.
+
+  Three variants of HOME (structurally different information hierarchy), switchable via
+  the floating bottom bar, ?variant=A|B|C, or the arrow keys. Dark/light in the pill.
+  Never merged to main.
+-->
+<style>
+  /* ---- Quiet Focus tokens (issue #55, Direction C) ---- */
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2;
+    --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.5;
+    padding-bottom: 6rem;
+    transition: background .2s ease, color .2s ease;
+  }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  input, select { font: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* ---- slim top bar (the LOCKED chrome, identical across variants) ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px clamp(16px, 4vw, 40px);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration: none; letter-spacing: -0.02em; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  .cap-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: var(--on-accent);
+    border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem;
+    box-shadow: 0 1px 2px rgba(20,24,40,.16);
+  }
+  .cap-btn:hover { background: var(--accent-h); }
+  .cap-btn .plus { font-size: 1.05rem; line-height: 1; margin-top: -1px; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    color: var(--accent); font-weight: 700; font-size: .82rem;
+    display: inline-grid; place-items: center;
+  }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+
+  /* ---- page shell ---- */
+  .page { max-width: 64rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 24px; }
+
+  /* ---- capture composer (inline hero on A, expanded panel on C) ---- */
+  .composer {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10);
+    padding: 16px; box-shadow: var(--shadow);
+  }
+  .composer.hero { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .composer .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .composer .title-in {
+    width: 100%; background: var(--field-bg); color: var(--ink);
+    border: 1px solid var(--field-line); border-radius: var(--r8); padding: 11px 12px; font-size: 1rem;
+    margin-bottom: 10px;
+  }
+  .composer .title-in::placeholder { color: var(--muted); }
+  .composer .title-in:focus, .composer .src:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+  .type-pills { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .type-pill {
+    background: transparent; color: var(--muted); border: 1px solid var(--field-line);
+    border-radius: 999px; padding: 6px 12px; font-size: .84rem;
+  }
+  .type-pill.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  :root[data-theme="dark"] .type-pill.on { color: var(--ink); }
+  .src { flex: 1; min-width: 140px; background: var(--field-bg); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--r8); padding: 8px 11px; font-size: .9rem; }
+  .src::placeholder { color: var(--muted); }
+  .composer .add { margin-left: auto; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 9px 16px; font-weight: 600; }
+  .composer .add:hover { background: var(--accent-h); }
+  .composer .foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .composer .hint { color: var(--muted); font-size: .8rem; }
+
+  /* peek line (variant C, collapsed) */
+  .peek {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10);
+    padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow);
+  }
+  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
+  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
+  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--muted); }
+
+  /* ---- section heading + label quick-filters ---- */
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 12px; }
+  .sec-head h2 { font-size: 1.05rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sec-head .all-door { margin-left: auto; color: var(--accent); font-weight: 600; font-size: .88rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+  .sec-head .all-door:hover { text-decoration: underline; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .filters.hero { margin-bottom: 22px; }
+  .chip {
+    background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 13px; font-size: .85rem;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  .filters.hero .chip { padding: 8px 16px; font-size: .92rem; }
+
+  /* ---- trails grid ---- */
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 12px; }
+  .trail {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10);
+    padding: 14px 16px; box-shadow: var(--shadow); text-align: left; width: 100%;
+  }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); transform: translateY(-1px); transition: transform .12s ease, border-color .12s ease; }
+  .trail .body { flex: 1; min-width: 0; }
+  .trail .name { font-weight: 600; font-size: .98rem; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trail .meta { color: var(--muted); font-size: .8rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .trail .tag { border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .72rem; }
+  .ring {
+    --p: 0; width: 46px; aspect-ratio: 1; flex: none; border-radius: 50%; display: grid; place-items: center;
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0);
+  }
+  .ring.done { background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0); }
+  .ring::before { content: ''; grid-area: 1/1; width: 72%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); }
+  .ring b { grid-area: 1/1; font-size: .72rem; z-index: 1; }
+  .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
+  .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- capture overlay (non-navigating; reachable everywhere, all variants) ---- */
+  .scrim { position: fixed; inset: 0; background: rgba(10,12,20,.42); backdrop-filter: blur(2px); z-index: 40; display: none; }
+  .scrim.open { display: block; }
+  .overlay {
+    position: fixed; z-index: 41; top: 64px; right: clamp(16px, 4vw, 40px); width: min(30rem, calc(100vw - 32px));
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10);
+    box-shadow: 0 24px 60px -20px rgba(10,12,30,.5); padding: 16px; display: none;
+  }
+  .overlay.open { display: block; }
+  .overlay .oh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .overlay .oh h3 { font-size: 1rem; }
+  .overlay .oh .x { background: transparent; border: none; color: var(--muted); font-size: 1.2rem; line-height: 1; }
+  .overlay .stay { margin-top: 10px; font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .overlay .stay .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--done); }
+
+  /* ---- floating prototype switcher (clearly a dev control, not the design) ---- */
+  .switch {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60;
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(18,20,28,.94); color: #fff; border-radius: 999px; padding: 5px 6px;
+    box-shadow: 0 12px 34px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px);
+  }
+  .switch button { appearance: none; border: none; background: rgba(255,255,255,.1); color: #fff; height: 32px; border-radius: 999px; display: inline-grid; place-items: center; padding: 0 10px; }
+  .switch button:hover { background: rgba(255,255,255,.2); }
+  .switch .lbl { padding: 0 12px; font-size: .82rem; font-weight: 600; white-space: nowrap; min-width: 12.5rem; text-align: center; }
+  .switch .lbl small { color: rgba(255,255,255,.6); font-weight: 500; }
+  .switch .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
+
+  .hidden { display: none !important; }
+  @media (max-width: 560px) {
+    .cap-btn .txt { display: none; }
+    .composer .add { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+  <!-- ===== LOCKED chrome: slim top bar (identical across variants) ===== -->
+  <div class="topbar">
+    <a class="mark" href="#" title="Home — the hub"><span class="glyph"></span>Unshelf</a>
+    <span class="spacer"></span>
+    <button class="cap-btn" id="topCapture" title="Capture — opens here, never navigates you away">
+      <span class="plus">+</span><span class="txt">Capture</span>
+    </button>
+    <span class="avatar" title="Account (Clerk UserButton)">RG</span>
+  </div>
+
+  <!-- ===== Home content — swapped per variant ===== -->
+  <main class="page">
+    <p class="eyebrow">Home · the hub</p>
+
+    <!-- Variant A — Capture-forward Home -->
+    <section data-variant="A" class="hidden">
+      <h1 class="greet">Found something?</h1>
+      <p class="greet-sub">Capture it now — sort it later.</p>
+      <div class="composer hero" id="composerA"></div>
+    </section>
+
+    <!-- Variant B — Navigate-forward Home (no inline capture) -->
+    <section data-variant="B" class="hidden">
+      <h1 class="greet">Your Trails</h1>
+      <p class="greet-sub">Pick up where you left off — or filter the store by label.</p>
+      <div class="filters hero" id="filtersB"></div>
+    </section>
+
+    <!-- Variant C — Peek Home (collapsed capture line that expands) -->
+    <section data-variant="C" class="hidden">
+      <h1 class="greet">Welcome back</h1>
+      <p class="greet-sub">Capture on the fly, or dive into a Trail.</p>
+      <button class="peek" id="peekC">
+        <span class="plus">+</span>
+        <span>Capture something…</span>
+        <span class="kbd">press C</span>
+      </button>
+      <div class="composer hidden" id="composerC" style="margin-top:10px;"></div>
+    </section>
+
+    <!-- Trails index + label filters — shared, rendered under each variant -->
+    <div id="trailsBlock">
+      <div class="sec-head" id="trailsHead">
+        <h2>Your Trails</h2><span class="count tnum">5 active</span>
+        <a class="all-door" href="#">Browse All <span class="tnum">128</span> →</a>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="trails" id="trails"></div>
+      <button class="new-trail">+ New Trail</button>
+    </div>
+  </main>
+
+  <!-- ===== capture overlay (non-navigating) — reachable from the top bar everywhere ===== -->
+  <div class="scrim" id="scrim"></div>
+  <div class="overlay" id="overlay" role="dialog" aria-label="Capture">
+    <div class="oh"><h3>Capture</h3><button class="x" id="closeOverlay" aria-label="Close">×</button></div>
+    <div class="composer" id="composerOverlay"></div>
+    <p class="stay"><span class="dot"></span> Drops into <b>&nbsp;All</b>&nbsp; — you stay right where you were.</p>
+  </div>
+
+  <!-- ===== prototype switcher (dev control) ===== -->
+  <div class="switch">
+    <button id="prev" aria-label="Previous variant">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next variant">→</button>
+    <span class="sep"></span>
+    <button id="theme" title="Toggle light / dark (both ship as peers)">◐ Theme</button>
+  </div>
+
+<script>
+  // ---------- mock data ----------
+  const TRAILS = [
+    { name: "Learn Rust",            done: 7,  total: 12, tags: ["deep-dive","reference"] },
+    { name: "Kitchen remodel",       done: 3,  total: 9,  tags: ["how-to","video"] },
+    { name: "Marathon base build",   done: 11, total: 16, tags: ["routine"] },
+    { name: "Reading · 2026",        done: 4,  total: 20, tags: ["book"] },
+    { name: "Side project: unshelf", done: 5,  total: 8,  tags: ["reference","article"] },
+  ];
+  const LABELS = ["All", "reference", "video", "article", "book", "how-to", "deep-dive"];
+  const TYPES  = ["Article", "Video", "Book", "Link"];
+
+  const VARIANTS = [
+    { key: "A", name: "Capture-forward Home" },
+    { key: "B", name: "Navigate-forward Home" },
+    { key: "C", name: "Peek Home (middle)" },
+  ];
+
+  // ---------- builders ----------
+  function composerMarkup(withHint) {
+    return `
+      <input class="title-in" placeholder="What did you find? (title)" />
+      <div class="row">
+        <div class="type-pills">${TYPES.map((t,i)=>`<button class="type-pill${i===0?' on':''}" data-type>${t}</button>`).join("")}</div>
+        <input class="src" placeholder="Source — where'd you find it?" />
+        <button class="add">Add to All</button>
+      </div>
+      ${withHint ? `<div class="foot"><span class="hint">Label it later during triage in All · pure intake for now.</span></div>` : ""}`;
+  }
+  function wireComposer(el) {
+    el.innerHTML = composerMarkup(true);
+    el.querySelectorAll("[data-type]").forEach(p => p.addEventListener("click", () => {
+      el.querySelectorAll("[data-type]").forEach(x => x.classList.remove("on"));
+      p.classList.add("on");
+    }));
+  }
+  function ring(done, total) {
+    const p = Math.round((done/total)*100);
+    const cls = done === total ? "ring done" : "ring";
+    return `<div class="${cls}" style="--p:${p}"><b class="tnum">${done}/${total}</b></div>`;
+  }
+  function trailCard(t) {
+    return `<button class="trail">
+      ${ring(t.done, t.total)}
+      <span class="body">
+        <div class="name">${t.name}</div>
+        <div class="meta"><span class="tnum">${t.total - t.done} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div>
+      </span>
+    </button>`;
+  }
+  function chips(target, hero) {
+    target.innerHTML = LABELS.map((l,i)=>`<button class="chip${i===0?' on':''}">${l==="All"?"All":"#"+l}</button>`).join("");
+    target.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+      target.querySelectorAll(".chip").forEach(x=>x.classList.remove("on")); c.classList.add("on");
+    }));
+  }
+
+  // ---------- render static bits ----------
+  document.getElementById("trails").innerHTML = TRAILS.map(trailCard).join("");
+  chips(document.getElementById("filters"));       // shared filter row above the grid
+  wireComposer(document.getElementById("composerA"));
+  wireComposer(document.getElementById("composerC"));
+  wireComposer(document.getElementById("composerOverlay"));
+  chips(document.getElementById("filtersB"), true); // variant B hero filters
+
+  // Variant C: peek line expands into the composer on click / "C"
+  const peek = document.getElementById("peekC"), composerC = document.getElementById("composerC");
+  function expandC(){ peek.classList.add("hidden"); composerC.classList.remove("hidden"); composerC.querySelector(".title-in").focus(); }
+  peek.addEventListener("click", expandC);
+
+  // ---------- capture overlay (non-navigating) ----------
+  const scrim = document.getElementById("scrim"), overlay = document.getElementById("overlay");
+  function openOverlay(){ scrim.classList.add("open"); overlay.classList.add("open"); overlay.querySelector(".title-in").focus(); }
+  function closeOverlay(){ scrim.classList.remove("open"); overlay.classList.remove("open"); }
+  document.getElementById("topCapture").addEventListener("click", openOverlay);
+  document.getElementById("closeOverlay").addEventListener("click", closeOverlay);
+  scrim.addEventListener("click", closeOverlay);
+
+  // ---------- variant switching ----------
+  function readVariant(){
+    const k = new URLSearchParams(location.search).get("variant");
+    const i = VARIANTS.findIndex(v => v.key === k);
+    return i >= 0 ? i : 0;
+  }
+  let cur = readVariant();
+  function render(){
+    const v = VARIANTS[cur];
+    document.querySelectorAll("[data-variant]").forEach(s => s.classList.toggle("hidden", s.dataset.variant !== v.key));
+    document.getElementById("lbl").innerHTML = `${v.key} — <small>${v.name}</small>`;
+    // B leads with the Trails heading itself, so hide the duplicate section header on B
+    document.getElementById("trailsHead").classList.toggle("hidden", v.key === "B");
+    document.getElementById("filters").classList.toggle("hidden", v.key === "B"); // B has its own hero filters
+    // reset C's peek each time we land on it
+    if (v.key === "C"){ peek.classList.remove("hidden"); composerC.classList.add("hidden"); }
+    try {
+      const p = new URLSearchParams(location.search); p.set("variant", v.key);
+      history.replaceState(null, "", location.pathname + "?" + p.toString());
+    } catch (_) { /* some browsers block replaceState on file:// — harmless for the prototype */ }
+  }
+  function go(delta){ cur = (cur + delta + VARIANTS.length) % VARIANTS.length; render(); }
+  document.getElementById("prev").addEventListener("click", () => go(-1));
+  document.getElementById("next").addEventListener("click", () => go(1));
+
+  // ---------- theme toggle ----------
+  document.getElementById("theme").addEventListener("click", () => {
+    const now = document.documentElement.getAttribute("data-theme") === "dark" ? "" : "dark";
+    if (now) document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+  });
+
+  // ---------- keyboard ----------
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+    if (e.key === "Escape") { closeOverlay(); return; }
+    if (typing) return;
+    if (e.key === "ArrowLeft") go(-1);
+    else if (e.key === "ArrowRight") go(1);
+    else if (e.key.toLowerCase() === "c") { cur === 2 ? expandC() : openOverlay(); }
+  });
+
+  render();
+</script>
+</body>
+</html>
