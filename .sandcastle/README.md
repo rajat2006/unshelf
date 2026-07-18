@@ -36,8 +36,8 @@ pinned Sandcastle version and Unshelf's provider set:
   keyring is unreachable in CI), and strips `OPENAI_KEY`/`OPENAI_API_KEY` so Codex
   uses the `gpt-5.6-sol` subscription seat, not the metered API. A no-op for the
   Claude default. Every capability calls it immediately before `run()`, so the
-  setup is uniform across phases; the workflow writes the refreshed `auth.json`
-  back to the secret at job end (see `docs/agents/sandcastle.md`).
+  setup is uniform across phases. (The seeded secret needs a periodic re-paste —
+  Codex's refresh token is single-use; see `docs/agents/sandcastle.md`.)
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
