@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Routing & deep-linking (prototype #58)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #58 "Routing: adopt react-router, define URL
+  structure and deep-linking", a wayfinder:grilling child of the web-redesign map #53.
+
+  Answers ONE open question: how does an open STOP / ITEM behave, given we ARE adopting
+  a real router — a full-page surface, or an overlay that still owns a URL? All three
+  variants use the real History API (clean paths, working back/forward, refresh-stable,
+  cold deep-links via the sibling SPA-fallback server), so you are judging FEEL, not
+  whether react-router "works" — that is already decided.
+
+  Locked already (do not relitigate here):
+    - adopt react-router (latest), declarative SPA mode
+    - route map:  / = Home · /all = All (?label= filter) · /trails/:trailId = a Trail
+                  /trails/:trailId/stops/:stopId = an open Stop · /items/:itemId = an Item
+                  /sign-in · /sign-up  (logout = redirect-to-/ action, no route)
+    - Capture is a NON-navigating overlay: opening it never changes the URL.
+
+  The switchable variant = how a Stop / Item OPENS:
+    A — Full-page      : the sub-surface replaces the screen (canvas gone)
+    B — Right drawer   : slides over the parent, which stays visible behind
+    C — Centered modal : pops over a dimmed parent
+
+  Theme = Quiet Focus (Direction C, issue #55). Light + dark peers. Never merged to main.
+
+  Run:  python3 apps/web/prototype-routing-serve.py   → http://127.0.0.1:5178/
+-->
+<style>
+  /* ---- Quiet Focus tokens (issue #55, Direction C) ---- */
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2;
+    --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    --drawer-sh:-24px 0 60px -30px rgba(20,24,40,.5);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6);
+    --drawer-sh:-24px 0 60px -20px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.5;
+    padding-bottom: 6rem;
+    transition: background .2s ease, color .2s ease;
+  }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  input, select { font: inherit; }
+  a { color: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* ---- slim top bar (locked chrome, #56) ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px clamp(16px, 4vw, 40px);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration: none; letter-spacing: -0.02em; background:none; border:none; padding:0; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  .cap-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: var(--on-accent);
+    border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem;
+    box-shadow: 0 1px 2px rgba(20,24,40,.16);
+  }
+  .cap-btn:hover { background: var(--accent-h); }
+  .cap-btn .plus { font-size: 1.05rem; line-height: 1; margin-top: -1px; }
+  .acct { position: relative; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    color: var(--accent); font-weight: 700; font-size: .82rem;
+    display: inline-grid; place-items: center;
+  }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+  .acct-menu { position: absolute; right: 0; top: 42px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r8); box-shadow: var(--shadow); padding: 6px; min-width: 160px; z-index: 30; }
+  .acct-menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--ink); padding: 8px 10px; border-radius: var(--r6); font-size: .9rem; }
+  .acct-menu button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .acct-menu .who { color: var(--muted); font-size: .78rem; padding: 6px 10px 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+
+  /* ---- page shell ---- */
+  .page { max-width: 64rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 24px; }
+  .crumbs { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.85rem; margin: 0 0 14px; }
+  .crumbs a { color: var(--accent); text-decoration:none; font-weight:600; }
+  .crumbs a:hover { text-decoration: underline; }
+  .crumbs .sep { color: var(--line); }
+
+  /* ---- capture peek (Home, #56 variant C) ---- */
+  .peek {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10);
+    padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow); margin-bottom: 26px;
+  }
+  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
+  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
+  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--muted); }
+
+  /* ---- section heading + label filters ---- */
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 26px 0 12px; }
+  .sec-head h2 { font-size: 1.05rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sec-head .all-door { margin-left: auto; color: var(--accent); font-weight: 600; font-size: .88rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background:none; border:none; }
+  .sec-head .all-door:hover { text-decoration: underline; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .chip { background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: .84rem; }
+  .chip.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  :root[data-theme="dark"] .chip.on { color: var(--ink); }
+
+  /* ---- trail cards (Home) ---- */
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .trail { display: flex; gap: 14px; align-items: center; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 14px; box-shadow: var(--shadow); }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .trail .body { min-width: 0; }
+  .trail .name { font-weight: 600; }
+  .trail .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: .8rem; margin-top: 4px; flex-wrap: wrap; }
+  .tag { font-size: .72rem; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .ring { --p:0; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none; background: conic-gradient(var(--accent) calc(var(--p)*1%), var(--line) 0); }
+  .ring::before { content:""; position: absolute; width: 34px; height: 34px; border-radius: 50%; background: var(--surface); }
+  .ring b { position: relative; font-size: .66rem; }
+  .ring.done { background: conic-gradient(var(--done) 100%, var(--done) 0); color: var(--on-accent); }
+
+  /* ---- All list ---- */
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item-row { display: flex; gap: 12px; align-items: center; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r8); padding: 11px 14px; box-shadow: var(--shadow); width: 100%; }
+  .item-row:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .item-row .t { font-weight: 600; }
+  .item-row .sub { color: var(--muted); font-size: .8rem; margin-top: 2px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .kind { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex:none; }
+  .st-inbox { background: var(--muted); } .st-active { background: var(--accent); } .st-done { background: var(--done); } .st-past { background: var(--past); }
+  .item-row .lbls { margin-left:auto; display:flex; gap:5px; flex-wrap:wrap; }
+  .lbl-chip { font-size:.7rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius:999px; padding:1px 8px; }
+  :root[data-theme="dark"] .lbl-chip { color: var(--ink); }
+
+  /* ---- Trail canvas ---- */
+  .canvas { position: relative; background:
+      radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 22px 22px;
+      border: 1px solid var(--line); border-radius: var(--r10); padding: 30px 20px; min-height: 320px; overflow-x:auto; }
+  .path { display:flex; align-items:center; gap: 0; min-width: max-content; }
+  .stop-node { position: relative; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .stop-dot { width: 64px; height: 64px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); color: var(--accent); display:grid; place-items:center; font-weight:700; box-shadow: var(--shadow); font-size:.9rem; }
+  .stop-node.done .stop-dot { border-color: var(--done); color: var(--done); }
+  .stop-node:hover .stop-dot { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .stop-cap { font-size: .82rem; max-width: 120px; text-align:center; }
+  .stop-cap .n { font-weight:600; display:block; }
+  .stop-cap .c { color: var(--muted); font-size:.74rem; }
+  .connector { width: 46px; height: 2px; background: var(--line); flex:none; margin-top: -34px; }
+  .fork-note { color: var(--muted); font-size:.8rem; margin-top: 14px; }
+
+  /* ---- generic surface heading for sub-surfaces ---- */
+  .sub-title { font-size: 1.35rem; font-weight: 700; margin: 0 0 2px; }
+  .sub-sub { color: var(--muted); font-size: .88rem; margin: 0 0 18px; }
+
+  /* ---- Item detail fields ---- */
+  .field { margin-bottom: 16px; }
+  .field label { display:block; font-size:.74rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:700; margin-bottom:6px; }
+  .field select, .field input[type=text] { width:100%; background: var(--field-bg); color: var(--ink); border:1px solid var(--field-line); border-radius: var(--r8); padding: 9px 11px; font-size:.95rem; }
+  .field select:focus, .field input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset:1px; border-color: var(--accent); }
+  .lbl-toggle { display:flex; gap:6px; flex-wrap:wrap; }
+  .lbl-toggle .chip { cursor:pointer; }
+  .src-line { color: var(--muted); font-size:.85rem; }
+
+  /* ---- overlay mechanics (variants B, C) ---- */
+  .scrim { position: fixed; inset: 0; background: rgba(14,15,19,.42); opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 40; }
+  .scrim.on { opacity: 1; pointer-events: auto; }
+
+  /* B — right drawer */
+  .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(460px, 92vw); background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--drawer-sh); z-index: 41; transform: translateX(100%); transition: transform .22s cubic-bezier(.2,.7,.2,1); display:flex; flex-direction:column; }
+  .drawer.on { transform: translateX(0); }
+  .drawer .oh, .modal .oh { display:flex; align-items:center; gap:10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .drawer .oh h3, .modal .oh h3 { font-size: .95rem; color: var(--muted); font-weight:600; margin:0; }
+  .drawer .oh .x, .modal .oh .x { margin-left:auto; background:none; border:none; color: var(--muted); font-size: 1.3rem; line-height:1; width:30px; height:30px; border-radius: var(--r6); }
+  .drawer .oh .x:hover, .modal .oh .x:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--ink); }
+  .drawer .obody, .modal .obody { padding: 20px; overflow-y:auto; }
+
+  /* C — centered modal */
+  .modal-wrap { position: fixed; inset: 0; z-index: 41; display:grid; place-items:center; padding: 20px; pointer-events:none; }
+  .modal { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: var(--shadow); width: min(560px, 96vw); max-height: 86vh; display:flex; flex-direction:column; opacity:0; transform: translateY(8px) scale(.98); transition: opacity .16s ease, transform .16s ease; pointer-events:auto; }
+  .modal.on { opacity:1; transform: none; }
+
+  /* full-page sub-surface (variant A) just uses .page */
+
+  /* ---- capture overlay (non-navigating, always centered modal, #56) ---- */
+  .cap-overlay { position: fixed; top: 0; left: 50%; transform: translate(-50%, -12px); width: min(560px, 94vw); margin-top: 68px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: var(--shadow); z-index: 45; padding: 0; opacity: 0; pointer-events: none; transition: opacity .16s ease, transform .16s ease; }
+  .cap-overlay.on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+  .cap-overlay .oh { display:flex; align-items:center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .cap-overlay .oh h3 { font-size: 1rem; }
+  .cap-overlay .oh .x { margin-left:auto; background:none; border:none; color: var(--muted); font-size:1.3rem; line-height:1; }
+  .cap-body { padding: 16px 18px; }
+  .cap-body .title-in { width:100%; background: var(--field-bg); color: var(--ink); border:1px solid var(--field-line); border-radius: var(--r8); padding: 11px 12px; font-size:1rem; margin-bottom:10px; }
+  .cap-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .type-pills { display:inline-flex; gap:6px; flex-wrap:wrap; }
+  .type-pill { background:transparent; color:var(--muted); border:1px solid var(--field-line); border-radius:999px; padding:6px 12px; font-size:.84rem; }
+  .type-pill.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); font-weight:600; }
+  :root[data-theme="dark"] .type-pill.on { color: var(--ink); }
+  .cap-add { margin-left:auto; background: var(--accent); color: var(--on-accent); border:none; border-radius: var(--r8); padding:9px 16px; font-weight:600; }
+  .cap-stay { display:flex; align-items:center; gap:8px; color: var(--muted); font-size:.82rem; padding: 0 18px 16px; }
+  .cap-stay .dot { width:7px; height:7px; border-radius:50%; background: var(--done); }
+
+  /* ---- auth screens ---- */
+  .auth-wrap { min-height: 100vh; display:grid; place-items:center; padding: 20px; }
+  .auth-card { width: min(380px, 94vw); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: var(--shadow); padding: 30px 28px; text-align:center; }
+  .auth-card .glyph { width: 34px; height:34px; border-radius: var(--r8); background: linear-gradient(150deg, var(--accent), var(--accent-h)); margin: 0 auto 14px; }
+  .auth-card h2 { font-size: 1.25rem; margin-bottom: 4px; }
+  .auth-card p { color: var(--muted); font-size:.9rem; margin: 0 0 20px; }
+  .auth-card .redir { font-size:.78rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r6); padding: 6px 8px; margin-bottom: 16px; }
+  .goog { width:100%; display:inline-flex; align-items:center; justify-content:center; gap:10px; background: var(--surface); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--r8); padding: 11px 14px; font-weight:600; }
+  .goog:hover { border-color: var(--accent); }
+  .goog .g { width:18px; height:18px; border-radius:50%; background: conic-gradient(#EA4335 0 25%, #FBBC05 0 50%, #34A853 0 75%, #4285F4 0); }
+  .auth-alt { margin-top: 16px; font-size:.85rem; color: var(--muted); }
+  .auth-alt a { color: var(--accent); text-decoration:none; font-weight:600; }
+  .auth-note { margin-top: 18px; font-size:.72rem; color: var(--muted); }
+
+  /* ---- 404 ---- */
+  .nf { max-width: 40rem; margin: 60px auto; text-align:center; }
+  .nf code { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 5px; padding: 2px 7px; }
+  .nf a { color: var(--accent); font-weight:600; text-decoration:none; }
+
+  /* ---- prototype switcher (dev control, obviously-not-the-design) ---- */
+  .switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60;
+    display:flex; align-items:center; gap: 8px; background: #101218; color:#fff;
+    border: 1px solid #2a2e39; border-radius: 999px; padding: 7px 10px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.6); font-size:.85rem; }
+  .switch button { background:#20242f; color:#fff; border:1px solid #333846; border-radius: 999px; width: 30px; height:30px; }
+  .switch button:hover { background:#2b3040; }
+  .switch .lbl { min-width: 190px; text-align:center; }
+  .switch .lbl small { color:#aab; }
+  .switch .route { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.76rem; color:#8fd0ff; background:#0a0c11; border:1px solid #232838; border-radius:6px; padding:3px 8px; max-width: 260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .switch .sep { width:1px; height:20px; background:#333846; }
+  .switch .tbtn { width:auto; padding: 0 12px; }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="layer"></div>
+
+  <!-- capture overlay (non-navigating) — reachable from the top bar everywhere -->
+  <div class="scrim" id="capScrim"></div>
+  <div class="cap-overlay" id="capOverlay" role="dialog" aria-label="Capture">
+    <div class="oh"><h3>Capture</h3><button class="x" id="capClose" aria-label="Close">×</button></div>
+    <div class="cap-body">
+      <input class="title-in" placeholder="What did you find? (title)" />
+      <div class="cap-row">
+        <div class="type-pills">
+          <button class="type-pill on">Article</button><button class="type-pill">Video</button>
+          <button class="type-pill">Book</button><button class="type-pill">Link</button>
+        </div>
+        <button class="cap-add">Add to All</button>
+      </div>
+    </div>
+    <p class="cap-stay"><span class="dot"></span> Drops into <b>&nbsp;All</b>&nbsp;— the URL never changes, you stay right where you are.</p>
+  </div>
+
+  <!-- prototype switcher -->
+  <div class="switch">
+    <button id="prev" aria-label="Previous variant">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next variant">→</button>
+    <span class="sep"></span>
+    <span class="route" id="routeReadout" title="Live URL — this is the real address bar path"></span>
+    <span class="sep"></span>
+    <button class="tbtn" id="theme" title="Toggle light / dark (both ship as peers)">◐</button>
+  </div>
+
+<script>
+  // ================= mock data =================
+  const ITEMS = {
+    i1:  { title: "The Rust Book — Ownership",         type:"Book",    source:"doc.rust-lang.org", status:"active", target:"2026-08-01", labels:["reference","deep-dive"] },
+    i2:  { title: "Lifetimes, explained visually",     type:"Article", source:"fasterthanli.me",   status:"inbox",  target:"",           labels:["reference"] },
+    i3:  { title: "Jon Gjengset — Crust of Rust",      type:"Video",   source:"youtube.com",       status:"active", target:"2026-08-10", labels:["video","deep-dive"] },
+    i4:  { title: "Cabinet layout — before you buy",   type:"Article", source:"sweeten.com",       status:"done",   target:"",           labels:["how-to"] },
+    i5:  { title: "Butcher block vs quartz",           type:"Video",   source:"youtube.com",       status:"inbox",  target:"",           labels:["how-to","video"] },
+    i6:  { title: "Zone 2 base-building primer",       type:"Article", source:"uphillathlete.com", status:"active", target:"2026-07-25", labels:["routine"] },
+    i7:  { title: "Daniels' Running Formula",          type:"Book",    source:"library",           status:"past",   target:"2026-07-01", labels:["book","reference"] },
+  };
+  const TRAILS = {
+    rust:   { name:"Learn Rust",          tags:["deep-dive","reference"], stops:[
+      { id:"ownership", title:"Ownership & borrows", done:true,  items:["i1","i2"] },
+      { id:"async",     title:"Async & futures",     done:false, items:["i3"] },
+      { id:"macros",    title:"Macros",              done:false, items:[] },
+    ]},
+    kitchen:{ name:"Kitchen remodel",     tags:["how-to","video"], stops:[
+      { id:"plan",   title:"Plan the layout", done:true,  items:["i4"] },
+      { id:"counter",title:"Countertops",     done:false, items:["i5"] },
+    ]},
+    marathon:{ name:"Marathon base build", tags:["routine"], stops:[
+      { id:"base", title:"Aerobic base", done:false, items:["i6","i7"] },
+    ]},
+  };
+  const ALL_LABELS = ["reference","video","article","book","how-to","deep-dive","routine"];
+  const stopCount = t => TRAILS[t].stops.length;
+  const doneCount = t => TRAILS[t].stops.filter(s=>s.done).length;
+
+  // ================= tiny router =================
+  const VARIANTS = [
+    { key:"A", name:"Full-page surface" },
+    { key:"B", name:"Right drawer (URL)" },
+    { key:"C", name:"Centered modal (URL)" },
+  ];
+  function initVariant() {
+    const q = new URLSearchParams(location.search).get("variant");
+    if (q && VARIANTS.some(v=>v.key===q)) { sessionStorage.setItem("proto-variant", q); }
+    return sessionStorage.getItem("proto-variant") || "A";
+  }
+  let VARIANT = initVariant();
+
+  // parse the real pathname into a route descriptor
+  function parse() {
+    const path = location.pathname.replace(/\/+$/,"") || "/";
+    const q = new URLSearchParams(location.search);
+    const seg = path.split("/").filter(Boolean);
+    if (path === "/")                              return { kind:"home" };
+    if (seg[0]==="all")                            return { kind:"all", label:q.get("label")||null };
+    if (seg[0]==="sign-in")                        return { kind:"signin", redirect:q.get("redirect") };
+    if (seg[0]==="sign-up")                        return { kind:"signup", redirect:q.get("redirect") };
+    if (seg[0]==="items" && seg[1])                return { kind:"item", itemId:seg[1] };
+    if (seg[0]==="trails" && seg[1] && seg[2]==="stops" && seg[3])
+                                                   return { kind:"stop", trailId:seg[1], stopId:seg[3] };
+    if (seg[0]==="trails" && seg[1])               return { kind:"trail", trailId:seg[1] };
+    return { kind:"notfound", path };
+  }
+
+  // reduce any path to its BASE surface path (Home / All / a Trail) — the thing an overlay floats over
+  function baseFor(route) {
+    if (route.kind==="stop") return "/trails/"+route.trailId;
+    if (route.kind==="item") {
+      const bg = history.state && history.state.bg;
+      if (bg) {
+        const b = bg.split("?")[0].replace(/\/+$/,"");
+        const s = b.split("/").filter(Boolean);
+        if (s[0]==="trails" && s[1]) return "/trails/"+s[1];   // opened from a Trail/Stop
+        if (s[0]==="all") return "/all" + (bg.includes("?")?"?"+bg.split("?")[1]:"");
+      }
+      return "/";                                              // cold deep-link / opened from Home
+    }
+    return location.pathname + location.search;
+  }
+  const isOverlayRoute = r => r.kind==="stop" || r.kind==="item";
+
+  function navigate(path, opts={}) {
+    const state = { bg: opts.bg != null ? opts.bg : (location.pathname + location.search) };
+    if (opts.replace) history.replaceState(state, "", path);
+    else              history.pushState(state, "", path);
+    render();
+  }
+  // close an overlay: walk back if we have history, else go to a sensible parent
+  function closeOverlay() {
+    if (history.state && history.state.bg) history.back();
+    else navigate(baseFor(parse()), { replace:true });
+  }
+
+  // ================= surface renderers (return HTML strings) =================
+  function topbar(route) {
+    return `<div class="topbar">
+      <button class="mark" data-nav="/"><span class="glyph"></span> Unshelf</button>
+      <span class="spacer"></span>
+      <button class="cap-btn" id="topCapture"><span class="plus">+</span> Capture</button>
+      <span class="acct"><button class="avatar" id="acctBtn">RG</button></span>
+    </div>`;
+  }
+  function ringMarkup(done,total){ const p=Math.round((done/total)*100); const cls=done===total?"ring done":"ring";
+    return `<div class="${cls}" style="--p:${p}"><b class="tnum">${done}/${total}</b></div>`; }
+
+  function homeHTML() {
+    const cards = Object.entries(TRAILS).map(([id,t]) => `
+      <button class="trail" data-nav="/trails/${id}">
+        ${ringMarkup(doneCount(id), stopCount(id))}
+        <span class="body">
+          <div class="name">${t.name}</div>
+          <div class="meta"><span class="tnum">${stopCount(id)-doneCount(id)} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div>
+        </span>
+      </button>`).join("");
+    const chips = ["All", ...ALL_LABELS.slice(0,5)].map((l,i)=>
+      l==="All" ? `<button class="chip" data-nav="/all">All →</button>`
+                : `<button class="chip" data-nav="/all?label=${l}">#${l}</button>`).join("");
+    return `<div class="page">
+      <p class="eyebrow">Home</p>
+      <h1 class="greet">Good afternoon, Raj</h1>
+      <p class="greet-sub">Pick up a Trail, or drop something into your shelf.</p>
+      <button class="peek" id="peekCapture"><span class="plus">+</span> Capture something…<span class="kbd">press C</span></button>
+      <div class="sec-head"><h2>Your Trails</h2><span class="count">${Object.keys(TRAILS).length}</span>
+        <button class="all-door" data-nav="/all">Browse All →</button></div>
+      <div class="filters">${chips}</div>
+      <div class="trails">${cards}</div>
+    </div>`;
+  }
+
+  function itemRow(id, navPath) {
+    const it = ITEMS[id];
+    return `<button class="item-row" data-nav="${navPath}">
+      <span class="status-dot st-${it.status}"></span>
+      <span class="body">
+        <div class="t">${it.title}</div>
+        <div class="sub"><span class="kind">${it.type}</span> <span>${it.source}</span></div>
+      </span>
+      <span class="lbls">${it.labels.map(l=>`<span class="lbl-chip">#${l}</span>`).join("")}</span>
+    </button>`;
+  }
+
+  function allHTML(route) {
+    const label = route.label;
+    const ids = Object.keys(ITEMS).filter(id => !label || ITEMS[id].labels.includes(label));
+    const chips = ["All", ...ALL_LABELS].map(l =>
+      `<button class="chip ${ (l==="All"&&!label)||l===label ? "on":"" }" data-nav="${l==="All"?"/all":"/all?label="+l}">${l==="All"?"All":"#"+l}</button>`).join("");
+    return `<div class="page">
+      <div class="crumbs"><a data-nav="/">Home</a><span class="sep">/</span> All${label?` <span class="sep">/</span> <span>#${label}</span>`:""}</div>
+      <h1 class="sub-title">All</h1>
+      <p class="sub-sub">Your whole shelf — ${ids.length} item${ids.length!==1?"s":""}${label?` labelled #${label}`:""}. Filter by label; the filter lives in the URL.</p>
+      <div class="filters">${chips}</div>
+      <div class="list">${ids.map(id=>itemRow(id, "/items/"+id)).join("") || '<p class="src-line">No items with that label.</p>'}</div>
+    </div>`;
+  }
+
+  function trailHTML(route) {
+    const t = TRAILS[route.trailId];
+    if (!t) return notFoundHTML({path:location.pathname});
+    const nodes = t.stops.map((s,i)=>`
+      ${i>0?'<div class="connector"></div>':''}
+      <button class="stop-node ${s.done?'done':''}" data-nav="/trails/${route.trailId}/stops/${s.id}">
+        <span class="stop-dot">${s.done?'✓':i+1}</span>
+        <span class="stop-cap"><span class="n">${s.title}</span><span class="c">${s.items.length} item${s.items.length!==1?'s':''}</span></span>
+      </button>`).join("");
+    return `<div class="page">
+      <div class="crumbs"><a data-nav="/">Home</a><span class="sep">/</span> <span>${t.name}</span></div>
+      <h1 class="sub-title">${t.name}</h1>
+      <p class="sub-sub">${doneCount(route.trailId)}/${stopCount(route.trailId)} stops done · open a Stop to see its Items.</p>
+      <div class="canvas"><div class="path">${nodes}</div></div>
+      <p class="fork-note">↳ Stops can fork here in the real canvas (ADR-0010). Restyled under Quiet Focus.</p>
+    </div>`;
+  }
+
+  // sub-surface CONTENT (shared by full-page / drawer / modal)
+  function stopContent(route) {
+    const t = TRAILS[route.trailId]; const s = t && t.stops.find(x=>x.id===route.stopId);
+    if (!s) return { title:"Stop", sub:"", body:'<p class="src-line">No such stop.</p>' };
+    const body = (s.items.length ? s.items.map(id=>itemRow(id, "/items/"+id)).join("")
+                                 : '<p class="src-line">No items pulled into this Stop yet.</p>');
+    return { title:s.title, sub:`Stop in ${t.name} · ${s.items.length} item${s.items.length!==1?'s':''}`, body:`<div class="list">${body}</div>` };
+  }
+  function itemContent(route) {
+    const it = ITEMS[route.itemId];
+    if (!it) return { title:"Item", sub:"", body:'<p class="src-line">No such item.</p>' };
+    const statuses = [["inbox","Inbox"],["active","Active"],["done","Done"],["past","Past target"]];
+    return { title: it.title, sub: `<span class="kind">${it.type}</span> &nbsp; <span class="src-line">${it.source}</span>`,
+      body: `
+      <div class="field"><label>Status</label>
+        <select>${statuses.map(([v,l])=>`<option ${v===it.status?"selected":""}>${l}</option>`).join("")}</select></div>
+      <div class="field"><label>Target date</label>
+        <input type="text" value="${it.target||""}" placeholder="none set" /></div>
+      <div class="field"><label>Labels</label>
+        <div class="lbl-toggle">${ALL_LABELS.map(l=>`<button class="chip ${it.labels.includes(l)?"on":""}" data-lbl>#${l}</button>`).join("")}</div></div>
+      <p class="src-line">This is the one shared Item record — the same URL wherever you reached it from.</p>` };
+  }
+  function subContent(route){ return route.kind==="stop" ? stopContent(route) : itemContent(route); }
+
+  function fullPageHTML(route) {
+    const c = subContent(route);
+    const backTo = baseFor(route);
+    const backLabel = route.kind==="stop" ? TRAILS[route.trailId].name : "back";
+    return `<div class="page">
+      <div class="crumbs"><a data-nav="/">Home</a><span class="sep">/</span> <a data-nav="${backTo}">${backLabel}</a><span class="sep">/</span> <span>${c.title}</span></div>
+      <h1 class="sub-title">${c.title}</h1>
+      <p class="sub-sub">${c.sub}</p>
+      ${c.body}
+    </div>`;
+  }
+
+  function notFoundHTML(route){
+    return `<div class="nf page"><h1 class="sub-title">No such route</h1>
+      <p class="sub-sub"><code>${route.path||location.pathname}</code> doesn't match any surface.</p>
+      <p><a data-nav="/">← Go Home</a></p></div>`;
+  }
+
+  function authHTML(route) {
+    const up = route.kind==="signup";
+    return `<div class="auth-wrap"><div class="auth-card">
+      <div class="glyph"></div>
+      <h2>${up?"Create your Unshelf":"Welcome back"}</h2>
+      <p>${up?"Invite-only — your Google account must be on the allowlist.":"Sign in to your shelf."}</p>
+      ${route.redirect?`<div class="redir">After you're in, we'll take you to <b>${route.redirect}</b></div>`:""}
+      <button class="goog" id="googBtn"><span class="g"></span> Continue with Google</button>
+      <p class="auth-alt">${up?`Already have access? <a data-nav="/sign-in">Sign in</a>`:`Have an invite? <a data-nav="/sign-up">Create account</a>`}</p>
+      <p class="auth-note">Both /sign-in and /sign-up are real routes · Clerk's allowlist still gates who gets in.</p>
+    </div></div>`;
+  }
+
+  // ================= master render =================
+  function render() {
+    const route = parse();
+    const app = document.getElementById("app");
+    const layer = document.getElementById("layer");
+    layer.innerHTML = "";
+
+    // auth = standalone full screens (no chrome)
+    if (route.kind==="signin" || route.kind==="signup") { app.innerHTML = authHTML(route); afterRender(); return; }
+    if (route.kind==="notfound") { app.innerHTML = topbar(route) + notFoundHTML(route); afterRender(); return; }
+
+    const overlay = isOverlayRoute(route);
+    const useOverlay = overlay && VARIANT !== "A";
+
+    if (overlay && VARIANT === "A") {
+      // full-page sub-surface replaces the base
+      app.innerHTML = topbar(route) + fullPageHTML(route);
+    } else {
+      // render the base surface (Home / All / Trail) — the leaf, or the background under an overlay
+      const baseRoute = useOverlay ? parseFromPath(baseFor(route)) : route;
+      let baseHTML;
+      if (baseRoute.kind==="home") baseHTML = homeHTML();
+      else if (baseRoute.kind==="all") baseHTML = allHTML(baseRoute);
+      else if (baseRoute.kind==="trail") baseHTML = trailHTML(baseRoute);
+      else baseHTML = homeHTML();
+      app.innerHTML = topbar(route) + baseHTML;
+    }
+
+    if (useOverlay) {
+      const c = subContent(route);
+      if (VARIANT === "B") {
+        layer.innerHTML = `<div class="scrim on" data-close></div>
+          <aside class="drawer on" role="dialog" aria-label="${c.title}">
+            <div class="oh"><h3>${route.kind==="stop"?"Stop":"Item"}</h3><button class="x" data-close aria-label="Close">×</button></div>
+            <div class="obody"><h2 class="sub-title">${c.title}</h2><p class="sub-sub">${c.sub}</p>${c.body}</div>
+          </aside>`;
+      } else { // C
+        layer.innerHTML = `<div class="scrim on" data-close></div>
+          <div class="modal-wrap"><div class="modal on" role="dialog" aria-label="${c.title}">
+            <div class="oh"><h3>${route.kind==="stop"?"Stop":"Item"}</h3><button class="x" data-close aria-label="Close">×</button></div>
+            <div class="obody"><h2 class="sub-title">${c.title}</h2><p class="sub-sub">${c.sub}</p>${c.body}</div>
+          </div></div>`;
+      }
+    }
+    afterRender();
+  }
+
+  function parseFromPath(path) {
+    const seg = path.split("?")[0].split("/").filter(Boolean);
+    const q = new URLSearchParams(path.includes("?")?path.split("?")[1]:"");
+    if (seg.length===0) return { kind:"home" };
+    if (seg[0]==="all") return { kind:"all", label:q.get("label")||null };
+    if (seg[0]==="trails" && seg[1]) return { kind:"trail", trailId:seg[1] };
+    return { kind:"home" };
+  }
+
+  // ================= wiring after each render =================
+  function afterRender() {
+    // update the switcher readout
+    document.getElementById("routeReadout").textContent = location.pathname + location.search;
+    const v = VARIANTS.find(x=>x.key===VARIANT);
+    document.getElementById("lbl").innerHTML = `${v.key} — <small>${v.name}</small>`;
+
+    // nav links (delegated would be simpler, but wire directly for clarity)
+    document.querySelectorAll("[data-nav]").forEach(el => el.addEventListener("click", (e)=>{
+      e.preventDefault();
+      navigate(el.getAttribute("data-nav"));
+    }));
+    // overlay close targets
+    document.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", closeOverlay));
+    // label toggles inside item detail (visual only)
+    document.querySelectorAll("[data-lbl]").forEach(el => el.addEventListener("click", ()=> el.classList.toggle("on")));
+
+    // top-bar capture (NON-navigating)
+    const cap = document.getElementById("topCapture"); if (cap) cap.addEventListener("click", openCapture);
+    const peek = document.getElementById("peekCapture"); if (peek) peek.addEventListener("click", openCapture);
+    // account menu
+    const acct = document.getElementById("acctBtn"); if (acct) acct.addEventListener("click", toggleAcct);
+    // auth "continue" → land on redirect or Home
+    const goog = document.getElementById("googBtn");
+    if (goog) goog.addEventListener("click", ()=>{ const r=parse(); navigate(r.redirect||"/", {replace:true}); });
+  }
+
+  // ================= capture overlay (non-navigating) =================
+  const capScrim = document.getElementById("capScrim"), capOverlay = document.getElementById("capOverlay");
+  function openCapture(){ capScrim.classList.add("on"); capOverlay.classList.add("on"); capOverlay.querySelector(".title-in").focus(); }
+  function closeCapture(){ capScrim.classList.remove("on"); capOverlay.classList.remove("on"); }
+  capScrim.addEventListener("click", closeCapture);
+  document.getElementById("capClose").addEventListener("click", closeCapture);
+  capOverlay.querySelectorAll(".type-pill").forEach(p=>p.addEventListener("click", ()=>{
+    capOverlay.querySelectorAll(".type-pill").forEach(x=>x.classList.remove("on")); p.classList.add("on"); }));
+
+  // ================= account menu (logout = redirect-to-/) =================
+  function toggleAcct(e){
+    e.stopPropagation();
+    let m = document.querySelector(".acct-menu");
+    if (m) { m.remove(); return; }
+    m = document.createElement("div"); m.className = "acct-menu";
+    m.innerHTML = `<div class="who">raj@unshelf.app</div>
+      <button data-nav="/">Account</button>
+      <button id="signout">Sign out</button>`;
+    document.querySelector(".acct").appendChild(m);
+    m.querySelector("[data-nav]").addEventListener("click", ()=>{ m.remove(); navigate("/"); });
+    m.querySelector("#signout").addEventListener("click", ()=>{ m.remove(); navigate("/sign-in", {replace:true}); }); // redirect-to-auth
+  }
+  document.addEventListener("click", ()=>{ const m=document.querySelector(".acct-menu"); if(m) m.remove(); });
+
+  // ================= variant switcher + theme =================
+  function setVariant(delta){
+    let i = VARIANTS.findIndex(v=>v.key===VARIANT);
+    i = (i + delta + VARIANTS.length) % VARIANTS.length;
+    VARIANT = VARIANTS[i].key;
+    sessionStorage.setItem("proto-variant", VARIANT);
+    render();
+  }
+  document.getElementById("prev").addEventListener("click", ()=>setVariant(-1));
+  document.getElementById("next").addEventListener("click", ()=>setVariant(1));
+  document.getElementById("theme").addEventListener("click", ()=>{
+    const dark = document.documentElement.getAttribute("data-theme")==="dark";
+    if (dark) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme","dark");
+  });
+
+  // ================= keyboard =================
+  document.addEventListener("keydown", (e)=>{
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+    if (e.key==="Escape") { if (capOverlay.classList.contains("on")) return closeCapture();
+                            if (document.querySelector(".drawer, .modal")) return closeOverlay(); }
+    if (typing) return;
+    if (e.key==="ArrowLeft") setVariant(-1);
+    else if (e.key==="ArrowRight") setVariant(1);
+    else if (e.key.toLowerCase()==="c") openCapture();
+  });
+
+  // ================= boot =================
+  window.addEventListener("popstate", render);
+  // normalize a bootstrap ?variant= out of the address bar after reading it
+  if (new URLSearchParams(location.search).get("variant")) {
+    const p = new URLSearchParams(location.search); p.delete("variant");
+    const clean = location.pathname + (p.toString()?"?"+p.toString():"");
+    history.replaceState({ bg:null }, "", clean);
+  }
+  render();
+</script>
+</body>
+</html>
