@@ -48,27 +48,46 @@ jobs:
           if ! echo "$labels_json" | jq -e 'index("agent:implement")' >/dev/null; then
             echo "agent:implement no longer on the issue — skipping."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
-            echo "is_prd=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # PRDs (issues with sub-issues) are expanded by the PRD flow, not
-          # implemented directly. Refuse below rather than run on a parent.
+          # PRDs (issues with sub-issues) are expanded by the PRD workflow, which
+          # listens for the SAME labeled event — SILENTLY skip so we neither race
+          # it nor strip its trigger label. Do not comment or edit labels here.
           sub_count=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" --jq 'length' 2>/dev/null || echo "0")
           if [ "$sub_count" != "0" ]; then
-            echo "is_prd=true" >> "$GITHUB_OUTPUT"
+            echo "Issue has sub-issues (PRD) — silent skip; the PRD flow handles it."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_prd=false" >> "$GITHUB_OUTPUT"
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "refusal=" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Refuse — issue is a PRD (has sub-issues)
-        if: steps.gate.outputs.is_prd == 'true'
+          # Pre-flight: if an open PR already closes this issue, refuse rather than
+          # force-push a second branch and collide on `gh pr create`. Keeps the
+          # one-issue → one-branch → one-PR invariant.
+          existing=$(gh pr list --state open \
+            --search "in:body \"#${ISSUE_NUMBER}\"" \
+            --json url,body \
+            --jq "[.[] | select(.body | test(\"(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b\"))]")
+          if [ "$(echo "$existing" | jq 'length')" -gt 0 ]; then
+            echo "existing_pr_url=$(echo "$existing" | jq -r '.[0].url')" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          echo "refusal=" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse — an open PR already targets this issue
+        if: steps.gate.outputs.refusal == 'existing_pr'
+        env:
+          EXISTING_PR_URL: ${{ steps.gate.outputs.existing_pr_url }}
         run: |
           set -euo pipefail
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
-          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:implement\`: this issue has sub-issues, so it looks like a PRD. \`agent:implement\` only runs on leaf issues — expand this into child issues first. Cleared \`agent:implement\`."
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:implement\`: PR ${EXISTING_PR_URL} already targets this issue. Close it first, then re-add \`agent:implement\`."
 
       - name: Transition labels — remove implement/blocked, add in-progress
         if: steps.gate.outputs.proceed == 'true'
