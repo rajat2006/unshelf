@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Radically different homes (prototype #59)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #59. The user likes A (two-door top bar) but
+  wants to see something RADICALLY different before finalising, and renamed "All" ->
+  "Library". Everything prior kept one skeleton: a top bar + a flat store you visit.
+  This breaks the skeleton two ways and keeps A as the finalist to beat.
+
+    A — Two-door bar (Trails · Library)   The finalist, renamed. Trails default + hero;
+                                          Library is a full page with a label rail.
+    B — Focus Home (Continue)             RADICAL Home: not a grid — your NEXT step. The
+                                          Trail you're on fills the top with its next stop
+                                          + Resume; the others are a switcher strip. Click
+                                          any to promote it. Library still lives in the bar.
+    C — Library as a drawer               RADICAL Library: not a place — a drawer you
+                                          summon. Trails are the whole app; hit Library and
+                                          it slides over, grab an Item, dismiss. Trails are
+                                          never left, so nothing competes with them.
+
+  Capture is fixed everywhere: a global chrome action whose modal says it lands in the
+  Library, never a Trail. Labels live only inside the Library. Theme = Quiet Focus (#55);
+  labels are an axis over Items, never Trails (#54). Deliberately revisits #56.
+  Self-contained, no build. Never merged to main.
+-->
+<style>
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2; --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body { background: var(--bg); color: var(--ink); font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.5; padding-bottom: 6rem; transition: background .2s ease, color .2s ease; }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 12px clamp(16px, 4vw, 40px); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); min-height: 58px; }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration:none; letter-spacing: -0.02em; background:none; border:none; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); font-weight: 700; font-size: .82rem; display: inline-grid; place-items: center; flex:none; }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+
+  .navdest { display:flex; align-items:center; gap:2px; margin-left:6px; }
+  .dest { background:none; border:none; color:var(--muted); font-weight:600; font-size:.92rem; padding:6px 12px; border-radius:var(--r8); display:inline-flex; align-items:center; gap:6px; }
+  .dest .nc { font-size:.76rem; color:var(--muted); font-weight:500; }
+  .dest:hover { color:var(--ink); background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  .dest.on { color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .dest.on .nc { color:var(--accent); }
+  .dest.subtle { color:var(--muted); font-weight:600; }
+  .kbd-chip { display:inline-flex; align-items:center; gap:4px; background:var(--surface); border:1px solid var(--line); color:var(--muted); font-weight:600; font-size:.82rem; border-radius:var(--r8); padding:7px 10px; }
+  .kbd-chip:hover { border-color:var(--accent); color:var(--accent); }
+  .lib-btn { display:inline-flex; align-items:center; gap:7px; background:var(--surface); border:1px solid var(--line); color:var(--ink); font-weight:600; font-size:.9rem; border-radius:var(--r8); padding:7px 13px; }
+  .lib-btn .lg { width:15px; height:15px; border-radius:3px; border:1.5px solid var(--muted); position:relative; }
+  .lib-btn .lg::after { content:''; position:absolute; left:2px; right:2px; top:5px; height:1.5px; background:var(--muted); box-shadow:0 3px 0 var(--muted); }
+  .lib-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .lib-btn:hover .lg, .lib-btn:hover .lg::after { border-color:var(--accent); background:var(--accent); }
+  .cap-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem; box-shadow: 0 1px 2px rgba(20,24,40,.16); }
+
+  .caption { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-bottom: 1px solid var(--line); color: var(--ink); font-size: .84rem; padding: 9px clamp(16px, 4vw, 40px); }
+  .caption b { color: var(--accent); }
+  .caption .tag { margin-left:8px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 8px; }
+  .caption .tag.hot { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--line)); }
+
+  .page { max-width: 66rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.35rem, 3.4vw, 1.8rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 8px; }
+  .crumb { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color: var(--muted); font-size:.85rem; font-weight:600; padding:0; margin: 0 0 10px; }
+  .crumb:hover { color: var(--accent); }
+
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 22px 0 14px; flex-wrap: wrap; }
+  .sec-head h2 { font-size: 1.12rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+
+  .ring { --p: 0; width: 46px; aspect-ratio: 1; flex: none; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+  .ring.done { background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0); }
+  .ring::before { content: ''; grid-area: 1/1; width: 72%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); }
+  .ring b { grid-area: 1/1; font-size: .7rem; z-index: 1; }
+
+  /* A / C : Trails grid */
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 12px; }
+  .trail { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 15px 16px; box-shadow: var(--shadow); text-align: left; width: 100%; }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .trail .body { flex: 1; min-width: 0; }
+  .trail .name { font-weight: 600; font-size: 1rem; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trail .meta { color: var(--muted); font-size: .8rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .trail .tag { border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .72rem; }
+  .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
+  .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* B : Focus Home */
+  .focus-eyebrow { font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:14px 0 8px; }
+  .focus-card { display:flex; align-items:center; gap:20px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:22px 24px; box-shadow: 0 1px 0 rgba(20,24,40,.03), 0 26px 50px -30px rgba(20,24,40,.4); position:relative; overflow:hidden; }
+  .focus-card::before { content:''; position:absolute; inset:0; background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 9%,transparent), transparent 62%); pointer-events:none; }
+  .focus-card .ring { width:64px; }
+  .focus-card .ring b { font-size:.82rem; }
+  .focus-body { flex:1; min-width:0; position:relative; }
+  .focus-name { font-size:1.35rem; font-weight:700; letter-spacing:-0.02em; }
+  .focus-next { font-size:1rem; margin-top:5px; }
+  .focus-next b { color:var(--accent); }
+  .focus-meta { color:var(--muted); font-size:.82rem; margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .focus-meta .tag { border:1px solid var(--line); border-radius:5px; padding:1px 6px; }
+  .focus-resume { position:relative; background:var(--accent); color:var(--on-accent); border:none; border-radius:var(--r8); padding:12px 22px; font-weight:600; font-size:.95rem; white-space:nowrap; box-shadow:0 1px 2px rgba(20,24,40,.16); }
+  .focus-resume:hover { background:var(--accent-h); }
+  .strip { display:flex; gap:10px; overflow-x:auto; padding: 2px 2px 8px; }
+  .strip-card { flex:0 0 auto; width:12.5rem; text-align:left; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:12px 14px; box-shadow:var(--shadow); }
+  .strip-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .strip-card.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), var(--shadow); }
+  .strip-card .sn { font-weight:600; font-size:.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .strip-card .sp { color:var(--muted); font-size:.78rem; margin-top:5px; display:flex; align-items:center; gap:6px; }
+  .strip-card .bar { flex:1; height:4px; border-radius:999px; background:var(--line); overflow:hidden; }
+  .strip-card .bar i { display:block; height:100%; background:var(--accent); border-radius:999px; }
+
+  /* Library page (A / B) */
+  .all-wrap { display:grid; grid-template-columns: 14rem 1fr; gap: clamp(18px,2.6vw,32px); align-items:start; }
+  .rail { position:sticky; top:120px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:12px; box-shadow:var(--shadow); }
+  .rail .rh { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:4px 8px 10px; }
+  .rrow { display:flex; align-items:center; justify-content:space-between; width:100%; background:transparent; border:none; color:var(--ink); border-radius:var(--r6); padding:8px 10px; font-size:.92rem; text-align:left; }
+  .rrow .c { color:var(--muted); font-size:.8rem; }
+  .rrow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent); }
+  .rrow:hover .c { color:var(--accent); }
+  .rrow.on { background: var(--accent); color: var(--on-accent); font-weight:600; }
+  .rrow.on .c { color: color-mix(in srgb, var(--on-accent) 78%, var(--accent)); }
+  .items { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:11px 15px; box-shadow: var(--shadow); flex-wrap:wrap; }
+  .item .lead { flex:1; min-width: 10rem; }
+  .item .it-title { font-weight:600; font-size:.94rem; }
+  .item .it-sub { margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .type-tag { border:1px solid var(--line); border-radius:5px; padding:1px 7px; font-size:.72rem; color:var(--muted); text-transform:capitalize; }
+  .lbl-chip { border:1px solid var(--line); border-radius:999px; padding:1px 9px; font-size:.72rem; color:var(--muted); }
+  .lbl-chip::before { content:"#"; opacity:.55; }
+  .lbl-chip.match { border-color: var(--accent); color: var(--accent); }
+
+  /* C : Library drawer */
+  .drawer-bg { position:fixed; inset:0; z-index:65; background:rgba(10,12,20,.42); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .2s ease; }
+  .drawer-bg.open { opacity:1; pointer-events:auto; }
+  .drawer { position:absolute; top:0; right:0; height:100%; width:min(440px,94vw); background:var(--bg); border-left:1px solid var(--line); box-shadow:-24px 0 60px -30px rgba(0,0,0,.6); display:flex; flex-direction:column; padding:18px clamp(14px,2vw,20px); overflow-y:auto; transform:translateX(100%); transition:transform .24s cubic-bezier(.4,0,.2,1); }
+  .drawer-bg.open .drawer { transform:translateX(0); }
+  .drawer-h { display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; }
+  .drawer-title { font-size:1.15rem; font-weight:700; }
+  .drawer-sub { color:var(--muted); font-size:.83rem; margin-top:2px; }
+  .drawer-x { margin-left:auto; background:none; border:1px solid var(--line); border-radius:var(--r8); width:32px; height:32px; color:var(--muted); flex:none; }
+  .drawer-x:hover { border-color:var(--accent); color:var(--accent); }
+  .drawer-note { color:var(--muted); font-size:.8rem; margin:-4px 0 12px; }
+  .drawer-filter { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .dchip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:5px 11px; font-size:.82rem; color:var(--muted); }
+  .dchip:hover { border-color:var(--accent); color:var(--accent); }
+  .dchip.on { background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:600; }
+
+  /* Capture modal (all variants) */
+  .modal-bg { position: fixed; inset: 0; z-index: 70; background: rgba(10,12,20,.45); backdrop-filter: blur(2px); display: grid; place-items: start center; padding: 14vh 16px 16px; }
+  .modal { width: min(520px, 94vw); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: 0 30px 80px -20px rgba(0,0,0,.5); padding: 18px; }
+  .modal-h { font-weight: 700; font-size: 1.05rem; margin-bottom: 12px; }
+  .modal-input { width: 100%; background: var(--field-bg); border: 1px solid var(--field-line); border-radius: var(--r8); padding: 11px 13px; color: var(--ink); font: inherit; }
+  .modal-input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; border-color: var(--accent); }
+  .modal-hint { color: var(--muted); font-size: .83rem; margin: 10px 2px 0; }
+  .modal-hint b { color: var(--accent); }
+  .modal-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .type-pick { border: 1px solid var(--line); border-radius: var(--r8); padding: 7px 12px; color: var(--muted); font-size: .85rem; }
+  .modal-save { margin-left: auto; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 9px 16px; font-weight: 600; }
+
+  .toast { position:fixed; left:50%; bottom:74px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:.82rem; padding:8px 14px; border-radius:999px; box-shadow:0 10px 30px rgba(0,0,0,.3); opacity:0; transition:opacity .18s ease; z-index:80; pointer-events:none; }
+  .toast.show { opacity:1; }
+
+  .switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 4px; background: rgba(18,20,28,.94); color: #fff; border-radius: 999px; padding: 5px 6px; box-shadow: 0 12px 34px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px); }
+  .switch button { appearance: none; border: none; background: rgba(255,255,255,.1); color: #fff; height: 32px; border-radius: 999px; display: inline-grid; place-items: center; padding: 0 10px; }
+  .switch button:hover { background: rgba(255,255,255,.2); }
+  .switch .lbl { padding: 0 12px; font-size: .82rem; font-weight: 600; white-space: nowrap; min-width: 14rem; text-align: center; }
+  .switch .lbl small { color: rgba(255,255,255,.6); font-weight: 500; }
+  .switch .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
+
+  @media (max-width: 680px) {
+    .all-wrap { grid-template-columns: 1fr; }
+    .rail { position: static; }
+    .focus-card { flex-wrap:wrap; }
+    .focus-resume { width:100%; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+  <div class="caption" id="caption"></div>
+
+  <main class="page">
+    <section id="homeScreen"><div id="homeInner"></div></section>
+
+    <section id="libraryScreen" class="hidden">
+      <button class="crumb" id="libBack">‹ Trails</button>
+      <p class="eyebrow">Library · the store</p>
+      <h1 class="greet">Library</h1>
+      <p class="greet-sub">Every Item you've captured, filtered by label — labels do their work only here.</p>
+      <div id="libraryWrap"></div>
+    </section>
+  </main>
+
+  <!-- C: Library drawer -->
+  <div class="drawer-bg" id="drawer">
+    <aside class="drawer">
+      <div class="drawer-h">
+        <div><div class="drawer-title">Library</div><div class="drawer-sub tnum">9 items · your store</div></div>
+        <button class="drawer-x" id="drawerX" title="Close">✕</button>
+      </div>
+      <p class="drawer-note">Trails stay open behind this. Grab a loose Item; thread it into a Trail whenever.</p>
+      <div class="drawer-filter" id="drawerChips"></div>
+      <ul class="items" id="drawerItems"></ul>
+    </aside>
+  </div>
+
+  <!-- capture modal (all variants) -->
+  <div class="modal-bg hidden" id="capModal">
+    <div class="modal">
+      <div class="modal-h">＋ Capture</div>
+      <input class="modal-input" id="capInput" placeholder="Paste a link, or jot a thought…" />
+      <p class="modal-hint">Lands in your <b>Library</b>. Thread it into a Trail whenever you like — capture never targets a Trail.</p>
+      <div class="modal-row"><span class="type-pick">Article ▾</span><button class="modal-save" id="capSave">Capture → Library</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="switch">
+    <button id="prev" aria-label="Previous">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next">→</button>
+    <span class="sep"></span>
+    <button id="theme" title="Toggle light / dark">◐ Theme</button>
+  </div>
+
+<script>
+  const TRAILS = [
+    { name:"Learn Rust", done:7, total:12, tags:["reference","deep-dive"], next:"Ch. 11 — Traits & generics" },
+    { name:"Kitchen remodel", done:3, total:9, tags:["how-to","video"], next:"Choose the backsplash tile" },
+    { name:"Marathon base build", done:11, total:16, tags:["reference"], next:"Week 12 — long run, 18 mi" },
+    { name:"Reading · 2026", done:4, total:20, tags:["book"], next:"Start ‘The Overstory’" },
+    { name:"Side project: unshelf", done:5, total:8, tags:["reference"], next:"Wire capture → Library" },
+  ];
+  const ITEMS = [
+    { t:"The Rust Book — Ch.10: Generics", type:"Article", labels:["reference","deep-dive"] },
+    { t:"Crust of Rust: Lifetimes", type:"Video", labels:["video","deep-dive"] },
+    { t:"Tokio — the async tutorial", type:"Article", labels:["reference"] },
+    { t:"Designing Data-Intensive Applications", type:"Book", labels:["book","reference","deep-dive"] },
+    { t:"Kitchen work-triangle basics", type:"Article", labels:["how-to","reference"] },
+    { t:"Zone-2 base building, explained", type:"Video", labels:["video","routine"] },
+    { t:"Daniels' Running Formula", type:"Book", labels:["book","reference","routine"] },
+    { t:"Refactoring UI", type:"Book", labels:["book","reference"] },
+    { t:"Backsplash tile install", type:"Video", labels:["video","how-to"] },
+  ];
+  const LABELS = ["reference","video","book","how-to","deep-dive","routine"];
+  const countOf = l => ITEMS.filter(i => i.labels.includes(l)).length;
+
+  const VARIANTS = [
+    { key:"A", name:"Two-door bar · Trails · Library", tag:"the finalist to beat", hot:false,
+      cap:"<b>Your pick, renamed.</b> Trails · Library as two named doors in the bar; Trails default + hero. Click Library → a full page with a label rail. The two below try to beat it." },
+    { key:"B", name:"Focus Home · Continue", tag:"radically different HOME", hot:true,
+      cap:"<b>Home is your next step, not a grid.</b> The Trail you're on fills the top — its next stop + Resume — and the rest are a switcher strip. Click any Trail to promote it. Library still lives in the bar." },
+    { key:"C", name:"Library as a drawer", tag:"radically different LIBRARY", hot:true,
+      cap:"<b>Library isn't a place — it's a drawer you summon.</b> Trails are the whole app; hit <i>Library</i> and it slides over; grab an Item and dismiss. Trails are never left, so nothing competes with them." },
+  ];
+
+  const $ = id => document.getElementById(id);
+  const MARK = '<button class="mark" id="goHome" title="Home — your Trails"><span class="glyph"></span>Unshelf</button>';
+  const toast = $("toast"); let toastT=null;
+  function flash(msg){ toast.textContent=msg; toast.classList.add("show"); if(toastT)clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove("show"),1600); }
+
+  const trailsGridHTML = () => TRAILS.map(t => {
+    const p = Math.round(t.done/t.total*100), cls = t.done===t.total ? "ring done":"ring";
+    return `<button class="trail"><div class="${cls}" style="--p:${p}"><b class="tnum">${t.done}/${t.total}</b></div>
+      <span class="body"><div class="name">${t.name}</div><div class="meta"><span class="tnum">${t.total-t.done} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div></span></button>`;
+  }).join("");
+
+  // ---- shared item rendering ----
+  let activeLabel = null;
+  function itemsHTML(){
+    const shown = activeLabel ? ITEMS.filter(i=>i.labels.includes(activeLabel)) : ITEMS;
+    return shown.map(i => `<li class="item"><div class="lead">
+      <div class="it-title">${i.t}</div>
+      <div class="it-sub"><span class="type-tag">${i.type}</span>${i.labels.map(l=>`<span class="lbl-chip${l===activeLabel?' match':''}">${l}</span>`).join("")}</div>
+    </div></li>`).join("");
+  }
+
+  // ---- Home ----
+  let activeTrail = 0;
+  function renderHome(v){
+    const host = $("homeInner");
+    if (v.key === "B") {
+      const t = TRAILS[activeTrail], p = Math.round(t.done/t.total*100), rc = t.done===t.total?"ring done":"ring";
+      host.innerHTML = `
+        <p class="eyebrow">Home</p>
+        <p class="focus-eyebrow">Continue where you left off</p>
+        <div class="focus-card">
+          <div class="${rc}" style="--p:${p}"><b class="tnum">${t.done}/${t.total}</b></div>
+          <div class="focus-body">
+            <div class="focus-name">${t.name}</div>
+            <div class="focus-next"><b>Next ·</b> ${t.next}</div>
+            <div class="focus-meta">${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}<span class="tnum">${t.total-t.done} stops left</span></div>
+          </div>
+          <button class="focus-resume" id="resumeBtn">Resume →</button>
+        </div>
+        <div class="sec-head"><h2>Your Trails</h2><span class="count tnum">5 active</span></div>
+        <div class="strip" id="strip">${TRAILS.map((x,idx)=>{
+          const pp=Math.round(x.done/x.total*100);
+          return `<button class="strip-card${idx===activeTrail?' on':''}" data-idx="${idx}"><div class="sn">${x.name}</div>
+            <div class="sp"><span class="tnum">${x.done}/${x.total}</span><span class="bar"><i style="width:${pp}%"></i></span></div></button>`;
+        }).join("")}</div>
+        <button class="new-trail">+ New Trail</button>`;
+      $("resumeBtn").addEventListener("click", ()=>flash(`Resuming ${t.name} → ${t.next}`));
+      host.querySelectorAll("[data-idx]").forEach(b=>b.addEventListener("click", ()=>{ activeTrail=+b.dataset.idx; renderHome(v); }));
+    } else {
+      host.innerHTML = `
+        <p class="eyebrow">Home</p>
+        <h1 class="greet">Welcome back</h1>
+        <p class="greet-sub">Pick up a Trail where you left off.</p>
+        <div class="sec-head"><h2>Your Trails</h2><span class="count tnum">5 active</span></div>
+        <div class="trails">${trailsGridHTML()}</div>
+        <button class="new-trail">+ New Trail</button>`;
+    }
+  }
+
+  // ---- Library page (A / B) ----
+  function renderLibraryPage(){
+    $("libraryWrap").innerHTML = `<div class="all-wrap">
+      <div class="rail"><div class="rh">Browse by label</div>
+        <button class="rrow${activeLabel===null?' on':''}" data-label="">All items<span class="c tnum">${ITEMS.length}</span></button>
+        ${LABELS.map(l=>`<button class="rrow${l===activeLabel?' on':''}" data-label="${l}">#${l}<span class="c tnum">${countOf(l)}</span></button>`).join("")}</div>
+      <div><ul class="items">${itemsHTML()}</ul></div></div>`;
+    $("libraryWrap").querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => { activeLabel = b.dataset.label || null; renderLibraryPage(); }));
+  }
+  function showLibrary(){ activeLabel=null; renderLibraryPage(); $("homeScreen").classList.add("hidden"); $("libraryScreen").classList.remove("hidden"); syncActive("library"); window.scrollTo(0,0); }
+  function showHome(){ $("libraryScreen").classList.add("hidden"); $("homeScreen").classList.remove("hidden"); closeDrawer(); syncActive("trails"); }
+  function syncActive(where){ document.querySelectorAll("#topbar [data-dest]").forEach(b => b.classList.toggle("on", b.dataset.dest===where)); }
+
+  // ---- Library drawer (C) ----
+  function renderDrawer(){
+    $("drawerChips").innerHTML = `<button class="dchip${activeLabel===null?' on':''}" data-label="">All <span class="tnum">${ITEMS.length}</span></button>`
+      + LABELS.map(l=>`<button class="dchip${l===activeLabel?' on':''}" data-label="${l}">#${l} <span class="tnum">${countOf(l)}</span></button>`).join("");
+    $("drawerItems").innerHTML = itemsHTML();
+    $("drawerChips").querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => { activeLabel = b.dataset.label || null; renderDrawer(); }));
+  }
+  function openDrawer(){ activeLabel=null; renderDrawer(); $("drawer").classList.add("open"); }
+  function closeDrawer(){ $("drawer").classList.remove("open"); }
+
+  // ---- capture modal ----
+  function openCap(){ $("capModal").classList.remove("hidden"); const i=$("capInput"); i.value=""; try{ i.focus(); }catch(_){}}
+  function closeCap(){ $("capModal").classList.add("hidden"); }
+
+  // ---- chrome per variant ----
+  function renderChrome(v){
+    const bar=$("topbar");
+    if (v.key === "A") {
+      bar.innerHTML = MARK + `<nav class="navdest">
+        <button class="dest" data-dest="trails">Trails</button>
+        <button class="dest" data-dest="library">Library <span class="nc tnum">${ITEMS.length}</span></button></nav>
+        <span class="spacer"></span>
+        <button class="kbd-chip" id="kchip" title="Capture (⌘K)">⌘K</button>
+        <button class="cap-btn" id="capBtn"><span>+</span> Capture</button>
+        <span class="avatar">RG</span>`;
+    } else if (v.key === "B") {
+      bar.innerHTML = MARK + `<span class="spacer"></span>
+        <button class="dest subtle" data-dest="library">Library</button>
+        <button class="cap-btn" id="capBtn"><span>+</span> Capture</button>
+        <span class="avatar">RG</span>`;
+    } else {
+      bar.innerHTML = MARK + `<span class="spacer"></span>
+        <button class="lib-btn" id="libBtn"><span class="lg"></span> Library</button>
+        <button class="cap-btn" id="capBtn"><span>+</span> Capture</button>
+        <span class="avatar">RG</span>`;
+    }
+    bar.querySelector("#goHome").addEventListener("click", showHome);
+    bar.querySelectorAll("[data-dest]").forEach(b => b.addEventListener("click", () => b.dataset.dest==="library" ? showLibrary() : showHome()));
+    bar.querySelector("#libBtn")?.addEventListener("click", openDrawer);
+    bar.querySelector("#capBtn")?.addEventListener("click", openCap);
+    bar.querySelector("#kchip")?.addEventListener("click", openCap);
+  }
+
+  // ---- variant switching ----
+  function readVariant(){ const k=new URLSearchParams(location.search).get("variant"); const i=VARIANTS.findIndex(v=>v.key===k); return i>=0?i:0; }
+  let cur = readVariant();
+  function render(){
+    const v = VARIANTS[cur];
+    closeCap(); closeDrawer(); activeLabel=null; activeTrail=0;
+    renderChrome(v);
+    renderHome(v);
+    showHome();
+    $("caption").innerHTML = `<b>Variant ${v.key} · ${v.name}.</b> ${v.cap}<span class="tag${v.hot?' hot':''}">${v.tag}</span>`;
+    $("lbl").innerHTML = `${v.key} — <small>${v.name}</small>`;
+    try { const p=new URLSearchParams(location.search); p.set("variant", v.key); history.replaceState(null,"",location.pathname+"?"+p.toString()); } catch(_){}
+  }
+  function go(d){ cur=(cur+d+VARIANTS.length)%VARIANTS.length; render(); }
+
+  $("prev").addEventListener("click", ()=>go(-1));
+  $("next").addEventListener("click", ()=>go(1));
+  $("libBack").addEventListener("click", showHome);
+  $("drawerX").addEventListener("click", closeDrawer);
+  $("drawer").addEventListener("click", e => { if(e.target===$("drawer")) closeDrawer(); });
+  $("capSave").addEventListener("click", () => { closeCap(); flash("Captured → Library. Thread it into a Trail whenever."); });
+  $("capModal").addEventListener("click", e => { if(e.target===$("capModal")) closeCap(); });
+  $("theme").addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme")==="dark";
+    if (dark) document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme","dark");
+  });
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey||e.ctrlKey) && (e.key==="k"||e.key==="K")) { e.preventDefault(); openCap(); return; }
+    if (e.key==="Escape") { closeCap(); closeDrawer(); return; }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    if (typing) return;
+    if (!$("capModal").classList.contains("hidden") || $("drawer").classList.contains("open")) return;
+    if (e.key==="ArrowLeft") go(-1);
+    else if (e.key==="ArrowRight") go(1);
+    else if (e.key==="c"||e.key==="C") openCap();
+  });
+  render();
+</script>
+</body>
+</html>
