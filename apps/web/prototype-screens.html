@@ -162,6 +162,12 @@
   .ring b { grid-area: 1/1; font-size: .72rem; z-index: 1; }
   .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
   .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+  /* The store block — labels belong to All, so it sits apart from the Trails index. */
+  .store-block { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .store-block .sec-head { margin-top: 0; }
+  .store-block .filters { margin-bottom: 0; }
+  .store-hint { color: var(--muted); font-size: .88rem; margin: 0 0 12px; }
+  .sub-h { color: var(--muted); font-weight: 400; font-size: .9rem; }
 
   /* ---- All: the store / triage surface ---- */
   .all-toolbar { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; margin: 2px 0 16px; }
@@ -285,13 +291,23 @@
       <button class="peek" id="peek"><span class="plus">+</span><span>Capture something…</span><span class="kbd">press C</span></button>
       <div class="composer hidden" id="peekComposer" style="margin-top:10px;"></div>
 
+      <!-- Trails = sequencing. You pick one; labels do NOT filter this list. -->
       <div class="sec-head">
         <h2>Your Trails</h2><span class="count tnum">5 active</span>
-        <button class="all-door" data-goall>Browse All <span class="tnum">12</span> →</button>
       </div>
-      <div class="filters" id="homeFilters"></div>
       <div class="trails" id="trails"></div>
       <button class="new-trail">+ New Trail</button>
+
+      <!-- The store: labels live HERE, as an axis over All (Items) — never over Trails (#54). -->
+      <div class="store-block">
+        <div class="sec-head">
+          <h2>All <span class="sub-h">· the store</span></h2>
+          <span class="count tnum">12 items</span>
+          <button class="all-door" data-goall>Browse everything →</button>
+        </div>
+        <p class="store-hint">Every Item you capture lands in All. Jump straight in by label:</p>
+        <div class="filters" id="homeFilters"></div>
+      </div>
     </section>
 
     <!-- ============================= ALL ============================= -->
