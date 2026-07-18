@@ -101,6 +101,31 @@ describe("prepareCodexAuth — materialise the Codex subscription seat before ru
     expect(occurrences).toBe(1);
   });
 
+  it("preserves an existing auth.json — never clobbers a phase's refreshed creds", () => {
+    const refreshed = '{"tokens":{"access_token":"REFRESHED-in-place"}}';
+    fs.writeFileSync(path.join(codexHome, "auth.json"), refreshed);
+    // The secret still holds the original (now stale) seed; it must be ignored.
+
+    prepareCodexAuth("codex", env);
+
+    const written = fs.readFileSync(path.join(codexHome, "auth.json"), "utf8");
+    expect(written).toBe(refreshed);
+  });
+
+  it("does not require CODEX_AUTH_JSON when auth.json already exists", () => {
+    fs.writeFileSync(path.join(codexHome, "auth.json"), '{"tokens":{}}');
+    delete env.CODEX_AUTH_JSON; // a later phase need not re-supply the seed
+    env.OPENAI_API_KEY = "sk-key";
+
+    expect(() => prepareCodexAuth("codex", env)).not.toThrow();
+
+    // The idempotent setup still runs on the existing-file path.
+    expect(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+    ).toContain(CREDENTIALS_STORE_LINE);
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+  });
+
   it("throws when Codex is selected but CODEX_AUTH_JSON is missing", () => {
     delete env.CODEX_AUTH_JSON;
 

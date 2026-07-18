@@ -90,10 +90,21 @@ cat ~/.codex/auth.json # paste the whole file as the secret value
 **Codex CI requirements — read before wiring the Codex path:**
 
 - `~/.codex/config.toml` must set `cli_auth_credentials_store = "file"` — the OS keyring
-  is unreachable in CI.
+  is unreachable in CI. The runner writes this automatically (`prepareCodexAuth`).
 - **`OPENAI_KEY` / `OPENAI_API_KEY` must NOT be set** anywhere the runner can see them. If
   either is present, Codex bills against the metered Platform API and can fail
   `Quota exceeded` even with a valid subscription. Do not add them as secrets.
+- **Credential refresh persistence.** Codex refreshes the ChatGPT tokens *in place*
+  during a run, writing the new tokens back to `auth.json`. The runner therefore seeds
+  `auth.json` from the secret only when it is **absent**, so a later phase never restores
+  the stale seed over a fresh refresh. Across jobs, the ephemeral runner discards the
+  refreshed file, so `agent-implement.yml` writes the refreshed `auth.json` back to the
+  `CODEX_AUTH_JSON` secret at job end (best-effort, via `AGENT_PAT`). This keeps the seat
+  from going stale as Codex rotates tokens — the pattern OpenAI's
+  [CI/CD auth guidance](https://learn.chatgpt.com/docs/auth/ci-cd-auth) prescribes. If
+  `AGENT_PAT` lacks the Secrets scope (below), write-back is skipped and each job
+  re-seeds from the original secret — fine until Codex invalidates that seed's refresh
+  token, after which you re-run `codex login` and repaste.
 
 ### 3. `AGENT_PAT`
 
@@ -102,11 +113,15 @@ A **fine-grained personal access token**, scoped to this repo, with:
 - **Contents** — Read and write
 - **Pull requests** — Read and write
 - **Workflows** — Read and write
+- **Secrets** — Read and write *(only for the Codex path — enables `CODEX_AUTH_JSON`
+  refresh write-back above; omit if you never run `agent:codex`)*
 
 Needed because the default `GITHUB_TOKEN` lacks the `workflows` scope and cannot trigger a
 downstream workflow when it adds a label — so the implement → review → ready chain would
 stall without it. It is also the preferred checkout token (`fetch-depth: 0`), falling back
-to `GITHUB_TOKEN` when absent.
+to `GITHUB_TOKEN` when absent. The **Secrets** scope is what lets the Codex path persist a
+refreshed `auth.json` back to `CODEX_AUTH_JSON`; without it that write-back is skipped
+(non-fatal).
 
 ### `GITHUB_TOKEN` (auto-provided — do not create)
 

@@ -268,6 +268,45 @@ jobs:
           fi
           gh pr edit "$PR_NUMBER" --add-label "agent:review"
 
+      - name: Persist refreshed Codex credentials
+        # Codex refreshes the ChatGPT tokens IN PLACE during a run and writes them
+        # back to auth.json. An ephemeral runner discards that file at job end, so
+        # without write-back the next job re-seeds an ever-staler secret and Codex
+        # eventually can't refresh (OpenAI CI guidance — see docs/agents/sandcastle.md).
+        # Runs on always() so a run that failed *after* refreshing still persists
+        # the newer tokens. Best-effort: needs AGENT_PAT with the Secrets scope; if
+        # that is absent (or the write fails) we fall back to re-seeding rather than
+        # failing the job.
+        if: always() && steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        env:
+          CODEX_HOME: ${{ runner.temp }}/.codex
+          AGENT_PAT: ${{ secrets.AGENT_PAT }}
+          CODEX_AUTH_SEED: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          set -uo pipefail
+          auth="${CODEX_HOME}/auth.json"
+          if [ ! -f "$auth" ]; then
+            echo "No auth.json on disk — nothing to persist."
+            exit 0
+          fi
+          if [ -z "${AGENT_PAT:-}" ]; then
+            echo "AGENT_PAT unset — cannot update the secret; next job re-seeds from CODEX_AUTH_JSON."
+            exit 0
+          fi
+          # Skip the write when Codex never refreshed (file identical to the seed),
+          # so unchanged runs don't churn the secret.
+          seed_hash=$(printf '%s' "$CODEX_AUTH_SEED" | sha256sum | cut -d' ' -f1)
+          file_hash=$(sha256sum < "$auth" | cut -d' ' -f1)
+          if [ "$seed_hash" = "$file_hash" ]; then
+            echo "auth.json unchanged since seed — nothing to persist."
+            exit 0
+          fi
+          if GH_TOKEN="$AGENT_PAT" gh secret set CODEX_AUTH_JSON --body-file "$auth"; then
+            echo "Persisted refreshed Codex credentials to CODEX_AUTH_JSON."
+          else
+            echo "Could not update CODEX_AUTH_JSON (AGENT_PAT likely lacks the Secrets scope). Next job re-seeds from the existing secret."
+          fi
+
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog (a non-zero tsx exit).
         # `cancelled()` covers the hard 60-min job `timeout-minutes` breach, which
