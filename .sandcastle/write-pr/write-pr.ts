@@ -4,6 +4,7 @@ import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { z } from "zod";
 import { loadCapabilityContext } from "../capability-context";
+import { prepareCodexAuth } from "../prepare-codex-auth";
 import { runWithRetry } from "../run-with-retry";
 
 /**
@@ -23,6 +24,10 @@ import { runWithRetry } from "../run-with-retry";
 
 const ctx = loadCapabilityContext();
 console.log(`Resolved provider model: ${ctx.model}`);
+
+// Same subscription-seat setup as implement — this phase also runs the agent, so
+// it must authenticate identically (a no-op on the Claude Code default).
+prepareCodexAuth(ctx.agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must
 // contain `Closes #<issue>` so the PR closes the issue on merge — enforced here,
