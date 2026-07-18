@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Anchor screens (prototype #59)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #59 "Anchor visual prototype: the key screens
+  with the theme applied", a wayfinder:prototype child of the web-redesign map #53.
+  The anchor the design spec (#60) points at: the NEW information architecture (#54)
+  rendered in the chosen chrome (#56) and theme (#55).
+
+  NOT a pick-one-variant prototype. The design is already LOCKED upstream; this file
+  draws the three signed-in SURFACES in that one design so the human can react to the
+  whole thing standing together. The floating bar switches SURFACES, not competing
+  designs (?surface=home|all|trail, or the arrow keys). Dark/light toggle in the pill.
+
+  Locked upstream, drawn here as-is (do not relitigate):
+    - Theme = Quiet Focus (Direction C, #55): cool near-neutral greyscale + one indigo
+      accent, green = done, quiet-slate = past target (never red), 4px grid, radius
+      6/8/10, system-ui (zero webfont), light + dark peers via a ~10-token layer.
+    - Chrome (#56): slim top bar (mark = home, left; Capture + account, right); Capture
+      is a non-navigating overlay reachable everywhere; on Home it is the "Peek" line.
+    - IA (#54): three surfaces + persistent Capture. Home = Trails index + Peek Capture
+      + labels-as-quick-filters + a door into All. All = the store; every Item,
+      filterable by label, where you triage (Status / target date / labels / pull into
+      Stops). Trail = one Trail's canvas of Stops + forks; open a Stop for its Items.
+    - Model assumed ahead of the build (#74): multiple Trails, labels over All, Stop as
+      a per-Trail waypoint.
+
+  DECIDED WHILE DRAWING (the fog #59 was handed — call these out for reaction):
+    1. Trail reskin. ADR-0010's Adventure map is warm survey-chart (pine/ochre paper,
+       compass rose) — Direction C is explicitly cool/neutral and "not map-themed". The
+       reskin KEEPS the topology-as-journey reading (walked ground vs dotted-ahead,
+       sealed done-medallion, filling "you are here" ring, ＋/⑃/⇢ authoring) and drops
+       the bookish skin: cool surface, faint neutral graticule, indigo "now" + green
+       "done", no compass. Reskin, not redesign.
+    2. Empty state shown on All (filter a label with no Items). Loading/error noted for
+       the spec (#60), not drawn here.
+    3. Responsive: shell reflows (clamp paddings, auto-fill grids, wrapping All rows);
+       the Trail canvas scrolls horizontally and is view-only on the phone (ADR-0008).
+
+  Self-contained, no build — open the file. Never merged to main.
+-->
+<style>
+  /* ---- Quiet Focus tokens (#55, Direction C) — verbatim from the nav prototype ---- */
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2;
+    --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.5;
+    padding-bottom: 6rem;
+    transition: background .2s ease, color .2s ease;
+  }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  input, select { font: inherit; }
+  a { color: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* ---- slim top bar (the LOCKED chrome, #56) ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px clamp(16px, 4vw, 40px);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration: none; letter-spacing: -0.02em; background:none; border:none; padding:0; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  .cap-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: var(--on-accent);
+    border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem;
+    box-shadow: 0 1px 2px rgba(20,24,40,.16);
+  }
+  .cap-btn:hover { background: var(--accent-h); }
+  .cap-btn .plus { font-size: 1.05rem; line-height: 1; margin-top: -1px; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    color: var(--accent); font-weight: 700; font-size: .82rem;
+    display: inline-grid; place-items: center;
+  }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+
+  /* ---- page shell ---- */
+  .page { max-width: 66rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 24px; }
+  .crumb { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color: var(--muted); font-size:.85rem; font-weight:600; padding:0; margin: 0 0 10px; }
+  .crumb:hover { color: var(--accent); }
+
+  /* ---- capture composer (shared: Peek-expand on Home, overlay everywhere) ---- */
+  .composer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 16px; box-shadow: var(--shadow); }
+  .composer .title-in { width: 100%; background: var(--field-bg); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--r8); padding: 11px 12px; font-size: 1rem; margin-bottom: 10px; }
+  .composer .title-in::placeholder { color: var(--muted); }
+  .composer .title-in:focus, .composer .src:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+  .composer .row { display: flex; gap: 8px; flex-wrap: wrap; align-items:center; }
+  .type-pills { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .type-pill { background: transparent; color: var(--muted); border: 1px solid var(--field-line); border-radius: 999px; padding: 6px 12px; font-size: .84rem; }
+  .type-pill.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  :root[data-theme="dark"] .type-pill.on { color: var(--ink); }
+  .src { flex: 1; min-width: 140px; background: var(--field-bg); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--r8); padding: 8px 11px; font-size: .9rem; }
+  .src::placeholder { color: var(--muted); }
+  .composer .add { margin-left: auto; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 9px 16px; font-weight: 600; }
+  .composer .add:hover { background: var(--accent-h); }
+  .composer .foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .composer .hint { color: var(--muted); font-size: .8rem; }
+
+  /* peek line (Home, collapsed) */
+  .peek { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow); }
+  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
+  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
+  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--muted); }
+
+  /* ---- section heading + label quick-filters ---- */
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 12px; flex-wrap: wrap; }
+  .sec-head h2 { font-size: 1.05rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sec-head .all-door { margin-left: auto; color: var(--accent); font-weight: 600; font-size: .88rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background:none; border:none; }
+  .sec-head .all-door:hover { text-decoration: underline; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .chip { background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; font-size: .85rem; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+
+  /* ---- trails grid (Home) ---- */
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 12px; }
+  .trail { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 14px 16px; box-shadow: var(--shadow); text-align: left; width: 100%; }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); transform: translateY(-1px); transition: transform .12s ease, border-color .12s ease; }
+  .trail .body { flex: 1; min-width: 0; }
+  .trail .name { font-weight: 600; font-size: .98rem; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trail .meta { color: var(--muted); font-size: .8rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .trail .tag { border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .72rem; }
+  .ring { --p: 0; width: 46px; aspect-ratio: 1; flex: none; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+  .ring.done { background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0); }
+  .ring.idle { background: conic-gradient(var(--muted) calc(var(--p) * 1%), var(--line) 0); }
+  .ring::before { content: ''; grid-area: 1/1; width: 72%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); }
+  .ring b { grid-area: 1/1; font-size: .72rem; z-index: 1; }
+  .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
+  .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- All: the store / triage surface ---- */
+  .all-toolbar { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; margin: 2px 0 16px; }
+  .all-toolbar .dot { width:6px; height:6px; border-radius:50%; background: var(--accent); flex:none; }
+  .items { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:12px 16px; box-shadow: var(--shadow); flex-wrap: wrap; }
+  .item .lead { flex:1; min-width: 12rem; }
+  .item .it-title { font-weight:600; font-size:.96rem; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .item .it-title a { color: var(--muted); text-decoration:none; font-size:.82rem; }
+  .item .it-title a:hover { color: var(--accent); }
+  .item .it-sub { margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .type-tag { border:1px solid var(--line); border-radius:5px; padding:1px 7px; font-size:.72rem; color:var(--muted); text-transform:capitalize; }
+  .lbl-chip { border:1px solid var(--line); border-radius:999px; padding:1px 9px; font-size:.72rem; color:var(--muted); }
+  .lbl-chip::before { content:"#"; opacity:.55; }
+  /* target date — past target is quiet-slate, NEVER red (theme C) */
+  .due { font-size:.75rem; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:1px 7px; }
+  .due.past { color: var(--past); border-color: color-mix(in srgb, var(--past) 45%, var(--line)); background: color-mix(in srgb, var(--past) 8%, transparent); font-weight:600; }
+  /* status segmented control */
+  .status { display:inline-flex; border:1px solid var(--field-line); border-radius:999px; overflow:hidden; }
+  .status button { background:transparent; color:var(--muted); border:none; padding:5px 11px; font-size:.76rem; }
+  .status button + button { border-left:1px solid var(--field-line); }
+  .status button.on { background: color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); font-weight:600; }
+  .status button.on.done { background: color-mix(in srgb, var(--done) 15%, transparent); color: var(--done); }
+  :root[data-theme="dark"] .status button.on { color: var(--ink); }
+  .item .stop-btn { display:inline-flex; align-items:center; gap:5px; background:transparent; border:1px dashed var(--field-line); color:var(--muted); border-radius:var(--r8); padding:6px 11px; font-size:.8rem; }
+  .item .stop-btn:hover { border-color:var(--accent); color:var(--accent); border-style:solid; }
+  .empty { text-align:center; color:var(--muted); border:1px dashed var(--field-line); border-radius:var(--r10); padding:44px 20px; }
+  .empty .big { font-size:1.6rem; margin-bottom:6px; }
+  .empty .sub { font-size:.9rem; }
+
+  /* ---- Trail: reskinned Adventure map (cool-neutral C, not warm survey-chart) ---- */
+  .trail-head { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+  .trail-head h1 { font-size: clamp(1.3rem, 3vw, 1.7rem); }
+  .trail-head .th-meta { color:var(--muted); font-size:.85rem; }
+  .canvas-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--r10); background: var(--surface); box-shadow: var(--shadow); }
+  .canvas { position:relative; width: 1040px; height: 420px;
+    /* faint COOL graticule — the Quiet Focus stand-in for the warm survey texture */
+    background-image: linear-gradient(color-mix(in srgb, var(--line) 60%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 60%, transparent) 1px, transparent 1px);
+    background-size: 40px 40px; background-position: -1px -1px; }
+  .canvas svg { position:absolute; inset:0; pointer-events:none; }
+  .node { position:absolute; transform: translate(-50%, -50%); width: 150px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .node .badge { font-size:.55rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color: var(--accent); }
+  .node .disc { width:58px; height:58px; border-radius:50%; display:grid; place-items:center; background: conic-gradient(var(--fill, var(--muted)) calc(var(--p,0)*1%), var(--line) 0); cursor:pointer; }
+  .node .disc::before { content:''; grid-area:1/1; width:76%; aspect-ratio:1; border-radius:50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+  .node .disc b { grid-area:1/1; z-index:1; font-size:.72rem; font-weight:700; color:var(--ink); }
+  /* done = a sealed green medallion (solid disc), not a ring */
+  .node.done .disc { background: linear-gradient(160deg, var(--done), color-mix(in srgb, var(--done) 72%, #000)); box-shadow: 0 1px 3px color-mix(in srgb, var(--done) 45%, transparent); }
+  .node.done .disc::before { width:64%; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.35); }
+  .node.done .disc b { color: #fff; }
+  .node.here .disc { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .node .nm { font-size:.76rem; font-weight:600; text-align:center; line-height:1.2; color: var(--ink); }
+  .node.done .nm { color: color-mix(in srgb, var(--done) 60%, var(--ink)); }
+  .node .author { display:flex; gap:5px; opacity:0; transition:opacity .12s ease; }
+  .node:hover .author { opacity:1; }
+  .node .author button { width:26px; height:26px; display:inline-grid; place-items:center; border:1px solid var(--field-line); background:var(--surface); color:var(--muted); border-radius:6px; font-size:.78rem; }
+  .node .author button:hover { border-color:var(--accent); color:var(--accent); }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; align-items:center; color:var(--muted); font-size:.8rem; margin-top:12px; }
+  .legend .k { display:inline-flex; align-items:center; gap:7px; }
+  .legend .sw { width:14px; height:14px; border-radius:50%; }
+  .legend .sw.done { background: var(--done); }
+  .legend .sw.here { background: var(--surface); box-shadow: 0 0 0 2px var(--accent); }
+  .legend .sw.ahead { width:22px; height:0; border-top:3px dotted var(--muted); border-radius:0; }
+
+  /* ---- Stop drawer (open a Stop → its Items) ---- */
+  .drawer { position: fixed; z-index: 41; top: 60px; right: clamp(16px, 4vw, 40px); width: min(28rem, calc(100vw - 32px)); background: var(--surface); border:1px solid var(--line); border-radius: var(--r10); box-shadow: 0 24px 60px -20px rgba(10,12,30,.5); padding: 16px; display:none; max-height: calc(100vh - 90px); overflow:auto; }
+  .drawer.open { display:block; }
+  .drawer .dh { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:12px; }
+  .drawer .dh .x { background:transparent; border:none; color:var(--muted); font-size:1.2rem; line-height:1; }
+  .drawer .di { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--line); }
+  .drawer .di .tick { width:18px; height:18px; border-radius:50%; flex:none; border:1.5px solid var(--field-line); display:grid; place-items:center; font-size:.6rem; }
+  .drawer .di .tick.done { background:var(--done); border-color:var(--done); color:#fff; }
+  .drawer .di .tick.prog { border-color:var(--accent); color:var(--accent); }
+  .drawer .di .dt { font-size:.88rem; }
+  .drawer .di.done .dt { color: var(--muted); text-decoration: line-through; }
+
+  /* ---- capture overlay (non-navigating; reachable everywhere) ---- */
+  .scrim { position: fixed; inset: 0; background: rgba(10,12,20,.42); backdrop-filter: blur(2px); z-index: 40; display: none; }
+  .scrim.open { display: block; }
+  .overlay { position: fixed; z-index: 41; top: 64px; right: clamp(16px, 4vw, 40px); width: min(30rem, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: 0 24px 60px -20px rgba(10,12,30,.5); padding: 16px; display: none; }
+  .overlay.open { display: block; }
+  .overlay .oh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .overlay .oh h3 { font-size: 1rem; }
+  .overlay .oh .x { background: transparent; border: none; color: var(--muted); font-size: 1.2rem; line-height: 1; }
+  .overlay .stay { margin-top: 10px; font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .overlay .stay .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--done); }
+
+  /* ---- floating SURFACE switcher (dev control, not the design) ---- */
+  .switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 4px; background: rgba(18,20,28,.94); color: #fff; border-radius: 999px; padding: 5px 6px; box-shadow: 0 12px 34px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px); }
+  .switch button { appearance: none; border: none; background: rgba(255,255,255,.1); color: #fff; height: 32px; border-radius: 999px; display: inline-grid; place-items: center; padding: 0 10px; }
+  .switch button:hover { background: rgba(255,255,255,.2); }
+  .switch .lbl { padding: 0 12px; font-size: .82rem; font-weight: 600; white-space: nowrap; min-width: 11.5rem; text-align: center; }
+  .switch .lbl small { color: rgba(255,255,255,.6); font-weight: 500; }
+  .switch .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
+
+  @media (max-width: 560px) {
+    .cap-btn .txt { display: none; }
+    .composer .add { margin-left: 0; }
+    .item .status button { padding: 5px 8px; }
+  }
+</style>
+</head>
+<body>
+  <!-- ===== LOCKED chrome: slim top bar (identical on every surface) ===== -->
+  <div class="topbar">
+    <button class="mark" id="goHome" title="Home — the hub"><span class="glyph"></span>Unshelf</button>
+    <span class="spacer"></span>
+    <button class="cap-btn" id="topCapture" title="Capture — opens here, never navigates you away">
+      <span class="plus">+</span><span class="txt">Capture</span>
+    </button>
+    <span class="avatar" title="Account (Clerk UserButton)">RG</span>
+  </div>
+
+  <main class="page">
+    <!-- ============================= HOME ============================= -->
+    <section data-surface="home" class="hidden">
+      <p class="eyebrow">Home · the hub</p>
+      <h1 class="greet">Welcome back</h1>
+      <p class="greet-sub">Capture on the fly, or dive into a Trail.</p>
+
+      <!-- Peek Capture (the chosen Home capture, #56 Variant C) -->
+      <button class="peek" id="peek"><span class="plus">+</span><span>Capture something…</span><span class="kbd">press C</span></button>
+      <div class="composer hidden" id="peekComposer" style="margin-top:10px;"></div>
+
+      <div class="sec-head">
+        <h2>Your Trails</h2><span class="count tnum">5 active</span>
+        <button class="all-door" data-goall>Browse All <span class="tnum">12</span> →</button>
+      </div>
+      <div class="filters" id="homeFilters"></div>
+      <div class="trails" id="trails"></div>
+      <button class="new-trail">+ New Trail</button>
+    </section>
+
+    <!-- ============================= ALL ============================= -->
+    <section data-surface="all" class="hidden">
+      <button class="crumb" id="allBack">‹ Home</button>
+      <p class="eyebrow">All · the store</p>
+      <h1 class="greet">All Items</h1>
+      <p class="greet-sub">Every Item, filterable by label. Triage here — set Status, target date, apply labels, pull into Stops.</p>
+      <div class="filters" id="allFilters"></div>
+      <div class="all-toolbar"><span class="dot"></span> <span id="allCount"></span> · one shared record — a Status you change here is the same Status seen on the Trail.</div>
+      <ul class="items" id="items"></ul>
+      <div class="empty hidden" id="allEmpty"><div class="big">∅</div><div class="sub" id="allEmptyMsg"></div></div>
+    </section>
+
+    <!-- ============================ TRAIL ============================ -->
+    <section data-surface="trail" class="hidden">
+      <button class="crumb" id="trailBack">‹ Home</button>
+      <div class="trail-head">
+        <div class="ring" id="trailRing"><b class="tnum">7/12</b></div>
+        <div>
+          <p class="eyebrow" style="margin-bottom:2px;">Trail</p>
+          <h1>Learn Rust</h1>
+          <div class="th-meta">7 of 12 items done · 6 stops · one fork</div>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <div class="canvas" id="canvas"></div>
+      </div>
+      <div class="legend">
+        <span class="k"><span class="sw done"></span> Done (ground covered)</span>
+        <span class="k"><span class="sw here"></span> Where you are now</span>
+        <span class="k"><span class="sw ahead"></span> Ahead (not yet walked)</span>
+        <span class="k">Tap a stop for its Items · ＋ next · ⑃ fork · ⇢ link</span>
+      </div>
+      <p class="greet-sub" style="margin-top:14px; font-size:.82rem;">Layout is derived from the topology (ADR-0010) — nothing stored. Scrolls sideways; view-only on the phone (ADR-0008).</p>
+    </section>
+  </main>
+
+  <!-- ===== Stop drawer (open a Stop → its Items) ===== -->
+  <div class="scrim" id="drawerScrim"></div>
+  <div class="drawer" id="drawer" role="dialog" aria-label="Stop items">
+    <div class="dh"><div><h3 id="drawerTitle">Stop</h3><div class="th-meta" id="drawerSub"></div></div><button class="x" id="drawerClose" aria-label="Close">×</button></div>
+    <div id="drawerItems"></div>
+  </div>
+
+  <!-- ===== capture overlay (non-navigating) — from the top bar, every surface ===== -->
+  <div class="scrim" id="scrim"></div>
+  <div class="overlay" id="overlay" role="dialog" aria-label="Capture">
+    <div class="oh"><h3>Capture</h3><button class="x" id="closeOverlay" aria-label="Close">×</button></div>
+    <div class="composer" id="composerOverlay"></div>
+    <p class="stay"><span class="dot"></span> Drops into <b>&nbsp;All</b>&nbsp; — you stay right where you were.</p>
+  </div>
+
+  <!-- ===== surface switcher (dev control) ===== -->
+  <div class="switch">
+    <button id="prev" aria-label="Previous surface">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next surface">→</button>
+    <span class="sep"></span>
+    <button id="theme" title="Toggle light / dark (both ship as peers)">◐ Theme</button>
+  </div>
+
+<script>
+  // ---------------- mock data ----------------
+  const TYPES = ["Article", "Video", "Playlist", "Course", "Book", "Other"]; // = shared Type enum
+  const LABELS = ["All", "reference", "video", "book", "how-to", "deep-dive", "archived"]; // "archived" has 0 Items → empty state
+
+  const TRAILS = [
+    { name: "Learn Rust",            done: 7,  total: 12, tags: ["reference","deep-dive"] },
+    { name: "Kitchen remodel",       done: 3,  total: 9,  tags: ["how-to","video"] },
+    { name: "Marathon base build",   done: 11, total: 16, tags: ["reference"] },
+    { name: "Reading · 2026",        done: 4,  total: 20, tags: ["book"] },
+    { name: "Side project: unshelf", done: 5,  total: 8,  tags: ["reference"] },
+  ];
+
+  // st: 0 not started · 1 in progress · 2 done. due: {d, past}. src: has a link.
+  const ITEMS = [
+    { t:"The Rust Book — Ch.10: Generic Types", type:"Article", src:1, st:1, due:{d:"Jul 25", past:false}, labels:["reference","deep-dive"] },
+    { t:"Crust of Rust: Lifetime Annotations", type:"Video", src:1, st:0, due:null, labels:["video","deep-dive"] },
+    { t:"Tokio — the async runtime tutorial", type:"Article", src:1, st:0, due:{d:"Jul 10", past:true}, labels:["reference"] },
+    { t:"Designing Data-Intensive Applications", type:"Book", src:0, st:0, due:null, labels:["book","reference","deep-dive"] },
+    { t:"A Philosophy of Software Design", type:"Book", src:0, st:1, due:{d:"Jul 05", past:true}, labels:["book","deep-dive"] },
+    { t:"Kitchen work-triangle basics", type:"Article", src:1, st:2, due:null, labels:["how-to","reference"] },
+    { t:"Zone-2 base building, explained", type:"Video", src:1, st:2, due:null, labels:["video"] },
+    { t:"Daniels' Running Formula", type:"Book", src:0, st:1, due:{d:"Aug 01", past:false}, labels:["book","reference"] },
+    { t:"Refactoring UI", type:"Book", src:1, st:2, due:null, labels:["book","reference"] },
+    { t:"conic-gradient progress rings", type:"Article", src:1, st:0, due:null, labels:["reference","how-to"] },
+    { t:"Backsplash tile install, start to finish", type:"Video", src:1, st:1, due:null, labels:["video","how-to"] },
+    { t:"Quiet Focus — the theme tokens", type:"Article", src:0, st:1, due:null, labels:["reference"] },
+  ];
+
+  // Trail "Learn Rust": a DAG with one fork (Ownership → Async | Macros) and a join (→ Build).
+  const STOPS = [
+    { id:"s1", nm:"Foundations",           done:4, total:4, x:110, y:150, items:["Install & cargo","Hello, ownership","Primitive types","cargo test"] },
+    { id:"s2", nm:"Ownership & Borrowing",  done:3, total:3, x:320, y:150, items:["Move semantics","Borrow checker","Lifetimes intro"] },
+    { id:"s3", nm:"Async / Tokio",          done:2, total:4, x:540, y:120, items:["Futures 101","async/await","Tokio runtime","select! & channels"] },
+    { id:"s4", nm:"Macros",                 done:0, total:3, x:540, y:300, items:["macro_rules!","Derive macros","Proc macros"] },
+    { id:"s5", nm:"Build a project",        done:0, total:5, x:770, y:210, items:["Scaffold","CLI parsing","Error handling","Tests","Docs"] },
+    { id:"s6", nm:"Ship it",                done:0, total:2, x:960, y:210, items:["Package & publish","Write the README"] },
+  ];
+  const EDGES = [ ["s1","s2"], ["s2","s3"], ["s2","s4"], ["s3","s5"], ["s4","s5"], ["s5","s6"] ];
+
+  const SURFACES = [
+    { key:"home",  name:"Home · the hub" },
+    { key:"all",   name:"All · the store" },
+    { key:"trail", name:"Trail · Learn Rust" },
+  ];
+
+  // ---------------- shared builders ----------------
+  function composerMarkup() {
+    return `
+      <input class="title-in" placeholder="What did you find? (title)" />
+      <div class="row">
+        <div class="type-pills">${TYPES.map((t,i)=>`<button class="type-pill${i===0?' on':''}" data-type>${t}</button>`).join("")}</div>
+        <input class="src" placeholder="Source — where'd you find it?" />
+        <button class="add">Add to All</button>
+      </div>
+      <div class="foot"><span class="hint">Label it later during triage in All · pure intake for now (#54).</span></div>`;
+  }
+  function wireComposer(el) {
+    el.innerHTML = composerMarkup();
+    el.querySelectorAll("[data-type]").forEach(p => p.addEventListener("click", () => {
+      el.querySelectorAll("[data-type]").forEach(x => x.classList.remove("on"));
+      p.classList.add("on");
+    }));
+  }
+
+  // ---------------- HOME ----------------
+  function ring(done, total, cls) {
+    const p = Math.round((done/total)*100);
+    const k = done===total ? "ring done" : (cls || "ring");
+    return `<div class="${k}" style="--p:${p}"><b class="tnum">${done}/${total}</b></div>`;
+  }
+  document.getElementById("trails").innerHTML = TRAILS.map(t => `
+    <button class="trail" ${t.name==="Learn Rust"?'data-opentrail':''}>
+      ${ring(t.done, t.total)}
+      <span class="body">
+        <div class="name">${t.name}</div>
+        <div class="meta"><span class="tnum">${t.total-t.done} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div>
+      </span>
+    </button>`).join("");
+
+  function labelChips(target, onPick) {
+    target.innerHTML = LABELS.map((l,i)=>`<button class="chip${i===0?' on':''}" data-label="${l}">${l==="All"?"All":"#"+l}</button>`).join("");
+    target.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+      target.querySelectorAll(".chip").forEach(x=>x.classList.remove("on")); c.classList.add("on");
+      onPick && onPick(c.dataset.label);
+    }));
+  }
+  // Home label chips are quick-filters INTO All (the #54 "door")
+  labelChips(document.getElementById("homeFilters"), (label) => { setSurface("all"); applyAllFilter(label); });
+
+  // Peek expands into the composer
+  const peek = document.getElementById("peek"), peekComposer = document.getElementById("peekComposer");
+  wireComposer(peekComposer);
+  function expandPeek(){ peek.classList.add("hidden"); peekComposer.classList.remove("hidden"); peekComposer.querySelector(".title-in").focus(); }
+  function resetPeek(){ peek.classList.remove("hidden"); peekComposer.classList.add("hidden"); }
+  peek.addEventListener("click", expandPeek);
+
+  // ---------------- ALL ----------------
+  const STATUS_LABELS = ["Not started", "In progress", "Done"];
+  function itemRow(it, idx) {
+    const statusBtns = STATUS_LABELS.map((s,i)=>`<button data-st="${i}" class="${i===it.st?('on'+(i===2?' done':'')):''}">${s}</button>`).join("");
+    const due = it.due ? `<span class="due${it.due.past?' past':''}">${it.due.past?'⚑ ':''}due ${it.due.d}</span>` : "";
+    const labels = it.labels.map(l=>`<span class="lbl-chip">${l}</span>`).join("");
+    const link = it.src ? `<a href="#" title="Source">↗ source</a>` : "";
+    return `<li class="item" data-idx="${idx}">
+      <div class="lead">
+        <div class="it-title">${it.t} ${link}</div>
+        <div class="it-sub"><span class="type-tag">${it.type}</span>${due}${labels}</div>
+      </div>
+      <div class="status">${statusBtns}</div>
+      <button class="stop-btn">＋ Stop</button>
+    </li>`;
+  }
+  let allFilter = "All";
+  function matches(it, f) { return f === "All" || it.labels.includes(f); }
+  function renderAll() {
+    const list = ITEMS.map((it,i)=>({it,i})).filter(x => matches(x.it, allFilter));
+    const ul = document.getElementById("items"), empty = document.getElementById("allEmpty");
+    document.getElementById("allCount").textContent =
+      (allFilter==="All" ? ITEMS.length + " items" : list.length + " with #" + allFilter);
+    if (list.length === 0) {
+      ul.innerHTML = ""; empty.classList.remove("hidden");
+      document.getElementById("allEmptyMsg").textContent = `Nothing tagged #${allFilter} yet — apply the label to an Item during triage.`;
+      return;
+    }
+    empty.classList.add("hidden");
+    ul.innerHTML = list.map(x => itemRow(x.it, x.i)).join("");
+    ul.querySelectorAll(".item").forEach(row => {
+      const it = ITEMS[+row.dataset.idx];
+      row.querySelectorAll("[data-st]").forEach(b => b.addEventListener("click", () => {
+        it.st = +b.dataset.st; renderAll(); // one shared record — mutate in place
+      }));
+    });
+  }
+  function applyAllFilter(label) {
+    allFilter = label;
+    const chips = document.getElementById("allFilters");
+    chips.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.label === label));
+    renderAll();
+  }
+  labelChips(document.getElementById("allFilters"), applyAllFilter);
+  document.querySelectorAll("[data-goall]").forEach(b => b.addEventListener("click", () => { setSurface("all"); applyAllFilter("All"); }));
+  renderAll();
+
+  // ---------------- TRAIL (reskinned Adventure map) ----------------
+  const stopById = Object.fromEntries(STOPS.map(s => [s.id, s]));
+  const isDone = s => s.total>0 && s.done>=s.total;
+  const isUnderway = s => s.done>0 && s.done<s.total;
+  // frontier = first not-done stop whose predecessors are all done → "You are here"
+  const preds = id => EDGES.filter(e=>e[1]===id).map(e=>e[0]);
+  const frontier = STOPS.find(s => !isDone(s) && preds(s.id).every(p => isDone(stopById[p])));
+
+  function seg(a, b, walked) {
+    const mx = (a.x+b.x)/2;
+    return `<path d="M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}"
+      fill="none" stroke="${walked?'var(--accent)':'var(--muted)'}" stroke-width="${walked?4:3}"
+      stroke-linecap="round" ${walked?'':'stroke-dasharray="1 11" opacity="0.7"'} />`;
+  }
+  function renderTrail() {
+    const canvas = document.getElementById("canvas");
+    // edges: dotted "ahead" for all; solid "walked" overlaid where the from-stop is done
+    const ahead = EDGES.map(([f,t]) => seg(stopById[f], stopById[t], false)).join("");
+    const walked = EDGES.filter(([f]) => isDone(stopById[f])).map(([f,t]) => seg(stopById[f], stopById[t], true)).join("");
+    const svg = `<svg width="1040" height="420" aria-hidden="true">${ahead}${walked}</svg>`;
+    const nodes = STOPS.map(s => {
+      const done = isDone(s), here = frontier && frontier.id===s.id;
+      const cls = "node" + (done?" done":"") + (here?" here":"");
+      const fill = done ? "var(--done)" : (here||isUnderway(s) ? "var(--accent)" : "var(--muted)");
+      const p = s.total>0 ? Math.round(s.done/s.total*100) : 0;
+      return `<div class="${cls}" style="left:${s.x}px; top:${s.y}px;">
+        ${here?'<div class="badge">You are here</div>':''}
+        <div class="disc" data-stop="${s.id}" style="--p:${p}; --fill:${fill};" title="${s.done} of ${s.total} items done"><b class="tnum">${s.done}/${s.total}</b></div>
+        <div class="nm">${s.nm}</div>
+        <div class="author"><button title="Add the next stop">＋</button><button title="Fork a branch">⑃</button><button title="Link to a stop">⇢</button></div>
+      </div>`;
+    }).join("");
+    canvas.innerHTML = svg + nodes;
+    canvas.querySelectorAll("[data-stop]").forEach(d => d.addEventListener("click", () => openStop(d.dataset.stop)));
+  }
+  renderTrail();
+
+  // Stop drawer: open a Stop → its Items
+  const drawer = document.getElementById("drawer"), drawerScrim = document.getElementById("drawerScrim");
+  function openStop(id) {
+    const s = stopById[id];
+    document.getElementById("drawerTitle").textContent = s.nm;
+    document.getElementById("drawerSub").textContent = `${s.done} of ${s.total} items done · a waypoint on Learn Rust`;
+    document.getElementById("drawerItems").innerHTML = s.items.map((t,i) => {
+      const isD = i < s.done, isP = !isD && i === s.done && isUnderway(s);
+      const tick = isD ? '<span class="tick done">✓</span>' : (isP ? '<span class="tick prog">◒</span>' : '<span class="tick"></span>');
+      return `<div class="di${isD?' done':''}">${tick}<span class="dt">${t}</span></div>`;
+    }).join("");
+    drawer.classList.add("open"); drawerScrim.classList.add("open");
+  }
+  function closeStop(){ drawer.classList.remove("open"); drawerScrim.classList.remove("open"); }
+  document.getElementById("drawerClose").addEventListener("click", closeStop);
+  drawerScrim.addEventListener("click", closeStop);
+
+  document.getElementById("trailRing").style.setProperty("--p", "58");
+
+  // ---------------- capture overlay (non-navigating) ----------------
+  const scrim = document.getElementById("scrim"), overlay = document.getElementById("overlay");
+  wireComposer(document.getElementById("composerOverlay"));
+  function openOverlay(){ scrim.classList.add("open"); overlay.classList.add("open"); overlay.querySelector(".title-in").focus(); }
+  function closeOverlay(){ scrim.classList.remove("open"); overlay.classList.remove("open"); }
+  document.getElementById("topCapture").addEventListener("click", openOverlay);
+  document.getElementById("closeOverlay").addEventListener("click", closeOverlay);
+  scrim.addEventListener("click", closeOverlay);
+
+  // ---------------- surface switching ----------------
+  function readSurface(){
+    const k = new URLSearchParams(location.search).get("surface");
+    const i = SURFACES.findIndex(s => s.key === k);
+    return i>=0 ? i : 0;
+  }
+  let cur = readSurface();
+  function render(){
+    const s = SURFACES[cur];
+    document.querySelectorAll("[data-surface]").forEach(sec => sec.classList.toggle("hidden", sec.dataset.surface !== s.key));
+    document.getElementById("lbl").innerHTML = `<small>${s.name}</small>`;
+    if (s.key !== "home") resetPeek();
+    closeStop();
+    try {
+      const p = new URLSearchParams(location.search); p.set("surface", s.key);
+      history.replaceState(null, "", location.pathname + "?" + p.toString());
+    } catch(_) {}
+  }
+  function setSurface(key){ const i = SURFACES.findIndex(s=>s.key===key); if(i>=0){ cur=i; render(); } }
+  function go(delta){ cur = (cur + delta + SURFACES.length) % SURFACES.length; render(); }
+  document.getElementById("prev").addEventListener("click", () => go(-1));
+  document.getElementById("next").addEventListener("click", () => go(1));
+  document.getElementById("goHome").addEventListener("click", () => setSurface("home"));
+  document.getElementById("allBack").addEventListener("click", () => setSurface("home"));
+  document.getElementById("trailBack").addEventListener("click", () => setSurface("home"));
+  document.querySelectorAll("[data-opentrail]").forEach(b => b.addEventListener("click", () => setSurface("trail")));
+
+  // ---------------- theme toggle ----------------
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark";
+    if (dark) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", "dark");
+  });
+
+  // ---------------- keyboard ----------------
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+    if (e.key === "Escape") { closeOverlay(); closeStop(); return; }
+    if (typing) return;
+    if (e.key === "ArrowLeft") go(-1);
+    else if (e.key === "ArrowRight") go(1);
+    else if (e.key.toLowerCase() === "c") { SURFACES[cur].key==="home" ? expandPeek() : openOverlay(); }
+  });
+
+  render();
+</script>
+</body>
+</html>
