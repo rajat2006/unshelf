@@ -63,6 +63,23 @@ jobs:
             exit 0
           fi
 
+          # Sub-issues (issues WITH a parent) belong to the parent PRD, which owns
+          # the run — you label the parent, not the child. Refuse below. The parent
+          # is queried via GraphQL; the REST issue object doesn't expose it.
+          owner="${GH_REPO%/*}"
+          repo="${GH_REPO#*/}"
+          parent_number=$(gh api graphql \
+            -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
+            -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
+            --jq '.data.repository.issue.parent.number // empty' 2>/dev/null || echo "")
+          if [ -n "$parent_number" ]; then
+            echo "Issue is a sub-issue of #${parent_number} — refusing direct run."
+            echo "parent_number=$parent_number" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=subissue" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Pre-flight: if an open PR already closes this issue, refuse rather than
           # force-push a second branch and collide on `gh pr create`. Keeps the
           # one-issue → one-branch → one-PR invariant.
@@ -79,6 +96,16 @@ jobs:
 
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse — issue is a sub-issue of another issue
+        if: steps.gate.outputs.refusal == 'subissue'
+        env:
+          PARENT_NUMBER: ${{ steps.gate.outputs.parent_number }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:implement\`: this issue is a sub-issue of #${PARENT_NUMBER}. Sub-issues are not labeled directly — add \`agent:implement\` to the parent PRD instead. Cleared \`agent:implement\` and added \`agent:blocked\`."
 
       - name: Refuse — an open PR already targets this issue
         if: steps.gate.outputs.refusal == 'existing_pr'

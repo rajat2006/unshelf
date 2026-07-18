@@ -127,7 +127,7 @@ seam; the runner-side scripts + prompts are documented in
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
-| `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; a run is refused if an open PR already targets the issue. |
+| `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; sub-issues (with a parent) and issues that already have an open PR are refused. |
 
 ## Cost model
 
