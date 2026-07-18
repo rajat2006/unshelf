@@ -34,6 +34,7 @@ RUN pnpm --filter @unshelf/api deploy --prod --legacy /app/deploy
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM base AS runtime
 ENV NODE_ENV=production
+# No-op (inherited from `base`); restated to document where the COPYs land.
 WORKDIR /app
 # Run as the unprivileged user that ships with the node image.
 USER node
