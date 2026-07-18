@@ -119,6 +119,16 @@ absent, and it is deliberately **not** used for chain-triggering label adds.
 (subscription auth replaces them). As above, setting `OPENAI_KEY`/`OPENAI_API_KEY` actively
 breaks the Codex subscription path — leave them unset.
 
+## Workflows
+
+Each capability is one `.github/workflows/agent-*.yml` on top of the `.sandcastle/`
+seam; the runner-side scripts + prompts are documented in
+[`.sandcastle/README.md`](../../.sandcastle/README.md).
+
+| Workflow | Trigger | Does |
+| --- | --- | --- |
+| `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; sub-issues (with a parent) and issues that already have an open PR are refused. |
+
 ## Cost model
 
 Two flat subscription seats (~$0 marginal per issue, usage-capped) plus metered Actions
