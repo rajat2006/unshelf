@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Where do labels live on Home? (prototype #59)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #59, follow-up question raised while reacting to
+  the anchor (prototype-screens.html): the label quick-filters in the CENTRE of Home
+  read as weird / like they filter the Trails. Where should labels live on Home?
+
+  Three STRUCTURALLY different placements, one Home, switch via the floating bar
+  (?variant=A|B|C, or the arrow keys). Dark/light in the pill. Trails and the Peek
+  capture are identical across all three — only label placement changes.
+
+    A — Left label rail      persistent vertical sidebar of labels (the instinct).
+    B — Centre store block    labels in an "All · the store" section (today's anchor).
+    C — Top-bar label menu    labels tucked into a "Labels ▾" chrome control; page stays clean.
+
+  Locked upstream, unchanged here: theme = Quiet Focus (#55); chrome = slim top bar,
+  Home-as-hub (#56, sidebar-for-Trails rejected); labels are an axis over All / Items,
+  never over Trails (#54). This asks ONLY: where on Home do the label quick-filters sit.
+
+  The trade-off to weigh (from #56's sidebar reasoning): a rail is always-on chrome that
+  grows with label count — hence the counts shown, and a deliberately longish list.
+  Self-contained, no build. Never merged to main.
+-->
+<style>
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2;
+    --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body { background: var(--bg); color: var(--ink); font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.5; padding-bottom: 6rem; transition: background .2s ease, color .2s ease; }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  input { font: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* slim top bar (#56) */
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 12px clamp(16px, 4vw, 40px); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration: none; letter-spacing: -0.02em; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  .tb-labels { position:relative; display:inline-flex; align-items:center; gap:6px; background:transparent; border:1px solid var(--field-line); color:var(--ink); border-radius:var(--r8); padding:8px 12px; font-weight:600; font-size:.9rem; }
+  .tb-labels:hover { border-color:var(--accent); color:var(--accent); }
+  .cap-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem; box-shadow: 0 1px 2px rgba(20,24,40,.16); }
+  .cap-btn:hover { background: var(--accent-h); }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); font-weight: 700; font-size: .82rem; display: inline-grid; place-items: center; }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+
+  /* label menu popover (variant C) */
+  .menu { position:absolute; top:calc(100% + 8px); right:0; width:15rem; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); box-shadow:0 20px 50px -18px rgba(10,12,30,.5); padding:8px; display:none; z-index:30; }
+  .menu.open { display:block; }
+  .menu .mh { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:6px 8px 8px; }
+  .menu .mrow { display:flex; align-items:center; justify-content:space-between; width:100%; background:transparent; border:none; color:var(--ink); border-radius:var(--r6); padding:8px 10px; font-size:.9rem; }
+  .menu .mrow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent); }
+  .menu .mrow .c { color:var(--muted); font-size:.8rem; }
+  .menu .mrow:hover .c { color:var(--accent); }
+
+  /* shell */
+  .page { max-width: 66rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 24px; }
+
+  /* two-column layout when the label rail is present (variant A) */
+  .home-wrap { display:block; }
+  .home-wrap.two-col { display:grid; grid-template-columns: 15rem 1fr; gap: clamp(20px, 3vw, 40px); align-items:start; }
+
+  /* left label rail (variant A) */
+  .rail { position:sticky; top: 74px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:12px; box-shadow:var(--shadow); }
+  .rail .rh { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:4px 8px 10px; }
+  .rail .rrow { display:flex; align-items:center; justify-content:space-between; width:100%; background:transparent; border:none; color:var(--ink); border-radius:var(--r6); padding:8px 10px; font-size:.92rem; text-align:left; }
+  .rail .rrow .c { color:var(--muted); font-size:.8rem; }
+  .rail .rrow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent); }
+  .rail .rrow:hover .c { color:var(--accent); }
+  .rail .rrow.on { background: var(--accent); color: var(--on-accent); font-weight:600; }
+  .rail .rrow.on .c { color: color-mix(in srgb, var(--on-accent) 75%, var(--accent)); }
+  .rail .rdoor { border-top:1px solid var(--line); margin-top:8px; padding-top:8px; }
+  .rail .rrow.door { color:var(--accent); font-weight:600; }
+
+  /* peek capture */
+  .peek { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow); margin-bottom: 8px; }
+  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
+  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
+  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; }
+
+  /* section heads + trails grid */
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 26px 0 12px; flex-wrap: wrap; }
+  .sec-head h2 { font-size: 1.05rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sec-head .all-door { margin-left: auto; color: var(--accent); font-weight: 600; font-size: .88rem; background:none; border:none; }
+  .sec-head .all-door:hover { text-decoration: underline; }
+  .sub-h { color: var(--muted); font-weight: 400; font-size: .9rem; }
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 12px; }
+  .trail { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 14px 16px; box-shadow: var(--shadow); text-align: left; width: 100%; }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .trail .body { flex: 1; min-width: 0; }
+  .trail .name { font-weight: 600; font-size: .98rem; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trail .meta { color: var(--muted); font-size: .8rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .trail .tag { border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .72rem; }
+  .ring { --p: 0; width: 44px; aspect-ratio: 1; flex: none; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+  .ring.done { background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0); }
+  .ring::before { content: ''; grid-area: 1/1; width: 72%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); }
+  .ring b { grid-area: 1/1; font-size: .7rem; z-index: 1; }
+  .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
+  .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* centre store block (variant B) */
+  .store-block { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .store-block .sec-head { margin-top: 0; }
+  .store-hint { color: var(--muted); font-size: .88rem; margin: 0 0 12px; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; font-size: .85rem; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip .c { opacity:.6; margin-left:4px; }
+
+  /* toast showing what a label click does (any placement) */
+  .toast { position:fixed; left:50%; bottom:74px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:.82rem; padding:8px 14px; border-radius:999px; box-shadow:0 10px 30px rgba(0,0,0,.3); opacity:0; transition:opacity .18s ease; z-index:50; pointer-events:none; }
+  .toast.show { opacity:1; }
+
+  /* floating variant switcher (dev control) */
+  .switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 4px; background: rgba(18,20,28,.94); color: #fff; border-radius: 999px; padding: 5px 6px; box-shadow: 0 12px 34px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px); }
+  .switch button { appearance: none; border: none; background: rgba(255,255,255,.1); color: #fff; height: 32px; border-radius: 999px; display: inline-grid; place-items: center; padding: 0 10px; }
+  .switch button:hover { background: rgba(255,255,255,.2); }
+  .switch .lbl { padding: 0 12px; font-size: .82rem; font-weight: 600; white-space: nowrap; min-width: 12.5rem; text-align: center; }
+  .switch .lbl small { color: rgba(255,255,255,.6); font-weight: 500; }
+  .switch .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
+
+  @media (max-width: 640px) { .home-wrap.two-col { grid-template-columns: 1fr; } .rail { position:static; } }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a class="mark" href="#" title="Home — the hub"><span class="glyph"></span>Unshelf</a>
+    <span class="spacer"></span>
+    <div style="position:relative;">
+      <button class="tb-labels hidden" id="tbLabels" title="Browse All by label">▤ Labels ▾</button>
+      <div class="menu" id="labelMenu"></div>
+    </div>
+    <button class="cap-btn" title="Capture — non-navigating overlay"><span>+</span> Capture</button>
+    <span class="avatar" title="Account (Clerk UserButton)">RG</span>
+  </div>
+
+  <main class="page">
+    <p class="eyebrow">Home · the hub</p>
+    <h1 class="greet">Welcome back</h1>
+    <p class="greet-sub">Capture on the fly, or dive into a Trail.</p>
+
+    <div class="home-wrap" id="homeWrap">
+      <!-- LEFT RAIL (variant A only) -->
+      <aside class="rail hidden" id="rail"></aside>
+
+      <!-- MAIN COLUMN (all variants) -->
+      <div class="home-main">
+        <button class="peek" id="peek"><span class="plus">+</span><span>Capture something…</span><span class="kbd">press C</span></button>
+
+        <div class="sec-head">
+          <h2>Your Trails</h2><span class="count tnum">5 active</span>
+        </div>
+        <div class="trails" id="trails"></div>
+        <button class="new-trail">+ New Trail</button>
+
+        <!-- CENTRE STORE BLOCK (variant B only) -->
+        <div class="store-block hidden" id="store">
+          <div class="sec-head">
+            <h2>All <span class="sub-h">· the store</span></h2>
+            <span class="count tnum">128 items</span>
+            <button class="all-door">Browse everything →</button>
+          </div>
+          <p class="store-hint">Every Item you capture lands in All. Jump straight in by label:</p>
+          <div class="filters" id="storeFilters"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="switch">
+    <button id="prev" aria-label="Previous">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next">→</button>
+    <span class="sep"></span>
+    <button id="theme" title="Toggle light / dark">◐ Theme</button>
+  </div>
+
+<script>
+  const TRAILS = [
+    { name:"Learn Rust", done:7, total:12, tags:["reference","deep-dive"] },
+    { name:"Kitchen remodel", done:3, total:9, tags:["how-to","video"] },
+    { name:"Marathon base build", done:11, total:16, tags:["reference"] },
+    { name:"Reading · 2026", done:4, total:20, tags:["book"] },
+    { name:"Side project: unshelf", done:5, total:8, tags:["reference"] },
+  ];
+  // a deliberately real-length list so the rail's "grows with count" cost is visible
+  const LABELS = [
+    { name:"reference", n:34 }, { name:"video", n:21 }, { name:"article", n:18 },
+    { name:"book", n:12 }, { name:"how-to", n:9 }, { name:"deep-dive", n:7 }, { name:"routine", n:4 },
+  ];
+  const VARIANTS = [
+    { key:"A", name:"Left label rail" },
+    { key:"B", name:"Centre store block (current)" },
+    { key:"C", name:"Top-bar label menu" },
+  ];
+
+  // trails (shared)
+  document.getElementById("trails").innerHTML = TRAILS.map(t => {
+    const p = Math.round(t.done/t.total*100), cls = t.done===t.total ? "ring done" : "ring";
+    return `<button class="trail">
+      <div class="${cls}" style="--p:${p}"><b class="tnum">${t.done}/${t.total}</b></div>
+      <span class="body"><div class="name">${t.name}</div>
+      <div class="meta"><span class="tnum">${t.total-t.done} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div></span>
+    </button>`;
+  }).join("");
+
+  // toast: what a label click actually does (identical behaviour in every placement)
+  let toastT = null;
+  function pick(label){
+    const toast = document.getElementById("toast");
+    toast.textContent = `→ opens All, filtered to #${label}`;
+    toast.classList.add("show");
+    if (toastT) clearTimeout(toastT);
+    toastT = setTimeout(() => toast.classList.remove("show"), 1400);
+  }
+
+  // A — rail
+  const rail = document.getElementById("rail");
+  rail.innerHTML =
+    `<div class="rh">Browse All by label</div>` +
+    LABELS.map((l,i)=>`<button class="rrow${i===0?' on':''}" data-label="${l.name}">#${l.name}<span class="c tnum">${l.n}</span></button>`).join("") +
+    `<div class="rdoor"><button class="rrow door">All · 128 items →</button></div>`;
+  rail.querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => {
+    rail.querySelectorAll(".rrow").forEach(x=>x.classList.remove("on")); b.classList.add("on"); pick(b.dataset.label);
+  }));
+
+  // B — centre chips
+  document.getElementById("storeFilters").innerHTML =
+    LABELS.map(l=>`<button class="chip" data-label="${l.name}">#${l.name}<span class="c tnum">${l.n}</span></button>`).join("");
+  document.querySelectorAll("#storeFilters .chip").forEach(b => b.addEventListener("click", () => pick(b.dataset.label)));
+
+  // C — top-bar menu
+  const menu = document.getElementById("labelMenu"), tbLabels = document.getElementById("tbLabels");
+  menu.innerHTML = `<div class="mh">Browse All by label</div>` +
+    LABELS.map(l=>`<button class="mrow" data-label="${l.name}">#${l.name}<span class="c tnum">${l.n}</span></button>`).join("");
+  menu.querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => { menu.classList.remove("open"); pick(b.dataset.label); }));
+  tbLabels.addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+  document.addEventListener("click", () => menu.classList.remove("open"));
+
+  // variant switching
+  const homeWrap = document.getElementById("homeWrap"), store = document.getElementById("store");
+  function readVariant(){ const k=new URLSearchParams(location.search).get("variant"); const i=VARIANTS.findIndex(v=>v.key===k); return i>=0?i:0; }
+  let cur = readVariant();
+  function render(){
+    const v = VARIANTS[cur];
+    homeWrap.classList.toggle("two-col", v.key==="A");
+    rail.classList.toggle("hidden", v.key!=="A");
+    store.classList.toggle("hidden", v.key!=="B");
+    tbLabels.classList.toggle("hidden", v.key!=="C");
+    if (v.key!=="C") menu.classList.remove("open");
+    document.getElementById("lbl").innerHTML = `${v.key} — <small>${v.name}</small>`;
+    try { const p=new URLSearchParams(location.search); p.set("variant", v.key); history.replaceState(null,"",location.pathname+"?"+p.toString()); } catch(_){}
+  }
+  function go(d){ cur=(cur+d+VARIANTS.length)%VARIANTS.length; render(); }
+  document.getElementById("prev").addEventListener("click", ()=>go(-1));
+  document.getElementById("next").addEventListener("click", ()=>go(1));
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme")==="dark";
+    if (dark) document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme","dark");
+  });
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    if (typing) return;
+    if (e.key==="ArrowLeft") go(-1); else if (e.key==="ArrowRight") go(1);
+  });
+  render();
+</script>
+</body>
+</html>
