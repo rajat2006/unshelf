@@ -19,14 +19,22 @@
     - Theme = Quiet Focus (Direction C, #55): cool near-neutral greyscale + one indigo
       accent, green = done, quiet-slate = past target (never red), 4px grid, radius
       6/8/10, system-ui (zero webfont), light + dark peers via a ~10-token layer.
-    - Chrome (#56): slim top bar (mark = home, left; Capture + account, right); Capture
-      is a non-navigating overlay reachable everywhere; on Home it is the "Peek" line.
-    - IA (#54): three surfaces + persistent Capture. Home = Trails index + Peek Capture
-      + labels-as-quick-filters + a door into All. All = the store; every Item,
-      filterable by label, where you triage (Status / target date / labels / pull into
-      Stops). Trail = one Trail's canvas of Stops + forks; open a Stop for its Items.
-    - Model assumed ahead of the build (#74): multiple Trails, labels over All, Stop as
-      a per-Trail waypoint.
+    - Chrome (#56 + #59 verdict): slim top bar carrying two named doors — Trails ·
+      Library — plus Capture + account. Trails is the default/hero; Library is the store.
+      Capture is a non-navigating overlay reachable everywhere (top-bar button or ⌘K / c)
+      and it lands in the Library, never a Trail.
+    - IA (#54 + #59 verdict): three surfaces + persistent Capture. Home = the Trails index
+      ONLY (no capture line, no label chips — those axes don't belong over Trails). Library
+      (was "All") = the store; every Item, filterable by label, where you triage (Status /
+      target date / labels / pull into Stops). Trail = one Trail's canvas of Stops + forks.
+    - Model assumed ahead of the build (#74): multiple Trails, labels over the Library,
+      Stop as a per-Trail waypoint.
+
+  #59 VERDICT folded in (supersedes the earlier draft of this file): the signed-off nav
+  model is the two-door top bar (prototype-radical.html, variant A). It revises #56's
+  "Home Capture = Peek line" (dropped — capture is a global chrome action) and #54/#56's
+  "labels as quick-filters on Home" (dropped — labels live only in the Library), and
+  renames "All" → "Library".
 
   DECIDED WHILE DRAWING (the fog #59 was handed — call these out for reaction):
     1. Trail reskin. ADR-0010's Adventure map is warm survey-chart (pine/ochre paper,
@@ -103,6 +111,15 @@
     display: inline-grid; place-items: center;
   }
   :root[data-theme="dark"] .avatar { color: var(--ink); }
+  /* two named doors in the bar (#59 verdict, variant A): Trails · Library */
+  .navdest { display:flex; align-items:center; gap:2px; margin-left:6px; }
+  .dest { background:none; border:none; color:var(--muted); font-weight:600; font-size:.92rem; padding:6px 12px; border-radius:var(--r8); display:inline-flex; align-items:center; gap:6px; }
+  .dest .nc { font-size:.76rem; color:var(--muted); font-weight:500; }
+  .dest:hover { color:var(--ink); background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  .dest.on { color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .dest.on .nc { color:var(--accent); }
+  .kbd-chip { display:inline-flex; align-items:center; gap:4px; background:var(--surface); border:1px solid var(--line); color:var(--muted); font-weight:600; font-size:.82rem; border-radius:var(--r8); padding:7px 10px; }
+  .kbd-chip:hover { border-color:var(--accent); color:var(--accent); }
 
   /* ---- page shell ---- */
   .page { max-width: 66rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
@@ -129,18 +146,10 @@
   .composer .foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
   .composer .hint { color: var(--muted); font-size: .8rem; }
 
-  /* peek line (Home, collapsed) */
-  .peek { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow); }
-  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
-  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
-  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--muted); }
-
-  /* ---- section heading + label quick-filters ---- */
+  /* ---- section heading + label quick-filters (Library) ---- */
   .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 12px; flex-wrap: wrap; }
   .sec-head h2 { font-size: 1.05rem; }
   .sec-head .count { color: var(--muted); font-size: .85rem; }
-  .sec-head .all-door { margin-left: auto; color: var(--accent); font-weight: 600; font-size: .88rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background:none; border:none; }
-  .sec-head .all-door:hover { text-decoration: underline; }
 
   .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
   .chip { background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; font-size: .85rem; }
@@ -162,12 +171,6 @@
   .ring b { grid-area: 1/1; font-size: .72rem; z-index: 1; }
   .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
   .new-trail:hover { border-color: var(--accent); color: var(--accent); }
-  /* The store block — labels belong to All, so it sits apart from the Trails index. */
-  .store-block { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); }
-  .store-block .sec-head { margin-top: 0; }
-  .store-block .filters { margin-bottom: 0; }
-  .store-hint { color: var(--muted); font-size: .88rem; margin: 0 0 12px; }
-  .sub-h { color: var(--muted); font-weight: 400; font-size: .9rem; }
 
   /* ---- All: the store / triage surface ---- */
   .all-toolbar { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; margin: 2px 0 16px; }
@@ -272,9 +275,14 @@
 <body>
   <!-- ===== LOCKED chrome: slim top bar (identical on every surface) ===== -->
   <div class="topbar">
-    <button class="mark" id="goHome" title="Home — the hub"><span class="glyph"></span>Unshelf</button>
+    <button class="mark" id="goHome" title="Home — your Trails"><span class="glyph"></span>Unshelf</button>
+    <nav class="navdest">
+      <button class="dest" data-dest="trails">Trails</button>
+      <button class="dest" data-dest="library">Library <span class="nc tnum">12</span></button>
+    </nav>
     <span class="spacer"></span>
-    <button class="cap-btn" id="topCapture" title="Capture — opens here, never navigates you away">
+    <button class="kbd-chip" id="kchip" title="Capture (⌘K)">⌘K</button>
+    <button class="cap-btn" id="topCapture" title="Capture — opens here, never navigates you away; lands in the Library">
       <span class="plus">+</span><span class="txt">Capture</span>
     </button>
     <span class="avatar" title="Account (Clerk UserButton)">RG</span>
@@ -283,38 +291,24 @@
   <main class="page">
     <!-- ============================= HOME ============================= -->
     <section data-surface="home" class="hidden">
-      <p class="eyebrow">Home · the hub</p>
+      <p class="eyebrow">Home</p>
       <h1 class="greet">Welcome back</h1>
-      <p class="greet-sub">Capture on the fly, or dive into a Trail.</p>
+      <p class="greet-sub">Pick up a Trail where you left off. Capture from the bar (or ⌘K) — it lands in your Library.</p>
 
-      <!-- Peek Capture (the chosen Home capture, #56 Variant C) -->
-      <button class="peek" id="peek"><span class="plus">+</span><span>Capture something…</span><span class="kbd">press C</span></button>
-      <div class="composer hidden" id="peekComposer" style="margin-top:10px;"></div>
-
-      <!-- Trails = sequencing. You pick one; labels do NOT filter this list. -->
+      <!-- Home is the Trails index ONLY (#59 verdict). No capture line, no label chips:
+           capture is a global chrome action, and labels are an axis over the Library. -->
       <div class="sec-head">
         <h2>Your Trails</h2><span class="count tnum">5 active</span>
       </div>
       <div class="trails" id="trails"></div>
       <button class="new-trail">+ New Trail</button>
-
-      <!-- The store: labels live HERE, as an axis over All (Items) — never over Trails (#54). -->
-      <div class="store-block">
-        <div class="sec-head">
-          <h2>All <span class="sub-h">· the store</span></h2>
-          <span class="count tnum">12 items</span>
-          <button class="all-door" data-goall>Browse everything →</button>
-        </div>
-        <p class="store-hint">Every Item you capture lands in All. Jump straight in by label:</p>
-        <div class="filters" id="homeFilters"></div>
-      </div>
     </section>
 
     <!-- ============================= ALL ============================= -->
-    <section data-surface="all" class="hidden">
-      <button class="crumb" id="allBack">‹ Home</button>
-      <p class="eyebrow">All · the store</p>
-      <h1 class="greet">All Items</h1>
+    <section data-surface="library" class="hidden">
+      <button class="crumb" id="allBack">‹ Trails</button>
+      <p class="eyebrow">Library · the store</p>
+      <h1 class="greet">Library</h1>
       <p class="greet-sub">Every Item, filterable by label. Triage here — set Status, target date, apply labels, pull into Stops.</p>
       <div class="filters" id="allFilters"></div>
       <div class="all-toolbar"><span class="dot"></span> <span id="allCount"></span> · one shared record — a Status you change here is the same Status seen on the Trail.</div>
@@ -358,7 +352,7 @@
   <div class="overlay" id="overlay" role="dialog" aria-label="Capture">
     <div class="oh"><h3>Capture</h3><button class="x" id="closeOverlay" aria-label="Close">×</button></div>
     <div class="composer" id="composerOverlay"></div>
-    <p class="stay"><span class="dot"></span> Drops into <b>&nbsp;All</b>&nbsp; — you stay right where you were.</p>
+    <p class="stay"><span class="dot"></span> Lands in your <b>&nbsp;Library</b>&nbsp; — never a Trail; you stay right where you were.</p>
   </div>
 
   <!-- ===== surface switcher (dev control) ===== -->
@@ -411,9 +405,9 @@
   const EDGES = [ ["s1","s2"], ["s2","s3"], ["s2","s4"], ["s3","s5"], ["s4","s5"], ["s5","s6"] ];
 
   const SURFACES = [
-    { key:"home",  name:"Home · the hub" },
-    { key:"all",   name:"All · the store" },
-    { key:"trail", name:"Trail · Learn Rust" },
+    { key:"home",    name:"Home · your Trails" },
+    { key:"library", name:"Library · the store" },
+    { key:"trail",   name:"Trail · Learn Rust" },
   ];
 
   // ---------------- shared builders ----------------
@@ -423,9 +417,9 @@
       <div class="row">
         <div class="type-pills">${TYPES.map((t,i)=>`<button class="type-pill${i===0?' on':''}" data-type>${t}</button>`).join("")}</div>
         <input class="src" placeholder="Source — where'd you find it?" />
-        <button class="add">Add to All</button>
+        <button class="add">Add to Library</button>
       </div>
-      <div class="foot"><span class="hint">Label it later during triage in All · pure intake for now (#54).</span></div>`;
+      <div class="foot"><span class="hint">Label it later during triage in the Library · pure intake for now (#54).</span></div>`;
   }
   function wireComposer(el) {
     el.innerHTML = composerMarkup();
@@ -457,17 +451,9 @@
       onPick && onPick(c.dataset.label);
     }));
   }
-  // Home label chips are quick-filters INTO All (the #54 "door")
-  labelChips(document.getElementById("homeFilters"), (label) => { setSurface("all"); applyAllFilter(label); });
+  // Home is the Trails index only — no label chips, no capture line (#59 verdict).
 
-  // Peek expands into the composer
-  const peek = document.getElementById("peek"), peekComposer = document.getElementById("peekComposer");
-  wireComposer(peekComposer);
-  function expandPeek(){ peek.classList.add("hidden"); peekComposer.classList.remove("hidden"); peekComposer.querySelector(".title-in").focus(); }
-  function resetPeek(){ peek.classList.remove("hidden"); peekComposer.classList.add("hidden"); }
-  peek.addEventListener("click", expandPeek);
-
-  // ---------------- ALL ----------------
+  // ---------------- LIBRARY (was "All"): the store / triage surface ----------------
   const STATUS_LABELS = ["Not started", "In progress", "Done"];
   function itemRow(it, idx) {
     const statusBtns = STATUS_LABELS.map((s,i)=>`<button data-st="${i}" class="${i===it.st?('on'+(i===2?' done':'')):''}">${s}</button>`).join("");
@@ -511,7 +497,6 @@
     renderAll();
   }
   labelChips(document.getElementById("allFilters"), applyAllFilter);
-  document.querySelectorAll("[data-goall]").forEach(b => b.addEventListener("click", () => { setSurface("all"); applyAllFilter("All"); }));
   renderAll();
 
   // ---------------- TRAIL (reskinned Adventure map) ----------------
@@ -590,7 +575,9 @@
     const s = SURFACES[cur];
     document.querySelectorAll("[data-surface]").forEach(sec => sec.classList.toggle("hidden", sec.dataset.surface !== s.key));
     document.getElementById("lbl").innerHTML = `<small>${s.name}</small>`;
-    if (s.key !== "home") resetPeek();
+    // two-door nav active state: Trails owns Home + Trail; Library owns the store
+    const activeDest = s.key === "library" ? "library" : "trails";
+    document.querySelectorAll(".dest[data-dest]").forEach(b => b.classList.toggle("on", b.dataset.dest === activeDest));
     closeStop();
     try {
       const p = new URLSearchParams(location.search); p.set("surface", s.key);
@@ -605,6 +592,9 @@
   document.getElementById("allBack").addEventListener("click", () => setSurface("home"));
   document.getElementById("trailBack").addEventListener("click", () => setSurface("home"));
   document.querySelectorAll("[data-opentrail]").forEach(b => b.addEventListener("click", () => setSurface("trail")));
+  // the two named doors + ⌘K capture
+  document.querySelectorAll(".dest[data-dest]").forEach(b => b.addEventListener("click", () => setSurface(b.dataset.dest === "library" ? "library" : "home")));
+  document.getElementById("kchip").addEventListener("click", openOverlay);
 
   // ---------------- theme toggle ----------------
   document.getElementById("theme").addEventListener("click", () => {
@@ -615,12 +605,13 @@
 
   // ---------------- keyboard ----------------
   document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); openOverlay(); return; }
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if (e.key === "Escape") { closeOverlay(); closeStop(); return; }
     if (typing) return;
     if (e.key === "ArrowLeft") go(-1);
     else if (e.key === "ArrowRight") go(1);
-    else if (e.key.toLowerCase() === "c") { SURFACES[cur].key==="home" ? expandPeek() : openOverlay(); }
+    else if (e.key.toLowerCase() === "c") openOverlay();
   });
 
   render();
