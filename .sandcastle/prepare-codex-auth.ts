@@ -72,7 +72,7 @@ export function prepareCodexAuth(
   // wrote (see the header note). The secret is read only on the seeding path, so
   // a later phase does not depend on it still being in the env.
   if (!fs.existsSync(authPath)) {
-    const authJson = requireEnvFrom(env, "CODEX_AUTH_JSON");
+    const authJson = requireEnv("CODEX_AUTH_JSON", env);
     try {
       JSON.parse(authJson);
     } catch (cause) {
@@ -111,20 +111,4 @@ function ensureFileCredentialStore(configPath: string): void {
   }
 
   fs.writeFileSync(configPath, content);
-}
-
-/**
- * {@link requireEnv} but reading a caller-supplied env object, so the check works
- * against the same `env` the rest of this module mutates (and stays unit-testable
- * without touching `process.env`).
- */
-function requireEnvFrom(env: NodeJS.ProcessEnv, name: string): string {
-  if (env === process.env) {
-    return requireEnv(name);
-  }
-  const value = env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
 }
