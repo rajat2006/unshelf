@@ -32,7 +32,34 @@ always talks to a single origin:
 - `PathPrefix(`/api`)` → **api** service (Traefik router priority 10)
 - everything else → **web** service (priority 1; the SPA + its history fallback)
 
-Caddy in the web image therefore never proxies `/api`; Traefik owns that split.
+```
+              Internet
+                 │ HTTPS
+                 ▼
+     ┌───────────────────────┐
+     │   Traefik (Dokploy)   │  TLS terminates + path split here
+     └─────┬───────────┬─────┘
+   /api    │           │  everything else
+           ▼           ▼
+   ┌────────────┐  ┌────────────┐
+   │ api :3001  │  │ web :80    │  Caddy: static files only
+   │ Express    │  │ Caddy      │
+   └─────┬──────┘  └────────────┘
+         │ internal network (private)
+         ▼
+   ┌────────────┐
+   │ db  (PG)   │
+   └────────────┘
+
+  dokploy-network (shared): api ✅  web ✅  db ❌
+  internal        (private): api ✅  web ❌  db ✅
+```
+
+**Traefik owns the split, not Caddy.** Caddy in the web image only serves the
+SPA's static files and its history fallback; it never proxies `/api`. Why the
+split lives at the platform's Traefik (and not inside Caddy, with the api sealed
+behind it) — platform-native routing, independently-routable services, and free
+horizontal scaling — is [ADR-0011](adr/0011-traefik-owns-routing-caddy-serves-static.md).
 
 ## Environment (set in Dokploy → the Compose service's Environment)
 
@@ -42,6 +69,8 @@ Caddy in the web image therefore never proxies `/api`; Traefik owns that split.
 | --- | --- | --- |
 | `DOMAIN` | Traefik router rules | e.g. `unshelf.example.com`. |
 | `POSTGRES_PASSWORD` | db + api `DATABASE_URL` | Generate a strong value; Dokploy stores it. |
+| `POSTGRES_USER` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
+| `POSTGRES_DB` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
 | `CLERK_SECRET_KEY` | api (runtime) | Server-side only. From the Clerk dashboard. |
 | `CLERK_PUBLISHABLE_KEY` | api (runtime) | Browser-public key. |
 | `VITE_CLERK_PUBLISHABLE_KEY` | web (**build arg**) | Same publishable key; Vite inlines it at build. |

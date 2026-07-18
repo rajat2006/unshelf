@@ -16,13 +16,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: unshelf
+      POSTGRES_USER: ${POSTGRES_USER:-unshelf}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: unshelf
+      POSTGRES_DB: ${POSTGRES_DB:-unshelf}
     volumes:
       - unshelf-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U unshelf -d unshelf"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unshelf} -d ${POSTGRES_DB:-unshelf}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +35,7 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://unshelf:${POSTGRES_PASSWORD}@db:5432/unshelf
+      DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
       PORT: 3001
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
       CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
