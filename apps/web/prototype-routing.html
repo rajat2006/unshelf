@@ -23,8 +23,10 @@
 
   The switchable variant = how a Stop / Item OPENS:
     A — Full-page      : the sub-surface replaces the screen (canvas gone)
-    B — Right drawer   : slides over the parent, which stays visible behind
-    C — Centered modal : pops over a dimmed parent
+    B — Drawer + scrim : slides over the parent, but a scrim blocks/dims it (steals focus)
+    C — Centered modal : pops over a dimmed parent (steals focus)
+    D — Right sidebar  : docks right, NO scrim; the canvas reflows beside it and stays
+                         fully interactive — both visible at once, for planning (#58 comment)
 
   Theme = Quiet Focus (Direction C, issue #55). Light + dark peers. Never merged to main.
 
@@ -202,6 +204,18 @@
   .modal { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); box-shadow: var(--shadow); width: min(560px, 96vw); max-height: 86vh; display:flex; flex-direction:column; opacity:0; transform: translateY(8px) scale(.98); transition: opacity .16s ease, transform .16s ease; pointer-events:auto; }
   .modal.on { opacity:1; transform: none; }
 
+  /* D — right sidebar: non-modal split / push (canvas reflows, no scrim, stays live) */
+  #app { transition: margin-right .22s cubic-bezier(.2,.7,.2,1); }
+  body.split-open #app { margin-right: min(440px, 42vw); }
+  .sidebar { position: fixed; top:0; right:0; bottom:0; width: min(440px, 42vw); background: var(--surface);
+    border-left: 1px solid var(--line); box-shadow: var(--drawer-sh); z-index: 25; display:flex; flex-direction:column; }
+  .sidebar .oh { position: sticky; top:0; display:flex; align-items:center; gap:10px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .sidebar .oh h3 { font-size:.95rem; color: var(--muted); font-weight:600; margin:0; }
+  .sidebar .oh .x { margin-left:auto; background:none; border:none; color: var(--muted); font-size:1.3rem; line-height:1; width:30px; height:30px; border-radius: var(--r6); }
+  .sidebar .oh .x:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--ink); }
+  .sidebar .obody { padding: 20px; overflow-y:auto; }
+  @media (max-width: 640px) { body.split-open #app { margin-right: 0; } .sidebar { width: 100vw; } }
+
   /* full-page sub-surface (variant A) just uses .page */
 
   /* ---- capture overlay (non-navigating, always centered modal, #56) ---- */
@@ -317,8 +331,9 @@
   // ================= tiny router =================
   const VARIANTS = [
     { key:"A", name:"Full-page surface" },
-    { key:"B", name:"Right drawer (URL)" },
-    { key:"C", name:"Centered modal (URL)" },
+    { key:"B", name:"Drawer + scrim" },
+    { key:"C", name:"Centered modal" },
+    { key:"D", name:"Right sidebar (split, no scrim)" },
   ];
   function initVariant() {
     const q = new URLSearchParams(location.search).get("variant");
@@ -513,6 +528,7 @@
     const app = document.getElementById("app");
     const layer = document.getElementById("layer");
     layer.innerHTML = "";
+    document.body.classList.remove("split-open");
 
     // auth = standalone full screens (no chrome)
     if (route.kind==="signin" || route.kind==="signup") { app.innerHTML = authHTML(route); afterRender(); return; }
@@ -537,18 +553,15 @@
 
     if (useOverlay) {
       const c = subContent(route);
+      const inner = `<div class="oh"><h3>${route.kind==="stop"?"Stop":"Item"}</h3><button class="x" data-close aria-label="Close">×</button></div>
+            <div class="obody"><h2 class="sub-title">${c.title}</h2><p class="sub-sub">${c.sub}</p>${c.body}</div>`;
       if (VARIANT === "B") {
-        layer.innerHTML = `<div class="scrim on" data-close></div>
-          <aside class="drawer on" role="dialog" aria-label="${c.title}">
-            <div class="oh"><h3>${route.kind==="stop"?"Stop":"Item"}</h3><button class="x" data-close aria-label="Close">×</button></div>
-            <div class="obody"><h2 class="sub-title">${c.title}</h2><p class="sub-sub">${c.sub}</p>${c.body}</div>
-          </aside>`;
-      } else { // C
-        layer.innerHTML = `<div class="scrim on" data-close></div>
-          <div class="modal-wrap"><div class="modal on" role="dialog" aria-label="${c.title}">
-            <div class="oh"><h3>${route.kind==="stop"?"Stop":"Item"}</h3><button class="x" data-close aria-label="Close">×</button></div>
-            <div class="obody"><h2 class="sub-title">${c.title}</h2><p class="sub-sub">${c.sub}</p>${c.body}</div>
-          </div></div>`;
+        layer.innerHTML = `<div class="scrim on" data-close></div><aside class="drawer on" role="dialog" aria-label="${c.title}">${inner}</aside>`;
+      } else if (VARIANT === "C") {
+        layer.innerHTML = `<div class="scrim on" data-close></div><div class="modal-wrap"><div class="modal on" role="dialog" aria-label="${c.title}">${inner}</div></div>`;
+      } else { // D — right sidebar: no scrim, canvas reflows beside it and stays interactive
+        document.body.classList.add("split-open");
+        layer.innerHTML = `<aside class="sidebar" role="complementary" aria-label="${c.title}">${inner}</aside>`;
       }
     }
     afterRender();
@@ -634,7 +647,7 @@
   document.addEventListener("keydown", (e)=>{
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if (e.key==="Escape") { if (capOverlay.classList.contains("on")) return closeCapture();
-                            if (document.querySelector(".drawer, .modal")) return closeOverlay(); }
+                            if (document.querySelector(".drawer, .modal, .sidebar")) return closeOverlay(); }
     if (typing) return;
     if (e.key==="ArrowLeft") setVariant(-1);
     else if (e.key==="ArrowRight") setVariant(1);
