@@ -5,3 +5,6 @@ dist/
 build/
 .turbo/
 coverage/
+
+# Local Claude Code worktrees (not part of the repo)
+.claude/worktrees/
