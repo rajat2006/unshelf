@@ -5,5 +5,5 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["lib", "vitest.config.ts"]
+  "include": ["**/*.ts", "vitest.config.ts"]
 }

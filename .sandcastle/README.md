@@ -6,32 +6,43 @@ autonomously in GitHub Actions via [Sandcastle](https://github.com/mattpocock/sa
 see spec **#52**. It joins the pnpm workspace and turbo graph as its own project,
 so `turbo run test` / `turbo run typecheck` cover it.
 
-## The testable seam (`lib/`)
+## The testable seam
 
-The control flow at the `sandcastle.run()` boundary, extracted as pure functions
-so it is unit-testable with an injected fake `run()` — no database, no network,
-no real agent (style: `apps/web/src/trail/geometry.test.ts`):
+The control flow around `sandcastle.run()`, extracted so it is unit-testable by
+mocking `run()` — no database, no network, no real agent. Ported from
+course-video-manager's runner (the Sandcastle reference), reconciled to the
+pinned Sandcastle version and Unshelf's provider set:
 
-- **`resolve-agent.ts`** — `resolveAgent(labels)`: `agent:codex` present ⇒ Codex on
-  `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8` (absence *is* Claude).
-- **`run-with-retry.ts`** — `runWithRetry`: the generic resume-on-error loop
-  (one attempt + up to two resumes = `MAX_ATTEMPTS` of 3).
-- **`retry-feedback.ts`** — `retryFeedback`: the token-efficient resume prompt
-  built from a `StructuredOutputError`.
-- **`run-with-extraction.ts`** — `runWithExtraction`: structured-output capabilities
-  with same-session retry — on a `StructuredOutputError` that carries a resumable
-  `sessionId`, resume with feedback and re-extract, up to 3×, else surface the failure.
+- **`run-with-retry.ts`** — `runWithRetry`: a single call that both does the work
+  and emits structured `output`, retrying the *same session* on a
+  `StructuredOutputError` (up to 3 attempts). For **side-effect-free** capabilities
+  where the output *is* the work (`write-pr`, `to-issues-prd`).
+- **`run-with-extraction.ts`** — `runWithExtraction`: the **two-phase** wrapper —
+  a *produce* run with no `output` (keeps the resumable `sessionId`, never throws
+  on extraction), then a resumed *extract* pass via `runWithRetry`. Returns the
+  produce run's commits with the extraction's output, so side effects (commits,
+  issue creation) are never repeated. For capabilities with a side-effectful
+  produce phase (`review`, `implement-pr`, `update-branch`, `architecture-review`).
+- **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
+  `StructuredOutputError`, echoing what the agent emitted and why it failed.
+- **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
+  present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
+  (absence *is* Claude). Reads the issue's full label set.
 
 Later workflow tickets add each capability as a thin `run()` script + YAML on top
-of this seam.
+of these helpers.
 
 ## Pinned version
 
 `@ai-hero/sandcastle` is pinned to **0.12.0** (current latest), reconciling the
-0.12 vs `^0.10` drift the spec flagged. The `run()` option shapes were verified
-against 0.12.0's type definitions: `RunOptions` (`agent`, `sandbox`, `promptFile`,
-`promptArgs`, `logging`, `maxIterations`, `resumeSession`, `output`), `Output.object`
-/ `Output.string`, and `StructuredOutputError` (`.sessionId`, `.tag`, `.rawMatched`,
-`.commits`, `.branch`) — the resume-with-feedback recovery this seam implements is
-the pattern documented on that class. Models follow spec §C (`claude-opus-4-8`,
-not CVM's `claude-opus-4-6`).
+0.12-vs-`^0.10` drift the spec flagged. The helpers rely on `run()`'s structured
+`output` + `StructuredOutputError.sessionId` resume path, verified against 0.12.0's
+type definitions. Two 0.12 behaviours the wrappers depend on:
+
+- `run()` rejects an inline `prompt` alongside any `promptArgs`
+  (`validateNoArgsWithInlinePrompt`), so both wrappers drop `promptArgs` (and
+  `promptFile`) when switching to an inline retry/extraction prompt.
+- `StructuredOutputError` carries `sessionId`/`rawMatched`/`cause`, which is what
+  makes same-session resume-with-feedback possible.
+
+Models follow spec §C (`claude-opus-4-8`, not CVM's `claude-opus-4-6`).
