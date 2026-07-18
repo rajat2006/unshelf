@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Unshelf — Reaching All without burying it (prototype #59)</title>
+<!--
+  THROWAWAY prototype — Unshelf issue #59. Follow-up to the label-org spike.
+  Settled: Trails are the hero of Home; labels live in All. Open question this file
+  answers: the door into All was sitting at the BOTTOM of Home, out of sight. Where
+  should the entry into All go so it's easily reachable WHILE Trails stay the centre
+  of attention (main column, top of the page)?
+
+  Four structurally different placements — each a little Home -> All flow you click
+  through (the All entry opens All; "< Home" or the wordmark returns). Switch via the
+  floating bar (?variant=A|B|C|D or arrow keys). Caption under the top bar names each.
+
+    A — All in the top bar        A persistent destination in the slim top bar. Zero
+                                  space on Home; one click from anywhere. [rec]
+    B — On the Trails header      The entry rides the "Your Trails" heading — top of
+                                  the page, above the fold, inline. Nothing below.
+    C — Pinned action dock        Capture + All in a dock pinned to the side, always in
+                                  view as you scroll. Home body stays pure Trails.
+    D — Trails hero + All column   Trails fill the main column; a slim All column sits
+                                  beside them, always visible. (All, not Trails — the
+                                  Trails sidebar was the thing #56 rejected.)
+
+  Locked upstream (unchanged): theme = Quiet Focus (#55); slim top bar, Home-as-hub,
+  no tabs/no-Trails-sidebar (#56); labels are an axis over All/Items, never over
+  Trails (#54). Self-contained, no build. Never merged to main.
+-->
+<style>
+  :root {
+    --bg:#FAFAFB; --surface:#FFFFFF; --ink:#16181D; --muted:#676C76; --line:#E6E8EC;
+    --accent:#4B57C4; --accent-h:#3B46A8; --on-accent:#FFFFFF; --done:#1F9D63; --past:#767C88;
+    --field-bg:#FFFFFF; --field-line:#D9DCE2; --r6:6px; --r8:8px; --r10:10px;
+    --shadow:0 1px 0 rgba(20,24,40,.03), 0 18px 40px -28px rgba(20,24,40,.35);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0E0F13; --surface:#16181D; --ink:#ECEEF3; --muted:#8B909B; --line:#24272E;
+    --accent:#7C88FF; --accent-h:#99A2FF; --on-accent:#0E0F13; --done:#35C081; --past:#868C98;
+    --field-bg:#1A1C22; --field-line:#2C2F38;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.6); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body { background: var(--bg); color: var(--ink); font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.5; padding-bottom: 6rem; transition: background .2s ease, color .2s ease; }
+  h1,h2,h3 { margin:0; letter-spacing:-0.01em; }
+  button { font: inherit; cursor: pointer; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 12px clamp(16px, 4vw, 40px); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration:none; letter-spacing: -0.02em; background:none; border:none; }
+  .mark .glyph { width: 22px; height: 22px; border-radius: var(--r6); background: linear-gradient(150deg, var(--accent), var(--accent-h)); display: inline-block; }
+  .topbar .spacer { flex: 1; }
+  /* A: a quiet persistent destination — one link, deliberately NOT styled like a tab row */
+  .navlink { display:inline-flex; align-items:center; gap:7px; background:none; border:none; color:var(--muted); font-weight:600; font-size:.92rem; padding:6px 4px; border-radius:var(--r6); }
+  .navlink .ng { width:15px; height:15px; border-radius:3px; border:1.5px solid currentColor; opacity:.75; }
+  .navlink .nc { color:var(--muted); font-weight:500; font-size:.82rem; }
+  .navlink:hover { color:var(--accent); }
+  .navlink:hover .nc { color:var(--accent); }
+  .cap-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--r8); padding: 8px 14px; font-weight: 600; font-size: .92rem; box-shadow: 0 1px 2px rgba(20,24,40,.16); }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); font-weight: 700; font-size: .82rem; display: inline-grid; place-items: center; }
+  :root[data-theme="dark"] .avatar { color: var(--ink); }
+
+  .caption { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-bottom: 1px solid var(--line); color: var(--ink); font-size: .84rem; padding: 9px clamp(16px, 4vw, 40px); }
+  .caption b { color: var(--accent); }
+  .caption .rec { margin-left:8px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--done); }
+
+  .page { max-width: 66rem; margin: 0 auto; padding: clamp(16px, 3.5vw, 32px) clamp(16px, 4vw, 40px); }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 4px; }
+  .greet { font-size: clamp(1.35rem, 3.4vw, 1.8rem); font-weight: 700; margin: 0 0 4px; }
+  .greet-sub { color: var(--muted); font-size: .95rem; margin: 0 0 22px; }
+  .crumb { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color: var(--muted); font-size:.85rem; font-weight:600; padding:0; margin: 0 0 10px; }
+  .crumb:hover { color: var(--accent); }
+
+  .peek { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 13px 16px; color: var(--muted); text-align: left; box-shadow: var(--shadow); }
+  .peek .plus { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); display: inline-grid; place-items: center; font-weight: 700; }
+  :root[data-theme="dark"] .peek .plus { color: var(--ink); }
+  .peek .kbd { margin-left: auto; font-size: .72rem; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; }
+
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 26px 0 14px; flex-wrap: wrap; }
+  .sec-head h2 { font-size: 1.12rem; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sub-h { color: var(--muted); font-weight: 400; font-size: .9rem; }
+  /* B: entry rides the section header, pushed right */
+  .head-door { margin-left:auto; display:inline-flex; align-items:center; gap:8px; background: color-mix(in srgb, var(--accent) 8%, transparent); border:1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); color:var(--accent); font-weight:600; font-size:.86rem; border-radius:999px; padding:6px 14px; }
+  .head-door:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .head-door .hc { color: var(--muted); font-weight:500; }
+  .head-door:hover .hc { color: var(--accent); }
+
+  .trails { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 12px; }
+  .trail { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r10); padding: 15px 16px; box-shadow: var(--shadow); text-align: left; width: 100%; }
+  .trail:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .trail .body { flex: 1; min-width: 0; }
+  .trail .name { font-weight: 600; font-size: 1rem; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trail .meta { color: var(--muted); font-size: .8rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .trail .tag { border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .72rem; }
+  .ring { --p: 0; width: 46px; aspect-ratio: 1; flex: none; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+  .ring.done { background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0); }
+  .ring::before { content: ''; grid-area: 1/1; width: 72%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); }
+  .ring b { grid-area: 1/1; font-size: .7rem; z-index: 1; }
+  .new-trail { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; background: transparent; border: 1px dashed var(--field-line); color: var(--muted); border-radius: var(--r8); padding: 9px 14px; font-size: .88rem; }
+  .new-trail:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* D: two-column Home — Trails hero + slim persistent All column */
+  .home-2col { display:grid; grid-template-columns: minmax(0,1fr) 15.5rem; gap: clamp(20px,3vw,36px); align-items:start; }
+  .side-all { position: sticky; top: 116px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:16px; box-shadow:var(--shadow); }
+  .side-all .sh { display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+  .side-all .sh .st { font-weight:700; font-size:.98rem; }
+  .side-all .sh .sc { color:var(--muted); font-size:.8rem; }
+  .side-all .sd { color:var(--muted); font-size:.8rem; margin-bottom:12px; }
+  .side-all .slabels { display:flex; flex-direction:column; gap:2px; }
+  .side-all .srow { display:flex; align-items:center; justify-content:space-between; width:100%; background:transparent; border:none; color:var(--ink); border-radius:var(--r6); padding:7px 9px; font-size:.9rem; text-align:left; }
+  .side-all .srow .c { color:var(--muted); font-size:.78rem; }
+  .side-all .srow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent); }
+  .side-all .srow:hover .c { color:var(--accent); }
+  .side-all .sall { margin-top:12px; width:100%; background: color-mix(in srgb, var(--accent) 8%, transparent); border:1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); color:var(--accent); font-weight:600; font-size:.86rem; border-radius:var(--r8); padding:9px; }
+  .side-all .sall:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+  /* C: dock pinned to the side, always in view */
+  .dock { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); z-index: 30; display:flex; flex-direction:column; gap:8px; background: var(--surface); border:1px solid var(--line); border-radius:999px; padding:8px; box-shadow: 0 14px 40px -18px rgba(20,24,40,.5); }
+  .dock button { width:52px; height:52px; border-radius:50%; border:1px solid transparent; display:grid; place-items:center; gap:0; background: transparent; color: var(--muted); font-size:.62rem; font-weight:600; line-height:1.05; }
+  .dock button .di { font-size:1.15rem; }
+  .dock .d-cap { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .dock .d-all:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+
+  /* All screen (entry target — same for every variant; the entry is the question, not this) */
+  .all-wrap.two-col { display:grid; grid-template-columns: 14rem 1fr; gap: clamp(18px,2.6vw,32px); align-items:start; }
+  .rail { position:sticky; top:120px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:12px; box-shadow:var(--shadow); }
+  .rail .rh { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:4px 8px 10px; }
+  .rrow { display:flex; align-items:center; justify-content:space-between; width:100%; background:transparent; border:none; color:var(--ink); border-radius:var(--r6); padding:8px 10px; font-size:.92rem; text-align:left; }
+  .rrow .c { color:var(--muted); font-size:.8rem; }
+  .rrow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent); }
+  .rrow:hover .c { color:var(--accent); }
+  .rrow.on { background: var(--accent); color: var(--on-accent); font-weight:600; }
+  .rrow.on .c { color: color-mix(in srgb, var(--on-accent) 78%, var(--accent)); }
+  .items { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r10); padding:11px 15px; box-shadow: var(--shadow); flex-wrap:wrap; }
+  .item .lead { flex:1; min-width: 11rem; }
+  .item .it-title { font-weight:600; font-size:.94rem; }
+  .item .it-sub { margin-top:5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .type-tag { border:1px solid var(--line); border-radius:5px; padding:1px 7px; font-size:.72rem; color:var(--muted); text-transform:capitalize; }
+  .lbl-chip { border:1px solid var(--line); border-radius:999px; padding:1px 9px; font-size:.72rem; color:var(--muted); }
+  .lbl-chip::before { content:"#"; opacity:.55; }
+  .lbl-chip.match { border-color: var(--accent); color: var(--accent); }
+
+  .toast { position:fixed; left:50%; bottom:74px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:.82rem; padding:8px 14px; border-radius:999px; box-shadow:0 10px 30px rgba(0,0,0,.3); opacity:0; transition:opacity .18s ease; z-index:50; pointer-events:none; }
+  .toast.show { opacity:1; }
+
+  .switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 4px; background: rgba(18,20,28,.94); color: #fff; border-radius: 999px; padding: 5px 6px; box-shadow: 0 12px 34px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px); }
+  .switch button { appearance: none; border: none; background: rgba(255,255,255,.1); color: #fff; height: 32px; border-radius: 999px; display: inline-grid; place-items: center; padding: 0 10px; }
+  .switch button:hover { background: rgba(255,255,255,.2); }
+  .switch .lbl { padding: 0 12px; font-size: .82rem; font-weight: 600; white-space: nowrap; min-width: 13rem; text-align: center; }
+  .switch .lbl small { color: rgba(255,255,255,.6); font-weight: 500; }
+  .switch .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
+
+  @media (max-width: 720px) {
+    .home-2col { grid-template-columns: 1fr; }
+    .side-all { position: static; }
+    .all-wrap.two-col { grid-template-columns: 1fr; }
+    .rail { position:static; }
+    .dock { top:auto; bottom:84px; right:14px; transform:none; flex-direction:row; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="mark" id="goHome" title="Home — the hub"><span class="glyph"></span>Unshelf</button>
+    <button class="navlink hidden" id="navAll" title="All — your store"><span class="ng"></span>All<span class="nc tnum">· 9</span></button>
+    <span class="spacer"></span>
+    <button class="cap-btn"><span>+</span> Capture</button>
+    <span class="avatar">RG</span>
+  </div>
+  <div class="caption" id="caption"></div>
+
+  <main class="page">
+    <!-- HOME (rebuilt per variant) -->
+    <section id="homeScreen">
+      <div id="homeInner"></div>
+    </section>
+
+    <!-- ALL (shared entry target) -->
+    <section id="allScreen" class="hidden">
+      <button class="crumb" id="allBack">‹ Home</button>
+      <p class="eyebrow">All · the store</p>
+      <h1 class="greet">All Items</h1>
+      <p class="greet-sub">Every Item, filtered by label — this is where labels do their work.</p>
+      <div class="all-wrap two-col" id="allWrap"></div>
+    </section>
+  </main>
+
+  <!-- C: pinned dock (shown only for variant C) -->
+  <div class="dock hidden" id="dock">
+    <button class="d-cap" title="Capture"><span class="di">+</span>Capture</button>
+    <button class="d-all" id="dockAll" title="All — your store"><span class="di">▤</span>All</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="switch">
+    <button id="prev" aria-label="Previous">←</button>
+    <span class="lbl" id="lbl"></span>
+    <button id="next" aria-label="Next">→</button>
+    <span class="sep"></span>
+    <button id="theme" title="Toggle light / dark">◐ Theme</button>
+  </div>
+
+<script>
+  const TRAILS = [
+    { name:"Learn Rust", done:7, total:12, tags:["reference","deep-dive"] },
+    { name:"Kitchen remodel", done:3, total:9, tags:["how-to","video"] },
+    { name:"Marathon base build", done:11, total:16, tags:["reference"] },
+    { name:"Reading · 2026", done:4, total:20, tags:["book"] },
+    { name:"Side project: unshelf", done:5, total:8, tags:["reference"] },
+  ];
+  const ITEMS = [
+    { t:"The Rust Book — Ch.10: Generics", type:"Article", labels:["reference","deep-dive"] },
+    { t:"Crust of Rust: Lifetimes", type:"Video", labels:["video","deep-dive"] },
+    { t:"Tokio — the async tutorial", type:"Article", labels:["reference"] },
+    { t:"Designing Data-Intensive Applications", type:"Book", labels:["book","reference","deep-dive"] },
+    { t:"Kitchen work-triangle basics", type:"Article", labels:["how-to","reference"] },
+    { t:"Zone-2 base building, explained", type:"Video", labels:["video","routine"] },
+    { t:"Daniels' Running Formula", type:"Book", labels:["book","reference","routine"] },
+    { t:"Refactoring UI", type:"Book", labels:["book","reference"] },
+    { t:"Backsplash tile install", type:"Video", labels:["video","how-to"] },
+  ];
+  const LABELS = ["reference","video","book","how-to","deep-dive","routine"];
+  const countOf = l => ITEMS.filter(i => i.labels.includes(l)).length;
+  const TOPLABELS = ["reference","video","book","deep-dive"]; // the few worth surfacing on Home (variant D)
+
+  const VARIANTS = [
+    { key:"A", name:"All in the top bar", rec:true,
+      cap:"<b>All is a destination in the slim top bar</b> — one click from any screen, and it takes <b>zero space on Home</b>, so Trails own the whole page. One link, deliberately not a tab row." },
+    { key:"B", name:"On the Trails header", rec:false,
+      cap:"<b>The entry rides the “Your Trails” heading</b> — top of the page, above the fold, inline with the section. Reachable instantly; nothing sits below the Trails competing for the eye." },
+    { key:"C", name:"Pinned action dock", rec:false,
+      cap:"<b>Capture + All live in a dock pinned to the side</b>, always in view as you scroll — never buried at the bottom. Home body stays pure Trails." },
+    { key:"D", name:"Trails hero + All column", rec:false,
+      cap:"<b>Trails fill the main column; a slim All column sits beside them</b>, always visible with your top labels. Gives All a permanent home off-centre. (This is All — the <i>Trails</i> sidebar is what #56 rejected.)" },
+  ];
+
+  // shared fragments
+  const trailsGridHTML = () => TRAILS.map(t => {
+    const p = Math.round(t.done/t.total*100), cls = t.done===t.total ? "ring done":"ring";
+    return `<button class="trail"><div class="${cls}" style="--p:${p}"><b class="tnum">${t.done}/${t.total}</b></div>
+      <span class="body"><div class="name">${t.name}</div><div class="meta"><span class="tnum">${t.total-t.done} left</span>${t.tags.map(g=>`<span class="tag">${g}</span>`).join("")}</div></span></button>`;
+  }).join("");
+  const peekHTML = () => `<button class="peek"><span class="plus">+</span><span>Capture something…</span><span class="kbd">press C</span></button>`;
+  const greetHTML = () => `<p class="eyebrow">Home · the hub</p><h1 class="greet">Welcome back</h1>
+    <p class="greet-sub">Your Trails are the work. Capture on the fly; dip into All when you need a loose Item.</p>`;
+  const sideAllHTML = () => `<aside class="side-all">
+      <div class="sh"><span class="st">All</span><span class="sc tnum">${ITEMS.length} items</span></div>
+      <div class="sd">Your store — every loose Item, by label.</div>
+      <div class="slabels">${TOPLABELS.map(l=>`<button class="srow" data-label="${l}">#${l}<span class="c tnum">${countOf(l)}</span></button>`).join("")}</div>
+      <button class="sall" data-goall>Browse all ${ITEMS.length} →</button>
+    </aside>`;
+
+  const toast = document.getElementById("toast"); let toastT=null;
+  function flash(msg){ toast.textContent=msg; toast.classList.add("show"); if(toastT)clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove("show"),1400); }
+
+  // ---- Home, rebuilt per variant ----
+  function renderHome(v){
+    const host = document.getElementById("homeInner");
+    const trailsBlock = (extraHead="") => `
+      <div class="sec-head"><h2>Your Trails</h2><span class="count tnum">5 active</span>${extraHead}</div>
+      <div class="trails">${trailsGridHTML()}</div>
+      <button class="new-trail">+ New Trail</button>`;
+
+    if (v.key === "D") {
+      host.innerHTML = `<div class="home-2col">
+        <div>${greetHTML()}${peekHTML()}${trailsBlock()}</div>
+        ${sideAllHTML()}
+      </div>`;
+    } else if (v.key === "B") {
+      const door = `<button class="head-door" data-goall>All <span class="hc tnum">· ${ITEMS.length} items</span> →</button>`;
+      host.innerHTML = `${greetHTML()}${peekHTML()}${trailsBlock(door)}`;
+    } else {
+      // A and C: pure Trails on Home; the entry lives in the top bar (A) or the dock (C)
+      host.innerHTML = `${greetHTML()}${peekHTML()}${trailsBlock()}`;
+    }
+    host.querySelectorAll("[data-goall]").forEach(b => b.addEventListener("click", () => openAll(null)));
+    host.querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => openAll(b.dataset.label)));
+
+    // toggle the chrome-level affordances for this variant
+    document.getElementById("navAll").classList.toggle("hidden", v.key !== "A");
+    document.getElementById("dock").classList.toggle("hidden", v.key !== "C");
+  }
+
+  // ---- All screen (shared target) ----
+  let activeLabel = null;
+  function renderItems(listHost){
+    const shown = activeLabel ? ITEMS.filter(i=>i.labels.includes(activeLabel)) : ITEMS;
+    listHost.innerHTML = shown.map(i => `<li class="item"><div class="lead">
+      <div class="it-title">${i.t}</div>
+      <div class="it-sub"><span class="type-tag">${i.type}</span>${i.labels.map(l=>`<span class="lbl-chip${l===activeLabel?' match':''}">${l}</span>`).join("")}</div>
+    </div></li>`).join("");
+  }
+  function renderAll(){
+    const wrap = document.getElementById("allWrap");
+    const railRows = `<div class="rail"><div class="rh">Browse by label</div>
+      <button class="rrow${activeLabel===null?' on':''}" data-label="">All<span class="c tnum">${ITEMS.length}</span></button>
+      ${LABELS.map(l=>`<button class="rrow${l===activeLabel?' on':''}" data-label="${l}">#${l}<span class="c tnum">${countOf(l)}</span></button>`).join("")}</div>`;
+    wrap.innerHTML = railRows + `<div><ul class="items" id="itemList"></ul></div>`;
+    renderItems(document.getElementById("itemList"));
+    wrap.querySelectorAll("[data-label]").forEach(b => b.addEventListener("click", () => {
+      activeLabel = b.dataset.label || null; renderAll();
+    }));
+  }
+  function openAll(label){
+    activeLabel = label;
+    document.getElementById("homeScreen").classList.add("hidden");
+    document.getElementById("dock").classList.add("hidden"); // dock is a Home affordance
+    document.getElementById("allScreen").classList.remove("hidden");
+    renderAll();
+    if (label) flash(`Filtered to #${label}`);
+    window.scrollTo(0,0);
+  }
+  function backHome(){
+    document.getElementById("allScreen").classList.add("hidden");
+    document.getElementById("homeScreen").classList.remove("hidden");
+    document.getElementById("dock").classList.toggle("hidden", VARIANTS[cur].key !== "C");
+  }
+
+  // ---- variant switching ----
+  function readVariant(){ const k=new URLSearchParams(location.search).get("variant"); const i=VARIANTS.findIndex(v=>v.key===k); return i>=0?i:0; }
+  let cur = readVariant();
+  function render(){
+    const v = VARIANTS[cur];
+    document.getElementById("allScreen").classList.add("hidden");
+    document.getElementById("homeScreen").classList.remove("hidden");
+    activeLabel = null;
+    renderHome(v);
+    document.getElementById("caption").innerHTML = `<b>Variant ${v.key} · ${v.name}.</b> ${v.cap}${v.rec?'<span class="rec">recommended</span>':''}`;
+    document.getElementById("lbl").innerHTML = `${v.key} — <small>${v.name}</small>`;
+    try { const p=new URLSearchParams(location.search); p.set("variant", v.key); history.replaceState(null,"",location.pathname+"?"+p.toString()); } catch(_){}
+  }
+  function go(d){ cur=(cur+d+VARIANTS.length)%VARIANTS.length; render(); }
+  document.getElementById("prev").addEventListener("click", ()=>go(-1));
+  document.getElementById("next").addEventListener("click", ()=>go(1));
+  document.getElementById("goHome").addEventListener("click", backHome);
+  document.getElementById("allBack").addEventListener("click", backHome);
+  document.getElementById("navAll").addEventListener("click", ()=>openAll(null));
+  document.getElementById("dockAll").addEventListener("click", ()=>openAll(null));
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme")==="dark";
+    if (dark) document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme","dark");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
+    if (e.key==="ArrowLeft") go(-1); else if (e.key==="ArrowRight") go(1);
+  });
+  render();
+</script>
+</body>
+</html>
