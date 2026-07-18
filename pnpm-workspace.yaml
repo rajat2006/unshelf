@@ -1,6 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # Dev infrastructure — the autonomous-agent runner seam. Its own project so
+  # `turbo run test` / `turbo run typecheck` include it.
+  - ".sandcastle"
 allowBuilds:
   '@clerk/shared': false
   cpu-features: false
