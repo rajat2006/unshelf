@@ -1,0 +1,84 @@
+# Production stack for Dokploy (ADR-0009). Dokploy deploys this Compose file on
+# the Hostinger VPS: each apps/* is its own service behind Dokploy's Traefik
+# proxy, and Postgres runs as a service on the same box.
+#
+# Routing (one domain, path-based — mirrors the dev Vite proxy). The two router
+# rules are mutually exclusive, so the split is explicit, not priority-based:
+#   PathPrefix(`/api`)  → api service   (Host && PathPrefix(`/api`))
+#   everything else     → web service   (Host && !PathPrefix(`/api`))
+#
+# Config comes from Dokploy's Environment settings (this file reads them; it
+# hardcodes no secrets). Required env: DOMAIN, POSTGRES_PASSWORD,
+# CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, VITE_CLERK_PUBLISHABLE_KEY.
+# See docs/deploy.md.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-unshelf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-unshelf}
+    volumes:
+      - unshelf-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unshelf} -d ${POSTGRES_DB:-unshelf}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
+      PORT: 3001
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.unshelf-api.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)
+      - traefik.http.routers.unshelf-api.entrypoints=websecure
+      - traefik.http.routers.unshelf-api.tls.certresolver=letsencrypt
+      - traefik.http.services.unshelf-api.loadbalancer.server.port=3001
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.unshelf-web.rule=Host(`${DOMAIN}`) && !PathPrefix(`/api`)
+      - traefik.http.routers.unshelf-web.entrypoints=websecure
+      - traefik.http.routers.unshelf-web.tls.certresolver=letsencrypt
+      - traefik.http.services.unshelf-web.loadbalancer.server.port=80
+
+volumes:
+  unshelf-db:
+
+networks:
+  # Private network for db↔api; never exposed to Traefik.
+  internal:
+  # Dokploy's shared Traefik network, created by Dokploy on the VPS.
+  dokploy-network:
+    external: true
