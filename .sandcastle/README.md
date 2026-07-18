@@ -28,9 +28,32 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
   present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
   (absence *is* Claude). Reads the issue's full label set.
+- **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
+  named error. The capability scripts run under a fixed workflow-supplied env; a
+  missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
+- **`capability-context.ts`** — `loadCapabilityContext()`: the one reader of the
+  env contract every `agent-*.yml` sets (issue coordinates, output dir, and the
+  provider resolved from the full label set). Returns the `promptArgs` ready to
+  spread into `run()`.
 
 Later workflow tickets add each capability as a thin `run()` script + YAML on top
 of these helpers.
+
+## Capabilities
+
+Each capability is a self-contained directory — a `run()` script + its `prompt.md`
+— driven by one `.github/workflows/agent-*.yml`. The workflow owns every git,
+`gh`, and label mutation; the script only produces commits and/or output files.
+
+- **`implement/`** — the core spine (workflow `agent-implement.yml`). Calls
+  `run()` directly (no structured output — the *work is the commits*), guards on a
+  non-zero commit count, and relies on the built-in `idleTimeoutSeconds` watchdog
+  inside the workflow's 60-min job timeout. Provider resolved from the full label
+  set via `resolveAgent`.
+- **`write-pr/`** — authors the draft PR's title + body via `runWithRetry`
+  (structured output *is* the work), writing flat text files the workflow feeds to
+  `gh pr create --body-file`. Runs after the branch is pushed; reads and
+  summarises, never commits.
 
 ## Pinned version
 
