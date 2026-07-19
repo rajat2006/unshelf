@@ -28,6 +28,16 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
   present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
   (absence *is* Claude). Reads the issue's full label set.
+- **`prepare-codex-auth.ts`** — `prepareCodexAuth(providerName)` (Unshelf-specific):
+  the runner-side half of the Codex path. When the resolved provider is Codex it
+  seeds `CODEX_AUTH_JSON` → `$CODEX_HOME/auth.json` **only if that file is absent**
+  (Codex refreshes the tokens in place mid-run, so a later phase must not clobber
+  them), forces `cli_auth_credentials_store = "file"` in `config.toml` (the OS
+  keyring is unreachable in CI), and strips `OPENAI_KEY`/`OPENAI_API_KEY` so Codex
+  uses the `gpt-5.6-sol` subscription seat, not the metered API. A no-op for the
+  Claude default. Every capability calls it immediately before `run()`, so the
+  setup is uniform across phases. (The seeded secret needs a periodic re-paste —
+  Codex's refresh token is single-use; see `docs/agents/sandcastle.md`.)
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.

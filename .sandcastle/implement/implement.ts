@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
+import { prepareCodexAuth } from "../prepare-codex-auth";
 
 /**
  * The `implement` capability: work a ready issue into commits on its branch.
@@ -20,6 +21,10 @@ import { loadCapabilityContext } from "../capability-context";
 
 const ctx = loadCapabilityContext();
 console.log(`Resolved provider model: ${ctx.model}`);
+
+// Materialise the Codex subscription seat (auth.json + file credential store,
+// OPENAI_* stripped) before the run — a no-op on the Claude Code default.
+prepareCodexAuth(ctx.agent.name);
 
 const result = await sandcastle.run({
   name: `implement-#${ctx.issueNumber}`,
