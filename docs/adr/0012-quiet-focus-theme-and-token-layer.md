@@ -15,8 +15,8 @@ map-themed.
 - **Palette.** Cool near-neutral greyscale + a single **indigo** accent (light
   `#4B57C4`, dark `#7C88FF`). **Green** signals *done*; **quiet-slate** signals the
   derived *past target* state (ADR-0005) — **never red**. The soft, never-nagging
-  character of a Target date (glossary) reaches the UI here: nothing overdue turns
-  alarm-red.
+  character of a Target date (glossary) reaches the UI here: a past-target Item never
+  turns alarm-red.
 - **Type.** One modern **grotesque** for everything. Ship candidate **Inter**, or
   the native `system-ui` stack for **zero webfont cost** — the cheapest option and a
   live choice at build time.
