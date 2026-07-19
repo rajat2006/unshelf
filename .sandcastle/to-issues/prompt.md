@@ -7,6 +7,10 @@ You are **not** implementing anything and **not** creating any issues — the
 workflow creates the child issues from the output you emit. Your job is to read
 the PRD and produce a clean decomposition.
 
+This run is **non-interactive**: there is no one to ask. Resolve any ambiguity in
+the PRD with a reasonable interpretation and proceed — never block for a
+clarification.
+
 # CONTEXT
 
 Read the PRD in full, including comments and any parent it references:
@@ -52,8 +56,10 @@ deterministically renders the `## Parent` back-reference, the `## What to build`
 section, and the `## Acceptance criteria` checklist from your fields — so supply
 the content, not the Markdown scaffolding:
 
-- `whatToBuild` — one or two paragraphs describing the vertical slice. Plain
-  prose; no headings.
+- `whatToBuild` — one or two paragraphs describing the vertical slice in terms of
+  behaviour and intent. Plain prose; no headings. **Do not include file paths or
+  code snippets** — name the behaviour and let the implementing agent choose the
+  files and code.
 - `acceptanceCriteria` — a list of testable outcomes, each a single line with no
   leading `- [ ]` (the runner adds the checkbox). At least one, and at least one
   of them must be the slice's **testing/verification** criterion.
@@ -79,9 +85,12 @@ block as the **last thing** in your response, with `children` **in build order**
 }
 </output>
 
-- `title` — a single line under 256 characters, imperative and specific.
+- `title` — a single line under 256 characters, imperative and specific. It is an
+  **issue** title, not a commit message: **no** conventional-commit prefix
+  (`feat:`, `fix:`, `refactor:`, `docs:`, …).
 - `children` — at least one; each an independently verifiable, vertical slice of
   the PRD, ordered so dependencies come first.
-- Do **not** pre-render Markdown or a parent reference into any field, and do
-  **not** add a dependency field — the runner owns the body shape and the list
-  order is the dependency signal.
+- Do **not** pre-render Markdown or a parent reference into any field, do **not**
+  add a dependency field — the runner owns the body shape and the list order is
+  the dependency signal — and do **not** add a `Closes #…` (or `Fixes`/`Resolves`)
+  directive anywhere: these are child issues, not PRs.

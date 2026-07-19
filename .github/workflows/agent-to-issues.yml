@@ -42,7 +42,29 @@ jobs:
         run: |
           set -euo pipefail
           # Full label set (AC: read the whole set, not just the trigger label).
-          labels_json=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '[.labels[].name]')
+          # Fails CLOSED like the shape probes below: retry transient blips, then a
+          # persistent failure REFUSES (shape-error) rather than crashing the gate
+          # — a bare crash here would exit before `proceed` is set, and the
+          # blocked-on-failure handler (gated on proceed == 'true') would then
+          # leave the issue with neither agent:blocked nor a run-link comment,
+          # violating #52's "any stop → blocked". The gate-failure backstop step
+          # below is the second line of defence for any other unexpected exit.
+          labels_json=""
+          labels_ok=false
+          for attempt in 1 2 3; do
+            if labels_json=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '[.labels[].name]' 2>/dev/null); then
+              labels_ok=true
+              break
+            fi
+            echo "label read attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$labels_ok" != "true" ]; then
+            echo "Could not read the issue's labels after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "labels_json=$labels_json" >> "$GITHUB_OUTPUT"
 
           # Provider switch (spec #64): mirrors resolveAgent() so the workflow's
@@ -133,17 +155,34 @@ jobs:
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
 
-      - name: Refuse — could not determine issue shape
+      - name: Refuse — could not read the issue's labels or shape
         if: steps.gate.outputs.refusal == 'shape-error'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
-          # Fail-closed shape probe gave up after retries — a transient API failure.
-          # Nothing was routed, to avoid decomposing a leaf or duplicating children.
+          # A fail-closed gate probe (label read, parent shape, or existing
+          # children) gave up after retries — a transient API failure. Nothing was
+          # routed, to avoid decomposing a leaf or duplicating children.
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:to-issues" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
-          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: could not read this issue's parent/sub-issue shape after retries (a transient GitHub API failure). Nothing was created, to avoid decomposing a leaf or duplicating an existing decomposition. Clear \`agent:blocked\` and re-add \`agent:to-issues\` to retry. Run: ${RUN_URL}"
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: could not read this issue's labels or parent/sub-issue shape after retries (a transient GitHub API failure). Nothing was created, to avoid decomposing a leaf or duplicating an existing decomposition. Clear \`agent:blocked\` and re-add \`agent:to-issues\` to retry. Run: ${RUN_URL}"
+
+      - name: Mark blocked — gate failed unexpectedly
+        # Backstop for #52's "any stop → blocked with a run URL": if the gate step
+        # itself exits non-zero for any reason other than the fail-closed refusals
+        # above (which set proceed=false and exit 0), `proceed` is never set, so
+        # neither the refusal steps nor the blocked-on-failure step at the end
+        # fire. This catch-all keys off the gate step's own failure outcome so the
+        # issue is never left silently stuck in agent:to-issues.
+        if: always() && steps.gate.outcome == 'failure'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:to-issues" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: the workflow's gate step failed unexpectedly before routing (see the run for details). Nothing was created. Clear \`agent:blocked\` and re-add \`agent:to-issues\` to retry. Run: ${RUN_URL}"
 
       - name: Refuse — issue is a sub-issue of another issue
         if: steps.gate.outputs.refusal == 'subissue'
