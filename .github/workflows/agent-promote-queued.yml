@@ -104,18 +104,23 @@ jobs:
               continue
             fi
 
-            # --- Gate: every OTHER blocker must be closed ---------------------
-            # The just-closed issue is excluded by number so an eventual-consistency
-            # lag (blocked_by still reporting it open) never blocks its own
-            # promotion. Fail closed on a lookup error.
+            # --- Gate: every blocker must be closed ---------------------------
+            # Count ALL currently-open blockers (CVM parity), so a blocker reopened
+            # mid-run still holds the dependent. The `blocked_by` endpoint reports
+            # each blocker's LIVE state, so the just-closed issue already reads
+            # `closed` here — no number exclusion needed. `--jq` runs per page and
+            # STREAMS one `.number` per open blocker; do NOT wrap in `[...]` and
+            # count with `jq length` — under `--paginate` that yields one array per
+            # page (e.g. `0\n1`), which Bash's numeric test rejects and falls open.
+            # A newline-separated stream concatenates cleanly across pages, and a
+            # non-empty result means "still blocked". Fail closed on a lookup error.
             if ! open_blockers=$(gh api "repos/${GH_REPO}/issues/${dep}/dependencies/blocked_by" \
-                --paginate \
-                --jq "[.[] | select(.state == \"open\") | select(.number != ${CLOSED_NUMBER}) | .number]"); then
+                --paginate --jq '.[] | select(.state == "open") | .number'); then
               echo "#${dep}: blocked_by lookup failed — leaving agent:queued (fail closed)."
               continue
             fi
-            if [ "$(echo "$open_blockers" | jq 'length')" -ne 0 ]; then
-              echo "#${dep}: still blocked by open issue(s) $(echo "$open_blockers" | jq -c '.') — leaving agent:queued."
+            if [ -n "$open_blockers" ]; then
+              echo "#${dep}: still blocked by open issue(s): $(echo "$open_blockers" | paste -sd' ' -) — leaving agent:queued."
               continue
             fi
 
