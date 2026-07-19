@@ -64,11 +64,36 @@ const result = await runWithExtraction({
 });
 
 const { body, addressed, deferred } = buildSummaryComment(result.output);
+
+// A run "succeeds" only if it actually produced work or a reason. Guard the two
+// ways success would be hollow, so the workflow marks the PR blocked instead of
+// pushing a no-op and posting an empty summary (CVM refuses runs that produce
+// neither commits nor replies):
+//   1. Nothing addressed AND nothing deferred — the agent did nothing at all.
+//   2. Output claims `addressed` items but no commits landed — an incoherent
+//      extraction (it says it fixed things it never committed).
+// An all-deferred run WITH commits === 0 is allowed: the deferred items carry
+// their reasons and the summary comment is the "reply" that explains them.
+const commits = result.commits.length;
+if (commits === 0 && result.output.items.length === 0) {
+  fail(
+    "Run produced no commits and reported no review comments to address or " +
+      "defer — nothing was done. Check the run log; the PR may have had no " +
+      "actionable review threads.",
+  );
+}
+if (commits === 0 && addressed > 0) {
+  fail(
+    `Output marks ${addressed} comment(s) as addressed, but the run committed ` +
+      "nothing — the fixes were never committed. Refusing to report success.",
+  );
+}
+
 fs.writeFileSync(path.join(ctx.outputDir, "pr_comment.md"), body);
 
 console.log(
   `\nimplement-pr complete: ${result.output.items.length} comment(s) — ` +
-    `${addressed} addressed, ${deferred} deferred.`,
+    `${addressed} addressed, ${deferred} deferred (${commits} commit(s)).`,
 );
 console.log(`  ${result.output.summary}`);
 
@@ -120,4 +145,15 @@ function buildSummaryComment(review: ImplementPrOutput): {
     addressed: addressed.length,
     deferred: deferred.length,
   };
+}
+
+/**
+ * Fail the run: write the reason where the workflow's `failure()` step reads it
+ * (to comment on the PR) and exit non-zero. Same contract as the `implement`
+ * capability's `fail()`.
+ */
+function fail(message: string): never {
+  console.error(`\nFAILED: ${message}`);
+  fs.writeFileSync(path.join(ctx.outputDir, "failure_reason.txt"), message);
+  process.exit(1);
 }

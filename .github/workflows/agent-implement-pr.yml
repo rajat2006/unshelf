@@ -64,6 +64,19 @@ jobs:
             exit 0
           fi
 
+          # Refuse a closed or merged PR (#66 is scoped to an OPEN PR). The trigger
+          # is human-applied to an arbitrary PR — unlike agent:review, which
+          # implement adds to a fresh draft — so a label on a merged/closed PR must
+          # not start a run that would then try to push onto a settled branch.
+          state=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
+          if [ "$state" != "OPEN" ]; then
+            echo "PR is $state, not OPEN — refusing implement-pr."
+            echo "pr_state=$state" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=closed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # SECURITY: this workflow runs under `pull_request_target`, so the base
           # repo's secrets (CLAUDE_CODE_OAUTH_TOKEN / CODEX_AUTH_JSON / AGENT_PAT)
           # are in scope. Refuse fork PRs so their (untrusted) head code is never
@@ -107,6 +120,15 @@ jobs:
           set -euo pipefail
           gh pr edit "$PR_NUMBER" --remove-label "agent:implement-pr" || true
           gh pr comment "$PR_NUMBER" --body "Refused to run \`agent:implement-pr\`: this PR is from a fork. The workflow runs under \`pull_request_target\` with repository secrets in scope, so it deliberately does not check out or execute fork head code. A maintainer can address the comments manually. Cleared \`agent:implement-pr\`."
+
+      - name: Refuse — PR is closed or merged
+        if: steps.gate.outputs.refusal == 'closed'
+        env:
+          PR_STATE: ${{ steps.gate.outputs.pr_state }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --remove-label "agent:implement-pr" || true
+          gh pr comment "$PR_NUMBER" --body "Refused to run \`agent:implement-pr\`: this PR is ${PR_STATE}, not open. Re-open it before asking an agent to address review comments. Cleared \`agent:implement-pr\`."
 
       - name: Transition labels — remove implement-pr/blocked, add in-progress
         if: steps.gate.outputs.proceed == 'true'
@@ -216,9 +238,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
+          reason="(no reason file written — check the workflow logs)"
+          if [ -f "${RUNNER_TEMP}/failure_reason.txt" ]; then
+            reason=$(cat "${RUNNER_TEMP}/failure_reason.txt")
+          fi
           gh pr edit "$PR_NUMBER" --add-label "agent:blocked" || true
           {
             printf '%s\n\n' '`agent:implement-pr` run failed.'
+            printf '**Reason:** %s\n\n' "$reason"
             printf '**Workflow run:** %s\n\n' "$RUN_URL"
             printf '%s\n' 'Clear `agent:blocked` and re-add `agent:implement-pr` to retry.'
           } > "${RUNNER_TEMP}/implement_pr_failed.md"

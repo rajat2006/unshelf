@@ -17,7 +17,7 @@ export const IMPLEMENT_PR_STATUSES = ["addressed", "deferred"] as const;
  * path for a line/file-scoped comment; `action` records what the agent changed
  * (for `addressed`) or why it left the comment alone (for `deferred`).
  */
-export const addressedCommentSchema = z.object({
+export const implementPrItemSchema = z.object({
   comment: z.string().min(1),
   status: z.enum(IMPLEMENT_PR_STATUSES),
   file: z.string().min(1).optional(),
@@ -37,9 +37,9 @@ export const addressedCommentSchema = z.object({
  */
 export const implementPrOutputSchema = z.object({
   summary: z.string().min(1),
-  items: z.array(addressedCommentSchema),
+  items: z.array(implementPrItemSchema),
 });
 
 export type ImplementPrStatus = (typeof IMPLEMENT_PR_STATUSES)[number];
-export type AddressedComment = z.infer<typeof addressedCommentSchema>;
+export type ImplementPrItem = z.infer<typeof implementPrItemSchema>;
 export type ImplementPrOutput = z.infer<typeof implementPrOutputSchema>;

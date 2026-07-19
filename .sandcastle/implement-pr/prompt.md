@@ -6,16 +6,28 @@ safely can to satisfy each comment, run the repo's checks, and commit your fixes
 
 # CONTEXT
 
-Read the review threads first — that is the work list:
+Read the review threads first — that is the work list. Fetch them via **GraphQL**,
+which is the only API that exposes each thread's `isResolved` state (the REST
+`/pulls/N/comments` endpoint does not), so you can reliably skip resolved threads:
+
+```
+repo=$(gh repo view --json owner,name -q '.owner.login + " " + .name')
+set -- $repo   # $1=owner  $2=name
+gh api graphql -f owner="$1" -f name="$2" -F pr={{PR_NUMBER}} -f query='
+  query($owner:String!,$name:String!,$pr:Int!){
+    repository(owner:$owner,name:$name){
+      pullRequest(number:$pr){
+        reviewThreads(first:100){ nodes{
+          isResolved isOutdated path line
+          comments(first:20){ nodes{ author{login} body } } } }
+        reviews(first:50){ nodes{ author{login} state body } } } } }'
+```
+
+Also skim the human-readable view for top-level discussion:
 
 ```
 gh pr view {{PR_NUMBER}} --comments
-gh api repos/{owner}/{repo}/pulls/{{PR_NUMBER}}/comments   # inline review comments (file + line)
-gh api repos/{owner}/{repo}/pulls/{{PR_NUMBER}}/reviews    # review summaries + state
 ```
-
-(`gh api` expands the `{owner}`/`{repo}` placeholders from the current clone's
-remote — run those commands verbatim.)
 
 The branch was cut from `origin/main`, so the change under review is:
 
