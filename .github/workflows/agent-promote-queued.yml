@@ -1,0 +1,93 @@
+name: Agent Promote Queued
+
+# Chain-continuation, pure label automation (spec #52 / #71): when an issue
+# closes, any dependent that was waiting on it via GitHub's native issue
+# dependencies gets flipped `agent:queued` → `agent:implement` — but only once
+# EVERY blocker is closed. No runner, no checkout, no agent — just `gh` + `jq`.
+# The promotion label is added with AGENT_PAT so it chains into agent-implement
+# (a GITHUB_TOKEN-applied label never triggers a downstream workflow).
+#
+# The promotion rule is the pure `decidePromotion` in
+# `.sandcastle/promote-queued.ts` (unit-tested); the bash below mirrors it, the
+# same helper-plus-workflow-mirror shape resolveAgent/agent-implement use.
+
+on:
+  issues:
+    types: [closed]
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      # Coalesce rapid re-close events on the same issue; cancelling a stale one
+      # is safe because promotion is idempotent (re-adding agent:implement is a
+      # no-op) and the surviving run recomputes from the live label/blocker set.
+      group: agent-promote-queued-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    permissions:
+      issues: write
+
+    env:
+      CLOSED_NUMBER: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      AGENT_PAT: ${{ secrets.AGENT_PAT }}
+
+    steps:
+      - name: Promote unblocked agent:queued dependents
+        run: |
+          set -uo pipefail
+
+          # Dependents this issue was blocking (native issue dependencies). The
+          # reverse `blocking` list includes already-closed dependents too — the
+          # agent:queued gate below filters them out.
+          dependents=$(gh api "repos/${GH_REPO}/issues/${CLOSED_NUMBER}/dependencies/blocking" \
+            --paginate --jq '.[].number' 2>/dev/null || true)
+          if [ -z "$dependents" ]; then
+            echo "#${CLOSED_NUMBER} was blocking nothing — nothing to promote."
+            exit 0
+          fi
+
+          for dep in $dependents; do
+            labels=$(gh issue view "$dep" --json labels --jq '[.labels[].name]' 2>/dev/null || echo "[]")
+
+            # Gate 1: only queued issues are promotable.
+            if ! echo "$labels" | jq -e 'index("agent:queued")' >/dev/null; then
+              echo "#${dep}: not agent:queued — skipping."
+              continue
+            fi
+
+            # Gate 2: a human who added ready-for-human pulled it out of the lane.
+            if echo "$labels" | jq -e 'index("ready-for-human")' >/dev/null; then
+              echo "#${dep}: ready-for-human present — leaving agent:queued."
+              continue
+            fi
+
+            # Gate 3: every OTHER blocker must be closed. The just-closed issue is
+            # excluded by number so an eventual-consistency lag (blocked_by still
+            # reporting it open) never blocks its own promotion.
+            open_blockers=$(gh api "repos/${GH_REPO}/issues/${dep}/dependencies/blocked_by" \
+              --paginate \
+              --jq "[.[] | select(.state == \"open\") | select(.number != ${CLOSED_NUMBER}) | .number]" \
+              2>/dev/null || echo "[]")
+            if [ "$(echo "$open_blockers" | jq 'length')" -ne 0 ]; then
+              echo "#${dep}: still blocked by open issue(s) $(echo "$open_blockers" | jq -c '.') — leaving agent:queued."
+              continue
+            fi
+
+            echo "#${dep}: all blockers closed — promoting agent:queued → agent:implement."
+            # AGENT_PAT so the added agent:implement fires agent-implement. Fall
+            # back to GITHUB_TOKEN (which still flips the label, but the run then
+            # needs a manual re-add to trigger) — mirrors agent-implement's
+            # agent:review add.
+            if [ -n "${AGENT_PAT:-}" ]; then
+              if GH_TOKEN="$AGENT_PAT" gh issue edit "$dep" \
+                  --remove-label "agent:queued" --add-label "agent:implement"; then
+                continue
+              fi
+              echo "#${dep}: AGENT_PAT edit failed; falling back to GITHUB_TOKEN (implement will need a manual re-add)."
+            fi
+            gh issue edit "$dep" --remove-label "agent:queued" --add-label "agent:implement" || \
+              echo "#${dep}: label edit failed — leaving as-is."
+          done

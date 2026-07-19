@@ -50,6 +50,13 @@ pinned Sandcastle version and Unshelf's provider set:
   Claude default. Every capability calls it immediately before `run()`, so the
   setup is uniform across phases. (The seeded secret needs a periodic re-paste —
   Codex's refresh token is single-use; see `docs/agents/sandcastle.md`.)
+- **`promote-queued.ts`** — `decidePromotion(...)` (Unshelf-specific): the pure
+  rule behind `agent-promote-queued.yml`. Given a queued dependent's label set and
+  its `blocked_by` list, decides whether a just-closed blocker unblocks it —
+  promote only when the issue is `agent:queued`, is not `ready-for-human`, and has
+  **no other open blocker** (the closing issue is treated as closed even if the
+  dependency API lags). Invokes nothing; the workflow does every `gh` call and
+  mirrors this rule in bash (like `resolveAgent`).
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
