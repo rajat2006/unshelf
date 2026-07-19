@@ -22,8 +22,10 @@ pinned Sandcastle version and Unshelf's provider set:
   on extraction), then a resumed *extract* pass via `runWithRetry`. Returns the
   produce run's commits with the extraction's output, so side effects (commits,
   issue creation) are never repeated. For capabilities with a side-effectful
-  produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`,
-  `architecture-review`).
+  produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`) —
+  and for `architecture-review`, whose produce phase is read-only but *heavy* (a
+  whole-tree survey): the split there separates that long survey from rigid JSON
+  emission, the same reliability win, rather than protecting a side effect.
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
@@ -35,6 +37,14 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`architecture-review-output.ts`** — `architectureReviewOutputSchema` (Zod):
+  the `architecture-review` capability's `<output>` contract — an `outcome` ∈
+  proposed/skipped, a `summary`, and (only when `proposed`) a `prdTitle`/`prdBody`
+  or (only when `skipped`) a `reason`. Refinements require the PRD for `proposed`
+  and a reason for `skipped` and forbid a PRD on `skipped`, so a self-contradictory
+  decision self-corrects via same-session retry before the workflow opens any PRD.
+  One proposal per run — CVM proposes a single fresh deepening opportunity at a
+  time so each becomes its own PRD → child-issues flow, not a rolling report.
 - **`implement-pr-output.ts`** — `implementPrOutputSchema` (Zod): the
   `implement-pr` capability's `<output>` contract — a `summary` plus `items[]`
   (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, an
@@ -144,17 +154,23 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
 - **`architecture-review/`** — the scheduled/on-demand codebase sweep (workflow
-  `agent-architecture-review.yml`) via `runWithExtraction`. Unlike the others it
-  has **no label trigger and no originating issue/PR**, so it reads its own
-  minimal env (an optional `AGENT_LABELS` for the provider — Claude by default —
-  plus `OUTPUT_DIR`) instead of `loadCapabilityContext`. The produce pass drives
-  the repo's local `/improve-codebase-architecture` to find **drift** (vs
-  `CONTEXT.md`/ADRs) and **deepening opportunities**; the resumed extraction pass
-  emits them as one `<output>` block validated against
-  `architectureReviewOutputSchema`. **Read-only** — it commits nothing; per
-  invariant H it only writes `architecture_report.md` (the durable tracking-issue
-  body, severity-grouped) and `architecture_summary.txt` to `OUTPUT_DIR`, and the
-  workflow opens or refreshes a single tracking issue from them.
+  `agent-architecture-review.yml`) via `runWithExtraction` — the autonomous,
+  GitHub-native analogue of CVM's interactive `/improve-codebase-architecture`.
+  Unlike the others it has **no label trigger and no originating issue/PR**, so it
+  reads its own minimal env (the open proposals to dedupe against, an optional
+  `AGENT_LABELS` for the provider — Claude by default — plus `OUTPUT_DIR`) instead
+  of `loadCapabilityContext`. The produce pass surveys the tree in prose for the
+  **single freshest deepening opportunity** — described directly with the
+  `/codebase-design` vocabulary, **not** by running the interactive
+  `/improve-codebase-architecture` skill (which is `disable-model-invocation` and
+  needs an HTML report + a human); the resumed extraction pass emits a
+  `proposed | skipped` decision validated against `architectureReviewOutputSchema`
+  (one PRD per run, not a findings list). **Read-only** — it commits nothing; per
+  invariant H it only writes `architecture_outcome.txt`, `architecture_summary.txt`,
+  and — when `proposed` — `prd_title.txt` + `prd_body.txt` to `OUTPUT_DIR`. The
+  workflow dedupes against open `source:architecture-review` proposals, skips the
+  run once ten are open, and opens the proposed PRD with that provenance label
+  (a human later expands it with `agent:to-issues`).
 - **`implement-pr/`** — addresses the review comments on an open PR (workflow
   `agent-implement-pr.yml`) via `runWithExtraction`. The produce pass reads the
   PR's review threads via **GraphQL** (which exposes each thread's `isResolved`
