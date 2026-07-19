@@ -1,5 +1,11 @@
 # v1 feature cut: capture, organise, and item-level track — nothing else
 
+> **Superseded in intent by [ADR-0014](0014-next-gen-surface-model-and-navigation.md)
+> (2026-07-19, map #53).** The web-UI redesign designs *ahead* of this frozen cut —
+> the target model adds **multiple Trails** and a **labels** axis over the store.
+> This ADR still describes v1 as shipped; the departure and its downstream build live
+> in ADR-0014 and #74.
+
 Unshelf v1 ships three of the founding brief's five verbs — **dump, organise,
 track** — and explicitly defers the other two. A User captures Items (paste a
 link, or add manually by title) into a single catch-all folder (**All**),

@@ -72,7 +72,11 @@ tool — a deferred sibling of Capture, not a synonym)
 The single catch-all folder every captured Item lands in — the raw dump. In v1
 the only folder, as Raindrop has one default collection. Organising happens by
 pulling Items into Stops, not by creating more folders.
-_Avoid_: Inbox, Library, All-items, Dump
+_Redesign note (ADR-0014, map #53):_ the web-UI redesign names this surface
+**Library** in the UI — the model concept (the catch-all every capture lands in) is
+unchanged; only the user-facing name differs. The target model also adds a
+many-to-many **label** axis over it (built downstream, #74).
+_Avoid_: Inbox, All-items, Dump (and — pre-redesign — Library, now the UI name)
 
 **Stop**:
 A flat grouping the User forms by pulling one or more Items together — the single
@@ -89,6 +93,18 @@ A visual arrangement of Stops in sequence (Stop 1 → Stop 2 → …) with forks
 threads run in parallel. It expresses "what to do first / next" as topology; in
 v1 it carries no dates or calendar.
 _Avoid_: Map, Roadmap, Timeline, Schedule, Graph
+
+**Label**:
+A free-text marker a User creates and applies to an Item to categorise it — the
+cross-cutting axis over the store (the **Library**). Many-to-many: an Item can carry
+several Labels and a Label spans many Items. Each User creates and customises their
+own Labels, private to that User like everything else. Distinct from a **Stop**: a Label categorises Items across
+the whole store, whereas a Stop sequences Items within one Trail — the two are
+independent axes. Readmits the "tag" idea ADR-0004 set aside: once the Stop is a
+per-Trail waypoint (ADR-0014) the store needs this cross-cutting grouping. A
+next-gen concept — the model realisation (schema, enforcement) is built downstream
+(#74).
+_Avoid_: Tag (the former name — now Label), Category, Bucket, Folder, Topic
 
 ### Reminders (deferred from v1)
 
