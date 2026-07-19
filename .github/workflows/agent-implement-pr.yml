@@ -137,11 +137,15 @@ jobs:
           # only one of them is never false-refused:
           #   - unresolved inline review threads (above),
           #   - top-level PR comments,
-          #   - submitted review BODIES that aren't a bare approval (a
-          #     REQUEST_CHANGES / COMMENTED review with prose but no inline comment).
+          #   - submitted review BODIES (a review with prose but no inline comment).
+          # Count EVERY review with a non-empty body — including an approval whose
+          # body may carry a suggestion or question — and let the agent decide
+          # whether it is actionable (CVM's predicate: body != null and != "").
+          # `!= null` matters: in jq `null != ""` is true, so without it a
+          # body-less review would be miscounted as feedback.
           comment_count=$(gh pr view "$PR_NUMBER" --json comments --jq '.comments | length')
           review_body_count=$(gh pr view "$PR_NUMBER" --json reviews \
-            --jq '[.reviews[] | select(.state != "APPROVED" and .body != "")] | length')
+            --jq '[.reviews[] | select(.body != null and .body != "")] | length')
           if [ "$unresolved" = "0" ] && [ "$comment_count" = "0" ] && [ "$review_body_count" = "0" ]; then
             echo "PR has no unresolved review threads, comments, or review bodies — nothing to address."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -267,7 +271,7 @@ jobs:
         # branch moved under us and should fail loudly rather than clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
-      - name: Reply on addressed threads
+      - name: Reply on answered threads
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           # Allowlist of review-thread node IDs that actually exist on THIS PR,
@@ -276,12 +280,13 @@ jobs:
           # an unrelated thread (the agent's output is untrusted input here).
           VALID_THREAD_IDS: ${{ steps.gate.outputs.valid_thread_ids }}
         # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
-        # addressed review thread. Reply on each thread whose id is on this PR.
-        # We deliberately do NOT resolve the thread: resolution is the reviewer's
-        # call (matching CVM, which only replies), so the reviewer confirms the fix
-        # and resolves. Best-effort per thread and never `set -e`: the fix commits
-        # are the deliverable and are already pushed, so a stale thread must not
-        # flip a successful run to blocked.
+        # answered review thread. Reply on each thread whose id is on this PR. We
+        # deliberately do NOT resolve the thread: resolution is the reviewer's call
+        # (matching CVM, which only replies). A validated id that FAILS to post is
+        # a real delivery error (auth/API), not an expected skip — we attempt every
+        # thread, then fail the step so the run lands in agent:blocked rather than
+        # silently dropping the conversational output and reporting success. An id
+        # that isn't on this PR's unresolved threads is skipped, not a failure.
         run: |
           set -uo pipefail
           file="${RUNNER_TEMP}/thread_replies.json"
@@ -290,27 +295,35 @@ jobs:
             exit 0
           fi
           count=$(jq 'length' "$file")
+          failed=0
           for i in $(seq 0 $((count - 1))); do
             tid=$(jq -r ".[$i].threadId" "$file")
             body=$(jq -r ".[$i].body" "$file")
             if ! echo "$VALID_THREAD_IDS" | jq -e --arg t "$tid" 'index($t)' >/dev/null; then
-              echo "threadId $tid is not a review thread on this PR — skipping (possible hallucinated or cross-PR id)."
+              echo "threadId $tid is not an unresolved review thread on this PR — skipping (possible hallucinated, cross-PR, or already-resolved id)."
               continue
             fi
-            gh api graphql -f threadId="$tid" -f body="$body" -f query='
+            if ! gh api graphql -f threadId="$tid" -f body="$body" -f query='
               mutation($threadId: ID!, $body: String!) {
                 addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) { comment { id } }
-              }' || echo "Could not reply on thread $tid — skipping."
+              }'; then
+              echo "Failed to reply on thread $tid."
+              failed=$((failed + 1))
+            fi
           done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::${failed} thread repl(y/ies) failed to post."
+            exit 1
+          fi
 
       - name: Post the summary comment
         if: steps.gate.outputs.proceed == 'true' && success()
         # implement-pr.ts wrote a Markdown summary of what it addressed vs
-        # deferred. Post it as one PR comment. Best-effort (|| true): the fix
-        # commits are the deliverable and are already pushed by the step above, so
-        # a transient comment-post failure must not flip a successful run to
-        # blocked and drop those commits on the floor.
-        run: gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/pr_comment.md" || true
+        # deferred. Post it as one PR comment. NOT best-effort: a failed post
+        # (auth/API) must fail the step so the run is blocked rather than reporting
+        # success while the summary silently vanished (CVM lets delivery failures
+        # fail). The fix commits are already pushed either way; a retry re-posts.
+        run: gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/pr_comment.md"
 
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog; `cancelled()` covers a
