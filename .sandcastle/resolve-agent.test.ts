@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CLAUDE_MODEL, CODEX_MODEL, resolveAgent } from "./resolve-agent";
 
@@ -14,6 +17,76 @@ describe("resolveAgent — provider chosen from the issue's full label set", () 
         dangerouslySkipPermissions: true,
       }).command,
     ).toContain('model_reasoning_effort="medium"');
+  });
+
+  it("finds Codex resumable sessions under CODEX_HOME", async () => {
+    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-home-"));
+    const sessionId = "session-from-configured-home";
+    const sessionPath = path.join(
+      codexHome,
+      "sessions",
+      "2026",
+      "07",
+      `rollout-test-${sessionId}.jsonl`,
+    );
+    const originalCodexHome = process.env.CODEX_HOME;
+
+    try {
+      fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+      fs.writeFileSync(sessionPath, "{}");
+      process.env.CODEX_HOME = codexHome;
+
+      const { agent } = resolveAgent(["agent:codex"]);
+      const found = await agent.sessionStorage?.findByIdOnHost(sessionId);
+
+      expect(found?.path).toBe(sessionPath);
+    } finally {
+      if (originalCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = originalCodexHome;
+      }
+      fs.rmSync(codexHome, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to HOME/.codex for Codex resumable sessions", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "home-"));
+    const sessionId = "session-from-default-home";
+    const sessionPath = path.join(
+      home,
+      ".codex",
+      "sessions",
+      "2026",
+      "07",
+      `rollout-test-${sessionId}.jsonl`,
+    );
+    const originalCodexHome = process.env.CODEX_HOME;
+    const originalHome = process.env.HOME;
+
+    try {
+      fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+      fs.writeFileSync(sessionPath, "{}");
+      delete process.env.CODEX_HOME;
+      process.env.HOME = home;
+
+      const { agent } = resolveAgent(["agent:codex"]);
+      const found = await agent.sessionStorage?.findByIdOnHost(sessionId);
+
+      expect(found?.path).toBe(sessionPath);
+    } finally {
+      if (originalCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = originalCodexHome;
+      }
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("defaults to Claude Code on claude-opus-4-8 when agent:codex is absent", () => {

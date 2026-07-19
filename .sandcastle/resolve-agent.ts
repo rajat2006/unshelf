@@ -1,3 +1,5 @@
+import * as os from "node:os";
+import * as path from "node:path";
 import { claudeCode, codex } from "@ai-hero/sandcastle";
 import type { AgentProvider } from "@ai-hero/sandcastle";
 
@@ -35,7 +37,19 @@ export interface ResolvedAgent {
 export function resolveAgent(labels: readonly string[]): ResolvedAgent {
   if (labels.includes(CODEX_LABEL)) {
     return {
-      agent: codex(CODEX_MODEL, { effort: MODEL_EFFORT }),
+      agent: codex(CODEX_MODEL, {
+        effort: MODEL_EFFORT,
+        // Codex writes sessions below CODEX_HOME. Sandcastle otherwise searches
+        // ~/.codex/sessions when resuming the produce pass for extraction, which
+        // differs from the Actions runner's temporary CODEX_HOME.
+        sessionStorage: {
+          hostSessionsDir: path.join(
+            process.env.CODEX_HOME ??
+              path.join(process.env.HOME ?? os.homedir(), ".codex"),
+            "sessions",
+          ),
+        },
+      }),
       model: CODEX_MODEL,
     };
   }
