@@ -125,17 +125,25 @@ jobs:
                 pullRequest(number: $pr) {
                   reviewThreads(first: 100) { nodes { id isResolved } }
                 } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes')
-          # Node IDs of every review thread ON THIS PR (the reply allowlist).
-          valid_thread_ids=$(echo "$threads" | jq -c '[.[].id]')
+          # The reply allowlist is UNRESOLVED threads only: an addressed item must
+          # reply on an open conversation, never re-open a thread a human already
+          # resolved (even if the extraction points at one by mistake).
+          valid_thread_ids=$(echo "$threads" | jq -c '[.[] | select(.isResolved == false) | .id]')
           echo "valid_thread_ids=$valid_thread_ids" >> "$GITHUB_OUTPUT"
           unresolved=$(echo "$threads" | jq '[.[] | select(.isResolved == false)] | length')
 
-          # No feedback ⇒ refuse before running the agent. "Feedback" = an
-          # unresolved inline review thread OR a top-level PR comment (some reviews
-          # land as a plain comment, not a thread), so we don't false-refuse those.
+          # No feedback ⇒ refuse before running the agent. Count the three distinct
+          # feedback surfaces separately (as CVM does), so a review that lands as
+          # only one of them is never false-refused:
+          #   - unresolved inline review threads (above),
+          #   - top-level PR comments,
+          #   - submitted review BODIES that aren't a bare approval (a
+          #     REQUEST_CHANGES / COMMENTED review with prose but no inline comment).
           comment_count=$(gh pr view "$PR_NUMBER" --json comments --jq '.comments | length')
-          if [ "$unresolved" = "0" ] && [ "$comment_count" = "0" ]; then
-            echo "PR has no unresolved review threads and no comments — nothing to address."
+          review_body_count=$(gh pr view "$PR_NUMBER" --json reviews \
+            --jq '[.reviews[] | select(.state != "APPROVED" and .body != "")] | length')
+          if [ "$unresolved" = "0" ] && [ "$comment_count" = "0" ] && [ "$review_body_count" = "0" ]; then
+            echo "PR has no unresolved review threads, comments, or review bodies — nothing to address."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
             echo "refusal=no_feedback" >> "$GITHUB_OUTPUT"
             exit 0
@@ -168,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           gh pr edit "$PR_NUMBER" --remove-label "agent:implement-pr" || true
-          gh pr comment "$PR_NUMBER" --body "Skipped \`agent:implement-pr\`: this PR has no unresolved review threads and no comments to address. Leave a review with the changes you want, then re-add \`agent:implement-pr\`. Cleared the label."
+          gh pr comment "$PR_NUMBER" --body "Skipped \`agent:implement-pr\`: this PR has no unresolved review threads, comments, or review bodies to address. Leave a review with the changes you want, then re-add \`agent:implement-pr\`. Cleared the label."
 
       - name: Transition labels — remove implement-pr/blocked, add in-progress
         if: steps.gate.outputs.proceed == 'true'

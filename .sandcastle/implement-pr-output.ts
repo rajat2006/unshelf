@@ -19,12 +19,12 @@ export const IMPLEMENT_PR_STATUSES = ["addressed", "deferred"] as const;
  *
  * `threadId` is the GitHub GraphQL node ID of the review thread this item answers
  * (the `id` of a `reviewThreads` node from the produce-phase query). When present
- * on an `addressed` item, the workflow posts a reply on that exact thread —
- * closing the loop in-context, CVM-style — instead of only listing it in the
- * summary comment. The workflow validates the id against the PR's real threads
- * before replying and leaves the thread open (resolution is the reviewer's call).
- * Omitted for a top-level PR comment that isn't a review thread, and irrelevant
- * for `deferred` items (left open for a human).
+ * — on an `addressed` OR a `deferred` item — the workflow posts a reply on that
+ * exact thread (the fix, or the reason it was left), closing the loop in-context
+ * CVM-style instead of only listing it in the summary comment. The workflow
+ * validates the id against the PR's real *unresolved* threads before replying and
+ * leaves the thread open (resolution is the reviewer's call). Omitted only for a
+ * top-level PR comment that isn't a review thread.
  */
 export const implementPrItemSchema = z.object({
   comment: z.string().min(1),

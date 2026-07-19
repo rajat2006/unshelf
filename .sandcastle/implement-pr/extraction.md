@@ -38,10 +38,11 @@ Rules:
 - `action` — required, non-empty: what you changed (for `addressed`) or why you
   deferred it (for `deferred`).
 - `threadId` — the GraphQL node `id` of the review thread this item answers (the
-  `id` field from the `reviewThreads` query). Include it on an **`addressed`**
-  item so the workflow can reply on that exact thread. **Omit it** for a top-level
-  PR comment that has no review thread, and for `deferred` items (they stay open
-  for a human). Use the real `id` — never invent one: the workflow checks every
-  id against the PR's actual threads and silently drops any that doesn't match.
+  `id` field from the `reviewThreads` query). Include it whenever the item maps to
+  a review thread — **for `deferred` items too**, so the workflow can post your
+  reason (why you declined or couldn't act) on the thread itself, not just in the
+  summary. **Omit it** only for a top-level PR comment that has no review thread.
+  Use the real `id` — never invent one: the workflow checks every id against the
+  PR's actual unresolved threads and silently drops any that doesn't match.
 
 Emit nothing after the closing `</output>` tag.

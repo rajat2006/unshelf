@@ -166,19 +166,23 @@ interface ThreadReply {
 }
 
 /**
- * Collect the in-thread replies to post: one per `addressed` item that carried
- * its review thread's node ID. The reply body leads with the action so the
- * reviewer sees what changed in-context; the workflow leaves the thread open for
- * the reviewer to resolve. Deferred items are intentionally excluded — they stay
- * open for a human — as are addressed items with no `threadId` (top-level
- * comments with no thread to reply on; those are covered by the summary comment).
+ * Collect the in-thread replies to post: one per item that carried its review
+ * thread's node ID — whether it was `addressed` (what changed) or `deferred` (why
+ * it was left), so a reviewer sees the response on the thread itself, not only in
+ * the summary comment (CVM answers both in-thread). The reply body leads with the
+ * status so the thread reads clearly; the workflow leaves every thread open for
+ * the reviewer to resolve. Items with no `threadId` (top-level comments with no
+ * thread to reply on) are covered by the summary comment instead.
  */
 function buildThreadReplies(review: ImplementPrOutput): ThreadReply[] {
   return review.items
-    .filter((i) => i.status === "addressed" && i.threadId !== undefined)
+    .filter((i) => i.threadId !== undefined)
     .map((i) => ({
       threadId: i.threadId as string,
-      body: `🤖 **Addressed.** ${i.action}`,
+      body:
+        i.status === "addressed"
+          ? `🤖 **Addressed.** ${i.action}`
+          : `🤖 **Left for a human.** ${i.action}`,
     }));
 }
 
