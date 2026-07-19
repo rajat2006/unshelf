@@ -267,7 +267,7 @@ jobs:
           AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/implement/implement.ts
+        run: pnpm --dir .sandcastle exec tsx implement/implement.ts
 
       - name: Push branch
         if: steps.gate.outputs.proceed == 'true' && success()
@@ -288,7 +288,7 @@ jobs:
           AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/write-pr/write-pr.ts
+        run: pnpm --dir .sandcastle exec tsx write-pr/write-pr.ts
 
       - name: Open draft PR
         if: steps.gate.outputs.proceed == 'true' && success()

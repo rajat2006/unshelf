@@ -184,7 +184,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.gate.outputs.issue_title }}
           BRANCH: ${{ steps.gate.outputs.head_ref }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/review/review.ts
+        run: pnpm --dir .sandcastle exec tsx review/review.ts
 
       - name: Push review fixes
         if: steps.gate.outputs.proceed == 'true' && success()

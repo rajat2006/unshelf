@@ -128,7 +128,7 @@ jobs:
           # labels/comments; contents permission is read-only as a second guard.
           GH_TOKEN: ""
           GH_REPO: ""
-        run: pnpm exec tsx .sandcastle/explore/explore.ts
+        run: pnpm --dir .sandcastle exec tsx explore/explore.ts
 
       - name: Post exploration comment
         if: steps.gate.outputs.proceed == 'true' && success()

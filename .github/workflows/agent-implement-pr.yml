@@ -259,7 +259,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.gate.outputs.issue_title }}
           BRANCH: ${{ steps.gate.outputs.head_ref }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/implement-pr/implement-pr.ts
+        run: pnpm --dir .sandcastle exec tsx implement-pr/implement-pr.ts
 
       - name: Push fix commits
         if: steps.gate.outputs.proceed == 'true' && success()

@@ -97,10 +97,10 @@ The runner is a **plain TypeScript entry script run with `tsx`** — not the `sa
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/implement/implement.ts
+        run: pnpm --dir .sandcastle exec tsx implement/implement.ts
 ```
 
-All seven invoking workflows follow this shape: `pnpm exec tsx .sandcastle/<workflow>/<script>.ts`,
+All invoking workflows follow this shape: `pnpm --dir .sandcastle exec tsx <workflow>/<script>.ts`,
 passing `CLAUDE_CODE_OAUTH_TOKEN` (the agent credential) and `OUTPUT_DIR: ${{ runner.temp }}` (the
 file drop the orchestrator reads afterward). Work-item context is passed via env (e.g. `BRANCH`,
 `PR_NUMBER`, `SUB_ISSUE_NUMBER`).

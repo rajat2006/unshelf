@@ -314,7 +314,7 @@ jobs:
           SUB_ISSUE_TITLE: ${{ steps.shape.outputs.next_open_title }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/implement-prd/implement-prd.ts
+        run: pnpm --dir .sandcastle exec tsx implement-prd/implement-prd.ts
 
       - name: Push branch
         if: steps.shape.outputs.mode == 'run' && success()
@@ -352,7 +352,7 @@ jobs:
           PRD_NUMBER: ${{ env.PRD_NUMBER }}
           PRD_TITLE: ${{ env.PRD_TITLE }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/write-prd-pr/write-prd-pr.ts
+        run: pnpm --dir .sandcastle exec tsx write-prd-pr/write-prd-pr.ts
 
       - name: Open draft PR if one doesn't exist for this branch
         if: steps.shape.outputs.mode == 'run' && success()

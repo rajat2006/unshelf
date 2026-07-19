@@ -221,7 +221,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.gate.outputs.issue_title }}
           BRANCH: ${{ steps.gate.outputs.head_ref }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/update-branch/update-branch.ts
+        run: pnpm --dir .sandcastle exec tsx update-branch/update-branch.ts
 
       - name: Push the refreshed branch
         # Push whenever a merge commit was made — the deterministic clean merge or

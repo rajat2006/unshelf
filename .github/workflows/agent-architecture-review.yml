@@ -159,7 +159,7 @@ jobs:
           AGENT_LABELS: ${{ steps.provider.outputs.labels_json }}
           EXISTING_PROPOSALS: ${{ steps.gate.outputs.proposals }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/architecture-review/architecture-review.ts
+        run: pnpm --dir .sandcastle exec tsx architecture-review/architecture-review.ts
 
       - name: Open the proposed PRD
         if: steps.gate.outputs.proceed == 'true' && success()

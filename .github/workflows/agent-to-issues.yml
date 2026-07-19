@@ -269,7 +269,7 @@ jobs:
           PRD_NUMBER: ${{ github.event.issue.number }}
           PRD_TITLE: ${{ github.event.issue.title }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: pnpm exec tsx .sandcastle/to-issues/to-issues-prd.ts
+        run: pnpm --dir .sandcastle exec tsx to-issues/to-issues-prd.ts
 
       - name: Create child issues and link them to the PRD
         if: steps.gate.outputs.proceed == 'true' && success()
