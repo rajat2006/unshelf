@@ -22,7 +22,8 @@ pinned Sandcastle version and Unshelf's provider set:
   on extraction), then a resumed *extract* pass via `runWithRetry`. Returns the
   produce run's commits with the extraction's output, so side effects (commits,
   issue creation) are never repeated. For capabilities with a side-effectful
-  produce phase (`review`, `implement-pr`, `update-branch`, `architecture-review`).
+  produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`,
+  `architecture-review`).
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
@@ -56,6 +57,18 @@ pinned Sandcastle version and Unshelf's provider set:
   the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
   failure fails the runner so an aborted or half-finished merge can never be
   pushed or reported as success (CVM's deterministic postconditions).
+- **`implement-prd-output.ts`** — `implementPrdOutputSchema` (Zod): the
+  `implement-prd` extraction's `<output>` contract — an `outcome`
+  (`completed`/`already-satisfied`/`blocked`) plus a one-line `reason`. Validated
+  by the extraction wrapper with same-session retry, so the three-way outcome that
+  distinguishes "already done" from "needs a human" can't be a malformed block.
+- **`verify-implement-prd.ts`** — `verifyImplementPrdOutcome({ outcome, commitCount })`:
+  a pure verifier the `implement-prd` runner calls to cross-check the agent's
+  reported outcome against the real commit count — `completed` ⇒ commits > 0,
+  `already-satisfied` ⇒ commits == 0, `blocked` ⇒ always a failure. Returns
+  `{ ok }` or `{ ok:false, reason }`; a mismatch fails the runner so a
+  self-contradictory claim can never close a sub-issue on a false premise (the
+  same claim-not-trusted-alone stance as `verify-branch-update.ts`).
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -75,10 +88,12 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
-- **`capability-context.ts`** — `loadCapabilityContext()`: the one reader of the
-  env contract every `agent-*.yml` sets (issue coordinates, output dir, and the
-  provider resolved from the full label set). Returns the `promptArgs` ready to
-  spread into `run()`.
+- **`capability-context.ts`** — `loadCapabilityContext()` and the PRD-mode
+  `loadPrdImplementContext()` / `loadPrdPrContext()`: the one reader of the env
+  contract every `agent-*.yml` sets (issue/PRD coordinates, output dir, and the
+  provider resolved from the full label set). Each returns the `promptArgs` ready
+  to spread into `run()`, so every capability resolves provider + env through this
+  seam rather than re-parsing `process.env`.
 
 Later workflow tickets add each capability as a thin `run()` script + YAML on top
 of these helpers.
@@ -98,6 +113,25 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`implement-prd/`** — the PRD variant of the spine (workflow
+  `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
+  sub-issue per run on the resumed accumulating branch, with coordinates + provider
+  from `loadPrdImplementContext`. A **two-phase** capability
+  ({@link runWithExtraction}): the produce pass implements the sub-issue passed via
+  `SUB_ISSUE_NUMBER` (reasoning in prose, committing its work); the resumed
+  extraction pass emits an explicit `outcome` — `completed` | `already-satisfied` |
+  `blocked` — validated against `implementPrdOutputSchema`. That three-way outcome
+  is the point: a plain commit-count guard can't tell an already-done sub-issue
+  (legitimately zero commits) from an agent that gave up (also zero commits), so
+  the runner fails the run on `blocked` (and on `completed` with no new commits) —
+  leaving the sub-issue open and the PRD `agent:blocked` — while `completed`/
+  `already-satisfied` let the workflow close the sub-issue and advance. It never
+  closes a sub-issue the agent asked for help on.
+- **`write-prd-pr/`** — the PRD variant of `write-pr/`, run **only when opening
+  the PR** (the first sub-issue run; later runs reuse the PR). Same `runWithRetry`
+  single-prompt shape, with coordinates + provider from `loadPrdPrContext`; frames
+  the body around the **whole PRD** and schema-enforces a single `Closes #<PRD>`
+  line — sub-issues are closed by the workflow per-run, not by the PR body.
 - **`review/`** — drives the repo's **local `/code-review`** over the PR branch
   (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
   along both axes, **fixes what it safely can and commits** the fixes, and

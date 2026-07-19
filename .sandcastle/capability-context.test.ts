@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadCapabilityContext } from "./capability-context";
+import {
+  loadCapabilityContext,
+  loadPrdImplementContext,
+  loadPrdPrContext,
+} from "./capability-context";
 import { CLAUDE_MODEL, CODEX_MODEL } from "./resolve-agent";
 
 const ENV_KEYS = [
@@ -76,5 +80,109 @@ describe("loadCapabilityContext", () => {
   it("throws when a required var (OUTPUT_DIR) is missing", () => {
     setEnv({ OUTPUT_DIR: undefined });
     expect(() => loadCapabilityContext()).toThrow("OUTPUT_DIR");
+  });
+});
+
+const PRD_ENV_KEYS = [
+  "PRD_NUMBER",
+  "PRD_TITLE",
+  "SUB_ISSUE_NUMBER",
+  "SUB_ISSUE_TITLE",
+  "BRANCH",
+  "OUTPUT_DIR",
+  "AGENT_LABELS",
+];
+
+function setPrdEnv(overrides: Record<string, string | undefined> = {}) {
+  const base: Record<string, string> = {
+    PRD_NUMBER: "52",
+    PRD_TITLE: "Build the Sandcastle platform",
+    SUB_ISSUE_NUMBER: "68",
+    SUB_ISSUE_TITLE: "agent-implement-prd workflow",
+    BRANCH: "agent/prd-52-build-the-sandcastle-platform",
+    OUTPUT_DIR: "/run/tmp",
+    AGENT_LABELS: '["ready-for-agent","agent:implement"]',
+  };
+  for (const [key, value] of Object.entries({ ...base, ...overrides })) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+describe("loadPrdPrContext", () => {
+  beforeEach(() => {
+    for (const key of PRD_ENV_KEYS) delete process.env[key];
+  });
+  afterEach(() => {
+    for (const key of PRD_ENV_KEYS) delete process.env[key];
+  });
+
+  it("reads the PRD coordinates and output dir", () => {
+    setPrdEnv();
+    const ctx = loadPrdPrContext();
+    expect(ctx.prdNumber).toBe("52");
+    expect(ctx.prdTitle).toBe("Build the Sandcastle platform");
+    expect(ctx.outputDir).toBe("/run/tmp");
+  });
+
+  it("exposes only PRD promptArgs (no sub-issue — the body is whole-PRD)", () => {
+    setPrdEnv();
+    expect(loadPrdPrContext().promptArgs).toEqual({
+      PRD_NUMBER: "52",
+      PRD_TITLE: "Build the Sandcastle platform",
+    });
+  });
+
+  it("resolves the provider from the PRD's full label set", () => {
+    setPrdEnv({ AGENT_LABELS: '["agent:codex","agent:implement"]' });
+    const ctx = loadPrdPrContext();
+    expect(ctx.agent.name).toBe("codex");
+    expect(ctx.model).toBe(CODEX_MODEL);
+  });
+
+  it("throws when a required var (PRD_NUMBER) is missing", () => {
+    setPrdEnv({ PRD_NUMBER: undefined });
+    expect(() => loadPrdPrContext()).toThrow("PRD_NUMBER");
+  });
+});
+
+describe("loadPrdImplementContext", () => {
+  beforeEach(() => {
+    for (const key of PRD_ENV_KEYS) delete process.env[key];
+  });
+  afterEach(() => {
+    for (const key of PRD_ENV_KEYS) delete process.env[key];
+  });
+
+  it("reads the PRD coordinates, the sub-issue, and the branch", () => {
+    setPrdEnv();
+    const ctx = loadPrdImplementContext();
+    expect(ctx.prdNumber).toBe("52");
+    expect(ctx.subIssueNumber).toBe("68");
+    expect(ctx.subIssueTitle).toBe("agent-implement-prd workflow");
+    expect(ctx.branch).toBe("agent/prd-52-build-the-sandcastle-platform");
+  });
+
+  it("exposes promptArgs shaped for {{...}} substitution", () => {
+    setPrdEnv();
+    expect(loadPrdImplementContext().promptArgs).toEqual({
+      PRD_NUMBER: "52",
+      PRD_TITLE: "Build the Sandcastle platform",
+      SUB_ISSUE_NUMBER: "68",
+      SUB_ISSUE_TITLE: "agent-implement-prd workflow",
+      BRANCH: "agent/prd-52-build-the-sandcastle-platform",
+    });
+  });
+
+  it("resolves the provider from the PRD's full label set (default Claude)", () => {
+    setPrdEnv();
+    const ctx = loadPrdImplementContext();
+    expect(ctx.agent.name).toBe("claude-code");
+    expect(ctx.model).toBe(CLAUDE_MODEL);
+  });
+
+  it("throws when the sub-issue var (SUB_ISSUE_NUMBER) is missing", () => {
+    setPrdEnv({ SUB_ISSUE_NUMBER: undefined });
+    expect(() => loadPrdImplementContext()).toThrow("SUB_ISSUE_NUMBER");
   });
 });
