@@ -54,6 +54,9 @@ jobs:
           # The trigger may have been removed while this run was queued. In that
           # case leave the issue alone instead of resurrecting a cancelled run.
           if echo "$labels_json" | jq -e 'index("agent:explore")' >/dev/null; then
+            # Fetch while the workflow owns GitHub credentials. The agent step
+            # receives this file as prompt context and has GH_TOKEN removed.
+            gh issue view "$ISSUE_NUMBER" --comments > "${RUNNER_TEMP}/issue_context.md"
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           else
             echo "agent:explore is no longer present — skipping."
@@ -84,6 +87,9 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          # The explore process is read-only and receives no persisted checkout
+          # credential it could use to push.
+          persist-credentials: false
 
       - name: Setup pnpm
         if: steps.gate.outputs.proceed == 'true'
@@ -115,7 +121,13 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/.codex
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
+          ISSUE_CONTEXT_FILE: ${{ runner.temp }}/issue_context.md
           OUTPUT_DIR: ${{ runner.temp }}
+          # The workflow fetched the issue context above. Withhold GitHub
+          # credentials from the agent process so only workflow steps can mutate
+          # labels/comments; contents permission is read-only as a second guard.
+          GH_TOKEN: ""
+          GH_REPO: ""
         run: pnpm exec tsx .sandcastle/explore/explore.ts
 
       - name: Post exploration comment

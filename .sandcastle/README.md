@@ -85,6 +85,11 @@ pinned Sandcastle version and Unshelf's provider set:
   `{ ok }` or `{ ok:false, reason }`; a mismatch fails the runner so a
   self-contradictory claim can never close a sub-issue on a false premise (the
   same claim-not-trusted-alone stance as `verify-branch-update.ts`).
+- **`verify-explore-read-only.ts`** — `verifyExploreReadOnly(facts)`: checks that
+  an exploration left `HEAD` unchanged and the worktree clean before the runner
+  writes a publishable comment. The workflow also disables persisted checkout
+  credentials and removes `GH_TOKEN` from the agent step, so read-only is an
+  enforced boundary rather than only a prompt instruction.
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -136,8 +141,10 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   present. The produce pass verifies the issue against `main`, assesses
   difficulty, relevant files, open questions, implementation shape, and useful
   test seams; the resumed extraction pass validates one non-empty Markdown
-  comment. The runner writes only `comment.md` to `OUTPUT_DIR`; the workflow
-  posts it, and no branch or PR is created.
+  comment. The workflow fetches issue context before withholding GitHub
+  credentials from the agent; the runner rejects a changed `HEAD` or dirty tree,
+  then writes only `comment.md` to `OUTPUT_DIR`. The workflow posts it, and no
+  branch or PR is created.
 - **`implement-prd/`** — the PRD variant of the spine (workflow
   `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
   sub-issue per run on the resumed accumulating branch, with coordinates + provider

@@ -18,6 +18,10 @@ describe("exploreOutputSchema — the explore <output> contract", () => {
     expect(() => exploreOutputSchema.parse({ comment: "" })).toThrow();
   });
 
+  it("rejects a whitespace-only exploration comment", () => {
+    expect(() => exploreOutputSchema.parse({ comment: "  \n\t" })).toThrow();
+  });
+
   it("rejects output with no comment", () => {
     expect(() => exploreOutputSchema.parse({})).toThrow();
   });

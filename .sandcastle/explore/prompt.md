@@ -8,11 +8,10 @@ what must be resolved before work starts.
 
 # ISSUE
 
-Fetch the complete issue and its discussion:
+The workflow fetched the complete issue and its discussion before removing
+GitHub credentials from this agent step:
 
-```bash
-gh issue view {{ISSUE_NUMBER}} --comments
-```
+{{ISSUE_CONTEXT}}
 
 # CONTEXT
 

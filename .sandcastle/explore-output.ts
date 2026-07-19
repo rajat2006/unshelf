@@ -9,7 +9,9 @@ import { z } from "zod";
  * assessment and lets the extraction wrapper retry malformed output in-session.
  */
 export const exploreOutputSchema = z.object({
-  comment: z.string().min(1),
+  comment: z.string().refine((comment) => comment.trim().length > 0, {
+    message: "Exploration comment must contain non-whitespace content.",
+  }),
 });
 
 export type ExploreOutput = z.infer<typeof exploreOutputSchema>;

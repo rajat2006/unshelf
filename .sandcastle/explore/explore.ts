@@ -1,11 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadIssueCapabilityContext } from "../capability-context";
 import { exploreOutputSchema } from "../explore-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { requireEnv } from "../require-env";
 import { runWithExtraction } from "../run-with-extraction";
+import { verifyExploreReadOnly } from "../verify-explore-read-only";
 
 /**
  * Investigate one issue without implementing it, then write the structured
@@ -19,6 +22,10 @@ import { runWithExtraction } from "../run-with-extraction";
 
 const ctx = loadIssueCapabilityContext();
 console.log(`Resolved provider model: ${ctx.model}`);
+const issueContext = fs.readFileSync(requireEnv("ISSUE_CONTEXT_FILE"), "utf8");
+const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
+  encoding: "utf8",
+}).trim();
 
 prepareCodexAuth(ctx.agent.name);
 
@@ -29,7 +36,7 @@ const result = await runWithExtraction({
   logging: { type: "stdout" },
   idleTimeoutSeconds: 600,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: ctx.promptArgs,
+  promptArgs: { ...ctx.promptArgs, ISSUE_CONTEXT: issueContext },
   extractionPrompt: fs.readFileSync(
     path.join(import.meta.dirname, "extraction.md"),
     "utf8",
@@ -39,6 +46,23 @@ const result = await runWithExtraction({
     schema: exploreOutputSchema,
   }),
 });
+
+const verification = verifyExploreReadOnly({
+  initialHead,
+  finalHead: execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim(),
+  porcelainStatus: execFileSync("git", ["status", "--porcelain"], {
+    encoding: "utf8",
+  }),
+});
+if (!verification.ok) {
+  fs.writeFileSync(
+    path.join(ctx.outputDir, "failure_reason.txt"),
+    verification.reason,
+  );
+  throw new Error(verification.reason);
+}
 
 fs.writeFileSync(path.join(ctx.outputDir, "comment.md"), result.output.comment);
 console.log(`Exploration comment written for issue #${ctx.issueNumber}.`);
