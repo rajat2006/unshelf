@@ -1,10 +1,12 @@
 name: Agent Review
 
 # The review leg of the chain (spec #52 / #65): applying `agent:review` to a PR
-# runs the repo's local `/code-review`, posts the findings, and marks the PR
-# ready. implement adds this label via AGENT_PAT so the chain fires automatically
-# (implement → review → ready). The agent only produces an output file — this
-# workflow owns every git, `gh`, and label mutation (spec invariant H).
+# runs the repo's local `/code-review`, which reviews, fixes what it safely can,
+# and commits; the workflow pushes those fixes, posts the review, and marks the
+# PR ready. implement adds this label via AGENT_PAT so the chain fires
+# automatically (implement → review → ready). The agent only produces commits +
+# output files — this workflow owns every git, `gh`, and label mutation (spec
+# invariant H).
 
 on:
   pull_request_target:
@@ -199,15 +201,13 @@ jobs:
         if: steps.gate.outputs.proceed == 'true' && success()
         # review.ts wrote a ready-to-POST GitHub reviews-API body (event=COMMENT,
         # a summary `body`, and any inline `comments` anchored to the diff). Post
-        # it as one review so findings land on their exact lines. If the reviews
-        # API rejects it (it 422s the whole review on a single off-diff anchor),
-        # fall back to the summary as a plain PR comment so findings still land.
-        run: |
-          set -uo pipefail
-          if ! gh api --method POST "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --input "${RUNNER_TEMP}/review_payload.json"; then
-            echo "Inline review POST failed — falling back to a plain summary comment."
-            gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/review_body.md"
-          fi
+        # it as one review so findings land on their exact lines. A failure here
+        # (e.g. the reviews API 422s on an off-diff anchor) fails the job into the
+        # Mark-blocked path — we do NOT fall back to a degraded plain comment that
+        # would drop the inline findings while reporting success (CVM parity: a
+        # failed post is a run failure, and the anchor check already guards the
+        # common 422 cause).
+        run: gh api --method POST "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --input "${RUNNER_TEMP}/review_payload.json"
 
       - name: Mark the PR ready for review
         if: steps.gate.outputs.proceed == 'true' && success()

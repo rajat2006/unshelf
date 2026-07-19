@@ -71,10 +71,6 @@ fs.writeFileSync(
   path.join(ctx.outputDir, "review_payload.json"),
   JSON.stringify(payload, null, 2),
 );
-// The summary body on its own, so the workflow can fall back to a plain PR
-// comment if the reviews API rejects the inline review (it 422s the whole
-// review if a single anchor lands off-diff).
-fs.writeFileSync(path.join(ctx.outputDir, "review_body.md"), payload.body);
 
 console.log(
   `\nReview complete: ${result.output.findings.length} finding(s) — ` +
