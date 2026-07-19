@@ -100,7 +100,7 @@ jobs:
             if [ -n "$parent" ]; then
               echo "#${dep}: sub-issue of #${parent} — refusing direct promotion."
               gh issue edit "$dep" --remove-label "agent:queued" --add-label "agent:blocked" || true
-              gh issue comment "$dep" --body "Not promoted on #${CLOSED_NUMBER} closing: this is a sub-issue of #${parent}. Sub-issues are not started directly — add \`agent:implement\` to the parent PRD instead. Cleared \`agent:queued\` and added \`agent:blocked\`." || true
+              gh issue comment "$dep" --body "Not promoted on #${CLOSED_NUMBER} closing: this is a sub-issue of #${parent}. Sub-issues are not started directly — add \`agent:implement\` to the parent PRD instead. Cleared \`agent:queued\` and added \`agent:blocked\`."
               continue
             fi
 
@@ -158,5 +158,5 @@ jobs:
                 continue
               fi
             fi
-            gh issue comment "$dep" --body "Unblocked by #${CLOSED_NUMBER} closing — all blockers are now closed. Promoted \`agent:queued\` → \`agent:implement\`." || true
+            gh issue comment "$dep" --body "Unblocked by #${CLOSED_NUMBER} closing — all blockers are now closed. Promoted \`agent:queued\` → \`agent:implement\`."
           done
