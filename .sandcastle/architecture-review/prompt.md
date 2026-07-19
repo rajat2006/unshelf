@@ -1,75 +1,82 @@
 # TASK
 
-Run a **codebase-level architecture review** of this repository at its current
-`main` checkout, using **this repo's own `/improve-codebase-architecture`
-skill**, and surface where the codebase has **drifted** from its recorded
-decisions or has **deepening opportunities** worth acting on.
+Survey this repository at its current `main` checkout and find the **single
+freshest deepening opportunity** — one shallow module that could become a deep
+one — then write it up as a **PRD proposal** a maintainer can later expand into
+child issues. If there is nothing fresh worth proposing, say so and skip.
 
-Use only the local skills defined in this repository
-(`.claude/skills/improve-codebase-architecture/` and its companion
-`.claude/skills/codebase-design/`). Do not use any external or third-party
-architecture skill. This is a **read-only survey** — do **not** edit code, do
-**not** commit, do **not** touch any `gh` or label state. Your entire job is to
-find and describe; a later turn serialises what you find.
+This is the autonomous, GitHub-native form of an architecture review. It runs on
+a schedule with no human in the loop, so it is a **read-only survey**: do **not**
+edit code, do **not** commit, do **not** produce an HTML report, do **not** open
+or wait on anything interactive, and do **not** touch any `gh` or label state.
+Your entire job is to reason about the codebase and, in a later turn, emit one
+structured decision.
+
+**Do not run the `/improve-codebase-architecture` skill** — it is built for an
+interactive session (HTML report + grilling a human through candidates) and does
+not fit an autonomous run. Instead do the analysis directly, using the
+**`/codebase-design` deep-module vocabulary** as your reference for the terms
+(*module*, *interface*, *depth*, *seam*, *adapter*, *leverage*, *locality*) and
+the principles (the deletion test; "the interface is the test surface"). You may
+read `.claude/skills/codebase-design/` for those definitions; do not invoke it as
+an interactive flow.
 
 # CONTEXT
 
-This is a scheduled/on-demand sweep of the **whole tree** on `main`, not a diff
-review — there is no branch or PR under review. Orient yourself:
+This is a whole-tree sweep on `main`, not a diff review. Orient yourself:
 
 ```
 git log --oneline -20
 git ls-files | sed -n '1,200p'
 ```
 
-Read the domain model and every recorded decision first — the review holds the
-codebase to *these*, so drift is measured against them:
+Read the domain model and the recorded decisions first — a good proposal names
+real seams and does not re-litigate settled calls:
 
-- `CONTEXT.md` — the ubiquitous language. A term used in code to mean something
-  the model doesn't say, or a documented rule the code no longer honours, is
-  **drift**.
-- `docs/adr/` — every ADR. Code that contradicts an accepted decision is
-  **drift**; if a decision is genuinely obsolete, that's a finding too (the ADR,
-  not the code, may be what's stale — say so).
+- `CONTEXT.md` — the ubiquitous language. Name modules by their real domain names
+  (if `CONTEXT.md` defines "Stop", talk about "the Stop intake module").
+- `docs/adr/` — the ADRs record decisions this review **must not re-propose**. A
+  proposal that contradicts an accepted ADR is out of bounds.
 
-Use the **`/codebase-design` vocabulary** exactly — *module*, *interface*,
-*depth*, *seam*, *adapter*, *leverage*, *locality* — and the **`CONTEXT.md`
-vocabulary** for the domain. Name real modules by their real names (if
-`CONTEXT.md` defines "Stop", talk about "the Stop intake module", not "the
-FooHandler").
+## Already-open proposals — do NOT re-propose these
+
+These architecture-review PRDs are already open in the backlog. Your proposal
+must be **materially different** from every one of them; if the only opportunity
+you can find is already covered here, that is a **skip**, not a duplicate.
+
+{{EXISTING_PROPOSALS}}
 
 # LIFECYCLE
 
 ### 1. Survey
 
-Run the `/improve-codebase-architecture` skill over the tree. It surfaces
-**deepening opportunities** — shallow modules whose interface exposes more than
-it hides — and design smells. Cross that against `CONTEXT.md`/ADR drift.
+Use the `Explore` sub-agent to walk the codebase organically and note where you
+feel friction. Look for **shallow modules** (interface nearly as complex as the
+implementation), concepts that force bouncing between many small modules, pure
+functions extracted only for testability where the real bugs hide in how they're
+called (no **locality**), and tightly-coupled modules leaking across a seam.
 
-### 2. Judge each candidate
+Apply the **deletion test** to anything you suspect is shallow: would deleting it
+*concentrate* complexity, or just move it? A "concentrates" is the signal.
 
-For every candidate the survey turns up, decide whether it is a *real*,
-*load-bearing* finding a maintainer would want to act on — not a stylistic
-nitpick and not speculative. Prefer a few high-signal findings over a long list
-of shallow ones. A clean sweep (no findings) is a valid and honest outcome —
-don't invent problems to have something to report.
+### 2. Pick the single best fresh opportunity
 
-### 3. Locate and characterise each finding
+Choose the **one** opportunity with the most leverage that is **not** already an
+open proposal above. Prefer one high-signal, load-bearing candidate over a list
+of shallow ones. If nothing clears that bar this run — the codebase is clean, or
+every candidate is already proposed — that is a valid, honest **skip**.
 
-For each finding you keep, pin down:
+### 3. Write it up as a PRD
 
-- **category** — `drift` (diverged from an ADR / `CONTEXT.md`), `deepening` (a
-  shallow module that could hide more behind a smaller interface), `duplication`
-  (the same knowledge repeated — a missing seam), `coupling` (modules entangled
-  across what should be a clean seam), or `other`.
-- **area** — where it lives: a repo-relative path (`apps/web/src/trail`), a
-  module name, or the `CONTEXT.md` term / ADR id it drifts from.
-- **why it matters** — the concrete friction it causes, and the direction a fix
-  would take (not a full design — just the seam or deepening it points at).
+For the chosen opportunity, draft a PRD body a maintainer could hand straight to
+`agent:to-issues`. Follow this repo's issue conventions — **Problem** (the
+friction, in `/codebase-design` and `CONTEXT.md` vocabulary), **Solution** (the
+deepening: what moves behind which interface, at which seam), and **Acceptance
+criteria** (a checklist). Reference the modules and ADRs by name. Keep it scoped
+to this one deepening — not a grab-bag.
 
 # REPORTING
 
 Reason in prose throughout — do **not** emit any JSON or `<output>` block yet. A
-separate follow-up turn will ask you to emit the structured findings. If the
-codebase is clean on an axis, say so — an axis with no findings is a valid
-outcome.
+separate follow-up turn will ask you to emit the structured decision (the PRD, or
+the skip reason).

@@ -2,17 +2,19 @@ name: Agent Architecture Review
 
 # The scheduled/on-demand architecture-review leg (spec #52 / #70). Unlike the
 # other agent workflows this has NO label trigger and NO originating issue/PR:
-# it runs on a cron and via `workflow_dispatch`, sweeps the whole tree on `main`
-# for codebase-level drift and deepening opportunities via the repo's local
-# `/improve-codebase-architecture` skill, and surfaces the findings durably by
-# opening or refreshing a single tracking issue. Read-only: the agent produces
-# only output files — this workflow owns every `gh` mutation (spec invariant H).
+# it runs on a weekday cron and via `workflow_dispatch`, surveys the tree on
+# `main` for the single freshest deepening opportunity, and proposes it as a PRD
+# labelled `source:architecture-review` (a human later expands it with
+# `agent:to-issues`). Read-only: the agent produces only output files — this
+# workflow owns every `gh` mutation (spec invariant H). Mirrors CVM's
+# improve-codebase-architecture lifecycle: dedupe against open proposals, one
+# PRD per run, and skip the run entirely once the backlog is full.
 
 on:
   schedule:
-    # Weekly, Monday 06:00 UTC — surfaces drift without a human remembering to
-    # ask (spec user story 15).
-    - cron: "0 6 * * 1"
+    # Every weekday at 09:00 UTC — CVM's cadence, so drift surfaces steadily
+    # without a human remembering to ask (spec user story 15).
+    - cron: "0 9 * * 1-5"
   workflow_dispatch:
     inputs:
       provider:
@@ -23,18 +25,20 @@ on:
           - codex
         default: claude
 
-# The stable title of the single durable tracking issue this workflow maintains.
-# Each run refreshes its body and appends a per-run comment, so there is exactly
-# one issue to watch rather than a new one per cron tick.
 env:
-  TRACKING_TITLE: "🏛️ Architecture review — codebase drift"
+  # Provenance label CVM applies to every architecture-review proposal — the
+  # dedupe key and the backlog the open-proposal cap counts.
+  PROVENANCE_LABEL: "source:architecture-review"
+  # Once this many proposals are open, skip the agent run: don't pile more
+  # architecture PRDs onto an un-triaged backlog (CVM's open-proposal cap).
+  MAX_OPEN_PROPOSALS: 10
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GH_REPO: ${{ github.repository }}
 
 concurrency:
   # One review at a time: a cron tick that overlaps a manual dispatch queues
-  # rather than double-posting to the tracking issue. Never cancels an in-flight
-  # run (matches the other capabilities' queue-not-cancel stance).
+  # rather than double-proposing. Never cancels an in-flight run (matches the
+  # other capabilities' queue-not-cancel stance).
   group: agent-architecture-review
   cancel-in-progress: false
 
@@ -44,21 +48,50 @@ jobs:
     timeout-minutes: 60
     permissions:
       # Read-only survey → no `contents: write` (nothing is committed or pushed).
-      # `issues: write` to open/refresh/comment the durable tracking issue.
+      # `issues: write` to open + label the proposed PRD.
       contents: read
       issues: write
 
     steps:
+      - name: Gate — provenance label, open-proposal cap, and dedupe list
+        id: gate
+        run: |
+          set -euo pipefail
+
+          # Ensure the provenance label exists (idempotent) so both the count and
+          # the later create can rely on it — a fresh repo may not have run
+          # provision-labels.sh yet.
+          gh label create "$PROVENANCE_LABEL" \
+            --color "5319e7" \
+            --description "Provenance: PRD proposed by the scheduled architecture-review agent" \
+            --force >/dev/null
+
+          # The currently-open proposals: their count gates the run, their titles
+          # feed the agent's dedupe. `--search` keeps this to the labelled set.
+          proposals=$(gh issue list --state open --label "$PROVENANCE_LABEL" \
+            --json title --jq '[.[].title]')
+          count=$(echo "$proposals" | jq 'length')
+          echo "Open $PROVENANCE_LABEL proposals: $count (cap $MAX_OPEN_PROPOSALS)"
+
+          if [ "$count" -ge "$MAX_OPEN_PROPOSALS" ]; then
+            echo "Backlog full — skipping the agent run this cycle."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Emit the titles JSON for the run step (a compact single line).
+          echo "proposals=$(echo "$proposals" | jq -c '.')" >> "$GITHUB_OUTPUT"
+
       - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
         id: provider
         # No label trigger, so the provider comes from the dispatch input and
         # defaults to Claude Code (the cron path always uses the default). Mirror
-        # resolveAgent()'s contract by serialising the choice into AGENT_LABELS,
-        # exactly as the issue flows pass the issue's label set.
+        # resolveAgent()'s contract by serialising the choice into AGENT_LABELS.
         run: |
           set -euo pipefail
-          provider="${{ github.event.inputs.provider }}"
-          if [ "$provider" = "codex" ]; then
+          if [ "${{ github.event.inputs.provider }}" = "codex" ]; then
             echo "labels_json=[\"agent:codex\"]" >> "$GITHUB_OUTPUT"
             echo "is_codex=true" >> "$GITHUB_OUTPUT"
           else
@@ -67,6 +100,7 @@ jobs:
           fi
 
       - name: Checkout main
+        if: steps.gate.outputs.proceed == 'true'
         uses: actions/checkout@v4
         with:
           ref: main
@@ -74,28 +108,33 @@ jobs:
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup pnpm
+        if: steps.gate.outputs.proceed == 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js 22
+        if: steps.gate.outputs.proceed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Install Claude Code
+        if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       # Codex CLI only when a manual dispatch opted in via the provider input; the
       # scheduled default never pays for it. Runner-side auth is materialised by
       # prepareCodexAuth.
       - name: Install Codex CLI
-        if: steps.provider.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Run architecture review
+        if: steps.gate.outputs.proceed == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
@@ -104,60 +143,36 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/.codex
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           AGENT_LABELS: ${{ steps.provider.outputs.labels_json }}
+          EXISTING_PROPOSALS: ${{ steps.gate.outputs.proposals }}
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm exec tsx .sandcastle/architecture-review/architecture-review.ts
 
-      - name: Open or refresh the tracking issue
-        if: success()
+      - name: Open the proposed PRD
+        if: steps.gate.outputs.proceed == 'true' && success()
         env:
-          # Provenance for the issue body: which ref/SHA was reviewed and the run
-          # that produced it, so a stale report is always traceable.
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
+        # `proposed` ⇒ open one PRD labelled with the provenance label so the next
+        # run dedupes against it and the open-proposal cap counts it; a human
+        # later applies `agent:to-issues`. `skipped` ⇒ nothing to open. No
+        # `agent:*` state label is applied, so this never itself starts a run.
         run: |
           set -euo pipefail
+          outcome=$(cat "${RUNNER_TEMP}/architecture_outcome.txt")
+          if [ "$outcome" != "proposed" ]; then
+            echo "Outcome: $outcome — $(cat "${RUNNER_TEMP}/architecture_summary.txt"). No PRD to open."
+            exit 0
+          fi
 
-          # Prepend a provenance header to the agent's findings section.
+          title=$(cat "${RUNNER_TEMP}/prd_title.txt")
           {
-            printf '_Reviewed `main` at `%s` — [run log](%s)._\n\n' "${COMMIT_SHA:0:12}" "$RUN_URL"
-            printf '<!-- managed by .github/workflows/agent-architecture-review.yml — body refreshed each run -->\n\n'
-            cat "${RUNNER_TEMP}/architecture_report.md"
-          } > "${RUNNER_TEMP}/issue_body.md"
+            cat "${RUNNER_TEMP}/prd_body.txt"
+            printf '\n\n---\n_Proposed by the scheduled architecture-review agent — reviewed `main` at `%s` ([run log](%s)). Apply `agent:to-issues` to expand into child issues._\n' \
+              "${COMMIT_SHA:0:12}" "$RUN_URL"
+          } > "${RUNNER_TEMP}/prd_issue_body.md"
 
-          summary=$(cat "${RUNNER_TEMP}/architecture_summary.txt")
-
-          # Find the single open tracking issue by its exact title (search is
-          # fuzzy, so filter exactly in jq).
-          number=$(gh issue list --state open --search "${TRACKING_TITLE} in:title" \
-            --json number,title \
-            --jq "[.[] | select(.title == \"${TRACKING_TITLE}\")] | .[0].number // empty")
-
-          if [ -z "$number" ]; then
-            url=$(gh issue create --title "$TRACKING_TITLE" --body-file "${RUNNER_TEMP}/issue_body.md")
-            echo "Opened tracking issue: $url"
-          else
-            gh issue edit "$number" --body-file "${RUNNER_TEMP}/issue_body.md"
-            {
-              printf '**New architecture-review run** — %s\n\n' "$summary"
-              printf '_Reviewed `main` at `%s` — [run log](%s)._\n' "${COMMIT_SHA:0:12}" "$RUN_URL"
-            } > "${RUNNER_TEMP}/run_comment.md"
-            gh issue comment "$number" --body-file "${RUNNER_TEMP}/run_comment.md"
-            echo "Refreshed tracking issue #$number"
-          fi
-
-      - name: Note failure on the tracking issue
-        # No issue/PR subject to move to agent:blocked, so a failed run surfaces
-        # as a comment on the existing tracking issue (if one is open) plus the
-        # Actions run failure itself. `failure()` covers crashes and the idle
-        # watchdog; `cancelled()` covers a hard 60-min timeout breach.
-        if: failure() || cancelled()
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -uo pipefail
-          number=$(gh issue list --state open --search "${TRACKING_TITLE} in:title" \
-            --json number,title \
-            --jq "[.[] | select(.title == \"${TRACKING_TITLE}\")] | .[0].number // empty" || true)
-          if [ -n "$number" ]; then
-            gh issue comment "$number" --body "⚠️ An \`agent-architecture-review\` run failed before it could refresh this report — see the [run log](${RUN_URL}). The findings above are from the last successful run." || true
-          fi
+          url=$(gh issue create \
+            --title "$title" \
+            --body-file "${RUNNER_TEMP}/prd_issue_body.md" \
+            --label "$PROVENANCE_LABEL")
+          echo "Opened architecture-review PRD: $url"
