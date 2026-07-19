@@ -65,10 +65,34 @@ jobs:
             exit 0
           fi
 
-          # PRDs (issues with sub-issues) are expanded by the PRD workflow, which
+          # THE SHAPE FETCH — fail CLOSED, never guess. An issue with no
+          # sub-issues returns `200 []` (exit 0); only a genuine API/auth/network
+          # failure exits non-zero. Retry to ride out transient blips, then treat a
+          # persistent failure as an ERROR (refuse) — NOT as "no sub-issues", which
+          # would let this leaf path implement a real PRD as one monolithic issue.
+          # The PRD workflow's detect fails closed the same way, so the two never
+          # both proceed on an unknown shape.
+          sub_issues_json=""
+          fetch_ok=false
+          for attempt in 1 2 3; do
+            if sub_issues_json=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" 2>/dev/null); then
+              fetch_ok=true
+              break
+            fi
+            echo "sub_issues fetch attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$fetch_ok" != "true" ]; then
+            echo "Could not determine issue shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sub_count=$(echo "$sub_issues_json" | jq 'length')
+
+          # PRDs (issues with sub-issues) are handled by the PRD workflow, which
           # listens for the SAME labeled event — SILENTLY skip so we neither race
           # it nor strip its trigger label. Do not comment or edit labels here.
-          sub_count=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" --jq 'length' 2>/dev/null || echo "0")
           if [ "$sub_count" != "0" ]; then
             echo "Issue has sub-issues (PRD) — silent skip; the PRD flow handles it."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -109,6 +133,16 @@ jobs:
 
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse — could not determine issue shape
+        if: steps.gate.outputs.refusal == 'shape-error'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:implement\`: could not read this issue's sub-issue shape after retries (a transient GitHub API failure). Nothing was routed, to avoid implementing a PRD as a single issue. Clear \`agent:blocked\` and re-add \`agent:implement\` to retry. Run: ${RUN_URL}"
 
       - name: Refuse — issue is a sub-issue of another issue
         if: steps.gate.outputs.refusal == 'subissue'

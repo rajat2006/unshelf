@@ -3,40 +3,46 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { z } from "zod";
-import { loadCapabilityContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { requireEnv } from "../require-env";
+import { resolveAgent } from "../resolve-agent";
 import { runWithRetry } from "../run-with-retry";
 
 /**
  * The `write-prd-pr` capability: author the title and body for the draft PR that
- * lands a whole PRD.
+ * delivers a whole PRD.
  *
- * Invoked by `.github/workflows/agent-implement-prd.yml` AFTER the branch is
- * pushed, so the agent only *reads* the PRD, its sub-issues, and the branch diff
- * and *summarises* them — it implements nothing and commits nothing. Because the
- * structured output IS the work, this uses {@link runWithRetry} (not the
- * two-phase extraction wrapper): a single combined prompt drafts and emits,
- * retrying the same session on a malformed or non-conforming `<output>` block.
+ * Invoked by `.github/workflows/agent-implement-prd.yml` on the FIRST sub-issue
+ * run only (the workflow reuses the same PR across every later run). So the body
+ * must describe the PRD as a whole, not the one sub-issue that happened to open
+ * it. The agent only reads the PRD and its sub-issues and summarises them — it
+ * implements nothing and commits nothing. Because the structured output IS the
+ * work, this uses {@link runWithRetry}: a single combined prompt drafts and
+ * emits, retrying the same session on a malformed or non-conforming `<output>`.
  *
- * The title/body are written to `outputDir` as flat text files for the
- * workflow's `gh pr create --body-file` step, keeping every git/gh mutation in
- * the workflow.
+ * The title/body are written to `OUTPUT_DIR` as flat text files for the
+ * workflow's `gh pr create --body-file`, keeping every git/gh mutation in the
+ * workflow. Provider is resolved from the PRD's full label set.
  */
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const prdNumber = requireEnv("PRD_NUMBER");
+const prdTitle = requireEnv("PRD_TITLE");
+const outputDir = requireEnv("OUTPUT_DIR");
+const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
+
+const { agent, model } = resolveAgent(labels);
+console.log(`Resolved provider model: ${model}`);
 
 // Same subscription-seat setup as implement-prd — this phase also runs the
 // agent, so it must authenticate identically (a no-op on the Claude Code
 // default).
-prepareCodexAuth(ctx.agent.name);
+prepareCodexAuth(agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must
-// contain `Closes #<PRD>` so merging the PR closes the parent PRD — enforced
-// here, not just in the prompt, so a compliant-looking-but-wrong body triggers a
-// retry rather than opening a PR that leaves the PRD open. The prompt also asks
-// for a `Closes #<sub-issue>` line per sub-issue (their numbers aren't known
-// here), but the parent close is the invariant this schema guards.
+// contain `Closes #<PRD>` so merging the PR closes the PRD — enforced here, not
+// just in the prompt, so a compliant-looking-but-wrong body triggers a retry
+// rather than opening a PR that leaves the PRD open. (Sub-issues are closed by
+// the workflow per-run, so only the parent PRD is closed by the PR body.)
 const PrdPrOutput = z
   .object({
     prTitle: z.string().min(1).max(256),
@@ -44,31 +50,31 @@ const PrdPrOutput = z
   })
   .refine(
     (o) =>
-      new RegExp(`closes\\s+#${ctx.issueNumber}\\b`, "i").test(o.prDescription),
+      new RegExp(`closes\\s+#${prdNumber}\\b`, "i").test(o.prDescription),
     {
       path: ["prDescription"],
-      message: `prDescription must contain "Closes #${ctx.issueNumber}" so the PR closes the PRD on merge`,
+      message: `prDescription must contain "Closes #${prdNumber}" so the PR closes the PRD on merge`,
     },
   );
 
 const result = await runWithRetry({
-  name: `write-prd-pr-#${ctx.issueNumber}`,
-  agent: ctx.agent,
+  name: `write-prd-pr-#${prdNumber}`,
+  agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: ctx.promptArgs,
+  promptArgs: {
+    PRD_NUMBER: prdNumber,
+    PRD_TITLE: prdTitle,
+  },
   output: sandcastle.Output.object({ tag: "output", schema: PrdPrOutput }),
 });
 
+fs.writeFileSync(path.join(outputDir, "pr_title.txt"), result.output.prTitle);
 fs.writeFileSync(
-  path.join(ctx.outputDir, "pr_title.txt"),
-  result.output.prTitle,
-);
-fs.writeFileSync(
-  path.join(ctx.outputDir, "pr_description.txt"),
+  path.join(outputDir, "pr_description.txt"),
   result.output.prDescription,
 );
 
-console.log(`\nWrote PRD PR metadata to ${ctx.outputDir}`);
+console.log(`\nWrote PRD PR metadata to ${outputDir}`);
 console.log(`  title: ${result.output.prTitle}`);

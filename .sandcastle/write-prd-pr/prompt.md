@@ -1,35 +1,23 @@
 # TASK
 
-Write the title and description for a pull request that lands PRD issue
-#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}.
+Write the title and description for a pull request that delivers PRD
+#{{PRD_NUMBER}}: {{PRD_TITLE}}.
 
-This PRD is a parent that owns a set of sub-issues, and the whole spec has
-already been implemented — the commits sit on branch `{{BRANCH}}`. You are
-**not** implementing anything and **not** running tests. You are summarising work
-that already exists.
+The PRD ships as a chain of sub-issue runs, all committing to the same branch.
+This PR is reused across every sub-issue run, so the title and description must
+describe the **whole PRD**, not any individual sub-issue. You are **not**
+implementing anything and **not** running tests.
 
 # CONTEXT
 
 Read the PRD and enumerate its sub-issues:
 
 ```
-gh issue view {{ISSUE_NUMBER}} --comments
-gh api "repos/$GH_REPO/issues/{{ISSUE_NUMBER}}/sub_issues" --jq '.[].number'
+gh issue view {{PRD_NUMBER}} --comments
+gh api "repos/$GH_REPO/issues/{{PRD_NUMBER}}/sub_issues"
 ```
 
-Read what changed on the branch:
-
-```
-git log main..{{BRANCH}} --reverse
-git diff main..{{BRANCH}} --stat
-git diff main..{{BRANCH}}
-```
-
-If the diff is large, lean on the commit messages and the `--stat` summary; only
-`git diff` a specific file when a commit message is unclear.
-
-Draft the title and description from what you read. Frame the description around
-the PRD as a whole, and note which sub-issues the change satisfies.
+Draft the title and description, framed around the whole PRD.
 
 # OUTPUT
 
@@ -38,14 +26,14 @@ thing** in your response:
 
 <output>
 {
-  "prTitle": "feat: short imperative summary of the PRD",
-  "prDescription": "## Summary\n\n- what the PRD delivers, in a few bullets\n\n## Sub-issues landed\n\n- #<n> — one line each\n\n## Notes for the reviewer\n\n- anything worth flagging\n\nCloses #{{ISSUE_NUMBER}}\nCloses #<each sub-issue>"
+  "prTitle": "feat: short imperative summary of the PRD as a whole",
+  "prDescription": "## Summary\n\nWhat the PRD delivers, in 1–3 paragraphs framed around the whole effort.\n\n## Sub-issues\n\n- #N — title\n- #M — title\n\nCloses #{{PRD_NUMBER}}"
 }
 </output>
 
-- `prTitle` — a single line, conventional-commit style (`feat:`, `fix:`,
-  `refactor:`, `test:`, `docs:`), under 70 characters.
-- `prDescription` — Markdown. It **must** contain `Closes #{{ISSUE_NUMBER}}` so
-  the PR closes the PRD on merge, and it should carry a `Closes #<n>` line for
-  **each** sub-issue the branch fully implements, so those close on merge too.
-  Only list a sub-issue's `Closes` line if the branch actually satisfies it.
+- `prTitle` — a single line, under 70 characters, conventional-commit style
+  (`feat:`, `fix:`, `refactor:`, `docs:`), framed around the PRD as a whole.
+- `prDescription` — Markdown. It must restate the PRD's overall intent, list
+  every sub-issue with its number and title, and end with `Closes #{{PRD_NUMBER}}`
+  so the PR closes the PRD on merge. Do **not** add `Closes` lines for individual
+  sub-issues — the workflow closes each sub-issue as its run completes.

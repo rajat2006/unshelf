@@ -77,16 +77,20 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
 - **`implement-prd/`** — the PRD variant of the spine (workflow
-  `agent-implement-prd.yml`). Structurally identical to `implement/` — calls
-  `run()` directly, guards on a non-zero commit count, same watchdog — but its
-  prompt pulls the parent PRD **plus every sub-issue** (`gh api …/sub_issues`) and
-  lands the whole spec as one branch. The normal-vs-PRD split is the workflow's
-  shape-guard (sub-issue presence), so exactly one path runs per issue.
-- **`write-prd-pr/`** — the PRD variant of `write-pr/`. Same `runWithRetry`
-  single-prompt shape, but frames the body around the PRD as a whole and enforces
-  a `Closes #<PRD>` line (schema-checked) while asking the prompt for a
-  `Closes #<n>` line per satisfied sub-issue, so merging the PR closes the parent
-  and its children together.
+  `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle. Implements
+  **one** sub-issue per run: the workflow resumes the accumulating PRD branch and
+  passes the first still-open sub-issue (`SUB_ISSUE_NUMBER`) via the label-derived
+  provider seam (`resolveAgent` + `prepareCodexAuth`). Like `implement/` it calls
+  `run()` directly (the *work is the commits*) with the same idle watchdog — but
+  it has **no commit-count guard**: a sub-issue already satisfied by an earlier
+  run legitimately produces zero new commits, and the workflow must still close it
+  and advance. The prompt reads the whole PRD for context but changes only the one
+  sub-issue.
+- **`write-prd-pr/`** — the PRD variant of `write-pr/`, run **only when opening
+  the PR** (the first sub-issue run; later runs reuse the PR). Same `runWithRetry`
+  single-prompt shape and label-derived provider, but frames the body around the
+  **whole PRD** and schema-enforces a single `Closes #<PRD>` line — sub-issues are
+  closed by the workflow per-run, not by the PR body.
 - **`review/`** — drives the repo's **local `/code-review`** over the PR branch
   (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
   along both axes, **fixes what it safely can and commits** the fixes, and
