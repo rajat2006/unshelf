@@ -34,6 +34,14 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`implement-pr-output.ts`** — `implementPrOutputSchema` (Zod): the
+  `implement-pr` capability's `<output>` contract — a `summary` plus `items[]`
+  (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, an
+  `action` describing what changed or why it was deferred, and an optional
+  `threadId` — the review thread's GraphQL node ID, so the workflow can reply on
+  the exact thread an addressed item answers). The extraction wrapper
+  validates the emitted block the same way, so a malformed block self-corrects via
+  same-session retry before anything is posted.
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -87,6 +95,28 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`implement-pr/`** — addresses the review comments on an open PR (workflow
+  `agent-implement-pr.yml`) via `runWithExtraction`. The produce pass reads the
+  PR's review threads via **GraphQL** (which exposes each thread's `isResolved`
+  state and node `id`, unlike the REST comments endpoint), **changes what it
+  safely can and commits** the fixes, running the repo's typecheck/test on what it
+  touches; the resumed extraction pass emits one `<output>` block
+  (`extraction.md`) recording each comment as `addressed` or `deferred` — with the
+  addressed thread's `threadId` — validated against `implementPrOutputSchema` with
+  same-session retry. Per invariant H the runner only commits + writes files: fix
+  commits land on the branch, a Markdown summary (`pr_comment.md`) and a
+  `thread_replies.json` ({threadId, body} per answered thread) go to `OUTPUT_DIR`.
+  The workflow pushes the commits, replies on each answered thread — `addressed`
+  (the fix) *or* `deferred` (the reason it was left), CVM-style, reply only;
+  resolution stays the reviewer's call — after checking each `threadId` against
+  the PR's real **unresolved** threads (so a hallucinated/cross-PR/already-resolved
+  id can't be replied to), and posts the summary comment. It refuses cleanly up
+  front when the PR has no unresolved threads, comments, *or* non-approval review
+  bodies to address (no wasted run), and a runtime guard fails the run (→
+  `agent:blocked`) if it still produced no commits and no items, or claims
+  `addressed` items with zero commits. It does **not** change the PR's draft/ready
+  state — that belongs to the review leg. Shares the per-PR concurrency group with
+  `review`.
 
 ## Pinned version
 
