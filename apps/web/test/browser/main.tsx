@@ -5,17 +5,17 @@ import {
   ApplicationAuthProvider,
   type ApplicationAuth,
 } from "../../src/application-auth";
+import { selectedTestUser, testBearerToken } from "./harness";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("#root element not found");
 
-const testUser = new URLSearchParams(window.location.search).get("testUser");
-if (!testUser) throw new Error("testUser query parameter is required");
+const testUser = selectedTestUser(window.location.search);
 
 const EmptyControl = () => null;
 const auth: ApplicationAuth = {
   status: "signed-in",
-  user: { getToken: async () => testUser },
+  user: { getToken: async () => testBearerToken(testUser) },
   SignInButton: EmptyControl,
   UserButton: EmptyControl,
 };

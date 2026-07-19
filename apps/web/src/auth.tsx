@@ -11,12 +11,12 @@ import {
 } from "./application-auth";
 
 /**
- * The one place Clerk is imported on the web (ADR-0009 guardrail). Everything the
- * rest of the app needs — the provider, the current-User hook, and the sign-in /
- * signed-in gate primitives — is defined here with our own props, so no other
- * module touches `@clerk/react` or depends on its component contracts. Google is
- * the only enabled sign-in method (Clerk-dashboard config, ADR-0001 — see
- * docs/clerk-setup.md): no password is created or managed.
+ * The one place Clerk is imported on the web (ADR-0009 guardrail). This adapter
+ * translates Clerk's session and controls into the provider-neutral application
+ * auth boundary, so no application module touches `@clerk/react` or depends on
+ * its component contracts. Google is the only enabled sign-in method
+ * (Clerk-dashboard config, ADR-0001 — see docs/clerk-setup.md): no password is
+ * created or managed.
  */
 
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;

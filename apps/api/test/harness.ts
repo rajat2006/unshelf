@@ -14,10 +14,11 @@ import { applySchema } from "../src/schema";
 /**
  * The api test harness (extends T1's): an ephemeral Postgres, the schema applied,
  * and the real app — but wired with a Clerk-free auth chain. This is the
- * injection seam in action: `createAuthMiddleware` takes an `Identify` that here
- * reads the `x-test-clerk-user-id` header, so a test can act as any User (and
- * provision a real `users` row) without touching Clerk. It is the same middleware
- * production uses; only the identity source differs.
+ * injection seam in action: `createAuthMiddleware` takes an `Identify`; the
+ * default reads `x-test-clerk-user-id`, while a browser harness can supply its own
+ * local credential reader. Either can act as any User (and provision a real
+ * `users` row) without touching Clerk. It is the same middleware production uses;
+ * only the identity source differs.
  */
 export const TEST_USER_HEADER = "x-test-clerk-user-id";
 

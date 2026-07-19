@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { BROWSER_HARNESS_WEB_ORIGIN } from "./test/browser/harness";
 
 export default defineConfig({
   testDir: "./test/browser",
@@ -7,13 +8,13 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: BROWSER_HARNESS_WEB_ORIGIN,
     channel: "chrome",
     trace: "retain-on-failure",
   },
   webServer: {
     command: "tsx test/browser/server.ts",
-    url: "http://127.0.0.1:4173",
+    url: BROWSER_HARNESS_WEB_ORIGIN,
     reuseExistingServer: false,
     timeout: 120_000,
   },

@@ -2,29 +2,33 @@ import { createServer as createHttpServer } from "node:http";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createServer as createViteServer } from "vite";
 import { startTestApp } from "../../../api/test/harness";
+import {
+  BROWSER_HARNESS_API_ORIGIN,
+  BROWSER_HARNESS_API_PORT,
+  BROWSER_HARNESS_HOST,
+  BROWSER_HARNESS_WEB_PORT,
+  testUserFromAuthorization,
+} from "./harness";
 
-const apiPort = 3101;
-const webPort = 4173;
 const testApp = await startTestApp((req) => {
-  const authorization = req.header("authorization");
-  const token = authorization?.match(/^Bearer (.+)$/)?.[1];
-  return token ? (token as ClerkUserId) : null;
+  const userId = testUserFromAuthorization(req.header("authorization"));
+  return userId ? (userId as unknown as ClerkUserId) : null;
 });
 const apiServer = createHttpServer(testApp.app);
 
 await new Promise<void>((resolve, reject) => {
   apiServer.once("error", reject);
-  apiServer.listen(apiPort, "127.0.0.1", resolve);
+  apiServer.listen(BROWSER_HARNESS_API_PORT, BROWSER_HARNESS_HOST, resolve);
 });
 
 const vite = await createViteServer({
   configFile: "vite.config.ts",
   server: {
-    host: "127.0.0.1",
-    port: webPort,
+    host: BROWSER_HARNESS_HOST,
+    port: BROWSER_HARNESS_WEB_PORT,
     strictPort: true,
     proxy: {
-      "/api": `http://127.0.0.1:${apiPort}`,
+      "/api": BROWSER_HARNESS_API_ORIGIN,
     },
   },
 });
