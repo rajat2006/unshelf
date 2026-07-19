@@ -1,0 +1,223 @@
+name: Agent Architecture Review
+
+# The scheduled/on-demand architecture-review leg (spec #52 / #70). Unlike the
+# other agent workflows this has NO label trigger and NO originating issue/PR:
+# it runs on a weekday cron and via `workflow_dispatch`, surveys the tree on
+# `main` for the single freshest deepening opportunity, and proposes it as a PRD
+# labelled `source:architecture-review` (a human later expands it with
+# `agent:to-issues`). Read-only: the agent produces only output files — this
+# workflow owns every `gh` mutation (spec invariant H). Mirrors CVM's
+# improve-codebase-architecture lifecycle: dedupe against past proposals (open
+# AND closed), one PRD per run, skip the run once the open backlog is full, and
+# always write a run summary.
+
+on:
+  schedule:
+    # Every weekday at 09:00 UTC — CVM's cadence, so drift surfaces steadily
+    # without a human remembering to ask (spec user story 15).
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Agent provider (default: Claude Code)"
+        type: choice
+        options:
+          - claude
+          - codex
+        default: claude
+
+env:
+  # Provenance label CVM applies to every architecture-review proposal — the
+  # dedupe key and the backlog the open-proposal cap counts.
+  PROVENANCE_LABEL: "source:architecture-review"
+  # Once this many proposals are OPEN, skip the agent run: don't pile more
+  # architecture PRDs onto an un-triaged backlog (CVM's open-proposal cap).
+  MAX_OPEN_PROPOSALS: 10
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+
+concurrency:
+  # One review at a time: a cron tick that overlaps a manual dispatch queues
+  # rather than double-proposing. Never cancels an in-flight run (matches the
+  # other capabilities' queue-not-cancel stance).
+  group: agent-architecture-review
+  cancel-in-progress: false
+
+jobs:
+  architecture-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      # Read-only survey → no `contents: write` (nothing is committed or pushed).
+      # `issues: write` to open + label the proposed PRD.
+      contents: read
+      issues: write
+
+    steps:
+      - name: Gate — open-proposal cap and dedupe list
+        id: gate
+        # CVM ensures its provenance label exists as part of the run itself, so a
+        # never-provisioned repo can still label (and later dedupe against) its
+        # first PRD. We create it idempotently WITHOUT `--force`: if it already
+        # exists the create is a no-op (`|| true`) and we never clobber the
+        # canonical colour/description that ./.sandcastle/provision-labels.sh owns
+        # (that script uses `--force` to reconcile). This also makes the
+        # `--label` queries below robust on a fresh repo, where filtering by a
+        # not-yet-created label would otherwise error.
+        run: |
+          set -euo pipefail
+
+          # Ensure the provenance label exists (bootstrap-only; provision-labels.sh
+          # remains the canonical source of its colour/description).
+          gh label create "$PROVENANCE_LABEL" \
+            --color 5319e7 \
+            --description "Provenance: PRD proposed by the scheduled architecture-review agent" \
+            2>/dev/null || true
+
+          # The OPEN proposals gate the run (an un-triaged backlog shouldn't grow).
+          # Explicit high --limit: `gh issue list` defaults to 30, which would
+          # silently cap the count.
+          open_count=$(gh issue list --state open --label "$PROVENANCE_LABEL" \
+            --limit 1000 --json number --jq 'length')
+          echo "Open $PROVENANCE_LABEL proposals: $open_count (cap $MAX_OPEN_PROPOSALS)"
+
+          if [ "$open_count" -ge "$MAX_OPEN_PROPOSALS" ]; then
+            echo "Backlog full — skipping the agent run this cycle."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "open_count=$open_count" >> "$GITHUB_OUTPUT"
+
+          # Dedupe against the FULL history — open AND closed — so a completed or
+          # rejected idea is never re-proposed. Titles feed the agent's prompt.
+          # Same explicit high --limit so the dedupe never silently drops history
+          # past the default 30.
+          proposals=$(gh issue list --state all --label "$PROVENANCE_LABEL" \
+            --limit 1000 --json title --jq '[.[].title]')
+          echo "proposals=$(echo "$proposals" | jq -c '.')" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        # No label trigger, so the provider comes from the dispatch input and
+        # defaults to Claude Code (the cron path always uses the default). Mirror
+        # resolveAgent()'s contract by serialising the choice into AGENT_LABELS.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.provider }}" = "codex" ]; then
+            echo "labels_json=[\"agent:codex\"]" >> "$GITHUB_OUTPUT"
+            echo "is_codex=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "labels_json=[]" >> "$GITHUB_OUTPUT"
+            echo "is_codex=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout main
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        if: steps.gate.outputs.proceed == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.gate.outputs.proceed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Claude Code
+        if: steps.gate.outputs.proceed == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Codex CLI only when a manual dispatch opted in via the provider input; the
+      # scheduled default never pays for it. Runner-side auth is materialised by
+      # prepareCodexAuth.
+      - name: Install Codex CLI
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
+        run: npm install -g @openai/codex
+
+      - name: Run architecture review
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
+          # writes $CODEX_HOME/auth.json only when Codex is resolved. OPENAI_KEY /
+          # OPENAI_API_KEY are deliberately NOT passed (spec #64).
+          CODEX_HOME: ${{ runner.temp }}/.codex
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          AGENT_LABELS: ${{ steps.provider.outputs.labels_json }}
+          EXISTING_PROPOSALS: ${{ steps.gate.outputs.proposals }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: pnpm exec tsx .sandcastle/architecture-review/architecture-review.ts
+
+      - name: Open the proposed PRD
+        if: steps.gate.outputs.proceed == 'true' && success()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        # `proposed` ⇒ open one PRD labelled with the provenance label so future
+        # runs dedupe against it and the open cap counts it; a human later applies
+        # `agent:to-issues`. `skipped` ⇒ nothing to open. No `agent:*` state label
+        # is applied, so this never itself starts a run. The created URL is
+        # persisted for the run-summary step.
+        run: |
+          set -euo pipefail
+          status=$(cat "${RUNNER_TEMP}/architecture_status.txt")
+          if [ "$status" != "proposed" ]; then
+            echo "Status: $status — $(cat "${RUNNER_TEMP}/architecture_summary.txt"). No PRD to open."
+            exit 0
+          fi
+
+          title=$(cat "${RUNNER_TEMP}/prd_title.txt")
+          {
+            cat "${RUNNER_TEMP}/prd_body.txt"
+            printf '\n\n---\n_Proposed by the scheduled architecture-review agent — reviewed `main` at `%s` ([run log](%s)). Apply `agent:to-issues` to expand into child issues._\n' \
+              "${COMMIT_SHA:0:12}" "$RUN_URL"
+          } > "${RUNNER_TEMP}/prd_issue_body.md"
+
+          url=$(gh issue create \
+            --title "$title" \
+            --body-file "${RUNNER_TEMP}/prd_issue_body.md" \
+            --label "$PROVENANCE_LABEL")
+          echo "Opened architecture-review PRD: $url"
+          printf '%s' "$url" > "${RUNNER_TEMP}/prd_url.txt"
+
+      - name: Run summary
+        # Always report the outcome to the Actions run summary (CVM parity): the
+        # created PRD + candidates considered, the skip reason + candidates, the
+        # backlog-full skip, or a failure. Runs whatever happened upstream.
+        if: always()
+        run: |
+          set -uo pipefail
+          {
+            echo "## Architecture review"
+            echo
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "⚠️ **Run failed** (\`${{ job.status }}\`) before it could produce a decision — see the step logs above."
+            elif [ "${{ steps.gate.outputs.proceed }}" != "true" ]; then
+              echo "⏭️ **Skipped — backlog full.** ${{ steps.gate.outputs.open_count }} open \`$PROVENANCE_LABEL\` proposal(s) ≥ cap of $MAX_OPEN_PROPOSALS. Triage the open proposals to let the next run propose again."
+            elif [ -f "${RUNNER_TEMP}/architecture_status.txt" ] && [ "$(cat "${RUNNER_TEMP}/architecture_status.txt")" = "proposed" ]; then
+              echo "✅ **Proposed a PRD:** $(cat "${RUNNER_TEMP}/prd_title.txt")"
+              echo
+              echo "$(cat "${RUNNER_TEMP}/architecture_summary.txt")"
+              [ -f "${RUNNER_TEMP}/prd_url.txt" ] && echo && echo "$(cat "${RUNNER_TEMP}/prd_url.txt")"
+            else
+              echo "⏭️ **Skipped — nothing fresh to propose.** $(cat "${RUNNER_TEMP}/architecture_summary.txt" 2>/dev/null || echo 'no summary')"
+            fi
+            if [ -s "${RUNNER_TEMP}/architecture_candidates.txt" ]; then
+              echo
+              echo "**Candidates considered:**"
+              while IFS= read -r c; do [ -n "$c" ] && echo "- $c"; done < "${RUNNER_TEMP}/architecture_candidates.txt"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

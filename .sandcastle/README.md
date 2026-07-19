@@ -22,7 +22,10 @@ pinned Sandcastle version and Unshelf's provider set:
   on extraction), then a resumed *extract* pass via `runWithRetry`. Returns the
   produce run's commits with the extraction's output, so side effects (commits,
   issue creation) are never repeated. For capabilities with a side-effectful
-  produce phase (`review`, `implement-pr`, `update-branch`, `architecture-review`).
+  produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`) —
+  and for `architecture-review`, whose produce phase is read-only but *heavy* (a
+  whole-tree survey): the split there separates that long survey from rigid JSON
+  emission, the same reliability win, rather than protecting a side effect.
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
@@ -34,6 +37,50 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`architecture-review-output.ts`** — `architectureReviewOutputSchema` (Zod):
+  the `architecture-review` capability's `<output>` contract, copied field-for-field
+  from CVM as a **strict discriminated union on `status`** — `proposed` is
+  `{status, title, body, oneLineSummary, candidatesConsidered}` (at least one
+  non-empty candidate), `skipped` is `{status, reason}`. Strict = extra keys
+  rejected, not stripped, so a `skipped` block can't smuggle a `title`/`body` and a
+  `proposed` block can't carry a stray `reason`; a malformed or mixed decision
+  self-corrects via same-session retry before the workflow opens any PRD. One
+  proposal per run — CVM proposes a single fresh deepening opportunity at a time so
+  each becomes its own PRD → child-issues flow, not a rolling report.
+- **`implement-pr-output.ts`** — `implementPrOutputSchema` (Zod): the
+  `implement-pr` capability's `<output>` contract — a `summary` plus `items[]`
+  (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, an
+  `action` describing what changed or why it was deferred, and an optional
+  `threadId` — the review thread's GraphQL node ID, so the workflow can reply on
+  the exact thread an addressed item answers). The extraction wrapper
+  validates the emitted block the same way, so a malformed block self-corrects via
+  same-session retry before anything is posted.
+- **`update-branch-output.ts`** — `updateBranchOutputSchema` (Zod): the
+  `update-branch` capability's `<output>` contract — an `outcome` ∈
+  merged/already-current/blocked, a `summary`, `conflicts[]` (each a `file` + a
+  one-line `resolution` note), and a `reason` (required when `blocked`).
+  Refinements require a `reason` for `blocked` and forbid `conflicts` on any
+  non-`merged` outcome, so a contradictory block self-corrects via same-session
+  retry. The agent's claim is not trusted alone — see `verify-branch-update.ts`.
+- **`verify-branch-update.ts`** — `verifyBranchUpdate(facts)`: a pure verifier
+  the `update-branch` runner calls to cross-check the agent's success claim
+  against the real git state (origin/main is now an ancestor of HEAD, HEAD
+  advanced when `merged`, no unresolved paths remain, the repo is not mid-merge,
+  the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
+  failure fails the runner so an aborted or half-finished merge can never be
+  pushed or reported as success (CVM's deterministic postconditions).
+- **`implement-prd-output.ts`** — `implementPrdOutputSchema` (Zod): the
+  `implement-prd` extraction's `<output>` contract — an `outcome`
+  (`completed`/`already-satisfied`/`blocked`) plus a one-line `reason`. Validated
+  by the extraction wrapper with same-session retry, so the three-way outcome that
+  distinguishes "already done" from "needs a human" can't be a malformed block.
+- **`verify-implement-prd.ts`** — `verifyImplementPrdOutcome({ outcome, commitCount })`:
+  a pure verifier the `implement-prd` runner calls to cross-check the agent's
+  reported outcome against the real commit count — `completed` ⇒ commits > 0,
+  `already-satisfied` ⇒ commits == 0, `blocked` ⇒ always a failure. Returns
+  `{ ok }` or `{ ok:false, reason }`; a mismatch fails the runner so a
+  self-contradictory claim can never close a sub-issue on a false premise (the
+  same claim-not-trusted-alone stance as `verify-branch-update.ts`).
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -60,10 +107,12 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
-- **`capability-context.ts`** — `loadCapabilityContext()`: the one reader of the
-  env contract every `agent-*.yml` sets (issue coordinates, output dir, and the
-  provider resolved from the full label set). Returns the `promptArgs` ready to
-  spread into `run()`.
+- **`capability-context.ts`** — `loadCapabilityContext()` and the PRD-mode
+  `loadPrdImplementContext()` / `loadPrdPrContext()`: the one reader of the env
+  contract every `agent-*.yml` sets (issue/PRD coordinates, output dir, and the
+  provider resolved from the full label set). Each returns the `promptArgs` ready
+  to spread into `run()`, so every capability resolves provider + env through this
+  seam rather than re-parsing `process.env`.
 
 Later workflow tickets add each capability as a thin `run()` script + YAML on top
 of these helpers.
@@ -83,6 +132,25 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`implement-prd/`** — the PRD variant of the spine (workflow
+  `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
+  sub-issue per run on the resumed accumulating branch, with coordinates + provider
+  from `loadPrdImplementContext`. A **two-phase** capability
+  ({@link runWithExtraction}): the produce pass implements the sub-issue passed via
+  `SUB_ISSUE_NUMBER` (reasoning in prose, committing its work); the resumed
+  extraction pass emits an explicit `outcome` — `completed` | `already-satisfied` |
+  `blocked` — validated against `implementPrdOutputSchema`. That three-way outcome
+  is the point: a plain commit-count guard can't tell an already-done sub-issue
+  (legitimately zero commits) from an agent that gave up (also zero commits), so
+  the runner fails the run on `blocked` (and on `completed` with no new commits) —
+  leaving the sub-issue open and the PRD `agent:blocked` — while `completed`/
+  `already-satisfied` let the workflow close the sub-issue and advance. It never
+  closes a sub-issue the agent asked for help on.
+- **`write-prd-pr/`** — the PRD variant of `write-pr/`, run **only when opening
+  the PR** (the first sub-issue run; later runs reuse the PR). Same `runWithRetry`
+  single-prompt shape, with coordinates + provider from `loadPrdPrContext`; frames
+  the body around the **whole PRD** and schema-enforces a single `Closes #<PRD>`
+  line — sub-issues are closed by the workflow per-run, not by the PR body.
 - **`review/`** — drives the repo's **local `/code-review`** over the PR branch
   (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
   along both axes, **fixes what it safely can and commits** the fixes, and
@@ -94,6 +162,82 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`architecture-review/`** — the scheduled/on-demand codebase sweep (workflow
+  `agent-architecture-review.yml`) via `runWithExtraction` — the autonomous,
+  GitHub-native analogue of CVM's interactive `/improve-codebase-architecture`.
+  Unlike the others it has **no label trigger and no originating issue/PR**, so it
+  reads its own minimal env (the open proposals to dedupe against, an optional
+  `AGENT_LABELS` for the provider — Claude by default — plus `OUTPUT_DIR`) instead
+  of `loadCapabilityContext`. The produce pass surveys the tree in prose for the
+  **single freshest deepening opportunity** — described directly with the
+  `/codebase-design` vocabulary, **not** by running the interactive
+  `/improve-codebase-architecture` skill (which is `disable-model-invocation` and
+  needs an HTML report + a human); the resumed extraction pass emits a
+  `proposed | skipped` decision validated against `architectureReviewOutputSchema`
+  (one PRD per run, not a findings list). **Read-only** — it commits nothing; per
+  invariant H it only writes `architecture_status.txt` and `architecture_summary.txt`
+  (the `oneLineSummary` when proposed, the `reason` when skipped), plus — when
+  `proposed` — `architecture_candidates.txt`, `prd_title.txt`, and `prd_body.txt`
+  to `OUTPUT_DIR`. The workflow dedupes against **open *and closed***
+  `source:architecture-review` proposals with an explicit high `--limit` (so a
+  completed or rejected idea is never re-raised and the default-30 page never
+  silently truncates history), skips the run once ten are **open**, opens the
+  proposed PRD with that provenance label (provisioned once by `provision-labels.sh`;
+  a human later expands it with `agent:to-issues`), and always writes a run summary
+  (proposed PRD + one-line summary + candidates, skip reason, or backlog-full).
+- **`implement-pr/`** — addresses the review comments on an open PR (workflow
+  `agent-implement-pr.yml`) via `runWithExtraction`. The produce pass reads the
+  PR's review threads via **GraphQL** (which exposes each thread's `isResolved`
+  state and node `id`, unlike the REST comments endpoint), **changes what it
+  safely can and commits** the fixes, running the repo's typecheck/test on what it
+  touches; the resumed extraction pass emits one `<output>` block
+  (`extraction.md`) recording each comment as `addressed` or `deferred` — with the
+  addressed thread's `threadId` — validated against `implementPrOutputSchema` with
+  same-session retry. Per invariant H the runner only commits + writes files: fix
+  commits land on the branch, a Markdown summary (`pr_comment.md`) and a
+  `thread_replies.json` ({threadId, body} per answered thread) go to `OUTPUT_DIR`.
+  The workflow pushes the commits, replies on each answered thread — `addressed`
+  (the fix) *or* `deferred` (the reason it was left), CVM-style, reply only;
+  resolution stays the reviewer's call — after checking each `threadId` against
+  the PR's real **unresolved** threads (so a hallucinated/cross-PR/already-resolved
+  id can't be replied to), and posts the summary comment. It refuses cleanly up
+  front when the PR has no unresolved threads, comments, *or* non-approval review
+  bodies to address (no wasted run), and a runtime guard fails the run (→
+  `agent:blocked`) if it still produced no commits and no items, or claims
+  `addressed` items with zero commits. It does **not** change the PR's draft/ready
+  state — that belongs to the review leg. Shares the per-PR concurrency group with
+  `review`.
+- **`update-branch/`** — brings a stale or conflicted PR branch current with
+  `main` (workflow `agent-update-branch.yml`). The workflow resolves the common
+  cases **deterministically, without an agent**: an already-current branch is a
+  no-op, and a conflict-free merge is done with `git merge` in a shell step. Only
+  when that merge hits **real conflicts** is the agent invoked (via
+  `runWithExtraction`) — its produce pass re-merges `origin/main`, resolves the
+  conflicts, runs the repo's checks, and commits; the resumed extraction pass
+  emits the `<output>` block (`extraction.md`) validated against
+  `updateBranchOutputSchema`. Before anything is pushed, the runner cross-checks
+  the agent's claim against the real git state (`verify-branch-update.ts`); a
+  failed postcondition — or an agent that reports `outcome: blocked` — fails the
+  run into `agent:blocked` with the agent's reason, so an aborted merge is never
+  pushed or reported as success. Per invariant H the runner only commits + writes
+  files: the merge commit lands on the branch (the workflow pushes it — a plain,
+  non-force push) and `update_branch_comment.md` goes to `OUTPUT_DIR`. **Merge,
+  never rebase** — history only grows, so the non-force push is always valid.
+- **`to-issues/`** — decomposes a PRD issue into agent-sized child issues
+  (workflow `agent-to-issues.yml`) via `runWithRetry` (structured output *is* the
+  work — no branch, no commits). Copies CVM's `to-issues-prd` contract: the agent
+  emits `slices[]` (`title`, `whatToBuild`, `acceptanceCriteria[]`) — vertical
+  tracer-bullet slices with **no dependency field and no summary** (emitted list
+  order is the only phase signal) — validated against `toIssuesOutputSchema`
+  (CVM's `PromptOutput`) with same-session retry. The runner then
+  **deterministically renders** each slice's issue body (`renderSliceBody`,
+  byte-for-byte CVM's `renderBody` — `## Parent PRD` back-reference, "What to
+  build", and a `- [ ]` acceptance checklist) and writes `child_issues.json`. It
+  reads the PRD coordinates through the shared PRD-mode seam (`loadPrdPrContext`,
+  `PRD_NUMBER`/`PRD_TITLE`), so no branch is involved. **Unshelf's one deliberate
+  divergence from CVM** (invariant H / issue #69): CVM's runner does the
+  `gh issue create` itself, whereas here the runner only writes files and the
+  **workflow** does every `gh issue create` + sub-issue link.
 
 ## Pinned version
 
