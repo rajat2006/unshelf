@@ -263,10 +263,11 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/.codex
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
-          # This capability has no branch; the ref it reads against is main. The
-          # shared capability-context requires BRANCH, and the prompt never
-          # references it (an unreferenced promptArg only warns).
-          BRANCH: main
+          # PRD coordinates via the shared PRD-mode seam (loadPrdPrContext) — this
+          # capability reads a PRD, not a branch, so there is deliberately no
+          # BRANCH env here.
+          PRD_NUMBER: ${{ github.event.issue.number }}
+          PRD_TITLE: ${{ github.event.issue.title }}
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm exec tsx .sandcastle/to-issues/to-issues-prd.ts
 
@@ -319,15 +320,10 @@ jobs:
         if: steps.gate.outputs.proceed == 'true' && success()
         run: |
           set -euo pipefail
-          summary="Decomposed this PRD into child issues."
-          if [ -f "${RUNNER_TEMP}/to_issues_summary.txt" ]; then
-            summary=$(cat "${RUNNER_TEMP}/to_issues_summary.txt")
-          fi
           {
-            printf '%s\n\n' '`agent:to-issues` decomposed this PRD into child issues.'
-            printf '**Summary:** %s\n\n' "$summary"
+            printf '%s\n\n' '`agent:to-issues` decomposed this PRD into sub-issues, in build order:'
             cat "${RUNNER_TEMP}/created_children.txt"
-            printf '\n%s\n' 'Each child is linked as a sub-issue. Triage them and apply `agent:implement` (optionally `agent:codex`) where ready — no state label was applied automatically.'
+            printf '\n%s\n' 'Each is linked as a sub-issue. Triage them and apply `agent:implement` (optionally `agent:codex`) where ready — no state label was applied automatically.'
           } > "${RUNNER_TEMP}/to_issues_comment.md"
           gh issue comment "$ISSUE_NUMBER" --body-file "${RUNNER_TEMP}/to_issues_comment.md"
 

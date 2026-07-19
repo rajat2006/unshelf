@@ -1,102 +1,85 @@
 import { describe, expect, it } from "vitest";
-import {
-  renderChildIssueBody,
-  toIssuesOutputSchema,
-} from "./to-issues-output";
+import { renderSliceBody, toIssuesOutputSchema } from "./to-issues-output";
 
-/** A minimal well-formed child issue, spread-overridable per test. */
-function child(overrides: Record<string, unknown> = {}) {
+/** A minimal well-formed slice, spread-overridable per test. */
+function slice(overrides: Record<string, unknown> = {}) {
   return {
-    title: "Foundation: .sandcastle/ scaffold + pure helper seam",
-    whatToBuild: "Stand up the testable runner seam under .sandcastle/.",
-    acceptanceCriteria: ["turbo run test covers the seam", "helpers are pure"],
+    title: "Add the .sandcastle scaffold end to end",
+    whatToBuild: "Stand up the testable runner seam and prove it with a test.",
+    acceptanceCriteria: ["turbo run test covers the seam", "Tests cover it"],
     ...overrides,
   };
 }
 
-describe("toIssuesOutputSchema — the to-issues <output> contract", () => {
-  it("accepts a well-formed structured decomposition", () => {
+describe("toIssuesOutputSchema — the to-issues <output> contract (CVM PromptOutput)", () => {
+  it("accepts a well-formed ordered slice list", () => {
     const parsed = toIssuesOutputSchema.parse({
-      summary: "Split the platform spec into 2 agent-sized tickets.",
-      children: [child(), child({ title: "Provision agent:* labels" })],
+      slices: [slice(), slice({ title: "Provision agent:* labels" })],
     });
-    expect(parsed.children).toHaveLength(2);
-    expect(parsed.children[0].title).toContain("Foundation");
+    expect(parsed.slices).toHaveLength(2);
+    expect(parsed.slices[0].title).toContain("scaffold");
   });
 
-  it("strips any dependency field — list order is the only dependency signal", () => {
+  it("rejects an empty slices array — a decomposition needs a slice", () => {
+    expect(() => toIssuesOutputSchema.parse({ slices: [] })).toThrow();
+  });
+
+  it("has no summary field — extra keys are stripped, not required", () => {
     const parsed = toIssuesOutputSchema.parse({
-      summary: "s",
-      children: [child({ blockedBy: ["Foundation"] })],
+      summary: "ignored",
+      slices: [slice()],
     });
-    expect(parsed.children[0]).not.toHaveProperty("blockedBy");
+    expect(parsed).not.toHaveProperty("summary");
   });
 
-  it("rejects an empty children array — a decomposition needs a child", () => {
+  it("strips any dependency field — list order is the only phase signal", () => {
+    const parsed = toIssuesOutputSchema.parse({
+      slices: [slice({ blockedBy: ["earlier"] })],
+    });
+    expect(parsed.slices[0]).not.toHaveProperty("blockedBy");
+  });
+
+  it("rejects a slice with an empty title", () => {
     expect(() =>
-      toIssuesOutputSchema.parse({ summary: "s", children: [] }),
+      toIssuesOutputSchema.parse({ slices: [slice({ title: "" })] }),
     ).toThrow();
   });
 
-  it("rejects a child with an empty title", () => {
+  it("rejects a slice with empty whatToBuild", () => {
     expect(() =>
-      toIssuesOutputSchema.parse({
-        summary: "s",
-        children: [child({ title: "" })],
-      }),
+      toIssuesOutputSchema.parse({ slices: [slice({ whatToBuild: "" })] }),
     ).toThrow();
   });
 
-  it("rejects a child with empty whatToBuild", () => {
+  it("rejects a slice with zero acceptance criteria", () => {
     expect(() =>
-      toIssuesOutputSchema.parse({
-        summary: "s",
-        children: [child({ whatToBuild: "" })],
-      }),
+      toIssuesOutputSchema.parse({ slices: [slice({ acceptanceCriteria: [] })] }),
     ).toThrow();
   });
 
-  it("rejects a child with zero acceptance criteria", () => {
+  it("rejects a slice title over CVM's 200-char limit", () => {
     expect(() =>
-      toIssuesOutputSchema.parse({
-        summary: "s",
-        children: [child({ acceptanceCriteria: [] })],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects a child title over GitHub's 256-char limit", () => {
-    expect(() =>
-      toIssuesOutputSchema.parse({
-        summary: "s",
-        children: [child({ title: "x".repeat(257) })],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects a missing summary", () => {
-    expect(() =>
-      toIssuesOutputSchema.parse({ children: [child()] }),
+      toIssuesOutputSchema.parse({ slices: [slice({ title: "x".repeat(201) })] }),
     ).toThrow();
   });
 });
 
-describe("renderChildIssueBody — deterministic body rendering", () => {
-  it("renders the parent reference, prose, and a checkbox list", () => {
-    const body = renderChildIssueBody(child(), 52);
-    expect(body).toContain("## Parent\n\n#52");
+describe("renderSliceBody — deterministic body rendering (CVM renderBody)", () => {
+  it("renders the parent PRD reference, prose, and a checkbox list", () => {
+    const body = renderSliceBody(slice(), 52);
+    expect(body).toContain("## Parent PRD\n\n#52");
     expect(body).toContain("## What to build\n\nStand up the testable runner");
     expect(body).toContain("## Acceptance criteria");
     expect(body).toContain("- [ ] turbo run test covers the seam");
-    expect(body).toContain("- [ ] helpers are pure");
+    expect(body).toContain("- [ ] Tests cover it");
     expect(body.endsWith("\n")).toBe(true);
   });
 
-  it("renders no dependency section — order carries dependencies", () => {
-    expect(renderChildIssueBody(child(), 52)).not.toContain("## Blocked by");
+  it("renders no dependency section — order carries phase", () => {
+    expect(renderSliceBody(slice(), 52)).not.toContain("## Blocked by");
   });
 
-  it("accepts a string parent number", () => {
-    expect(renderChildIssueBody(child(), "69")).toContain("#69");
+  it("accepts a string PRD number", () => {
+    expect(renderSliceBody(slice(), "69")).toContain("#69");
   });
 });

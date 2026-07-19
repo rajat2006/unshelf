@@ -2,32 +2,35 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { loadCapabilityContext } from "../capability-context";
+import { loadPrdPrContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { runWithRetry } from "../run-with-retry";
 import {
-  type ChildIssue,
-  renderChildIssueBody,
+  renderSliceBody,
+  type Slice,
   toIssuesOutputSchema,
 } from "../to-issues-output";
 
 /**
  * The `to-issues-prd` capability: decompose a PRD issue into agent-sized child
- * issues.
+ * issues (CVM's `to-issues-prd`, reconciled to Unshelf's seam).
  *
  * Invoked by `.github/workflows/agent-to-issues.yml` when a human applies
  * `agent:to-issues` to a PRD. The agent only *reads* the PRD and *emits* the
  * decomposition — it creates nothing. Because the structured output IS the work
- * (no branch, no commits, no files touched), this uses {@link runWithRetry} (not
- * the two-phase extraction wrapper): one combined prompt reads and emits,
- * retrying the same session on a malformed or non-conforming `<output>` block.
+ * (no branch, no commits, no files touched), this uses {@link runWithRetry},
+ * matching CVM.
  *
- * The children are written to `outputDir` as JSON for the workflow's
- * `gh issue create` + sub-issue-link steps, keeping every `gh` and label
- * mutation in the workflow (invariant H).
+ * Per Unshelf invariant H (and issue #69: "the agent emits only output; the
+ * workflow performs the issue creation") this diverges from CVM's runner, which
+ * does the `gh issue create` itself: here the slices are rendered and written to
+ * `child_issues.json` for the workflow's create + sub-issue-link steps, keeping
+ * every `gh` mutation in the workflow. Reads the PRD coordinates through the
+ * shared {@link loadPrdPrContext} seam (PRD_NUMBER/PRD_TITLE) — no branch, so no
+ * BRANCH env is involved.
  */
 
-const ctx = loadCapabilityContext();
+const ctx = loadPrdPrContext();
 console.log(`Resolved provider model: ${ctx.model}`);
 
 // Same subscription-seat setup as every other capability — this phase runs the
@@ -35,7 +38,7 @@ console.log(`Resolved provider model: ${ctx.model}`);
 prepareCodexAuth(ctx.agent.name);
 
 const result = await runWithRetry({
-  name: `to-issues-#${ctx.issueNumber}`,
+  name: `to-issues-prd-#${ctx.prdNumber}`,
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
@@ -47,24 +50,20 @@ const result = await runWithRetry({
   }),
 });
 
-// Deterministically render each child's body from its structured fields — the
+// Deterministically render each slice's body from its structured fields — the
 // agent supplies the content, the runner owns the shape (parent back-reference +
 // acceptance checklist), so a malformed body can never be published verbatim.
-const rendered = result.output.children.map((child: ChildIssue) => ({
-  title: child.title,
-  body: renderChildIssueBody(child, ctx.issueNumber),
+const rendered = result.output.slices.map((slice: Slice) => ({
+  title: slice.title,
+  body: renderSliceBody(slice, ctx.prdNumber),
 }));
 
 fs.writeFileSync(
   path.join(ctx.outputDir, "child_issues.json"),
   JSON.stringify(rendered, null, 2),
 );
-fs.writeFileSync(
-  path.join(ctx.outputDir, "to_issues_summary.txt"),
-  result.output.summary,
-);
 
-console.log(`\nWrote ${rendered.length} child issue(s) to ${ctx.outputDir}`);
-for (const c of rendered) {
-  console.log(`  - ${c.title}`);
+console.log(`\nWrote ${rendered.length} sub-issue(s) to ${ctx.outputDir}`);
+for (const s of rendered) {
+  console.log(`  - ${s.title}`);
 }

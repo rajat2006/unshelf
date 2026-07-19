@@ -1,96 +1,77 @@
 # TASK
 
-Decompose the PRD issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}} into agent-sized
-child issues.
+You are breaking a PRD into a flat list of native GitHub sub-issues. You do
+**not** create the issues yourself. You emit a structured plan; the workflow that
+invoked you creates and attaches the sub-issues deterministically.
 
-You are **not** implementing anything and **not** creating any issues — the
-workflow creates the child issues from the output you emit. Your job is to read
-the PRD and produce a clean decomposition.
-
-This run is **non-interactive**: there is no one to ask. Resolve any ambiguity in
-the PRD with a reasonable interpretation and proceed — never block for a
-clarification.
+- **PRD:** #{{PRD_NUMBER}} — {{PRD_TITLE}}
 
 # CONTEXT
 
-Read the PRD in full, including comments and any parent it references:
+1. Fetch the PRD:
 
-```
-gh issue view {{ISSUE_NUMBER}} --comments
-```
+   ```
+   gh issue view {{PRD_NUMBER}} --comments
+   ```
 
-Read `CONTEXT.md` and the relevant ADRs under `docs/adr/` — they carry the
-domain model and the decisions the child issues must not contradict. Then
-explore the parts of the repo the PRD touches, enough to slice the work
-sensibly. Look at how existing issues in this repo are written (`gh issue list`,
-`gh issue view <n>`) so your children match the house style.
+   If the PRD is ambiguous, make the most reasonable interpretation and proceed; do not stop to ask.
 
-# HOW TO SLICE
+2. Read `CONTEXT.md` and skim `docs/adr/` for any decisions that bear on the area the PRD touches. Sub-issue titles and bodies must use the project's vocabulary.
 
-Slice into **vertical tracer bullets**, not horizontal layers:
+3. Explore the codebase to ground the breakdown in the real shape of the files you'll be cutting through.
 
-- **Vertical, end-to-end slices.** Each child cuts through every layer it needs
-  to deliver one thin, working piece of user- or system-visible behaviour — never
-  a horizontal "build all the scaffolding / schemas / plumbing" ticket that
-  produces nothing observable on its own. A foundational-only slice is the
-  anti-pattern; fold the scaffolding a slice needs into that slice.
-- **Independently verifiable and flat.** Each child must be implementable,
-  testable, and landable **on its own**, with a flat scope (no sub-tasks, no
-  nested phases). If it can't be verified without another child's code, it isn't
-  sliced right — merge or re-cut.
-- **Order is the dependency signal.** Emit the children in the order they should
-  be built: earlier children land first, later ones may build on them. There is
-  **no dependency field** — the list order carries it, so put a child after
-  everything it relies on.
-- **Every child carries a testing acceptance criterion.** At least one entry in
-  each child's `acceptanceCriteria` must be about how the slice is *verified* —
-  the test, check, or observable behaviour that proves it works (e.g. "a unit
-  test covers X", "`turbo run test` passes with the new case").
-- Cover the PRD's acceptance criteria across the children with **no gaps and no
-  overlap** — every requirement lands in exactly one child.
+   During exploration, look for opportunities to prefactor the code to make the implementation easier. "Make the change easy, then make the easy change."
 
-# CHILD ISSUE FIELDS
+# DRAFTING SUB-ISSUES
 
-You emit **structured fields per child, not a rendered issue body**. The runner
-deterministically renders the `## Parent` back-reference, the `## What to build`
-section, and the `## Acceptance criteria` checklist from your fields — so supply
-the content, not the Markdown scaffolding:
+Break the PRD into **tracer-bullet** vertical slices. Each slice is a thin vertical cut through every layer (schema → API → UI → tests), NOT a horizontal slice of one layer.
 
-- `whatToBuild` — one or two paragraphs describing the vertical slice in terms of
-  behaviour and intent. Plain prose; no headings. **Do not include file paths or
-  code snippets** — name the behaviour and let the implementing agent choose the
-  files and code.
-- `acceptanceCriteria` — a list of testable outcomes, each a single line with no
-  leading `- [ ]` (the runner adds the checkbox). At least one, and at least one
-  of them must be the slice's **testing/verification** criterion.
+Rules:
+
+- Each slice delivers a narrow but COMPLETE path through every layer.
+- A completed slice is demoable or verifiable on its own.
+- Sub-issues are **flat** — a sub-issue must not itself need sub-issues. If a slice is too big to leaf, split it into multiple peer slices.
+- Prefactoring should be done before feature work.
+- Sub-issues run in **list order** under the PRD. Order them so dependencies are satisfied: if slice B builds on slice A's schema, A must come first.
+- Each slice must stand on its own in a single agent session. A reasonable session can build a couple of files, write tests, and run typecheck/test. Don't draft slices that are unrealistic for one session.
+
+Draft the ordered list of slices, each with a title, what to build, and
+acceptance criteria.
 
 # OUTPUT
 
-Once you have read everything and sliced the work, emit a single `<output>`
-block as the **last thing** in your response, with `children` **in build order**:
+Emit the breakdown you just drafted as a single `<output>` block — the last thing in your response. The script parses it with a strict schema.
 
 <output>
 {
-  "summary": "One line: what the PRD was split into.",
-  "children": [
+  "slices": [
     {
-      "title": "Imperative, specific child title",
-      "whatToBuild": "One or two paragraphs describing the vertical slice.",
+      "title": "short imperative title",
+      "whatToBuild": "One to three short paragraphs describing this slice's end-to-end behavior, framed around what it delivers. No file paths. Plain text — embed newlines literally as \\n in the JSON.",
       "acceptanceCriteria": [
-        "A testable outcome",
-        "A unit test covers the new behaviour"
+        "Concrete, checkable outcome 1",
+        "Concrete, checkable outcome 2",
+        "Tests cover the new behavior"
       ]
     }
   ]
 }
 </output>
 
-- `title` — a single line under 256 characters, imperative and specific. It is an
-  **issue** title, not a commit message: **no** conventional-commit prefix
-  (`feat:`, `fix:`, `refactor:`, `docs:`, …).
-- `children` — at least one; each an independently verifiable, vertical slice of
-  the PRD, ordered so dependencies come first.
-- Do **not** pre-render Markdown or a parent reference into any field, do **not**
-  add a dependency field — the runner owns the body shape and the list order is
-  the dependency signal — and do **not** add a `Closes #…` (or `Fixes`/`Resolves`)
-  directive anywhere: these are child issues, not PRs.
+Field rules:
+
+- `slices` — ordered array. List order is execution order; the workflow
+  attaches them in this order under the PRD. A later slice may build on
+  any earlier slice's work; the ordering is the only signal of phase.
+- `title` — short, imperative. No leading `feat:` / `fix:` prefix.
+- `whatToBuild` — prose, not a list. Avoid specific file paths or code
+  snippets. Exception: a prototype-derived snippet (state machine,
+  reducer, schema, type shape) may be inlined when prose can't encode the
+  decision as precisely.
+- `acceptanceCriteria` — array of strings. The workflow renders them as a
+  GitHub checklist (`- [ ] ...`). Always include one item that asserts
+  tests cover the new behavior.
+
+Do NOT include a `Closes` directive anywhere in the body — the workflow
+omits one by design. Closing sub-issues is the implement-prd workflow's
+job; closing the PRD is the merged PR's job.

@@ -183,19 +183,19 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   never rebase** — history only grows, so the non-force push is always valid.
 - **`to-issues/`** — decomposes a PRD issue into agent-sized child issues
   (workflow `agent-to-issues.yml`) via `runWithRetry` (structured output *is* the
-  work — no branch, no commits). The agent reads the PRD and emits `children[]` as
-  **structured fields** (`title`, `whatToBuild`, `acceptanceCriteria[]`) —
-  CVM-style vertical tracer-bullet slices with **no dependency field** (emitted
-  list order is the dependency signal) — validated against `toIssuesOutputSchema`
-  with same-session retry. The runner then **deterministically renders** each
-  child's issue body (`renderChildIssueBody` — parent back-reference, "What to
-  build", and a `- [ ]` acceptance checklist), so the published body is
-  code-shaped, not raw agent prose, and writes `child_issues.json`. Per invariant
-  H the runner only
-  writes files — the workflow does every `gh issue create` and links each child as
-  a sub-issue of the PRD. It never touches a branch, so the workflow passes
-  `BRANCH: main` (the ref it reads against) to satisfy the shared context; the
-  prompt never references it.
+  work — no branch, no commits). Copies CVM's `to-issues-prd` contract: the agent
+  emits `slices[]` (`title`, `whatToBuild`, `acceptanceCriteria[]`) — vertical
+  tracer-bullet slices with **no dependency field and no summary** (emitted list
+  order is the only phase signal) — validated against `toIssuesOutputSchema`
+  (CVM's `PromptOutput`) with same-session retry. The runner then
+  **deterministically renders** each slice's issue body (`renderSliceBody`,
+  byte-for-byte CVM's `renderBody` — `## Parent PRD` back-reference, "What to
+  build", and a `- [ ]` acceptance checklist) and writes `child_issues.json`. It
+  reads the PRD coordinates through the shared PRD-mode seam (`loadPrdPrContext`,
+  `PRD_NUMBER`/`PRD_TITLE`), so no branch is involved. **Unshelf's one deliberate
+  divergence from CVM** (invariant H / issue #69): CVM's runner does the
+  `gh issue create` itself, whereas here the runner only writes files and the
+  **workflow** does every `gh issue create` + sub-issue link.
 
 ## Pinned version
 
