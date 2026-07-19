@@ -72,7 +72,11 @@ tool — a deferred sibling of Capture, not a synonym)
 The single catch-all folder every captured Item lands in — the raw dump. In v1
 the only folder, as Raindrop has one default collection. Organising happens by
 pulling Items into Stops, not by creating more folders.
-_Avoid_: Inbox, Library, All-items, Dump
+_Redesign note (ADR-0014, map #53):_ the web-UI redesign names this surface
+**Library** in the UI — the model concept (the catch-all every capture lands in) is
+unchanged; only the user-facing name differs. The target model also adds a
+many-to-many **label** axis over it (built downstream, #74).
+_Avoid_: Inbox, All-items, Dump (and — pre-redesign — Library, now the UI name)
 
 **Stop**:
 A flat grouping the User forms by pulling one or more Items together — the single

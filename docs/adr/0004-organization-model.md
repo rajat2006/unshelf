@@ -1,5 +1,12 @@
 # Stop is the single organising primitive — flat, unordered, and of one kind
 
+> **Superseded in intent by [ADR-0014](0014-next-gen-surface-model-and-navigation.md)
+> (2026-07-19, map #53).** The web-UI redesign demotes the Stop to a **per-Trail
+> waypoint** and adds a many-to-many **labels** axis over the store — reopening this
+> ADR's rejection of tags, since a Stop is no longer the store's cross-cutting
+> grouping. This ADR still describes v1 as shipped; the reversal reasoning and its
+> downstream build live in ADR-0014 and #74.
+
 Unshelf v1 organises captured Items with exactly one grouping concept, the
 **Stop** — a User-formed bag of Items. There are no tags, no nested/sub-Stops, and
 no folders beyond **All**; a Stop holds its Items as an **unordered set** (all

@@ -81,7 +81,9 @@ edge list, and the layout is fully recoverable from topology.
   progress reads as ground walked-vs-ahead. It gives the "arranging, not data entry"
   gesture (US 39) while keeping layout derived. This does not bind the schema (any
   interaction writes the same edges) and is recorded in the prototype README, not
-  frozen here.
+  frozen here. **The visual skin was later reskinned to Quiet Focus — see the
+  update note below; the topology-as-journey reading and derived layout are kept, the
+  warm survey-chart skin is not.**
 - **The same derived layout is the mobile Trail view seam.** Mobile is view-only
   (US 40, ADR-0008); because position is derived from topology, the identical trail
   renders read-only on the phone with no extra data — noted for that surface, not
@@ -89,3 +91,26 @@ edge list, and the layout is fully recoverable from topology.
 - **Every rejected option stays cheap to add** — a layout table, an edge
   `position`, a `trails` row for a future Trail attribute — each additive and
   non-breaking, the same deferral discipline as ADR-0003 and ADR-0004.
+
+## Update — Trail canvas reskinned to Quiet Focus (2026-07-19, map #53)
+
+The web-UI redesign (map #53) reskinned the Trail canvas from this ADR's **Adventure
+map** to the **Quiet Focus** theme (ADR-0012), settled while drawing the anchor
+prototype (issue #59). **This is a reskin, not a redesign, and it changes nothing in
+this ADR's persistence decision** — the edge-list model, derived layout, and
+write-time acyclicity all stand.
+
+- **Kept:** the topology-as-journey reading — solid **walked-ground** vs
+  **dotted-ahead** edges, a sealed green **done**-medallion, an indigo filling
+  **"you are here"** ring, and ＋ / ⑃ / ⇢ authoring gestures. Layout stays derived
+  from topology (no stored positions).
+- **Dropped:** the **warm survey-chart skin** (pine/ochre paper) and the **compass
+  rose**. Quiet Focus is explicitly *not map-themed* (ADR-0012), so the canvas moves
+  to a cool neutral surface with a faint neutral graticule.
+- **Scope note:** the redesign also demotes the Stop to a **per-Trail waypoint** and
+  assumes **multiple Trails per User** (ADR-0014). That target-model change is a
+  downstream build (#74); it does not alter this ADR's edge-list shape, which already
+  scopes edges per User and needs no `trails` row.
+- **Full spec:** `docs/ui-design-spec.md` §8. Reskin drawn in
+  `apps/web/prototype-screens.html` (`worktree-issue-59-screens-prototype`), never
+  merged.
