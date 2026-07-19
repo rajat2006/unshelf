@@ -63,14 +63,35 @@ jobs:
           fi
 
           # A sub-issue (issue WITH a parent) is a leaf, not a PRD — you decompose
-          # top-level specs, not children. Refuse below. The parent is queried via
-          # GraphQL; the REST issue object doesn't expose it.
+          # top-level specs, not children. The parent is queried via GraphQL; the
+          # REST issue object doesn't expose it. This probe fails CLOSED — a
+          # missing parent is exit 0 with empty output; only a genuine API failure
+          # exits non-zero, and after retries that REFUSES (shape-error) rather
+          # than being read as "no parent", which would let us decompose a leaf
+          # (or, if the existing-children probe also failed open, duplicate an
+          # existing decomposition). Mirrors agent-implement.yml's fail-closed
+          # shape probes so no path proceeds on an unknown shape.
           owner="${GH_REPO%/*}"
           repo="${GH_REPO#*/}"
-          parent_number=$(gh api graphql \
-            -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
-            -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
-            --jq '.data.repository.issue.parent.number // empty' 2>/dev/null || echo "")
+          parent_number=""
+          parent_ok=false
+          for attempt in 1 2 3; do
+            if parent_number=$(gh api graphql \
+                 -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
+                 -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
+                 --jq '.data.repository.issue.parent.number // empty' 2>/dev/null); then
+              parent_ok=true
+              break
+            fi
+            echo "parent-shape probe attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$parent_ok" != "true" ]; then
+            echo "Could not determine parent shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$parent_number" ]; then
             echo "Issue is a sub-issue of #${parent_number} — refusing to decompose a leaf."
             echo "parent_number=$parent_number" >> "$GITHUB_OUTPUT"
@@ -80,8 +101,28 @@ jobs:
           fi
 
           # Idempotency guard: if the PRD already has sub-issues it was already
-          # decomposed. Refuse rather than create a duplicate set.
-          sub_count=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" --jq 'length' 2>/dev/null || echo "0")
+          # decomposed — refuse rather than create a duplicate set. Fails CLOSED
+          # the same way: an issue with no sub-issues returns `200 []` (exit 0);
+          # only a genuine API failure exits non-zero, and a persistent one refuses
+          # (shape-error) rather than being read as "zero children", which would
+          # duplicate an existing decomposition.
+          sub_issues_json=""
+          fetch_ok=false
+          for attempt in 1 2 3; do
+            if sub_issues_json=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" 2>/dev/null); then
+              fetch_ok=true
+              break
+            fi
+            echo "sub_issues fetch attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$fetch_ok" != "true" ]; then
+            echo "Could not determine existing-children shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sub_count=$(echo "$sub_issues_json" | jq 'length')
           if [ "$sub_count" != "0" ]; then
             echo "Issue already has ${sub_count} sub-issue(s) — refusing to re-decompose."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -92,27 +133,42 @@ jobs:
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
 
+      - name: Refuse — could not determine issue shape
+        if: steps.gate.outputs.refusal == 'shape-error'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          # Fail-closed shape probe gave up after retries — a transient API failure.
+          # Nothing was routed, to avoid decomposing a leaf or duplicating children.
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:to-issues" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: could not read this issue's parent/sub-issue shape after retries (a transient GitHub API failure). Nothing was created, to avoid decomposing a leaf or duplicating an existing decomposition. Clear \`agent:blocked\` and re-add \`agent:to-issues\` to retry. Run: ${RUN_URL}"
+
       - name: Refuse — issue is a sub-issue of another issue
         if: steps.gate.outputs.refusal == 'subissue'
         env:
           PARENT_NUMBER: ${{ steps.gate.outputs.parent_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           # Wrong-shape refusal → agent:blocked (CVM blocks these), not a silent
           # clear: the issue leaves the agent lane visibly and needs a human.
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:to-issues" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
-          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: this issue is a sub-issue of #${PARENT_NUMBER}, i.e. a leaf, not a PRD. Decompose the parent, or apply \`agent:implement\` to this issue to work it directly. Cleared \`agent:to-issues\` and added \`agent:blocked\`."
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: this issue is a sub-issue of #${PARENT_NUMBER}, i.e. a leaf, not a PRD. Decompose the parent, or apply \`agent:implement\` to this issue to work it directly. Cleared \`agent:to-issues\` and added \`agent:blocked\`. Run: ${RUN_URL}"
 
       - name: Refuse — PRD already decomposed
         if: steps.gate.outputs.refusal == 'already_decomposed'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           # Already-decomposed refusal → agent:blocked (CVM blocks these): a human
           # decides whether the existing children stand or a fresh split is wanted.
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:to-issues" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
-          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: this PRD already has sub-issues. Close or delete the existing children first if you want a fresh decomposition. Cleared \`agent:to-issues\` and added \`agent:blocked\`."
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:to-issues\`: this PRD already has sub-issues. Detach the existing children from this PRD first (optionally closing them afterward) if you want a fresh decomposition. Cleared \`agent:to-issues\` and added \`agent:blocked\`. Run: ${RUN_URL}"
 
       - name: Transition labels — remove to-issues/blocked, add in-progress
         if: steps.gate.outputs.proceed == 'true'
@@ -262,7 +318,7 @@ jobs:
             if [ -s "$created_file" ]; then
               printf '%s\n\n' '**Partial decomposition — these child issues were already created:**'
               cat "$created_file"
-              printf '\n%s\n' 'Delete or close them first (this PRD now has sub-issues, so a retry is otherwise refused as already-decomposed), then clear `agent:blocked` and re-add `agent:to-issues` to retry.'
+              printf '\n%s\n' '**Detach** each of these from this PRD first (Issue → Sub-issues → remove, or the `sub_issues` DELETE API), optionally closing them afterward — closing alone does not drop them from the sub-issue count, so this PRD would still be refused as already-decomposed. Once detached, clear `agent:blocked` and re-add `agent:to-issues` to retry.'
             else
               printf '%s\n' 'No child issues were created. Clear `agent:blocked` and re-add `agent:to-issues` to retry.'
             fi

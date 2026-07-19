@@ -4,15 +4,18 @@ import { z } from "zod";
  * One child issue the `to-issues-prd` capability decomposes a PRD into — emitted
  * as **structured fields**, never as a pre-rendered issue body.
  *
- * Mirrors CVM's to-issues contract: the agent supplies the *content*
- * (`whatToBuild`, the `acceptanceCriteria` list, any `blockedBy` siblings) and
- * the runner {@link renderChildIssueBody} deterministically renders the Markdown
- * body — the parent back-reference and the `- [ ]` checklist are code, not agent
- * prose. That keeps every published child in the house issue shape and stops a
- * malformed, non-agent-ready body from being created verbatim (spec #52 / #69).
+ * Mirrors CVM's runner-neutral to-issues contract: each child is an independent,
+ * vertically-sliced tracer bullet, so there is **no dependency field** — CVM uses
+ * the emitted *list order* as the dependency signal (earlier children land
+ * first). The agent supplies the *content* (`whatToBuild` and the
+ * `acceptanceCriteria` list); the runner {@link renderChildIssueBody}
+ * deterministically renders the Markdown body — the parent back-reference and the
+ * `- [ ]` checklist are code, not agent prose. That keeps every published child
+ * in the house issue shape and stops a malformed, non-agent-ready body from being
+ * created verbatim (spec #52 / #69).
  *
  * `title` is capped at GitHub's 256-char issue-title limit. `acceptanceCriteria`
- * requires at least one entry — an agent-sized ticket with no testable outcome is
+ * requires at least one entry — an agent-sized slice with no testable outcome is
  * not actionable — so an empty list triggers a same-session retry rather than a
  * checklist-less issue. No `labels` field: the workflow deliberately applies no
  * state label, so a human triages each child before it enters the agent lane.
@@ -21,7 +24,6 @@ export const childIssueSchema = z.object({
   title: z.string().min(1).max(256),
   whatToBuild: z.string().min(1),
   acceptanceCriteria: z.array(z.string().min(1)).min(1),
-  blockedBy: z.array(z.string().min(1)).optional(),
 });
 
 /**
@@ -47,10 +49,10 @@ export type ToIssuesOutput = z.infer<typeof toIssuesOutputSchema>;
  * the workflow feeds to `gh issue create --body-file`.
  *
  * The structure — the `## Parent` back-reference to the PRD, the `## What to
- * build` prose, the `## Acceptance criteria` checklist, and the optional `##
- * Blocked by` list — is fixed here, not left to the agent, so every child lands
- * in the same house shape regardless of what the agent emitted. `parentNumber`
- * is the PRD's issue number; the trailing newline keeps the file POSIX-clean.
+ * build` prose, and the `## Acceptance criteria` checklist — is fixed here, not
+ * left to the agent, so every child lands in the same house shape regardless of
+ * what the agent emitted. `parentNumber` is the PRD's issue number; the trailing
+ * newline keeps the file POSIX-clean.
  */
 export function renderChildIssueBody(
   child: ChildIssue,
@@ -63,12 +65,6 @@ export function renderChildIssueBody(
       .map((c) => `- [ ] ${c.trim()}`)
       .join("\n")}`,
   ];
-
-  if (child.blockedBy && child.blockedBy.length > 0) {
-    sections.push(
-      `## Blocked by\n\n${child.blockedBy.map((b) => `- ${b.trim()}`).join("\n")}`,
-    );
-  }
 
   return `${sections.join("\n\n")}\n`;
 }
