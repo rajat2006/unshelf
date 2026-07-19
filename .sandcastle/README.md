@@ -22,7 +22,8 @@ pinned Sandcastle version and Unshelf's provider set:
   on extraction), then a resumed *extract* pass via `runWithRetry`. Returns the
   produce run's commits with the extraction's output, so side effects (commits,
   issue creation) are never repeated. For capabilities with a side-effectful
-  produce phase (`review`, `implement-pr`, `update-branch`, `architecture-review`).
+  produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`,
+  `architecture-review`).
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
