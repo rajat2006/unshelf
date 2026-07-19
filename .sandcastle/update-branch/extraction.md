@@ -41,7 +41,7 @@ Rules:
 
 Be honest: the runner independently verifies a `merged`/`already-current` claim
 against the real git state (origin/main must be an ancestor of HEAD, no unresolved
-paths remain, a real merge commit exists for `merged`), and fails the run if the
+paths remain, and HEAD must have advanced for `merged`), and fails the run if the
 claim does not hold. A `blocked` outcome is the correct, expected way to hand a
 hard merge back to a human — prefer it to a guessed resolution.
 

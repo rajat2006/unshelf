@@ -31,9 +31,10 @@ import { verifyBranchUpdate } from "../verify-branch-update";
  * a success-shaped block. Two guards convert that into a real `agent:blocked`:
  *   1. An explicit `outcome: blocked` fails the run with the agent's reason.
  *   2. {@link verifyBranchUpdate} cross-checks a success claim against the real
- *      git state (ancestry, a genuine merge commit, no unresolved paths, no
- *      lingering merge state, a clean tree) — a failed postcondition fails the
- *      run — so an aborted or half-finished merge is never pushed.
+ *      git state (origin/main is now an ancestor of HEAD, HEAD advanced, no
+ *      unresolved paths, no lingering merge state, a clean tree) — a failed
+ *      postcondition fails the run — so an aborted or half-finished merge is
+ *      never pushed.
  *
  * Per invariant H the runner emits ONLY commits + output files: the merge commit
  * lands on the branch (the workflow pushes it — a plain, non-force push) and

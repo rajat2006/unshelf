@@ -51,9 +51,9 @@ pinned Sandcastle version and Unshelf's provider set:
   retry. The agent's claim is not trusted alone — see `verify-branch-update.ts`.
 - **`verify-branch-update.ts`** — `verifyBranchUpdate(facts)`: a pure verifier
   the `update-branch` runner calls to cross-check the agent's success claim
-  against the real git state (origin/main is an ancestor of HEAD, a genuine merge
-  commit was made when `merged`, no unresolved paths remain, the repo is not
-  mid-merge, the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
+  against the real git state (origin/main is now an ancestor of HEAD, HEAD
+  advanced when `merged`, no unresolved paths remain, the repo is not mid-merge,
+  the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
   failure fails the runner so an aborted or half-finished merge can never be
   pushed or reported as success (CVM's deterministic postconditions).
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser

@@ -5,8 +5,8 @@ import {
 } from "./verify-branch-update";
 
 /**
- * A fully-successful `merged` snapshot: main incorporated, a real merge commit
- * (HEAD moved), clean tree, no lingering merge state. Spread-overridable per test.
+ * A fully-successful `merged` snapshot: main incorporated, HEAD advanced (a new
+ * commit landed), clean tree, no lingering merge state. Spread-overridable per test.
  */
 function facts(overrides: Partial<BranchUpdateFacts> = {}): BranchUpdateFacts {
   return {
@@ -70,12 +70,12 @@ describe("verifyBranchUpdate — deterministic post-merge postconditions", () =>
     if (!verdict.ok) expect(verdict.reason).toMatch(/not an ancestor/);
   });
 
-  it("fails a 'merged' claim where HEAD did not move (no merge commit)", () => {
+  it("fails a 'merged' claim where HEAD did not advance (no new commit)", () => {
     const verdict = verifyBranchUpdate(
       facts({ headBefore: "aaaa", headAfter: "aaaa" }),
     );
     expect(verdict).toMatchObject({ ok: false });
-    if (!verdict.ok) expect(verdict.reason).toMatch(/HEAD did not move/);
+    if (!verdict.ok) expect(verdict.reason).toMatch(/HEAD did not advance/);
   });
 
   it("fails an 'already-current' claim where HEAD moved (a commit was made)", () => {

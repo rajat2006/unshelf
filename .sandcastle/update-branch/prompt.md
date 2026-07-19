@@ -88,8 +88,8 @@ to resolve conflicts, `git add` them first.
 labels, comments, or `gh` state.** The workflow pushes your branch and posts the
 summary; your job is the merge commit and the report. The runner independently
 re-checks the git state after you finish (origin/main must be an ancestor of
-HEAD, no unresolved paths, a real merge commit), so an aborted or half-finished
-merge cannot be reported as success — report honestly.
+HEAD, HEAD must have advanced, no unresolved paths, not mid-merge), so an aborted
+or half-finished merge cannot be reported as success — report honestly.
 
 # REPORTING
 

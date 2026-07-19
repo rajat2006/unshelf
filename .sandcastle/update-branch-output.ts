@@ -33,8 +33,9 @@ export const conflictResolutionSchema = z.object({
  *
  * The agent's claim here is NOT trusted on its own: `update-branch.ts`
  * cross-checks a `merged`/`already-current` claim against the real git state
- * (ancestry, a genuine merge commit, no unresolved paths, no lingering merge
- * state) via {@link import("./verify-branch-update").verifyBranchUpdate} before
+ * (origin/main is now an ancestor of HEAD, HEAD advanced, no unresolved paths,
+ * no lingering merge state) via
+ * {@link import("./verify-branch-update").verifyBranchUpdate} before
  * the workflow pushes. This schema's job is to carry the agent's *intent* — in
  * particular a `blocked` outcome, which git state alone cannot distinguish from
  * an ordinary clean tree.
@@ -69,5 +70,4 @@ export const updateBranchOutputSchema = z
   });
 
 export type UpdateOutcome = (typeof UPDATE_OUTCOMES)[number];
-export type ConflictResolution = z.infer<typeof conflictResolutionSchema>;
 export type UpdateBranchOutput = z.infer<typeof updateBranchOutputSchema>;

@@ -92,13 +92,17 @@ export function verifyBranchUpdate(
     };
   }
 
-  // Outcome-specific: the claim must match what actually happened to HEAD.
+  // Outcome-specific: the claim must match what actually happened to HEAD. We
+  // check that HEAD *advanced* (a new commit landed) and — via mainIsAncestor
+  // above — that it now incorporates origin/main; we do NOT assert HEAD is
+  // literally a 2-parent merge commit, since a legitimate merge-then-fixup would
+  // then fail. The later non-force push is what guards against rewritten history.
   if (facts.claimedOutcome === "merged" && facts.headAfter === facts.headBefore) {
     return {
       ok: false,
       reason:
-        "Agent reported a merge but HEAD did not move — no merge commit was " +
-        "made. If the branch was already current it should report " +
+        "Agent reported a merge but HEAD did not advance — no new commit " +
+        "landed. If the branch was already current it should report " +
         "already-current instead.",
     };
   }
