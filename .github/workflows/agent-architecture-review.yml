@@ -1,0 +1,163 @@
+name: Agent Architecture Review
+
+# The scheduled/on-demand architecture-review leg (spec #52 / #70). Unlike the
+# other agent workflows this has NO label trigger and NO originating issue/PR:
+# it runs on a cron and via `workflow_dispatch`, sweeps the whole tree on `main`
+# for codebase-level drift and deepening opportunities via the repo's local
+# `/improve-codebase-architecture` skill, and surfaces the findings durably by
+# opening or refreshing a single tracking issue. Read-only: the agent produces
+# only output files — this workflow owns every `gh` mutation (spec invariant H).
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC — surfaces drift without a human remembering to
+    # ask (spec user story 15).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Agent provider (default: Claude Code)"
+        type: choice
+        options:
+          - claude
+          - codex
+        default: claude
+
+# The stable title of the single durable tracking issue this workflow maintains.
+# Each run refreshes its body and appends a per-run comment, so there is exactly
+# one issue to watch rather than a new one per cron tick.
+env:
+  TRACKING_TITLE: "🏛️ Architecture review — codebase drift"
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+
+concurrency:
+  # One review at a time: a cron tick that overlaps a manual dispatch queues
+  # rather than double-posting to the tracking issue. Never cancels an in-flight
+  # run (matches the other capabilities' queue-not-cancel stance).
+  group: agent-architecture-review
+  cancel-in-progress: false
+
+jobs:
+  architecture-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      # Read-only survey → no `contents: write` (nothing is committed or pushed).
+      # `issues: write` to open/refresh/comment the durable tracking issue.
+      contents: read
+      issues: write
+
+    steps:
+      - name: Resolve provider
+        id: provider
+        # No label trigger, so the provider comes from the dispatch input and
+        # defaults to Claude Code (the cron path always uses the default). Mirror
+        # resolveAgent()'s contract by serialising the choice into AGENT_LABELS,
+        # exactly as the issue flows pass the issue's label set.
+        run: |
+          set -euo pipefail
+          provider="${{ github.event.inputs.provider }}"
+          if [ "$provider" = "codex" ]; then
+            echo "labels_json=[\"agent:codex\"]" >> "$GITHUB_OUTPUT"
+            echo "is_codex=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "labels_json=[]" >> "$GITHUB_OUTPUT"
+            echo "is_codex=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Codex CLI only when a manual dispatch opted in via the provider input; the
+      # scheduled default never pays for it. Runner-side auth is materialised by
+      # prepareCodexAuth.
+      - name: Install Codex CLI
+        if: steps.provider.outputs.is_codex == 'true'
+        run: npm install -g @openai/codex
+
+      - name: Run architecture review
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
+          # writes $CODEX_HOME/auth.json only when Codex is resolved. OPENAI_KEY /
+          # OPENAI_API_KEY are deliberately NOT passed (spec #64).
+          CODEX_HOME: ${{ runner.temp }}/.codex
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          AGENT_LABELS: ${{ steps.provider.outputs.labels_json }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: pnpm exec tsx .sandcastle/architecture-review/architecture-review.ts
+
+      - name: Open or refresh the tracking issue
+        if: success()
+        env:
+          # Provenance for the issue body: which ref/SHA was reviewed and the run
+          # that produced it, so a stale report is always traceable.
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Prepend a provenance header to the agent's findings section.
+          {
+            printf '_Reviewed `main` at `%s` — [run log](%s)._\n\n' "${COMMIT_SHA:0:12}" "$RUN_URL"
+            printf '<!-- managed by .github/workflows/agent-architecture-review.yml — body refreshed each run -->\n\n'
+            cat "${RUNNER_TEMP}/architecture_report.md"
+          } > "${RUNNER_TEMP}/issue_body.md"
+
+          summary=$(cat "${RUNNER_TEMP}/architecture_summary.txt")
+
+          # Find the single open tracking issue by its exact title (search is
+          # fuzzy, so filter exactly in jq).
+          number=$(gh issue list --state open --search "${TRACKING_TITLE} in:title" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"${TRACKING_TITLE}\")] | .[0].number // empty")
+
+          if [ -z "$number" ]; then
+            url=$(gh issue create --title "$TRACKING_TITLE" --body-file "${RUNNER_TEMP}/issue_body.md")
+            echo "Opened tracking issue: $url"
+          else
+            gh issue edit "$number" --body-file "${RUNNER_TEMP}/issue_body.md"
+            {
+              printf '**New architecture-review run** — %s\n\n' "$summary"
+              printf '_Reviewed `main` at `%s` — [run log](%s)._\n' "${COMMIT_SHA:0:12}" "$RUN_URL"
+            } > "${RUNNER_TEMP}/run_comment.md"
+            gh issue comment "$number" --body-file "${RUNNER_TEMP}/run_comment.md"
+            echo "Refreshed tracking issue #$number"
+          fi
+
+      - name: Note failure on the tracking issue
+        # No issue/PR subject to move to agent:blocked, so a failed run surfaces
+        # as a comment on the existing tracking issue (if one is open) plus the
+        # Actions run failure itself. `failure()` covers crashes and the idle
+        # watchdog; `cancelled()` covers a hard 60-min timeout breach.
+        if: failure() || cancelled()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          number=$(gh issue list --state open --search "${TRACKING_TITLE} in:title" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"${TRACKING_TITLE}\")] | .[0].number // empty" || true)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "⚠️ An \`agent-architecture-review\` run failed before it could refresh this report — see the [run log](${RUN_URL}). The findings above are from the last successful run." || true
+          fi

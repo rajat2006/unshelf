@@ -87,6 +87,18 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`architecture-review/`** — the scheduled/on-demand codebase sweep (workflow
+  `agent-architecture-review.yml`) via `runWithExtraction`. Unlike the others it
+  has **no label trigger and no originating issue/PR**, so it reads its own
+  minimal env (an optional `AGENT_LABELS` for the provider — Claude by default —
+  plus `OUTPUT_DIR`) instead of `loadCapabilityContext`. The produce pass drives
+  the repo's local `/improve-codebase-architecture` to find **drift** (vs
+  `CONTEXT.md`/ADRs) and **deepening opportunities**; the resumed extraction pass
+  emits them as one `<output>` block validated against
+  `architectureReviewOutputSchema`. **Read-only** — it commits nothing; per
+  invariant H it only writes `architecture_report.md` (the durable tracking-issue
+  body, severity-grouped) and `architecture_summary.txt` to `OUTPUT_DIR`, and the
+  workflow opens or refreshes a single tracking issue from them.
 
 ## Pinned version
 
