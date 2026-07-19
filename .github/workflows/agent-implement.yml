@@ -65,10 +65,34 @@ jobs:
             exit 0
           fi
 
-          # PRDs (issues with sub-issues) are expanded by the PRD workflow, which
+          # THE SHAPE FETCH — fail CLOSED, never guess. An issue with no
+          # sub-issues returns `200 []` (exit 0); only a genuine API/auth/network
+          # failure exits non-zero. Retry to ride out transient blips, then treat a
+          # persistent failure as an ERROR (refuse) — NOT as "no sub-issues", which
+          # would let this leaf path implement a real PRD as one monolithic issue.
+          # The PRD workflow's detect fails closed the same way, so the two never
+          # both proceed on an unknown shape.
+          sub_issues_json=""
+          fetch_ok=false
+          for attempt in 1 2 3; do
+            if sub_issues_json=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" 2>/dev/null); then
+              fetch_ok=true
+              break
+            fi
+            echo "sub_issues fetch attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$fetch_ok" != "true" ]; then
+            echo "Could not determine issue shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sub_count=$(echo "$sub_issues_json" | jq 'length')
+
+          # PRDs (issues with sub-issues) are handled by the PRD workflow, which
           # listens for the SAME labeled event — SILENTLY skip so we neither race
           # it nor strip its trigger label. Do not comment or edit labels here.
-          sub_count=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/sub_issues" --jq 'length' 2>/dev/null || echo "0")
           if [ "$sub_count" != "0" ]; then
             echo "Issue has sub-issues (PRD) — silent skip; the PRD flow handles it."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -78,13 +102,32 @@ jobs:
 
           # Sub-issues (issues WITH a parent) belong to the parent PRD, which owns
           # the run — you label the parent, not the child. Refuse below. The parent
-          # is queried via GraphQL; the REST issue object doesn't expose it.
+          # is queried via GraphQL; the REST issue object doesn't expose it. This
+          # probe fails CLOSED like the sub-issue fetch above — a missing parent is
+          # exit 0 with empty output; only a genuine API failure exits non-zero,
+          # and after retries that refuses (shape-error) rather than being read as
+          # "no parent", which would let a directly-labelled sub-issue through.
           owner="${GH_REPO%/*}"
           repo="${GH_REPO#*/}"
-          parent_number=$(gh api graphql \
-            -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
-            -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
-            --jq '.data.repository.issue.parent.number // empty' 2>/dev/null || echo "")
+          parent_number=""
+          parent_ok=false
+          for attempt in 1 2 3; do
+            if parent_number=$(gh api graphql \
+                 -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
+                 -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
+                 --jq '.data.repository.issue.parent.number // empty' 2>/dev/null); then
+              parent_ok=true
+              break
+            fi
+            echo "parent-shape probe attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$parent_ok" != "true" ]; then
+            echo "Could not determine parent shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$parent_number" ]; then
             echo "Issue is a sub-issue of #${parent_number} — refusing direct run."
             echo "parent_number=$parent_number" >> "$GITHUB_OUTPUT"
@@ -109,6 +152,16 @@ jobs:
 
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse — could not determine issue shape
+        if: steps.gate.outputs.refusal == 'shape-error'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:blocked" || true
+          gh issue comment "$ISSUE_NUMBER" --body "Refused to run \`agent:implement\`: could not read this issue's sub-issue shape after retries (a transient GitHub API failure). Nothing was routed, to avoid implementing a PRD as a single issue. Clear \`agent:blocked\` and re-add \`agent:implement\` to retry. Run: ${RUN_URL}"
 
       - name: Refuse — issue is a sub-issue of another issue
         if: steps.gate.outputs.refusal == 'subissue'
