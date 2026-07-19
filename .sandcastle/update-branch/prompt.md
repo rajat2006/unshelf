@@ -2,13 +2,16 @@
 
 Bring branch `{{BRANCH}}` — the branch for issue #{{ISSUE_NUMBER}}:
 {{ISSUE_TITLE}} — current with `main` by **merging `origin/main` into it** and
-resolving any conflicts. The branch is stale or conflicts with its base; your job
-is to make it merge cleanly again without losing either side's intent.
+resolving the conflicts. This branch is **known to conflict** with `main`: the
+workflow already tried a plain `git merge` deterministically, hit conflicts, and
+aborted it before handing the job to you. Your job is to redo that merge and
+resolve the conflicts so the branch merges cleanly again, without losing either
+side's intent.
 
 # CONTEXT
 
-You are already on branch `{{BRANCH}}`, and `origin/main` has been fetched, so
-the base to merge in is:
+You are already on branch `{{BRANCH}}` (clean — the deterministic merge was
+aborted), and `origin/main` has been fetched, so the base to merge in is:
 
 ```
 origin/main
@@ -45,9 +48,7 @@ git merge origin/main
 
 **Merge — do not rebase.** The workflow pushes your branch with a plain
 (non-force) push, so history must only ever grow: a rebase that rewrites the
-branch's existing commits would be rejected on push. If `git merge` reports
-`Already up to date`, the branch is already current — make no commit and skip to
-reporting (`alreadyCurrent`).
+branch's existing commits would be rejected on push.
 
 ### 2. Resolve every conflict
 
@@ -60,10 +61,10 @@ side, and never leave conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) in a
 file.
 
 If a conflict needs a product decision you cannot make safely, **stop** — abort
-the merge (`git merge --abort`) and explain why in your final message rather than
-committing a guessed resolution. Leaving the branch unmerged is the correct
-signal for "a human needs to look at this"; the workflow will mark the PR
-blocked.
+the merge (`git merge --abort`) and report `blocked` (see REPORTING) with a clear
+reason. That is the correct "a human needs to look at this" signal; the workflow
+marks the PR blocked with your reason and leaves the branch untouched. Do **not**
+guess a resolution just to finish.
 
 ### 3. Validate
 
@@ -75,7 +76,7 @@ turbo run test
 ```
 
 If the merge left the build broken and you cannot fix it cleanly and in scope,
-abort the merge and stop (as above) — do not commit a broken merge.
+abort the merge and report `blocked` (as above) — do not commit a broken merge.
 
 ### 4. Commit the merge
 
@@ -85,11 +86,15 @@ to resolve conflicts, `git add` them first.
 
 **Commit only — do not push, do not force, do not rebase, and do not touch PR
 labels, comments, or `gh` state.** The workflow pushes your branch and posts the
-summary; your job is the merge commit and the report.
+summary; your job is the merge commit and the report. The runner independently
+re-checks the git state after you finish (origin/main must be an ancestor of
+HEAD, no unresolved paths, a real merge commit), so an aborted or half-finished
+merge cannot be reported as success — report honestly.
 
 # REPORTING
 
 Reason in prose throughout — do **not** emit any JSON or `<output>` block yet. A
-separate follow-up turn will ask you to emit the structured summary: whether the
-branch was already current, and one entry per conflict you resolved (the file and
-how you reconciled it).
+separate follow-up turn will ask you to emit the structured outcome: whether you
+`merged` (with one entry per conflict you resolved), found the branch
+`already-current` (only if `git merge` reported *Already up to date* and you made
+no commit), or `blocked` it for a human (with the reason).

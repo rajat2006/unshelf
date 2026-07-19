@@ -13,18 +13,18 @@ function conflict(overrides: Record<string, unknown> = {}) {
 describe("updateBranchOutputSchema — the update-branch <output> contract", () => {
   it("accepts a merge that resolved conflicts", () => {
     const parsed = updateBranchOutputSchema.parse({
+      outcome: "merged",
       summary: "Merged main into the branch, resolving 2 conflicts.",
-      alreadyCurrent: false,
       conflicts: [conflict(), conflict({ file: "CONTEXT.md" })],
     });
+    expect(parsed.outcome).toBe("merged");
     expect(parsed.conflicts).toHaveLength(2);
-    expect(parsed.alreadyCurrent).toBe(false);
   });
 
   it("accepts a clean merge with zero conflicts", () => {
     const parsed = updateBranchOutputSchema.parse({
+      outcome: "merged",
       summary: "Merged main cleanly; no conflicts.",
-      alreadyCurrent: false,
       conflicts: [],
     });
     expect(parsed.conflicts).toEqual([]);
@@ -32,58 +32,101 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
 
   it("accepts an already-current branch (no-op merge)", () => {
     const parsed = updateBranchOutputSchema.parse({
+      outcome: "already-current",
       summary: "Branch is already current with main; nothing to do.",
-      alreadyCurrent: true,
       conflicts: [],
     });
-    expect(parsed.alreadyCurrent).toBe(true);
+    expect(parsed.outcome).toBe("already-current");
   });
 
-  it("rejects an already-current run that also claims conflicts", () => {
+  it("accepts a blocked outcome carrying a reason", () => {
+    const parsed = updateBranchOutputSchema.parse({
+      outcome: "blocked",
+      summary: "Aborted the merge; a human is needed.",
+      conflicts: [],
+      reason: "The pricing rounding conflict in billing.ts needs a product call.",
+    });
+    expect(parsed.outcome).toBe("blocked");
+    expect(parsed.reason).toContain("product call");
+  });
+
+  it("rejects a blocked outcome with no reason", () => {
     expect(() =>
       updateBranchOutputSchema.parse({
+        outcome: "blocked",
+        summary: "Aborted.",
+        conflicts: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a blocked outcome with an empty reason", () => {
+    expect(() =>
+      updateBranchOutputSchema.parse({
+        outcome: "blocked",
+        summary: "Aborted.",
+        conflicts: [],
+        reason: "",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects conflicts on an already-current outcome", () => {
+    expect(() =>
+      updateBranchOutputSchema.parse({
+        outcome: "already-current",
         summary: "contradictory",
-        alreadyCurrent: true,
         conflicts: [conflict()],
       }),
     ).toThrow();
   });
 
+  it("rejects conflicts on a blocked outcome", () => {
+    expect(() =>
+      updateBranchOutputSchema.parse({
+        outcome: "blocked",
+        summary: "contradictory",
+        conflicts: [conflict()],
+        reason: "needs a human",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown outcome", () => {
+    expect(() =>
+      updateBranchOutputSchema.parse({
+        outcome: "rebased",
+        summary: "s",
+        conflicts: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a missing outcome", () => {
+    expect(() =>
+      updateBranchOutputSchema.parse({ summary: "s", conflicts: [] }),
+    ).toThrow();
+  });
+
   it("rejects a missing summary", () => {
     expect(() =>
-      updateBranchOutputSchema.parse({ alreadyCurrent: false, conflicts: [] }),
+      updateBranchOutputSchema.parse({ outcome: "merged", conflicts: [] }),
     ).toThrow();
   });
 
   it("rejects an empty summary", () => {
     expect(() =>
       updateBranchOutputSchema.parse({
+        outcome: "merged",
         summary: "",
-        alreadyCurrent: false,
         conflicts: [],
       }),
-    ).toThrow();
-  });
-
-  it("rejects a non-boolean alreadyCurrent", () => {
-    expect(() =>
-      updateBranchOutputSchema.parse({
-        summary: "s",
-        alreadyCurrent: "no",
-        conflicts: [],
-      }),
-    ).toThrow();
-  });
-
-  it("rejects a missing alreadyCurrent", () => {
-    expect(() =>
-      updateBranchOutputSchema.parse({ summary: "s", conflicts: [] }),
     ).toThrow();
   });
 
   it("rejects a missing conflicts array", () => {
     expect(() =>
-      updateBranchOutputSchema.parse({ summary: "s", alreadyCurrent: false }),
+      updateBranchOutputSchema.parse({ outcome: "merged", summary: "s" }),
     ).toThrow();
   });
 
@@ -91,8 +134,8 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
     const { file: _file, ...noFile } = conflict();
     expect(() =>
       updateBranchOutputSchema.parse({
+        outcome: "merged",
         summary: "s",
-        alreadyCurrent: false,
         conflicts: [noFile],
       }),
     ).toThrow();
@@ -102,8 +145,8 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
     for (const key of ["file", "resolution"]) {
       expect(() =>
         updateBranchOutputSchema.parse({
+          outcome: "merged",
           summary: "s",
-          alreadyCurrent: false,
           conflicts: [conflict({ [key]: "" })],
         }),
       ).toThrow();

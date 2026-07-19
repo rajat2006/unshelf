@@ -1,0 +1,106 @@
+import { describe, expect, it } from "vitest";
+import {
+  verifyBranchUpdate,
+  type BranchUpdateFacts,
+} from "./verify-branch-update";
+
+/**
+ * A fully-successful `merged` snapshot: main incorporated, a real merge commit
+ * (HEAD moved), clean tree, no lingering merge state. Spread-overridable per test.
+ */
+function facts(overrides: Partial<BranchUpdateFacts> = {}): BranchUpdateFacts {
+  return {
+    claimedOutcome: "merged",
+    mainIsAncestor: true,
+    mainWasAncestorBefore: false,
+    inMergeState: false,
+    unresolvedPaths: [],
+    treeDirty: false,
+    headBefore: "aaaa",
+    headAfter: "bbbb",
+    ...overrides,
+  };
+}
+
+describe("verifyBranchUpdate — deterministic post-merge postconditions", () => {
+  it("passes a genuine merge (HEAD moved, main incorporated, clean)", () => {
+    expect(verifyBranchUpdate(facts())).toEqual({ ok: true });
+  });
+
+  it("passes a genuine already-current no-op (HEAD unchanged, main was ancestor)", () => {
+    const verdict = verifyBranchUpdate(
+      facts({
+        claimedOutcome: "already-current",
+        mainWasAncestorBefore: true,
+        headBefore: "aaaa",
+        headAfter: "aaaa",
+      }),
+    );
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it("fails a blocked claim outright — it must never be pushed", () => {
+    const verdict = verifyBranchUpdate(facts({ claimedOutcome: "blocked" }));
+    expect(verdict.ok).toBe(false);
+  });
+
+  it("fails when the repo is still mid-merge (MERGE_HEAD present)", () => {
+    const verdict = verifyBranchUpdate(facts({ inMergeState: true }));
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/mid-merge|MERGE_HEAD/);
+  });
+
+  it("fails when unresolved paths remain, naming them", () => {
+    const verdict = verifyBranchUpdate(
+      facts({ unresolvedPaths: ["a.ts", "b.ts"] }),
+    );
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toContain("a.ts, b.ts");
+  });
+
+  it("fails when the working tree is dirty (resolution not committed)", () => {
+    const verdict = verifyBranchUpdate(facts({ treeDirty: true }));
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/uncommitted/);
+  });
+
+  it("fails when origin/main is not an ancestor of HEAD (aborted merge)", () => {
+    const verdict = verifyBranchUpdate(facts({ mainIsAncestor: false }));
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/not an ancestor/);
+  });
+
+  it("fails a 'merged' claim where HEAD did not move (no merge commit)", () => {
+    const verdict = verifyBranchUpdate(
+      facts({ headBefore: "aaaa", headAfter: "aaaa" }),
+    );
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/HEAD did not move/);
+  });
+
+  it("fails an 'already-current' claim where HEAD moved (a commit was made)", () => {
+    const verdict = verifyBranchUpdate(
+      facts({
+        claimedOutcome: "already-current",
+        mainWasAncestorBefore: true,
+        headBefore: "aaaa",
+        headAfter: "bbbb",
+      }),
+    );
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/HEAD moved/);
+  });
+
+  it("fails an 'already-current' claim where main was not an ancestor before", () => {
+    const verdict = verifyBranchUpdate(
+      facts({
+        claimedOutcome: "already-current",
+        mainWasAncestorBefore: false,
+        headBefore: "aaaa",
+        headAfter: "aaaa",
+      }),
+    );
+    expect(verdict).toMatchObject({ ok: false });
+    if (!verdict.ok) expect(verdict.reason).toMatch(/not an ancestor.*before/);
+  });
+});

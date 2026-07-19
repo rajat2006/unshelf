@@ -1,11 +1,14 @@
 name: Agent Update Branch
 
 # The branch-refresh leg (spec #52 / #67): applying `agent:update-branch` to a PR
-# brings a stale or conflicted branch current with `main`. The `update-branch`
-# capability merges `origin/main` into the branch, resolves conflicts, and
-# commits the merge; the workflow pushes the refreshed branch and posts a summary
-# comment. The agent only produces commits + output files — this workflow owns
-# every git, `gh`, and label mutation (spec invariant H).
+# brings a stale or conflicted branch current with `main`.
+#
+# Mirrors CVM's deterministic-first design: the common cases are resolved WITHOUT
+# an agent — an already-current branch is a no-op, and a conflict-free merge is
+# done with plain `git merge` in a shell step. The `update-branch` capability (an
+# agent) is spent ONLY when that merge hits real conflicts. Whatever resolves it,
+# this workflow owns every git, `gh`, and label mutation; the agent only produces
+# a merge commit + output files (spec invariant H).
 #
 # Fires on `pull_request_target: [labeled]` (NOT `pull_request`) so it runs
 # reliably even when the PR head conflicts with base — a mergeability failure
@@ -142,42 +145,70 @@ jobs:
         # origin/main`, whatever narrow refspec the checkout left behind.
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
-      - name: Setup pnpm
+      - name: Configure git identity
         if: steps.gate.outputs.proceed == 'true'
+        # Both the deterministic merge below and (if reached) the agent's merge
+        # produce commits; git needs an author identity. Same bot identity
+        # implement and review use.
+        run: |
+          set -euo pipefail
+          git config user.name "unshelf-agent[bot]"
+          git config user.email "unshelf-agent[bot]@users.noreply.github.com"
+
+      - name: Deterministic merge attempt
+        id: premerge
+        if: steps.gate.outputs.proceed == 'true'
+        # Resolve the common cases without spending an agent (CVM parity):
+        #   already-current — main is already an ancestor, nothing to do.
+        #   clean           — `git merge` succeeds with no conflicts; the merge
+        #                     commit is now on HEAD, ready to push.
+        #   needs-agent     — `git merge` hit conflicts; abort to restore a clean
+        #                     tree and hand the resolution to the agent below.
+        # No `set -e`: the merge is allowed to exit non-zero (conflicts) inside
+        # the `if`.
+        run: |
+          set -uo pipefail
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "origin/main is already an ancestor of HEAD — already current."
+            echo "mode=already-current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git merge --no-edit origin/main; then
+            echo "origin/main merged cleanly without conflicts."
+            echo "mode=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "Merge hit conflicts — aborting for the agent to resolve."
+            git merge --abort
+            echo "mode=needs-agent" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js 22
-        if: steps.gate.outputs.proceed == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
 
       - name: Install dependencies
-        if: steps.gate.outputs.proceed == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent'
         run: pnpm install --frozen-lockfile
 
       - name: Install Claude Code
-        if: steps.gate.outputs.proceed == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent'
         run: npm install -g @anthropic-ai/claude-code
 
       # Codex CLI only when this PR opted in via `agent:codex`; the Claude default
       # never pays for it. Runner-side auth is materialised by prepareCodexAuth.
       - name: Install Codex CLI
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent' && steps.gate.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
-      - name: Configure git identity
-        if: steps.gate.outputs.proceed == 'true'
-        # The merge produces a commit; git needs an author identity. Same bot
-        # identity implement and review use.
-        run: |
-          set -euo pipefail
-          git config user.name "unshelf-agent[bot]"
-          git config user.email "unshelf-agent[bot]@users.noreply.github.com"
-
-      - name: Run update-branch
-        if: steps.gate.outputs.proceed == 'true'
+      - name: Run update-branch (resolve conflicts)
+        if: steps.gate.outputs.proceed == 'true' && steps.premerge.outputs.mode == 'needs-agent'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
@@ -193,37 +224,58 @@ jobs:
         run: pnpm exec tsx .sandcastle/update-branch/update-branch.ts
 
       - name: Push the refreshed branch
-        if: steps.gate.outputs.proceed == 'true' && success()
+        # Push whenever a merge commit was made — the deterministic clean merge or
+        # the agent's resolved merge. Skipped for already-current (nothing changed)
+        # and when the agent failed (success() is false → the branch is left as it
+        # was). NOT a force-push: a merge only appends to the head the run checked
+        # out, so a rejected push means the branch moved under us and should fail
+        # loudly rather than clobber.
+        if: steps.gate.outputs.proceed == 'true' && success() && steps.premerge.outputs.mode != 'already-current'
         env:
           HEAD_REF: ${{ steps.gate.outputs.head_ref }}
-        # Push the merge commit back onto the PR branch. A no-op when the branch
-        # was already current (the agent committed nothing). NOT a force-push: a
-        # merge only appends to the head the run checked out, so a rejected push
-        # means the branch moved under us and should fail loudly rather than
-        # clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
       - name: Post the update summary
         if: steps.gate.outputs.proceed == 'true' && success()
-        # update-branch.ts wrote a ready-to-post comment body (summary + the
-        # conflicts it resolved). Post it so the PR records what the merge did.
-        run: gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/update_branch_comment.md"
+        # The needs-agent path already wrote update_branch_comment.md (summary +
+        # resolved conflicts). For the deterministic paths, write a matching
+        # comment here so all three modes post one consistent summary.
+        env:
+          MODE: ${{ steps.premerge.outputs.mode }}
+        run: |
+          set -euo pipefail
+          comment="${RUNNER_TEMP}/update_branch_comment.md"
+          case "$MODE" in
+            already-current)
+              printf '## 🔄 Branch update\n\nThe branch was already current with `main` — nothing to do.\n' > "$comment"
+              ;;
+            clean)
+              printf '## 🔄 Branch update\n\nMerged `main` in cleanly — no conflicts.\n' > "$comment"
+              ;;
+          esac
+          gh pr comment "$PR_NUMBER" --body-file "$comment"
 
       - name: Mark blocked on failure
-        # `failure()` covers crashes, an aborted merge the agent left unresolved
-        # (the run exits non-zero), and the idle watchdog; `cancelled()` covers a
-        # hard 60-min timeout breach. The PR lands in agent:blocked with a run-URL
-        # comment — the same failure lifecycle as agent-review. A blocked
-        # update-branch leaves the branch as it was (the merge commit is only
-        # pushed on success), so a failed refresh never half-updates the PR.
+        # `failure()` covers crashes, a failed post-merge postcondition, an agent
+        # that reported `blocked` because a conflict needs a human (both exit
+        # non-zero), and the idle watchdog; `cancelled()` covers a hard 60-min
+        # timeout breach. Reads the reason update-branch.ts wrote so the blocked
+        # comment names the exact problem. The branch is left as it was — the
+        # merge is only pushed on success — so a failed refresh never half-updates
+        # the PR.
         if: steps.gate.outputs.proceed == 'true' && (failure() || cancelled())
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
+          reason="(no reason file written — check the workflow logs)"
+          if [ -f "${RUNNER_TEMP}/failure_reason.txt" ]; then
+            reason=$(cat "${RUNNER_TEMP}/failure_reason.txt")
+          fi
           gh pr edit "$PR_NUMBER" --add-label "agent:blocked" || true
           {
             printf '%s\n\n' '`agent:update-branch` run failed — the branch was not refreshed.'
+            printf '**Reason:** %s\n\n' "$reason"
             printf '**Workflow run:** %s\n\n' "$RUN_URL"
             printf '%s\n' 'Clear `agent:blocked` and re-add `agent:update-branch` to retry. A merge that needs a human decision must be resolved manually.'
           } > "${RUNNER_TEMP}/update_failed.md"
