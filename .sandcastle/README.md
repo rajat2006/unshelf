@@ -34,6 +34,12 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`implement-pr-output.ts`** — `implementPrOutputSchema` (Zod): the
+  `implement-pr` capability's `<output>` contract — a `summary` plus `items[]`
+  (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, and an
+  `action` describing what changed or why it was deferred). The extraction wrapper
+  validates the emitted block the same way, so a malformed block self-corrects via
+  same-session retry before the summary comment is posted.
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -87,6 +93,18 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`implement-pr/`** — addresses the review comments on an open PR (workflow
+  `agent-implement-pr.yml`) via `runWithExtraction`. The produce pass reads the
+  PR's review threads (`gh pr view --comments` + the pulls comments/reviews API),
+  **changes what it safely can and commits** the fixes, running the repo's
+  typecheck/test on what it touches; the resumed extraction pass emits one
+  `<output>` block (`extraction.md`) recording each comment as `addressed` or
+  `deferred`, validated against `implementPrOutputSchema` with same-session retry.
+  Per invariant H the runner only commits + writes files: fix commits land on the
+  branch (the workflow pushes them) and a Markdown summary (`pr_comment.md`) goes
+  to `OUTPUT_DIR`. The workflow pushes the commits and posts that summary as a PR
+  comment. It does **not** change the PR's draft/ready state — that belongs to the
+  review leg. Shares the per-PR concurrency group with `review`.
 
 ## Pinned version
 
