@@ -30,7 +30,8 @@ pinned Sandcastle version and Unshelf's provider set:
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
   present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
-  (absence *is* Claude). Reads the issue's full label set.
+  (absence *is* Claude). Both providers run with explicit `medium` reasoning
+  effort. Reads the issue's full label set.
 - **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
   `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
   standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional

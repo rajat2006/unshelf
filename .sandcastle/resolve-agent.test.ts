@@ -8,6 +8,12 @@ describe("resolveAgent — provider chosen from the issue's full label set", () 
     expect(agent.name).toBe("codex");
     expect(model).toBe(CODEX_MODEL);
     expect(model).toBe("gpt-5.6-sol");
+    expect(
+      agent.buildPrintCommand({
+        prompt: "Inspect the issue",
+        dangerouslySkipPermissions: true,
+      }).command,
+    ).toContain('model_reasoning_effort="medium"');
   });
 
   it("defaults to Claude Code on claude-opus-4-8 when agent:codex is absent", () => {
@@ -16,6 +22,12 @@ describe("resolveAgent — provider chosen from the issue's full label set", () 
     expect(agent.name).toBe("claude-code");
     expect(model).toBe(CLAUDE_MODEL);
     expect(model).toBe("claude-opus-4-8");
+    expect(
+      agent.buildPrintCommand({
+        prompt: "Inspect the issue",
+        dangerouslySkipPermissions: true,
+      }).command,
+    ).toContain("--effort medium");
   });
 
   it("treats an empty label set as the Claude default (absence is Claude)", () => {

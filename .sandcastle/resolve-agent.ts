@@ -14,6 +14,9 @@ export const CLAUDE_MODEL = "claude-opus-4-8";
 /** Model for the `agent:codex` provider — uniform across every capability. */
 export const CODEX_MODEL = "gpt-5.6-sol";
 
+/** Explicit reasoning effort for both provider CLIs. */
+export const MODEL_EFFORT = "medium" as const;
+
 export interface ResolvedAgent {
   /** The Sandcastle agent provider to hand to `run({ agent })`. */
   readonly agent: AgentProvider;
@@ -31,7 +34,13 @@ export interface ResolvedAgent {
  */
 export function resolveAgent(labels: readonly string[]): ResolvedAgent {
   if (labels.includes(CODEX_LABEL)) {
-    return { agent: codex(CODEX_MODEL), model: CODEX_MODEL };
+    return {
+      agent: codex(CODEX_MODEL, { effort: MODEL_EFFORT }),
+      model: CODEX_MODEL,
+    };
   }
-  return { agent: claudeCode(CLAUDE_MODEL), model: CLAUDE_MODEL };
+  return {
+    agent: claudeCode(CLAUDE_MODEL, { effort: MODEL_EFFORT }),
+    model: CLAUDE_MODEL,
+  };
 }

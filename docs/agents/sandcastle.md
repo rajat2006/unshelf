@@ -24,7 +24,7 @@ issue out of the agent lane; it is never applied by a machine.
 
 | Label | Meaning |
 | --- | --- |
-| `agent:codex` | Optional. Present ⇒ run on Codex (`gpt-5.6-sol`). **Absent ⇒ Claude Code (`claude-opus-4-8`)** — a default needs no label, so there is deliberately **no `agent:claude`**. Applied to an issue, it is **propagated onto the PR** by `agent-implement` so the review runs on the same provider (each workflow resolves its provider from its own subject's label set). |
+| `agent:codex` | Optional. Present ⇒ run on Codex (`gpt-5.6-sol`, medium effort). **Absent ⇒ Claude Code (`claude-opus-4-8`, medium effort)** — a default needs no label, so there is deliberately **no `agent:claude`**. Applied to an issue, it is **propagated onto the PR** by `agent-implement` so the review runs on the same provider (each workflow resolves its provider from its own subject's label set). |
 
 ### 3. Agent state machine
 
