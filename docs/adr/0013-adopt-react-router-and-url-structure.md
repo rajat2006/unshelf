@@ -13,7 +13,7 @@ human picked **D**) and settled on issue #58; this ADR records that decision.
 | Route | Surface |
 |-------|---------|
 | `/` | Trails index (home) |
-| `/library` | The Library (`?label=…` carries the active label filter) |
+| `/library` | The Library (`?label=…` carries the active label filter) — the routing prototype (#58) used `/all`; the store was renamed All → Library at #59, so this route follows the surface name (ADR-0014) |
 | `/trails/:trailId` | A Trail — `:trailId` opaque |
 | `/trails/:trailId/stops/:stopId` | An open Stop |
 | `/items/:itemId` | An Item — one canonical, context-independent URL |

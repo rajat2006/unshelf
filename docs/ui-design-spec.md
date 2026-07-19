@@ -50,7 +50,9 @@ each section below.
 
 **Decision:** [Theme direction](https://github.com/rajat2006/unshelf/issues/55) ·
 **ADR:** [0012](adr/0012-quiet-focus-theme-and-token-layer.md) ·
-**Prototype:** `apps/web/prototype-theme.html` on `worktree-issue-55-theme-prototype`
+**Prototype:** the theme prototype app on `worktree-issue-55-theme-prototype` —
+entry `apps/web/prototype-theme.html`, with the palette / type / spacing tokens in
+`apps/web/src/prototype/ThemePrototype.tsx`
 
 Quiet Focus makes "enable, don't automate" visual: calm, modern, minimal — **not**
 bookish, **not** map-themed.
@@ -132,7 +134,8 @@ behind one named door; tags demoted inside it; capture a quiet global action).
 - **Routes:**
   - `/` — Trails index (home)
   - `/library` — the Library; the active label filter lives in the URL as
-    `?label=…`
+    `?label=…` (the routing prototype #58 used `/all`; the store was renamed
+    All → Library at #59, so the route follows)
   - `/trails/:trailId` — a Trail (opaque id)
   - `/trails/:trailId/stops/:stopId` — an open Stop
   - `/items/:itemId` — an Item, one canonical, context-independent URL
