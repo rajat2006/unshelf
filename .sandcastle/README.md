@@ -61,6 +61,13 @@ pinned Sandcastle version and Unshelf's provider set:
   (`completed`/`already-satisfied`/`blocked`) plus a one-line `reason`. Validated
   by the extraction wrapper with same-session retry, so the three-way outcome that
   distinguishes "already done" from "needs a human" can't be a malformed block.
+- **`verify-implement-prd.ts`** — `verifyImplementPrdOutcome({ outcome, commitCount })`:
+  a pure verifier the `implement-prd` runner calls to cross-check the agent's
+  reported outcome against the real commit count — `completed` ⇒ commits > 0,
+  `already-satisfied` ⇒ commits == 0, `blocked` ⇒ always a failure. Returns
+  `{ ok }` or `{ ok:false, reason }`; a mismatch fails the runner so a
+  self-contradictory claim can never close a sub-issue on a false premise (the
+  same claim-not-trusted-alone stance as `verify-branch-update.ts`).
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when

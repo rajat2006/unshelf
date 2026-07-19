@@ -6,6 +6,7 @@ import { loadPrdImplementContext } from "../capability-context";
 import { implementPrdOutputSchema } from "../implement-prd-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { runWithExtraction } from "../run-with-extraction";
+import { verifyImplementPrdOutcome } from "../verify-implement-prd";
 
 /**
  * The `implement-prd` capability: implement ONE still-open sub-issue of a PRD
@@ -66,24 +67,20 @@ const commitsThisRun = result.commits.length;
 console.log(`\nSub-issue #${ctx.subIssueNumber} outcome: ${outcome} — ${reason}`);
 console.log(`  commits this run: ${commitsThisRun}`);
 
-if (outcome === "blocked") {
-  fail(
-    `Agent could not complete sub-issue #${ctx.subIssueNumber}: ${reason}`,
-  );
+// Cross-check the agent's claimed outcome against the real commit count (a pure,
+// tested verifier). The three outcomes must each agree with the git reality:
+// completed ⇒ commits > 0, already-satisfied ⇒ commits == 0, blocked ⇒ always a
+// failure. Any mismatch fails the run so the workflow leaves the sub-issue OPEN
+// and marks the PRD `agent:blocked`, never closing it on a self-contradictory
+// claim. Surface the agent's own `reason` for a blocked outcome.
+const verdict = verifyImplementPrdOutcome({ outcome, commitCount: commitsThisRun });
+if (!verdict.ok) {
+  const detail = outcome === "blocked" ? reason : verdict.reason;
+  fail(`Sub-issue #${ctx.subIssueNumber} ${verdict.reason} (agent: ${detail})`);
 }
 
-if (outcome === "completed" && commitsThisRun === 0) {
-  // "completed" claims the work was done in THIS run, so zero commits is a
-  // contradiction (a genuinely already-done sub-issue must be reported
-  // "already-satisfied"). Fail closed rather than close an unfinished sub-issue.
-  fail(
-    `Agent reported sub-issue #${ctx.subIssueNumber} "completed" but made no ` +
-      `commits this run. Treating as blocked to avoid closing unfinished work.`,
-  );
-}
-
-// `completed` (with commits) or `already-satisfied` — the workflow closes the
-// sub-issue and advances to the next one.
+// A consistent `completed` (with commits) or `already-satisfied` (no commits) —
+// the workflow closes the sub-issue and advances to the next one.
 
 /**
  * Fail the run: write the reason where the workflow's `failure()` step reads it

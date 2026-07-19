@@ -102,13 +102,32 @@ jobs:
 
           # Sub-issues (issues WITH a parent) belong to the parent PRD, which owns
           # the run — you label the parent, not the child. Refuse below. The parent
-          # is queried via GraphQL; the REST issue object doesn't expose it.
+          # is queried via GraphQL; the REST issue object doesn't expose it. This
+          # probe fails CLOSED like the sub-issue fetch above — a missing parent is
+          # exit 0 with empty output; only a genuine API failure exits non-zero,
+          # and after retries that refuses (shape-error) rather than being read as
+          # "no parent", which would let a directly-labelled sub-issue through.
           owner="${GH_REPO%/*}"
           repo="${GH_REPO#*/}"
-          parent_number=$(gh api graphql \
-            -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
-            -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
-            --jq '.data.repository.issue.parent.number // empty' 2>/dev/null || echo "")
+          parent_number=""
+          parent_ok=false
+          for attempt in 1 2 3; do
+            if parent_number=$(gh api graphql \
+                 -f query='query($owner: String!, $repo: String!, $num: Int!) { repository(owner: $owner, name: $repo) { issue(number: $num) { parent { number } } } }' \
+                 -f owner="$owner" -f repo="$repo" -F num="$ISSUE_NUMBER" \
+                 --jq '.data.repository.issue.parent.number // empty' 2>/dev/null); then
+              parent_ok=true
+              break
+            fi
+            echo "parent-shape probe attempt ${attempt} failed; retrying…"
+            sleep 3
+          done
+          if [ "$parent_ok" != "true" ]; then
+            echo "Could not determine parent shape after retries — failing closed."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$parent_number" ]; then
             echo "Issue is a sub-issue of #${parent_number} — refusing direct run."
             echo "parent_number=$parent_number" >> "$GITHUB_OUTPUT"
