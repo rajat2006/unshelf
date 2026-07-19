@@ -34,28 +34,20 @@ sensibly. Look at how existing issues in this repo are written (`gh issue list`,
   overlap** — every requirement lands in exactly one child.
 - Prefer fewer, well-scoped children over many thin ones.
 
-# CHILD ISSUE SHAPE
+# CHILD ISSUE FIELDS
 
-Write each child the way this repo writes issues:
+You emit **structured fields per child, not a rendered issue body**. The runner
+deterministically renders the `## Parent` back-reference, the `## What to build`
+section, and the `## Acceptance criteria` checklist from your fields — so supply
+the content, not the Markdown scaffolding:
 
-```
-## Parent
-
-#{{ISSUE_NUMBER}}
-
-## What to build
-
-<one or two paragraphs>
-
-## Acceptance criteria
-
-- [ ] <testable outcome>
-- [ ] <testable outcome>
-
-## Blocked by
-
-- <sibling title, if any>
-```
+- `whatToBuild` — one or two paragraphs describing the change. Plain prose; no
+  headings.
+- `acceptanceCriteria` — a list of testable outcomes, each a single line with no
+  leading `- [ ]` (the runner adds the checkbox). At least one.
+- `blockedBy` — optional list of sibling child **titles** this one depends on
+  (the sibling issue numbers don't exist yet). Omit it when there are no
+  dependencies.
 
 # OUTPUT
 
@@ -68,14 +60,18 @@ block as the **last thing** in your response:
   "children": [
     {
       "title": "Imperative, specific child title",
-      "body": "## Parent\n\n#{{ISSUE_NUMBER}}\n\n## What to build\n\n...\n\n## Acceptance criteria\n\n- [ ] ...\n"
+      "whatToBuild": "One or two paragraphs describing the change.",
+      "acceptanceCriteria": [
+        "A testable outcome",
+        "Another testable outcome"
+      ],
+      "blockedBy": ["Title of a sibling this depends on"]
     }
   ]
 }
 </output>
 
 - `title` — a single line under 256 characters, imperative and specific.
-- `body` — Markdown following the shape above; it **must** reference the parent
-  as `#{{ISSUE_NUMBER}}` so a reader can trace it back (the workflow also links
-  it as a real sub-issue).
 - `children` — at least one; each a distinct, agent-sized slice of the PRD.
+- Do **not** pre-render Markdown or a parent reference into any field — the
+  runner owns the issue body's shape.

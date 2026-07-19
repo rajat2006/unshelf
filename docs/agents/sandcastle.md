@@ -43,10 +43,11 @@ issue out of the agent lane; it is never applied by a machine.
 `GITHUB_TOKEN` does not trigger a downstream workflow. The implement → review → ready
 chain only fires because `agent:review` is added with the PAT (see secrets below).
 
-**Retry is manual.** Any stop lands the issue in `agent:blocked` with a run link. A
-human clears `agent:blocked` and re-applies `agent:implement` to retry — there is no
-automatic loop. (Sandcastle's within-run resume-session retry is internal to a single
-run, not a label transition.)
+**Retry is manual.** Any stop lands the subject in `agent:blocked` with a run link. A
+human clears `agent:blocked` and re-applies the **originating trigger label** (the one
+that fired the run — `agent:implement`, `agent:implement-pr`, `agent:update-branch`, or
+`agent:to-issues`) to retry — there is no automatic loop. (Sandcastle's within-run
+resume-session retry is internal to a single run, not a label transition.)
 
 ### Provisioning the labels
 

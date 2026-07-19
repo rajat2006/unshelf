@@ -5,7 +5,11 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { runWithRetry } from "../run-with-retry";
-import { toIssuesOutputSchema } from "../to-issues-output";
+import {
+  type ChildIssue,
+  renderChildIssueBody,
+  toIssuesOutputSchema,
+} from "../to-issues-output";
 
 /**
  * The `to-issues-prd` capability: decompose a PRD issue into agent-sized child
@@ -43,16 +47,24 @@ const result = await runWithRetry({
   }),
 });
 
+// Deterministically render each child's body from its structured fields — the
+// agent supplies the content, the runner owns the shape (parent back-reference +
+// acceptance checklist), so a malformed body can never be published verbatim.
+const rendered = result.output.children.map((child: ChildIssue) => ({
+  title: child.title,
+  body: renderChildIssueBody(child, ctx.issueNumber),
+}));
+
 fs.writeFileSync(
   path.join(ctx.outputDir, "child_issues.json"),
-  JSON.stringify(result.output.children, null, 2),
+  JSON.stringify(rendered, null, 2),
 );
 fs.writeFileSync(
   path.join(ctx.outputDir, "to_issues_summary.txt"),
   result.output.summary,
 );
 
-console.log(`\nWrote ${result.output.children.length} child issue(s) to ${ctx.outputDir}`);
-for (const c of result.output.children) {
+console.log(`\nWrote ${rendered.length} child issue(s) to ${ctx.outputDir}`);
+for (const c of rendered) {
   console.log(`  - ${c.title}`);
 }
