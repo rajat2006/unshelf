@@ -87,6 +87,15 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`to-issues/`** — decomposes a PRD issue into agent-sized child issues
+  (workflow `agent-to-issues.yml`) via `runWithRetry` (structured output *is* the
+  work — no branch, no commits). The agent reads the PRD and emits `children[]`
+  (each a `title` + issue `body`), validated against `toIssuesOutputSchema` with
+  same-session retry and written to `child_issues.json`. Per invariant H the
+  runner only writes files — the workflow does every `gh issue create` and links
+  each child as a sub-issue of the PRD. It never touches a branch, so the
+  workflow passes `BRANCH: main` (the ref it reads against) to satisfy the shared
+  context; the prompt never references it.
 
 ## Pinned version
 
