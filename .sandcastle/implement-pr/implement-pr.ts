@@ -92,8 +92,10 @@ if (commits === 0 && addressed > 0) {
 fs.writeFileSync(path.join(ctx.outputDir, "pr_comment.md"), body);
 
 // In-thread replies (CVM parity): each addressed item that carried its review
-// thread's node ID gets a reply + resolve posted by the workflow (invariant H:
-// the runner only writes the file; the workflow performs the gh mutation).
+// thread's node ID gets a reply posted by the workflow (invariant H: the runner
+// only writes the file; the workflow performs the gh mutation, and validates each
+// id against the PR's real threads first). The thread is left open — resolution
+// is the reviewer's call, matching CVM.
 const replies = buildThreadReplies(result.output);
 fs.writeFileSync(
   path.join(ctx.outputDir, "thread_replies.json"),
@@ -157,7 +159,7 @@ function buildSummaryComment(review: ImplementPrOutput): {
   };
 }
 
-/** One in-thread reply the workflow posts + resolves via the GraphQL API. */
+/** One in-thread reply the workflow posts via the GraphQL API. */
 interface ThreadReply {
   readonly threadId: string;
   readonly body: string;
@@ -166,10 +168,10 @@ interface ThreadReply {
 /**
  * Collect the in-thread replies to post: one per `addressed` item that carried
  * its review thread's node ID. The reply body leads with the action so the
- * reviewer sees what changed in-context; the workflow resolves the thread after
- * replying. Deferred items are intentionally excluded — they stay open for a
- * human — as are addressed items with no `threadId` (top-level comments with no
- * thread to reply on; those are covered by the summary comment).
+ * reviewer sees what changed in-context; the workflow leaves the thread open for
+ * the reviewer to resolve. Deferred items are intentionally excluded — they stay
+ * open for a human — as are addressed items with no `threadId` (top-level
+ * comments with no thread to reply on; those are covered by the summary comment).
  */
 function buildThreadReplies(review: ImplementPrOutput): ThreadReply[] {
   return review.items

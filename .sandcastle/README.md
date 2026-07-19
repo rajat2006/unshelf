@@ -39,7 +39,7 @@ pinned Sandcastle version and Unshelf's provider set:
   (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, an
   `action` describing what changed or why it was deferred, and an optional
   `threadId` — the review thread's GraphQL node ID, so the workflow can reply on
-  and resolve the exact thread an addressed item answers). The extraction wrapper
+  the exact thread an addressed item answers). The extraction wrapper
   validates the emitted block the same way, so a malformed block self-corrects via
   same-session retry before anything is posted.
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
@@ -106,12 +106,15 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   same-session retry. Per invariant H the runner only commits + writes files: fix
   commits land on the branch, a Markdown summary (`pr_comment.md`) and a
   `thread_replies.json` ({threadId, body} per addressed thread) go to
-  `OUTPUT_DIR`. The workflow pushes the commits, replies on + resolves each
-  addressed thread (CVM-style), and posts the summary comment. A guard fails the
-  run (→ `agent:blocked`) if it produced no commits and no items, or claims
-  `addressed` items with zero commits, so a hollow run can't report success. It
-  does **not** change the PR's draft/ready state — that belongs to the review leg.
-  Shares the per-PR concurrency group with `review`.
+  `OUTPUT_DIR`. The workflow pushes the commits, replies on each addressed thread
+  (CVM-style — reply only; resolution is left to the reviewer) after checking each
+  `threadId` against the PR's real threads (so a hallucinated/cross-PR id can't be
+  replied to), and posts the summary comment. The workflow refuses cleanly up
+  front when the PR has no review threads/comments to address (no wasted run), and
+  a runtime guard fails the run (→ `agent:blocked`) if it still produced no commits
+  and no items, or claims `addressed` items with zero commits. It does **not**
+  change the PR's draft/ready state — that belongs to the review leg. Shares the
+  per-PR concurrency group with `review`.
 
 ## Pinned version
 

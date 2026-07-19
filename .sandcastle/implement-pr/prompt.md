@@ -55,7 +55,8 @@ Work in this order:
 Gather every actionable review comment — inline (file + line) and top-level.
 Ignore resolved/outdated threads and pure approvals. For each, decide the
 reviewer's actual ask. **Keep the `id` of each review thread you act on** — you
-will report it so the workflow can reply on that exact thread and resolve it.
+will report it so the workflow can reply on that exact thread (the reviewer
+resolves it once they've confirmed the fix).
 
 ### 2. Address what you safely can
 

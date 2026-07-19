@@ -39,8 +39,9 @@ Rules:
   deferred it (for `deferred`).
 - `threadId` — the GraphQL node `id` of the review thread this item answers (the
   `id` field from the `reviewThreads` query). Include it on an **`addressed`**
-  item so the workflow can reply on that exact thread and resolve it. **Omit it**
-  for a top-level PR comment that has no review thread, and for `deferred` items
-  (they stay open for a human). Use the real `id` — never invent one.
+  item so the workflow can reply on that exact thread. **Omit it** for a top-level
+  PR comment that has no review thread, and for `deferred` items (they stay open
+  for a human). Use the real `id` — never invent one: the workflow checks every
+  id against the PR's actual threads and silently drops any that doesn't match.
 
 Emit nothing after the closing `</output>` tag.

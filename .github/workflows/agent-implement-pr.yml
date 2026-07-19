@@ -111,6 +111,36 @@ jobs:
           echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
           echo "issue_title=$issue_title" >> "$GITHUB_OUTPUT"
 
+          # Fetch the PR's review threads ONCE, here, for two jobs:
+          #   1. Pre-flight (below): refuse cleanly when there is no feedback to
+          #      address, instead of spending an agent run and then marking the PR
+          #      agent:blocked for honestly reporting nothing to do.
+          #   2. The allowlist the reply step validates agent-provided thread IDs
+          #      against, so a hallucinated or cross-PR id can't be replied to.
+          owner="${GH_REPO%/*}"
+          repo="${GH_REPO#*/}"
+          threads=$(gh api graphql -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $name: String!, $pr: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) { nodes { id isResolved } }
+                } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes')
+          # Node IDs of every review thread ON THIS PR (the reply allowlist).
+          valid_thread_ids=$(echo "$threads" | jq -c '[.[].id]')
+          echo "valid_thread_ids=$valid_thread_ids" >> "$GITHUB_OUTPUT"
+          unresolved=$(echo "$threads" | jq '[.[] | select(.isResolved == false)] | length')
+
+          # No feedback ⇒ refuse before running the agent. "Feedback" = an
+          # unresolved inline review thread OR a top-level PR comment (some reviews
+          # land as a plain comment, not a thread), so we don't false-refuse those.
+          comment_count=$(gh pr view "$PR_NUMBER" --json comments --jq '.comments | length')
+          if [ "$unresolved" = "0" ] && [ "$comment_count" = "0" ]; then
+            echo "PR has no unresolved review threads and no comments — nothing to address."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=no_feedback" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "refusal=" >> "$GITHUB_OUTPUT"
 
@@ -129,6 +159,16 @@ jobs:
           set -euo pipefail
           gh pr edit "$PR_NUMBER" --remove-label "agent:implement-pr" || true
           gh pr comment "$PR_NUMBER" --body "Refused to run \`agent:implement-pr\`: this PR is ${PR_STATE}, not open. Re-open it before asking an agent to address review comments. Cleared \`agent:implement-pr\`."
+
+      - name: Refuse — PR has no review comments to address
+        if: steps.gate.outputs.refusal == 'no_feedback'
+        # Clean refusal, NOT a failure: there is simply nothing to do, so we clear
+        # the trigger without adding agent:blocked (a no-feedback run is not a
+        # crash). Matches CVM refusing before it ever invokes the agent.
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --remove-label "agent:implement-pr" || true
+          gh pr comment "$PR_NUMBER" --body "Skipped \`agent:implement-pr\`: this PR has no unresolved review threads and no comments to address. Leave a review with the changes you want, then re-add \`agent:implement-pr\`. Cleared the label."
 
       - name: Transition labels — remove implement-pr/blocked, add in-progress
         if: steps.gate.outputs.proceed == 'true'
@@ -219,13 +259,21 @@ jobs:
         # branch moved under us and should fail loudly rather than clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
-      - name: Reply to and resolve addressed threads
+      - name: Reply on addressed threads
         if: steps.gate.outputs.proceed == 'true' && success()
+        env:
+          # Allowlist of review-thread node IDs that actually exist on THIS PR,
+          # fetched by the gate. Every agent-provided threadId is checked against
+          # it before any mutation, so a hallucinated or cross-PR id can't reply to
+          # an unrelated thread (the agent's output is untrusted input here).
+          VALID_THREAD_IDS: ${{ steps.gate.outputs.valid_thread_ids }}
         # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
-        # addressed review thread. Reply on each thread and resolve it, closing
-        # the loop in-context (CVM parity). Best-effort per thread and never `set
-        # -e`: the fix commits are the deliverable and are already pushed, and a
-        # stale/already-resolved thread must not flip a successful run to blocked.
+        # addressed review thread. Reply on each thread whose id is on this PR.
+        # We deliberately do NOT resolve the thread: resolution is the reviewer's
+        # call (matching CVM, which only replies), so the reviewer confirms the fix
+        # and resolves. Best-effort per thread and never `set -e`: the fix commits
+        # are the deliverable and are already pushed, so a stale thread must not
+        # flip a successful run to blocked.
         run: |
           set -uo pipefail
           file="${RUNNER_TEMP}/thread_replies.json"
@@ -237,17 +285,14 @@ jobs:
           for i in $(seq 0 $((count - 1))); do
             tid=$(jq -r ".[$i].threadId" "$file")
             body=$(jq -r ".[$i].body" "$file")
-            if gh api graphql -f threadId="$tid" -f body="$body" -f query='
+            if ! echo "$VALID_THREAD_IDS" | jq -e --arg t "$tid" 'index($t)' >/dev/null; then
+              echo "threadId $tid is not a review thread on this PR — skipping (possible hallucinated or cross-PR id)."
+              continue
+            fi
+            gh api graphql -f threadId="$tid" -f body="$body" -f query='
               mutation($threadId: ID!, $body: String!) {
                 addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) { comment { id } }
-              }'; then
-              gh api graphql -f threadId="$tid" -f query='
-                mutation($threadId: ID!) {
-                  resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } }
-                }' || echo "Could not resolve thread $tid (replied, but resolve failed)."
-            else
-              echo "Could not reply on thread $tid — skipping."
-            fi
+              }' || echo "Could not reply on thread $tid — skipping."
           done
 
       - name: Post the summary comment
