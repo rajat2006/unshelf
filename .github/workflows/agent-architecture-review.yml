@@ -54,22 +54,20 @@ jobs:
       issues: write
 
     steps:
-      - name: Gate — provenance label, open-proposal cap, and dedupe list
+      - name: Gate — open-proposal cap and dedupe list
         id: gate
+        # The `source:architecture-review` label is provisioned once by
+        # ./.sandcastle/provision-labels.sh (its canonical colour/description live
+        # there — not duplicated here), exactly as every other agent workflow
+        # relies on its labels already existing.
         run: |
           set -euo pipefail
 
-          # Ensure the provenance label exists (idempotent) so both the count and
-          # the later create can rely on it — a fresh repo may not have run
-          # provision-labels.sh yet.
-          gh label create "$PROVENANCE_LABEL" \
-            --color "5319e7" \
-            --description "Provenance: PRD proposed by the scheduled architecture-review agent" \
-            --force >/dev/null
-
           # The OPEN proposals gate the run (an un-triaged backlog shouldn't grow).
+          # Explicit high --limit: `gh issue list` defaults to 30, which would
+          # silently cap the count.
           open_count=$(gh issue list --state open --label "$PROVENANCE_LABEL" \
-            --json number --jq 'length')
+            --limit 1000 --json number --jq 'length')
           echo "Open $PROVENANCE_LABEL proposals: $open_count (cap $MAX_OPEN_PROPOSALS)"
 
           if [ "$open_count" -ge "$MAX_OPEN_PROPOSALS" ]; then
@@ -82,8 +80,10 @@ jobs:
 
           # Dedupe against the FULL history — open AND closed — so a completed or
           # rejected idea is never re-proposed. Titles feed the agent's prompt.
+          # Same explicit high --limit so the dedupe never silently drops history
+          # past the default 30.
           proposals=$(gh issue list --state all --label "$PROVENANCE_LABEL" \
-            --json title --jq '[.[].title]')
+            --limit 1000 --json title --jq '[.[].title]')
           echo "proposals=$(echo "$proposals" | jq -c '.')" >> "$GITHUB_OUTPUT"
 
       - name: Resolve provider
@@ -198,6 +198,8 @@ jobs:
               echo "⏭️ **Skipped — backlog full.** ${{ steps.gate.outputs.open_count }} open \`$PROVENANCE_LABEL\` proposal(s) ≥ cap of $MAX_OPEN_PROPOSALS. Triage the open proposals to let the next run propose again."
             elif [ -f "${RUNNER_TEMP}/architecture_status.txt" ] && [ "$(cat "${RUNNER_TEMP}/architecture_status.txt")" = "proposed" ]; then
               echo "✅ **Proposed a PRD:** $(cat "${RUNNER_TEMP}/prd_title.txt")"
+              echo
+              echo "$(cat "${RUNNER_TEMP}/architecture_summary.txt")"
               [ -f "${RUNNER_TEMP}/prd_url.txt" ] && echo && echo "$(cat "${RUNNER_TEMP}/prd_url.txt")"
             else
               echo "⏭️ **Skipped — nothing fresh to propose.** $(cat "${RUNNER_TEMP}/architecture_summary.txt" 2>/dev/null || echo 'no summary')"

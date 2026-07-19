@@ -19,12 +19,11 @@ function proposed(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** A well-formed `skipped` output, spread-overridable per test. */
+/** A well-formed `skipped` output ({status, reason}, per CVM). */
 function skipped(overrides: Record<string, unknown> = {}) {
   return {
     status: "skipped",
-    oneLineSummary: "No fresh deepening opportunity — top candidate already proposed.",
-    candidatesConsidered: ["trail-geometry distance seam"],
+    reason: "No fresh deepening opportunity — top candidate already proposed.",
     ...overrides,
   };
 }
@@ -36,16 +35,10 @@ describe("architectureReviewOutputSchema — the architecture-review <output> co
     if (parsed.status === "proposed") expect(parsed.title).toBeTruthy();
   });
 
-  it("accepts a well-formed skipped output", () => {
+  it("accepts a well-formed skipped output ({status, reason})", () => {
     const parsed = architectureReviewOutputSchema.parse(skipped());
     expect(parsed.status).toBe("skipped");
-    expect(parsed.oneLineSummary).toBeTruthy();
-  });
-
-  it("accepts an empty candidatesConsidered array (clean skip)", () => {
-    expect(() =>
-      architectureReviewOutputSchema.parse(skipped({ candidatesConsidered: [] })),
-    ).not.toThrow();
+    if (parsed.status === "skipped") expect(parsed.reason).toBeTruthy();
   });
 
   it("rejects an unknown status", () => {
@@ -70,27 +63,41 @@ describe("architectureReviewOutputSchema — the architecture-review <output> co
     ).toThrow();
   });
 
-  it("rejects a skipped output that smuggles a proposed field (union is enforced)", () => {
+  it("rejects a proposed output with an empty candidatesConsidered list", () => {
+    expect(() =>
+      architectureReviewOutputSchema.parse(proposed({ candidatesConsidered: [] })),
+    ).toThrow();
+  });
+
+  it("rejects a proposed output with an empty candidate string", () => {
     expect(() =>
       architectureReviewOutputSchema.parse(
-        skipped({ title: "x", body: "y" }),
+        proposed({ candidatesConsidered: ["ok", ""] }),
       ),
     ).toThrow();
   });
 
-  it("rejects a missing oneLineSummary", () => {
-    const { oneLineSummary: _s, ...noSummary } = proposed();
-    expect(() => architectureReviewOutputSchema.parse(noSummary)).toThrow();
+  it("rejects a skipped output missing its reason", () => {
+    const { reason: _r, ...noReason } = skipped();
+    expect(() => architectureReviewOutputSchema.parse(noReason)).toThrow();
   });
 
-  it("rejects an empty oneLineSummary", () => {
+  it("rejects a skipped output that smuggles proposed fields (union is strict)", () => {
     expect(() =>
-      architectureReviewOutputSchema.parse(proposed({ oneLineSummary: "" })),
+      architectureReviewOutputSchema.parse(
+        skipped({ title: "x", body: "y", candidatesConsidered: ["z"] }),
+      ),
     ).toThrow();
   });
 
-  it("rejects a missing candidatesConsidered", () => {
-    const { candidatesConsidered: _c, ...noCands } = proposed();
-    expect(() => architectureReviewOutputSchema.parse(noCands)).toThrow();
+  it("rejects a proposed output that smuggles a stray reason (union is strict)", () => {
+    expect(() =>
+      architectureReviewOutputSchema.parse(proposed({ reason: "nope" })),
+    ).toThrow();
+  });
+
+  it("rejects a missing oneLineSummary on proposed", () => {
+    const { oneLineSummary: _s, ...noSummary } = proposed();
+    expect(() => architectureReviewOutputSchema.parse(noSummary)).toThrow();
   });
 });

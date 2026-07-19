@@ -73,18 +73,37 @@ proposed — that is a valid, honest **skip**.
 ### 3. Write it up as a complete PRD
 
 For the chosen opportunity, draft a PRD body a maintainer could hand straight to
-`agent:to-issues`. Follow this repo's full PRD shape — **every** section, in this
-order, in `/codebase-design` and `CONTEXT.md` vocabulary, referencing modules and
-ADRs by name:
+`agent:to-issues`. Write **every** section below, in this order, in
+`/codebase-design` and `CONTEXT.md` vocabulary, referencing real modules, files,
+and ADRs by name. Each section must be **substantive** — a reader who has never
+seen the codebase should understand the problem and the plan. A structurally
+complete but thin sketch (headings with one hand-wavy line each) is a failure;
+prefer to **skip** over shipping a shallow PRD.
 
-- **Problem Statement** — the friction the shallow module causes today.
-- **Solution** — the deepening: what moves behind which interface, at which seam.
-- **User Stories** — who benefits and how (maintainer, agent, reviewer …).
-- **Implementation Decisions** — the concrete design calls (modules touched,
-  interface shape, what stays out of the interface).
-- **Testing Decisions** — how the deepened module is tested through its interface.
-- **Out of Scope** — what this deepening deliberately does not touch.
-- **Further Notes** — ADR ties, follow-ups, risks.
+- **Problem Statement** — the concrete friction the shallow module causes *today*.
+  Name the module and the files. Show *why* it's shallow: apply the deletion test
+  (would deleting it concentrate complexity or just move it?), and describe the
+  bouncing-between-modules or leaked-seam symptom a maintainer or agent hits. Cite
+  the `CONTEXT.md` terms and any ADR the current shape strains.
+- **Solution** — the deepening. Which behaviour moves *behind* which interface, at
+  which seam; what the new interface looks like (the small surface) and what
+  complexity it now hides. Contrast before/after in terms of *depth*, *leverage*
+  for callers, and *locality* for maintainers.
+- **User Stories** — who benefits and how, one line each: the maintainer, the
+  autonomous agent navigating the code, the reviewer, the test author. Frame each
+  as "As a …, I want …, so that …".
+- **Implementation Decisions** — the concrete design calls: exact modules/files
+  touched, the interface signature(s), what deliberately stays *out* of the
+  interface, migration/rollout order, and any call sites that must change. Enough
+  that decomposing this into child issues is mechanical.
+- **Testing Decisions** — how the deepened module is tested *through its
+  interface* (the interface is the test surface), what becomes newly testable, and
+  which existing tests move or retire. Name the test files/harness this repo uses.
+- **Out of Scope** — adjacent deepenings, refactors, or modules this PRD
+  deliberately does *not* touch, so the change stays scoped to this one seam.
+- **Further Notes** — ADR ties (which decisions this respects or would amend),
+  follow-up opportunities it unlocks, and the risks or unknowns a builder should
+  watch.
 
 Keep it scoped to this one deepening — not a grab-bag.
 

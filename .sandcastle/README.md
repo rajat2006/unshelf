@@ -39,13 +39,14 @@ pinned Sandcastle version and Unshelf's provider set:
   anything is posted.
 - **`architecture-review-output.ts`** — `architectureReviewOutputSchema` (Zod):
   the `architecture-review` capability's `<output>` contract, copied field-for-field
-  from CVM (`{status, title, body, oneLineSummary, candidatesConsidered}`) as a
-  **strict discriminated union on `status`** — a `proposed` block *must* carry
-  `title` + `body`, a `skipped` block *cannot*, and neither may smuggle the other's
-  fields (strict = extra keys rejected, not stripped). So a malformed or mixed
-  decision self-corrects via same-session retry before the workflow opens any PRD.
-  One proposal per run — CVM proposes a single fresh deepening opportunity at a
-  time so each becomes its own PRD → child-issues flow, not a rolling report.
+  from CVM as a **strict discriminated union on `status`** — `proposed` is
+  `{status, title, body, oneLineSummary, candidatesConsidered}` (at least one
+  non-empty candidate), `skipped` is `{status, reason}`. Strict = extra keys
+  rejected, not stripped, so a `skipped` block can't smuggle a `title`/`body` and a
+  `proposed` block can't carry a stray `reason`; a malformed or mixed decision
+  self-corrects via same-session retry before the workflow opens any PRD. One
+  proposal per run — CVM proposes a single fresh deepening opportunity at a time so
+  each becomes its own PRD → child-issues flow, not a rolling report.
 - **`implement-pr-output.ts`** — `implementPrOutputSchema` (Zod): the
   `implement-pr` capability's `<output>` contract — a `summary` plus `items[]`
   (each a `comment` gist, `status` ∈ addressed/deferred, optional `file`, an
@@ -167,13 +168,16 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   needs an HTML report + a human); the resumed extraction pass emits a
   `proposed | skipped` decision validated against `architectureReviewOutputSchema`
   (one PRD per run, not a findings list). **Read-only** — it commits nothing; per
-  invariant H it only writes `architecture_status.txt`, `architecture_summary.txt`,
-  `architecture_candidates.txt`, and — when `proposed` — `prd_title.txt` +
-  `prd_body.txt` to `OUTPUT_DIR`. The workflow dedupes against **open *and closed***
-  `source:architecture-review` proposals (so a completed or rejected idea is never
-  re-raised), skips the run once ten are **open**, opens the proposed PRD with that
-  provenance label (a human later expands it with `agent:to-issues`), and always
-  writes a run summary (proposed PRD + candidates, skip reason, or backlog-full).
+  invariant H it only writes `architecture_status.txt` and `architecture_summary.txt`
+  (the `oneLineSummary` when proposed, the `reason` when skipped), plus — when
+  `proposed` — `architecture_candidates.txt`, `prd_title.txt`, and `prd_body.txt`
+  to `OUTPUT_DIR`. The workflow dedupes against **open *and closed***
+  `source:architecture-review` proposals with an explicit high `--limit` (so a
+  completed or rejected idea is never re-raised and the default-30 page never
+  silently truncates history), skips the run once ten are **open**, opens the
+  proposed PRD with that provenance label (provisioned once by `provision-labels.sh`;
+  a human later expands it with `agent:to-issues`), and always writes a run summary
+  (proposed PRD + one-line summary + candidates, skip reason, or backlog-full).
 - **`implement-pr/`** — addresses the review comments on an open PR (workflow
   `agent-implement-pr.yml`) via `runWithExtraction`. The produce pass reads the
   PR's review threads via **GraphQL** (which exposes each thread's `isResolved`

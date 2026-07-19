@@ -30,10 +30,11 @@ import { runWithExtraction } from "../run-with-extraction";
  * `/codebase-design` deep-module vocabulary.
  *
  * Per invariant H the runner only writes output files: `architecture_status.txt`
- * (`proposed`/`skipped`), `architecture_summary.txt` (the one-line summary),
+ * (`proposed`/`skipped`) and `architecture_summary.txt` (the `oneLineSummary` when
+ * proposed, the `reason` when skipped). When `proposed` it also writes
  * `architecture_candidates.txt` (the candidates weighed, one per line, for the
- * Actions summary), and — when `proposed` — `prd_title.txt` + `prd_body.txt`. The
- * workflow opens the PRD, labels it, and writes the run summary.
+ * Actions summary), `prd_title.txt`, and `prd_body.txt`. The workflow opens the
+ * PRD, labels it, and writes the run summary.
  */
 
 const outputDir = requireEnv("OUTPUT_DIR");
@@ -82,22 +83,23 @@ const result = await runWithExtraction({
 
 const out = result.output;
 fs.writeFileSync(path.join(outputDir, "architecture_status.txt"), out.status);
-fs.writeFileSync(
-  path.join(outputDir, "architecture_summary.txt"),
-  out.oneLineSummary,
-);
-fs.writeFileSync(
-  path.join(outputDir, "architecture_candidates.txt"),
-  out.candidatesConsidered.join("\n"),
-);
 
 if (out.status === "proposed") {
+  fs.writeFileSync(
+    path.join(outputDir, "architecture_summary.txt"),
+    out.oneLineSummary,
+  );
+  fs.writeFileSync(
+    path.join(outputDir, "architecture_candidates.txt"),
+    out.candidatesConsidered.join("\n"),
+  );
   fs.writeFileSync(path.join(outputDir, "prd_title.txt"), out.title);
   fs.writeFileSync(path.join(outputDir, "prd_body.txt"), out.body);
-  console.log(`\nProposed a PRD: ${out.title}`);
+  console.log(
+    `\nProposed a PRD (${out.candidatesConsidered.length} candidate(s) considered): ${out.title}`,
+  );
+  console.log(`  ${out.oneLineSummary}`);
 } else {
-  console.log(`\nSkipped — ${out.oneLineSummary}`);
+  fs.writeFileSync(path.join(outputDir, "architecture_summary.txt"), out.reason);
+  console.log(`\nSkipped — ${out.reason}`);
 }
-console.log(
-  `  ${out.candidatesConsidered.length} candidate(s) considered: ${out.oneLineSummary}`,
-);

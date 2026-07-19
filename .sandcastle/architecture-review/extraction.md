@@ -23,19 +23,21 @@ The block must match **one** of these two shapes exactly — no extra fields.
 <output>
 {
   "status": "skipped",
-  "oneLineSummary": "one-line reason nothing was proposed (clean on this axis, or every candidate already proposed)",
-  "candidatesConsidered": ["short label of each candidate you weighed and rejected (may be empty if none surfaced)"]
+  "reason": "one line: why nothing was proposed (clean on this axis, or every candidate already proposed)"
 }
 </output>
 
 Rules:
 
 - `status` — `"proposed"` or `"skipped"`.
-- `oneLineSummary` — required in both, one line.
-- `title` / `body` — **both required for `proposed`**, and **must NOT appear for
-  `skipped`** (the block is validated as a strict discriminated union — a stray
-  field is rejected). `title` ≤ 256 chars. `body` must contain all seven sections.
-- `candidatesConsidered` — required in both, an array of short strings (may be
-  `[]` only when a clean sweep surfaced no candidate at all).
+- The block is validated as a **strict discriminated union**: emit **only** the
+  fields shown for the branch you chose. A stray field from the other branch is
+  rejected and you'll be asked to fix it.
+- `proposed` — `oneLineSummary`, `title`, `body`, `candidatesConsidered` all
+  required. `title` ≤ 256 chars. `body` must contain all seven sections.
+  `candidatesConsidered` must have **at least one non-empty** entry (the one you
+  chose counts).
+- `skipped` — **only** `status` + `reason` (a non-empty one-line reason). No
+  `title`, `body`, `oneLineSummary`, or `candidatesConsidered`.
 - Propose **at most one** opportunity — one PRD per run. Never bundle several.
 - Emit nothing after the closing `</output>` tag.
