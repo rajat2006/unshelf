@@ -20,9 +20,12 @@ jobs:
     concurrency:
       # Per-issue serialisation that QUEUES rather than cancels — two triggers on
       # the same issue run one after another, never concurrently, and an
-      # in-flight run is never killed.
+      # in-flight run is never killed. `queue: max` is required for this: the
+      # default `queue: single` keeps only ONE pending run, so a third trigger
+      # would evict the second rather than lining up behind it.
       group: agent-implement-issue-${{ github.event.issue.number }}
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
       pull-requests: write
