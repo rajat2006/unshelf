@@ -20,9 +20,12 @@ jobs:
     concurrency:
       # Per-issue serialisation that QUEUES rather than cancels — two triggers on
       # the same issue run one after another, never concurrently, and an
-      # in-flight run is never killed.
+      # in-flight run is never killed. `queue: max` is required for this: the
+      # default `queue: single` keeps only ONE pending run, so a third trigger
+      # would evict the second rather than lining up behind it.
       group: agent-implement-issue-${{ github.event.issue.number }}
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
       pull-requests: write
@@ -249,6 +252,18 @@ jobs:
             --title "$pr_title" \
             --body-file "${RUNNER_TEMP}/pr_description.txt")
           echo "pr_number=$(basename "$pr_url")" >> "$GITHUB_OUTPUT"
+
+      - name: Propagate provider label (agent:codex) to the PR
+        if: steps.gate.outputs.proceed == 'true' && success() && steps.gate.outputs.is_codex == 'true'
+        env:
+          PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+        # Provider continuity (spec §C/#64): the review workflow resolves its
+        # provider from the PR's OWN label set, so a Codex-implemented issue must
+        # carry agent:codex onto the PR — otherwise its review silently falls back
+        # to Claude. Added BEFORE agent:review below so it is already present when
+        # the review gate reads the PR labels. GITHUB_TOKEN is fine here:
+        # agent:codex triggers no downstream workflow (only agent:review does).
+        run: gh pr edit "$PR_NUMBER" --add-label "agent:codex"
 
       - name: Request automated review (add agent:review)
         if: steps.gate.outputs.proceed == 'true' && success()

@@ -28,6 +28,18 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
   present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
   (absence *is* Claude). Reads the issue's full label set.
+- **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
+  `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
+  standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional
+  `line`, `title`, `detail`). The extraction wrapper validates the emitted block
+  against it, so a malformed block self-corrects via same-session retry before
+  anything is posted.
+- **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
+  returning the new-side line numbers each file adds/changes. The `review`
+  capability uses it to anchor unresolved findings to real changed lines when
+  building the inline PR-review comments, so a comment can't point at a line the
+  change never touched — and so the reviews API (which 422s the whole review on a
+  single off-diff anchor) is never handed a bad line.
 - **`prepare-codex-auth.ts`** — `prepareCodexAuth(providerName)` (Unshelf-specific):
   the runner-side half of the Codex path. When the resolved provider is Codex it
   seeds `CODEX_AUTH_JSON` → `$CODEX_HOME/auth.json` **only if that file is absent**
@@ -64,6 +76,17 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`review/`** — drives the repo's **local `/code-review`** over the PR branch
+  (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
+  along both axes, **fixes what it safely can and commits** the fixes, and
+  re-reviews; the resumed extraction pass emits the findings as one `<output>`
+  block (`extraction.md`), each marked `fixed` or `unresolved`, validated against
+  `reviewOutputSchema` with same-session retry. Per invariant H the runner only
+  commits + writes files: fix commits land on the branch (the workflow pushes
+  them) and a ready-to-POST GitHub *reviews* payload (`review_payload.json` — a
+  summary body plus inline comments for unresolved findings, anchored to the diff
+  via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
+  review, then `gh pr ready`. Uses no external skills registry.
 
 ## Pinned version
 

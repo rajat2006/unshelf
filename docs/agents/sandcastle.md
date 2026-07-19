@@ -24,7 +24,7 @@ issue out of the agent lane; it is never applied by a machine.
 
 | Label | Meaning |
 | --- | --- |
-| `agent:codex` | Optional. Present ⇒ run on Codex (`gpt-5.6-sol`). **Absent ⇒ Claude Code (`claude-opus-4-8`)** — a default needs no label, so there is deliberately **no `agent:claude`**. |
+| `agent:codex` | Optional. Present ⇒ run on Codex (`gpt-5.6-sol`). **Absent ⇒ Claude Code (`claude-opus-4-8`)** — a default needs no label, so there is deliberately **no `agent:claude`**. Applied to an issue, it is **propagated onto the PR** by `agent-implement` so the review runs on the same provider (each workflow resolves its provider from its own subject's label set). |
 
 ### 3. Agent state machine
 
@@ -142,7 +142,8 @@ seam; the runner-side scripts + prompts are documented in
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
-| `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; sub-issues (with a parent) and issues that already have an open PR are refused. |
+| `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, copies `agent:codex` onto the PR when the issue had it (so the review runs on the same provider), and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; sub-issues (with a parent) and issues that already have an open PR are refused. |
+| `agent-review.yml` | `agent:review` on a PR (`pull_request_target`) | Checks out the PR branch and runs the `review` capability (the repo's local `/code-review`, no external skills registry): it reviews both axes, **fixes what it safely can and commits**, and re-reviews. The workflow pushes the fix commits, posts one review (summary + inline comments for unresolved findings), and marks the PR **ready** via `gh pr ready`. Swaps `agent:review` → `agent:in-progress` on start; a failure lands the PR in `agent:blocked` with a run-URL comment (left a draft) and always removes `agent:in-progress`. Shares a per-PR concurrency group with the other PR-mutating capabilities (`queue: max`, `cancel-in-progress: false` — queues, never cancels). Fork PRs are refused (it runs under `pull_request_target` with secrets in scope). This closes the implement → review → ready chain. |
 
 ## Cost model
 
