@@ -17,7 +17,7 @@ import { runWithExtraction } from "../run-with-extraction";
  * Invoked by `.github/workflows/agent-architecture-review.yml` on a weekday cron
  * and via `workflow_dispatch` — NOT by a label, so unlike the other capabilities
  * there is no originating issue/PR. It therefore reads its own minimal env (the
- * open proposals to dedupe against, an optional provider label set, `OUTPUT_DIR`)
+ * past proposals to dedupe against, an optional provider label set, `OUTPUT_DIR`)
  * instead of {@link import("../capability-context").loadCapabilityContext},
  * which is issue-shaped.
  *
@@ -29,9 +29,11 @@ import { runWithExtraction } from "../run-with-extraction";
  * candidates); the survey is described directly in the prompt using the
  * `/codebase-design` deep-module vocabulary.
  *
- * Per invariant H the runner only writes output files: `architecture_outcome.txt`
- * (`proposed`/`skipped`), `architecture_summary.txt`, and — when `proposed` —
- * `prd_title.txt` + `prd_body.txt`. The workflow opens the PRD and labels it.
+ * Per invariant H the runner only writes output files: `architecture_status.txt`
+ * (`proposed`/`skipped`), `architecture_summary.txt` (the one-line summary),
+ * `architecture_candidates.txt` (the candidates weighed, one per line, for the
+ * Actions summary), and — when `proposed` — `prd_title.txt` + `prd_body.txt`. The
+ * workflow opens the PRD, labels it, and writes the run summary.
  */
 
 const outputDir = requireEnv("OUTPUT_DIR");
@@ -42,16 +44,17 @@ const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 const { agent, model } = resolveAgent(labels);
 console.log(`Resolved provider model: ${model}`);
 
-// The titles of the currently-open `source:architecture-review` proposals — the
-// workflow gathers them so the agent proposes something *fresh* rather than
-// re-raising an opportunity already sitting in the backlog (CVM's dedupe step).
-const openProposals = JSON.parse(
+// The titles of every past `source:architecture-review` proposal — OPEN and
+// CLOSED — so the agent proposes something genuinely fresh and never re-raises an
+// opportunity already accepted, completed, or explicitly rejected (CVM dedupes
+// against the full history, not just the open backlog).
+const pastProposals = JSON.parse(
   process.env.EXISTING_PROPOSALS ?? "[]",
 ) as string[];
 const proposalList =
-  openProposals.length > 0
-    ? openProposals.map((t) => `- ${t}`).join("\n")
-    : "_(none yet — the backlog is empty)_";
+  pastProposals.length > 0
+    ? pastProposals.map((t) => `- ${t}`).join("\n")
+    : "_(none yet — nothing has been proposed before)_";
 
 // Same subscription-seat setup as the other agent phases — a no-op on the Claude
 // Code default.
@@ -77,27 +80,24 @@ const result = await runWithExtraction({
   }),
 });
 
-fs.writeFileSync(
-  path.join(outputDir, "architecture_outcome.txt"),
-  result.output.outcome,
-);
+const out = result.output;
+fs.writeFileSync(path.join(outputDir, "architecture_status.txt"), out.status);
 fs.writeFileSync(
   path.join(outputDir, "architecture_summary.txt"),
-  result.output.summary,
+  out.oneLineSummary,
+);
+fs.writeFileSync(
+  path.join(outputDir, "architecture_candidates.txt"),
+  out.candidatesConsidered.join("\n"),
 );
 
-if (result.output.outcome === "proposed") {
-  // The refinement guarantees both are present when proposed.
-  fs.writeFileSync(
-    path.join(outputDir, "prd_title.txt"),
-    result.output.prdTitle ?? "",
-  );
-  fs.writeFileSync(
-    path.join(outputDir, "prd_body.txt"),
-    result.output.prdBody ?? "",
-  );
-  console.log(`\nProposed a PRD: ${result.output.prdTitle}`);
+if (out.status === "proposed") {
+  fs.writeFileSync(path.join(outputDir, "prd_title.txt"), out.title);
+  fs.writeFileSync(path.join(outputDir, "prd_body.txt"), out.body);
+  console.log(`\nProposed a PRD: ${out.title}`);
 } else {
-  console.log(`\nSkipped — ${result.output.reason ?? result.output.summary}`);
+  console.log(`\nSkipped — ${out.oneLineSummary}`);
 }
-console.log(`  ${result.output.summary}`);
+console.log(
+  `  ${out.candidatesConsidered.length} candidate(s) considered: ${out.oneLineSummary}`,
+);

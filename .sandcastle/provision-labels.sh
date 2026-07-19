@@ -17,7 +17,8 @@ if [[ -n "$REPO" ]]; then
 fi
 
 # name | colour (hex, no #) | description
-# Three layers per spec §D: one provider label, then the agent state machine.
+# Four layers per spec §D + #70: one provider label, the agent state machine, and
+# the source:architecture-review provenance label.
 # There is deliberately NO `agent:claude` label — absence of `agent:codex` is Claude.
 labels=(
   "agent:codex|8250df|Provider (optional): run this issue on Codex/gpt-5.6-sol instead of the default Claude Code"

@@ -2,59 +2,68 @@ import { z } from "zod";
 
 /**
  * What a single `architecture-review` run decided. Mirroring CVM's
- * `improve-codebase-architecture` capability, a run surfaces **exactly one fresh
- * deepening opportunity** and proposes it as a PRD — or finds nothing fresh worth
- * proposing and skips.
+ * `improve-codebase-architecture` capability field-for-field
+ * (`{status, title, body, oneLineSummary, candidatesConsidered}`): a run weighs
+ * a handful of deepening candidates and either **proposes** the single freshest
+ * one as a PRD or **skips**.
  *
- * - `proposed` — the run found one deepening opportunity not already covered by
- *   an open `source:architecture-review` proposal, and wrote it up as a PRD
- *   (`prdTitle` + `prdBody`). The workflow opens that PRD and labels it
+ * - `proposed` — one deepening opportunity, not already covered by an open *or
+ *   closed* `source:architecture-review` proposal, written up as a PRD
+ *   (`title` + `body`). The workflow opens that PRD and labels it
  *   `source:architecture-review`; a human later expands it with `agent:to-issues`.
- * - `skipped` — nothing fresh worth proposing this run (the codebase is clean, or
- *   every candidate is already an open proposal). Carries a one-line `reason`.
+ * - `skipped` — nothing fresh worth proposing (the codebase is clean, or every
+ *   candidate is already a past proposal). `oneLineSummary` carries why.
  */
-export const ARCHITECTURE_OUTCOMES = ["proposed", "skipped"] as const;
+export const ARCHITECTURE_STATUSES = ["proposed", "skipped"] as const;
 
 /**
- * The structured `<output>` block the `architecture-review` capability emits —
- * validated by the extraction wrapper against this schema, so a malformed or
- * self-contradictory block self-corrects via same-session retry before the
- * workflow opens any PRD (spec #52 / #70).
- *
- * A single proposal per run (not a findings list): CVM's capability proposes one
- * fresh opportunity at a time so each becomes its own PRD → child-issues flow,
- * rather than a rolling report. The refinements enforce that shape — `proposed`
- * must carry a PRD, `skipped` must carry a reason and no PRD — so the workflow
- * never opens an empty PRD or drops a proposal on the floor.
+ * The candidate deepening opportunities the run weighed — each a short one-line
+ * label — so the always-run Actions summary can report what was considered, not
+ * just the one that won (CVM's `candidatesConsidered`). Present on both branches;
+ * may be empty on a clean skip that surfaced no candidates at all.
  */
-export const architectureReviewOutputSchema = z
-  .object({
-    outcome: z.enum(ARCHITECTURE_OUTCOMES),
-    /** One-line headline of the decision (the per-run log + PRD lead line). */
-    summary: z.string().min(1),
-    /** The proposed PRD's title — required (and only) when `proposed`. */
-    prdTitle: z.string().min(1).max(256).optional(),
-    /** The proposed PRD's Markdown body — required (and only) when `proposed`. */
-    prdBody: z.string().min(1).optional(),
-    /** Why nothing was proposed — required when `skipped`. */
-    reason: z.string().min(1).optional(),
-  })
-  .refine((o) => o.outcome !== "proposed" || (!!o.prdTitle && !!o.prdBody), {
-    path: ["prdTitle"],
-    message:
-      "a `proposed` outcome must include prdTitle and prdBody (the deepening opportunity written up as a PRD)",
-  })
-  .refine((o) => o.outcome !== "skipped" || !!o.reason, {
-    path: ["reason"],
-    message:
-      "a `skipped` outcome must include a one-line reason (why nothing fresh was proposed)",
-  })
-  .refine((o) => o.outcome !== "skipped" || (!o.prdTitle && !o.prdBody), {
-    path: ["prdTitle"],
-    message: "a `skipped` outcome must not include prdTitle/prdBody",
-  });
+const candidatesConsidered = z.array(z.string());
 
-export type ArchitectureOutcome = (typeof ARCHITECTURE_OUTCOMES)[number];
+/**
+ * The structured `<output>` block the `architecture-review` capability emits — a
+ * **discriminated union on `status`** so the contract is enforced, not just
+ * documented: a `proposed` block *must* carry `title` + `body` and a `skipped`
+ * block *cannot*, and neither can smuggle the other branch's fields. Validated by
+ * the extraction wrapper, so a malformed or mixed block self-corrects via
+ * same-session retry before the workflow opens any PRD (spec #52 / #70).
+ *
+ * One proposal per run (not a findings list): CVM proposes a single fresh
+ * deepening opportunity at a time so each becomes its own PRD → child-issues
+ * flow, rather than a rolling report.
+ *
+ * Each branch is `.strict()`: extra keys are rejected rather than silently
+ * stripped, so a `skipped` block cannot smuggle a `title`/`body` and a `proposed`
+ * block cannot carry a stray `reason` — the union enforces the shape it documents.
+ */
+export const architectureReviewOutputSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("proposed"),
+      /** One-line headline of the deepening being proposed. */
+      oneLineSummary: z.string().min(1),
+      /** PRD title — imperative, within GitHub's 256-char issue-title limit. */
+      title: z.string().min(1).max(256),
+      /** The full PRD body (the seven-section spec shape) as Markdown. */
+      body: z.string().min(1),
+      candidatesConsidered,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("skipped"),
+      /** One-line reason nothing was proposed (drives the Actions summary). */
+      oneLineSummary: z.string().min(1),
+      candidatesConsidered,
+    })
+    .strict(),
+]);
+
+export type ArchitectureStatus = (typeof ARCHITECTURE_STATUSES)[number];
 export type ArchitectureReviewOutput = z.infer<
   typeof architectureReviewOutputSchema
 >;

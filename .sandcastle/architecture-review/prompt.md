@@ -2,8 +2,8 @@
 
 Survey this repository at its current `main` checkout and find the **single
 freshest deepening opportunity** — one shallow module that could become a deep
-one — then write it up as a **PRD proposal** a maintainer can later expand into
-child issues. If there is nothing fresh worth proposing, say so and skip.
+one — then write it up as a **complete PRD** a maintainer can hand straight to
+`agent:to-issues`. If there is nothing fresh worth proposing, say so and skip.
 
 This is the autonomous, GitHub-native form of an architecture review. It runs on
 a schedule with no human in the loop, so it is a **read-only survey**: do **not**
@@ -38,11 +38,13 @@ real seams and does not re-litigate settled calls:
 - `docs/adr/` — the ADRs record decisions this review **must not re-propose**. A
   proposal that contradicts an accepted ADR is out of bounds.
 
-## Already-open proposals — do NOT re-propose these
+## Already-proposed opportunities — do NOT re-propose any of these
 
-These architecture-review PRDs are already open in the backlog. Your proposal
-must be **materially different** from every one of them; if the only opportunity
-you can find is already covered here, that is a **skip**, not a duplicate.
+These architecture-review PRDs have already been proposed — **open and closed
+alike** (accepted, completed, or explicitly rejected). Your proposal must be
+**materially different** from every one of them; re-raising a closed idea is
+exactly the duplicate this list exists to prevent. If the only opportunity you
+can find is already covered here, that is a **skip**, not a duplicate.
 
 {{EXISTING_PROPOSALS}}
 
@@ -61,22 +63,33 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 
 ### 2. Pick the single best fresh opportunity
 
-Choose the **one** opportunity with the most leverage that is **not** already an
-open proposal above. Prefer one high-signal, load-bearing candidate over a list
-of shallow ones. If nothing clears that bar this run — the codebase is clean, or
-every candidate is already proposed — that is a valid, honest **skip**.
+Weigh the candidates you turned up and choose the **one** with the most leverage
+that is **not** already a past proposal above. Keep track of the handful you
+seriously considered — you'll report them as `candidatesConsidered`. Prefer one
+high-signal, load-bearing candidate over a list of shallow ones. If nothing
+clears that bar this run — the codebase is clean, or every candidate is already
+proposed — that is a valid, honest **skip**.
 
-### 3. Write it up as a PRD
+### 3. Write it up as a complete PRD
 
 For the chosen opportunity, draft a PRD body a maintainer could hand straight to
-`agent:to-issues`. Follow this repo's issue conventions — **Problem** (the
-friction, in `/codebase-design` and `CONTEXT.md` vocabulary), **Solution** (the
-deepening: what moves behind which interface, at which seam), and **Acceptance
-criteria** (a checklist). Reference the modules and ADRs by name. Keep it scoped
-to this one deepening — not a grab-bag.
+`agent:to-issues`. Follow this repo's full PRD shape — **every** section, in this
+order, in `/codebase-design` and `CONTEXT.md` vocabulary, referencing modules and
+ADRs by name:
+
+- **Problem Statement** — the friction the shallow module causes today.
+- **Solution** — the deepening: what moves behind which interface, at which seam.
+- **User Stories** — who benefits and how (maintainer, agent, reviewer …).
+- **Implementation Decisions** — the concrete design calls (modules touched,
+  interface shape, what stays out of the interface).
+- **Testing Decisions** — how the deepened module is tested through its interface.
+- **Out of Scope** — what this deepening deliberately does not touch.
+- **Further Notes** — ADR ties, follow-ups, risks.
+
+Keep it scoped to this one deepening — not a grab-bag.
 
 # REPORTING
 
 Reason in prose throughout — do **not** emit any JSON or `<output>` block yet. A
-separate follow-up turn will ask you to emit the structured decision (the PRD, or
-the skip reason).
+separate follow-up turn will ask you to emit the structured decision (the PRD and
+the candidates considered, or the skip reason).

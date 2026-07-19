@@ -7,8 +7,9 @@ name: Agent Architecture Review
 # labelled `source:architecture-review` (a human later expands it with
 # `agent:to-issues`). Read-only: the agent produces only output files — this
 # workflow owns every `gh` mutation (spec invariant H). Mirrors CVM's
-# improve-codebase-architecture lifecycle: dedupe against open proposals, one
-# PRD per run, and skip the run entirely once the backlog is full.
+# improve-codebase-architecture lifecycle: dedupe against past proposals (open
+# AND closed), one PRD per run, skip the run once the open backlog is full, and
+# always write a run summary.
 
 on:
   schedule:
@@ -29,7 +30,7 @@ env:
   # Provenance label CVM applies to every architecture-review proposal — the
   # dedupe key and the backlog the open-proposal cap counts.
   PROVENANCE_LABEL: "source:architecture-review"
-  # Once this many proposals are open, skip the agent run: don't pile more
+  # Once this many proposals are OPEN, skip the agent run: don't pile more
   # architecture PRDs onto an un-triaged backlog (CVM's open-proposal cap).
   MAX_OPEN_PROPOSALS: 10
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,21 +67,23 @@ jobs:
             --description "Provenance: PRD proposed by the scheduled architecture-review agent" \
             --force >/dev/null
 
-          # The currently-open proposals: their count gates the run, their titles
-          # feed the agent's dedupe. `--search` keeps this to the labelled set.
-          proposals=$(gh issue list --state open --label "$PROVENANCE_LABEL" \
-            --json title --jq '[.[].title]')
-          count=$(echo "$proposals" | jq 'length')
-          echo "Open $PROVENANCE_LABEL proposals: $count (cap $MAX_OPEN_PROPOSALS)"
+          # The OPEN proposals gate the run (an un-triaged backlog shouldn't grow).
+          open_count=$(gh issue list --state open --label "$PROVENANCE_LABEL" \
+            --json number --jq 'length')
+          echo "Open $PROVENANCE_LABEL proposals: $open_count (cap $MAX_OPEN_PROPOSALS)"
 
-          if [ "$count" -ge "$MAX_OPEN_PROPOSALS" ]; then
+          if [ "$open_count" -ge "$MAX_OPEN_PROPOSALS" ]; then
             echo "Backlog full — skipping the agent run this cycle."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "open_count=$open_count" >> "$GITHUB_OUTPUT"
 
-          # Emit the titles JSON for the run step (a compact single line).
+          # Dedupe against the FULL history — open AND closed — so a completed or
+          # rejected idea is never re-proposed. Titles feed the agent's prompt.
+          proposals=$(gh issue list --state all --label "$PROVENANCE_LABEL" \
+            --json title --jq '[.[].title]')
           echo "proposals=$(echo "$proposals" | jq -c '.')" >> "$GITHUB_OUTPUT"
 
       - name: Resolve provider
@@ -152,15 +155,16 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
-        # `proposed` ⇒ open one PRD labelled with the provenance label so the next
-        # run dedupes against it and the open-proposal cap counts it; a human
-        # later applies `agent:to-issues`. `skipped` ⇒ nothing to open. No
-        # `agent:*` state label is applied, so this never itself starts a run.
+        # `proposed` ⇒ open one PRD labelled with the provenance label so future
+        # runs dedupe against it and the open cap counts it; a human later applies
+        # `agent:to-issues`. `skipped` ⇒ nothing to open. No `agent:*` state label
+        # is applied, so this never itself starts a run. The created URL is
+        # persisted for the run-summary step.
         run: |
           set -euo pipefail
-          outcome=$(cat "${RUNNER_TEMP}/architecture_outcome.txt")
-          if [ "$outcome" != "proposed" ]; then
-            echo "Outcome: $outcome — $(cat "${RUNNER_TEMP}/architecture_summary.txt"). No PRD to open."
+          status=$(cat "${RUNNER_TEMP}/architecture_status.txt")
+          if [ "$status" != "proposed" ]; then
+            echo "Status: $status — $(cat "${RUNNER_TEMP}/architecture_summary.txt"). No PRD to open."
             exit 0
           fi
 
@@ -176,3 +180,31 @@ jobs:
             --body-file "${RUNNER_TEMP}/prd_issue_body.md" \
             --label "$PROVENANCE_LABEL")
           echo "Opened architecture-review PRD: $url"
+          printf '%s' "$url" > "${RUNNER_TEMP}/prd_url.txt"
+
+      - name: Run summary
+        # Always report the outcome to the Actions run summary (CVM parity): the
+        # created PRD + candidates considered, the skip reason + candidates, the
+        # backlog-full skip, or a failure. Runs whatever happened upstream.
+        if: always()
+        run: |
+          set -uo pipefail
+          {
+            echo "## Architecture review"
+            echo
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "⚠️ **Run failed** (\`${{ job.status }}\`) before it could produce a decision — see the step logs above."
+            elif [ "${{ steps.gate.outputs.proceed }}" != "true" ]; then
+              echo "⏭️ **Skipped — backlog full.** ${{ steps.gate.outputs.open_count }} open \`$PROVENANCE_LABEL\` proposal(s) ≥ cap of $MAX_OPEN_PROPOSALS. Triage the open proposals to let the next run propose again."
+            elif [ -f "${RUNNER_TEMP}/architecture_status.txt" ] && [ "$(cat "${RUNNER_TEMP}/architecture_status.txt")" = "proposed" ]; then
+              echo "✅ **Proposed a PRD:** $(cat "${RUNNER_TEMP}/prd_title.txt")"
+              [ -f "${RUNNER_TEMP}/prd_url.txt" ] && echo && echo "$(cat "${RUNNER_TEMP}/prd_url.txt")"
+            else
+              echo "⏭️ **Skipped — nothing fresh to propose.** $(cat "${RUNNER_TEMP}/architecture_summary.txt" 2>/dev/null || echo 'no summary')"
+            fi
+            if [ -s "${RUNNER_TEMP}/architecture_candidates.txt" ]; then
+              echo
+              echo "**Candidates considered:**"
+              while IFS= read -r c; do [ -n "$c" ] && echo "- $c"; done < "${RUNNER_TEMP}/architecture_candidates.txt"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
