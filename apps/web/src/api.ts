@@ -13,7 +13,7 @@ import type {
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
-import type { CurrentUser } from "./auth";
+import type { CurrentUser } from "./application-auth";
 
 /**
  * The thin api client the web uses for its authenticated calls. Every request

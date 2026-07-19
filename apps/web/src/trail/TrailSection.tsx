@@ -1,5 +1,5 @@
 import type { TrailView } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { TrailCanvas } from "./TrailCanvas";
 import { usePhoneViewport } from "./usePhoneViewport";
 

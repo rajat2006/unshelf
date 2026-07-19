@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { createStop } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 
 interface AddStopFormProps {
   user: CurrentUser;

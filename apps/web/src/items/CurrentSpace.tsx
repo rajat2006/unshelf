@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Item, Stop, StopDetail, TrailView } from "@unshelf/shared";
 import { fetchAll, fetchStops, fetchTrail } from "../api";
-import { useCurrentUser } from "../auth";
+import { useCurrentUser } from "../application-auth";
 import { StopsSection } from "../stops/StopsSection";
 import { TrailSection } from "../trail/TrailSection";
 import { AddItemForm } from "./AddItemForm";

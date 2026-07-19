@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, ItemId, StopDetail, StopId } from "@unshelf/shared";
 import { removeItemFromStop } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { ItemRow } from "../items/ItemRow";
 
 interface StopViewProps {

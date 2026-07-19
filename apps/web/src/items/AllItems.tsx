@@ -1,5 +1,5 @@
 import type { Item, Stop, StopDetail } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { AddToStopControl } from "../stops/AddToStopControl";
 import { ItemRow } from "./ItemRow";
 

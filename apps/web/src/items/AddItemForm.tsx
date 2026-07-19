@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import { captureItem } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { TYPE_LABELS } from "./presentation";
 
 interface AddItemFormProps {

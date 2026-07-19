@@ -1,5 +1,10 @@
 import { CurrentSpace } from "./items/CurrentSpace";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "./auth";
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+} from "./application-auth";
 
 /**
  * The v1 shell, gated by Google sign-in. A signed-out visitor sees only the

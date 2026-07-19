@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ITEM_STATUSES, type Item, type Status } from "@unshelf/shared";
 import { updateItemStatus } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import {
   ITEM_CONTROL_CAPTION_STYLE,
   ITEM_CONTROL_ERROR_STYLE,

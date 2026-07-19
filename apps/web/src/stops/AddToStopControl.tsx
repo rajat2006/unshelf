@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, Stop, StopDetail, StopId } from "@unshelf/shared";
 import { addItemToStop } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import {
   ITEM_CONTROL_CAPTION_STYLE,
   ITEM_CONTROL_ERROR_STYLE,

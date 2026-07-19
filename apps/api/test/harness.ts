@@ -7,6 +7,7 @@ import type { Pool } from "pg";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/auth";
+import type { Identify } from "../src/auth";
 import { createPool } from "../src/db";
 import { applySchema } from "../src/schema";
 
@@ -26,17 +27,16 @@ export interface TestApp {
   stop: () => Promise<void>;
 }
 
-export async function startTestApp(): Promise<TestApp> {
+export async function startTestApp(
+  identify: Identify = identifyFromTestHeader,
+): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
   const pool = createPool(container.getConnectionUri());
   await applySchema(pool);
 
-  const auth = createAuthMiddleware(pool, (req) => {
-    const header = req.header(TEST_USER_HEADER);
-    return header && header.length > 0 ? (header as ClerkUserId) : null;
-  });
+  const auth = createAuthMiddleware(pool, identify);
   const app = createApp(pool, [auth]);
 
   return {
@@ -48,3 +48,8 @@ export async function startTestApp(): Promise<TestApp> {
     },
   };
 }
+
+const identifyFromTestHeader: Identify = (req) => {
+  const header = req.header(TEST_USER_HEADER);
+  return header && header.length > 0 ? (header as ClerkUserId) : null;
+};

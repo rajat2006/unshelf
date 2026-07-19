@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StopId, TrailView, UserId } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { TrailCanvas } from "./TrailCanvas";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;

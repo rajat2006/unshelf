@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
