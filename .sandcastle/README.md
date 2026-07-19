@@ -34,6 +34,13 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`update-branch-output.ts`** — `updateBranchOutputSchema` (Zod): the
+  `update-branch` capability's `<output>` contract — a `summary`, an
+  `alreadyCurrent` flag, and `conflicts[]` (each a `file` + a one-line
+  `resolution` note). A refinement rejects a non-empty `conflicts` list when
+  `alreadyCurrent` is true (an already-current branch merged nothing), so a
+  contradictory block self-corrects via same-session retry before the workflow
+  posts anything.
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -87,6 +94,17 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summary body plus inline comments for unresolved findings, anchored to the diff
   via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
   review, then `gh pr ready`. Uses no external skills registry.
+- **`update-branch/`** — brings a stale or conflicted PR branch current with
+  `main` (workflow `agent-update-branch.yml`) via `runWithExtraction`. The
+  produce pass **merges `origin/main`** into the branch, resolves conflicts, runs
+  the repo's checks, and **commits the merge**; the resumed extraction pass emits
+  the summary + resolved-conflict list as one `<output>` block (`extraction.md`),
+  validated against `updateBranchOutputSchema` with same-session retry. Per
+  invariant H the runner only commits + writes files: the merge commit lands on
+  the branch (the workflow pushes it — a plain, non-force push) and a
+  ready-to-post PR comment (`update_branch_comment.md`) goes to `OUTPUT_DIR`. The
+  workflow pushes the refreshed branch and posts that comment. **Merge, never
+  rebase** — history only grows, so the non-force push is always valid.
 
 ## Pinned version
 
