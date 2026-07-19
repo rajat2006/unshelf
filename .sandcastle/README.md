@@ -76,6 +76,17 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`implement-prd/`** — the PRD variant of the spine (workflow
+  `agent-implement-prd.yml`). Structurally identical to `implement/` — calls
+  `run()` directly, guards on a non-zero commit count, same watchdog — but its
+  prompt pulls the parent PRD **plus every sub-issue** (`gh api …/sub_issues`) and
+  lands the whole spec as one branch. The normal-vs-PRD split is the workflow's
+  shape-guard (sub-issue presence), so exactly one path runs per issue.
+- **`write-prd-pr/`** — the PRD variant of `write-pr/`. Same `runWithRetry`
+  single-prompt shape, but frames the body around the PRD as a whole and enforces
+  a `Closes #<PRD>` line (schema-checked) while asking the prompt for a
+  `Closes #<n>` line per satisfied sub-issue, so merging the PR closes the parent
+  and its children together.
 - **`review/`** — drives the repo's **local `/code-review`** over the PR branch
   (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
   along both axes, **fixes what it safely can and commits** the fixes, and
