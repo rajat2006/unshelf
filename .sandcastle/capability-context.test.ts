@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   loadCapabilityContext,
+  loadIssueCapabilityContext,
   loadPrdImplementContext,
   loadPrdPrContext,
 } from "./capability-context";
@@ -80,6 +81,41 @@ describe("loadCapabilityContext", () => {
   it("throws when a required var (OUTPUT_DIR) is missing", () => {
     setEnv({ OUTPUT_DIR: undefined });
     expect(() => loadCapabilityContext()).toThrow("OUTPUT_DIR");
+  });
+});
+
+describe("loadIssueCapabilityContext", () => {
+  beforeEach(() => {
+    for (const key of ENV_KEYS) delete process.env[key];
+  });
+  afterEach(() => {
+    for (const key of ENV_KEYS) delete process.env[key];
+  });
+
+  it("loads a read-only issue capability without requiring a branch", () => {
+    setEnv({ BRANCH: undefined });
+
+    expect(loadIssueCapabilityContext()).toMatchObject({
+      issueNumber: "63",
+      issueTitle: "agent-implement workflow",
+      outputDir: "/run/tmp",
+      promptArgs: {
+        ISSUE_NUMBER: "63",
+        ISSUE_TITLE: "agent-implement workflow",
+      },
+    });
+  });
+
+  it("routes a read-only issue capability from the full label set", () => {
+    setEnv({
+      BRANCH: undefined,
+      AGENT_LABELS: '["agent:explore","agent:codex"]',
+    });
+
+    const ctx = loadIssueCapabilityContext();
+    expect(ctx.agent.name).toBe("codex");
+    expect(ctx.model).toBe(CODEX_MODEL);
+    expect(ctx.labels).toEqual(["agent:explore", "agent:codex"]);
   });
 });
 

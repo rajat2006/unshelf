@@ -28,6 +28,7 @@ labels=(
   "agent:implement-pr|006b75|Trigger: ask an agent to address review comments on this PR"
   "agent:update-branch|5319e7|Trigger: refresh this stale PR branch against main"
   "agent:to-issues|c5def5|Trigger: expand this PRD issue into agent-sized child issues"
+  "agent:explore|bfdadc|Human trigger: investigate an issue read-only and post an implementation assessment"
   "agent:queued|d4c5f9|Machine: blocked by another open issue; auto-promotes to agent:implement when the blocker closes"
   "agent:blocked|b60205|Machine: a run stopped (crash, timeout, or the agent asked for a human); see the linked run"
   # Provenance (spec #70): marks a PRD proposed by the scheduled

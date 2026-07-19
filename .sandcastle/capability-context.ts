@@ -2,6 +2,47 @@ import { resolveAgent, type ResolvedAgent } from "./resolve-agent";
 import { requireEnv } from "./require-env";
 
 /**
+ * Context for a read-only capability attached to an issue, such as
+ * `agent:explore`. It intentionally has no branch: the capability investigates
+ * `main` and emits output for the workflow to publish without committing.
+ */
+export interface IssueCapabilityContext extends ResolvedAgent {
+  readonly issueNumber: string;
+  readonly issueTitle: string;
+  readonly outputDir: string;
+  /** The issue's full label set, including the optional provider label. */
+  readonly labels: readonly string[];
+  readonly promptArgs: {
+    readonly ISSUE_NUMBER: string;
+    readonly ISSUE_TITLE: string;
+  };
+}
+
+/**
+ * Assemble a branchless, issue-shaped capability context from `process.env`.
+ * Required vars throw via {@link requireEnv}; provider routing uses the full
+ * `AGENT_LABELS` set just like every branch-mutating capability.
+ */
+export function loadIssueCapabilityContext(): IssueCapabilityContext {
+  const issueNumber = requireEnv("ISSUE_NUMBER");
+  const issueTitle = requireEnv("ISSUE_TITLE");
+  const outputDir = requireEnv("OUTPUT_DIR");
+  const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
+
+  return {
+    issueNumber,
+    issueTitle,
+    outputDir,
+    labels,
+    ...resolveAgent(labels),
+    promptArgs: {
+      ISSUE_NUMBER: issueNumber,
+      ISSUE_TITLE: issueTitle,
+    },
+  };
+}
+
+/**
  * Everything a capability run() script needs from the workflow-supplied
  * environment — the issue coordinates, the output directory, and the provider
  * resolved from the issue's label set — assembled once. Extends
@@ -37,22 +78,15 @@ export interface CapabilityContext extends ResolvedAgent {
  * should land the issue in `agent:blocked`, not run against a silent default.
  */
 export function loadCapabilityContext(): CapabilityContext {
-  const issueNumber = requireEnv("ISSUE_NUMBER");
-  const issueTitle = requireEnv("ISSUE_TITLE");
+  const issue = loadIssueCapabilityContext();
   const branch = requireEnv("BRANCH");
-  const outputDir = requireEnv("OUTPUT_DIR");
-  const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 
   return {
-    issueNumber,
-    issueTitle,
+    ...issue,
     branch,
-    outputDir,
-    labels,
-    ...resolveAgent(labels),
     promptArgs: {
-      ISSUE_NUMBER: issueNumber,
-      ISSUE_TITLE: issueTitle,
+      ISSUE_NUMBER: issue.issueNumber,
+      ISSUE_TITLE: issue.issueTitle,
       BRANCH: branch,
     },
   };

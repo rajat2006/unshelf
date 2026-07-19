@@ -23,8 +23,8 @@ pinned Sandcastle version and Unshelf's provider set:
   produce run's commits with the extraction's output, so side effects (commits,
   issue creation) are never repeated. For capabilities with a side-effectful
   produce phase (`review`, `implement-prd`, `implement-pr`, `update-branch`) —
-  and for `architecture-review`, whose produce phase is read-only but *heavy* (a
-  whole-tree survey): the split there separates that long survey from rigid JSON
+  and for `architecture-review` / `explore`, whose produce phases are read-only
+  but investigation-heavy: the split separates the survey from rigid JSON
   emission, the same reliability win, rather than protecting a side effect.
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
@@ -37,6 +37,10 @@ pinned Sandcastle version and Unshelf's provider set:
   `line`, `title`, `detail`). The extraction wrapper validates the emitted block
   against it, so a malformed block self-corrects via same-session retry before
   anything is posted.
+- **`explore-output.ts`** — `exploreOutputSchema` (Zod): the `agent:explore`
+  capability's contract — one required, non-empty Markdown `comment`. The
+  extraction wrapper retries malformed output before the workflow posts the
+  issue assessment.
 - **`architecture-review-output.ts`** — `architectureReviewOutputSchema` (Zod):
   the `architecture-review` capability's `<output>` contract, copied field-for-field
   from CVM as a **strict discriminated union on `status`** — `proposed` is
@@ -100,7 +104,8 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a
   named error. The capability scripts run under a fixed workflow-supplied env; a
   missing var is a wiring bug, so failing fast lands the issue in `agent:blocked`.
-- **`capability-context.ts`** — `loadCapabilityContext()` and the PRD-mode
+- **`capability-context.ts`** — branchless `loadIssueCapabilityContext()`,
+  branch-mutating `loadCapabilityContext()`, and the PRD-mode
   `loadPrdImplementContext()` / `loadPrdPrContext()`: the one reader of the env
   contract every `agent-*.yml` sets (issue/PRD coordinates, output dir, and the
   provider resolved from the full label set). Each returns the `promptArgs` ready
@@ -125,6 +130,14 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`explore/`** — the read-only issue investigation capability (workflow
+  `agent-explore.yml`). A human applies `agent:explore`; the workflow reads the
+  full label set and optionally routes through Codex when `agent:codex` is also
+  present. The produce pass verifies the issue against `main`, assesses
+  difficulty, relevant files, open questions, implementation shape, and useful
+  test seams; the resumed extraction pass validates one non-empty Markdown
+  comment. The runner writes only `comment.md` to `OUTPUT_DIR`; the workflow
+  posts it, and no branch or PR is created.
 - **`implement-prd/`** — the PRD variant of the spine (workflow
   `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
   sub-issue per run on the resumed accumulating branch, with coordinates + provider
