@@ -94,6 +94,19 @@ threads run in parallel. It expresses "what to do first / next" as topology; in
 v1 it carries no dates or calendar.
 _Avoid_: Map, Roadmap, Timeline, Schedule, Graph
 
+**Label**:
+A free-text marker a User creates and applies to an Item to categorise it — the
+cross-cutting axis over the store (the **Library**). Many-to-many: an Item can carry
+several Labels and a Label spans many Items. Each User creates and customises their
+own Labels, private to that User like everything else. Applied while triaging in the
+Library, not at Capture. Distinct from a **Stop**: a Label categorises Items across
+the whole store, whereas a Stop sequences Items within one Trail — the two are
+independent axes. Readmits the "tag" idea ADR-0004 set aside: once the Stop is a
+per-Trail waypoint (ADR-0014) the store needs this cross-cutting grouping. A
+next-gen concept — the model realisation (schema, enforcement) is built downstream
+(#74).
+_Avoid_: Tag (the former name — now Label), Category, Bucket, Folder, Topic
+
 ### Reminders (deferred from v1)
 
 **Reminder**:

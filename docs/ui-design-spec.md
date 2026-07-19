@@ -68,6 +68,30 @@ bookish, **not** map-themed.
   between modes); this token layer replaces today's inline `style={}` and is a
   build prerequisite for any theming. See ADR-0012.
 
+### Token palette (Direction C · Quiet Focus)
+
+The complete locked palette — builders read this, not the throwaway prototype:
+
+| Token | Role | Light | Dark |
+|-------|------|-------|------|
+| `--bg` | Page | `#FAFAFB` | `#0E0F13` |
+| `--surface` | Surface / cards | `#FFFFFF` | `#16181D` |
+| `--ink` | Text | `#16181D` | `#ECEEF3` |
+| `--muted` | Muted / secondary text | `#676C76` | `#8B909B` |
+| `--line` | Hairline / borders | `#E6E8EC` | `#24272E` |
+| `--accent` | Accent (indigo) | `#4B57C4` | `#7C88FF` |
+| `--accent-h` | Accent hover | `#3B46A8` | `#99A2FF` |
+| `--on-accent` | Text/icon on accent | `#FFFFFF` | `#0E0F13` |
+| `--done` | Status *done* (green) | `#1F9D63` | `#35C081` |
+| `--past` | *Past target* (slate, never red) | `#767C88` | `#868C98` |
+| `--field-bg` | Input background | `#FFFFFF` | `#1A1C22` |
+| `--field-line` | Input border | `#D9DCE2` | `#2C2F38` |
+| `--trail-bg` | Trail canvas ground | `#F4F5F7` | `#121319` |
+
+Source of record: `apps/web/src/prototype/ThemePrototype.tsx` (Direction C), on
+`worktree-issue-55-theme-prototype`, never merged. Type = one modern grotesque
+(Inter or `system-ui`); spacing = the 4px grid above; radii 6 / 8 / 10.
+
 ## 2. Information architecture — surfaces
 
 **Decision:** [Information architecture](https://github.com/rajat2006/unshelf/issues/54),
@@ -144,6 +168,11 @@ behind one named door; tags demoted inside it; capture a quiet global action).
   reflows beside it; no scrim; it stays interactive; it **owns its URL**, so back /
   refresh / bookmark / deep-link all work. Full-page, drawer-with-scrim, and
   centered-modal were rejected.
+- **Cold deep-link fallback.** The Item URL is context-independent, so opening
+  `/items/:itemId` fresh (no origin surface to reflow beside) renders the sidebar
+  over the **Library** — the Item's home surface, since every Item lives in the
+  store. A Stop opened cold (`/trails/:trailId/stops/:stopId`) renders its Trail
+  beneath, which the URL already names.
 - **Capture stays out of the URL** (non-navigating, §3).
 - **Deep-linking is owner-scoped** — bookmark / refresh / back / return-after-
   sign-in for the owner. Cross-user public sharing is out of scope (no sharing
@@ -222,10 +251,14 @@ topology** (ADR-0010) — no stored positions.
 
 Per ADR-0008 (single responsive web app, desktop-primary, must reflow to phone):
 
-- The shell **reflows** — clamped paddings, auto-fill grids, wrapping rows.
-- The **Trail canvas scrolls sideways** and is **view-only on the phone** (no
-  authoring on mobile; layout derives from topology so the same Trail renders
-  read-only with no extra data — ADR-0010).
+- The shell **reflows** with **no page-level horizontal scroll** (ADR-0008) —
+  clamped paddings, auto-fill grids, wrapping rows.
+- The **Trail canvas is the one deliberate exception** to that rule. ADR-0008 itself
+  frames the Trail as a *large-screen canvas* that mobile cannot author, so on the
+  phone it **pans sideways within its own container** and is **view-only** (no
+  authoring; layout derives from topology, so the same Trail renders read-only with
+  no extra data — ADR-0010). This is an inner-container pan, **not** the page-level
+  horizontal scroll ADR-0008 forbids.
 - No separate phone mockup was drawn; the reflowing shell is the spec.
 
 ## 10. Decisions record (map index)

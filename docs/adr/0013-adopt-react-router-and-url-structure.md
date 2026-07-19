@@ -26,7 +26,10 @@ Three properties of this table are themselves the decision:
   scrim** and the canvas **stays interactive**. Because the panel owns
   `/trails/:trailId/stops/:stopId` or `/items/:itemId`, **back / refresh / bookmark /
   deep-link all work**. An Item has **one** canonical URL regardless of which Stop or
-  Trail it was reached through (it is the one shared record, ADR-0003).
+  Trail it was reached through (it is the one shared record, ADR-0003). Opened
+  **cold** (no origin surface), `/items/:itemId` renders the sidebar over the
+  **Library** — the Item's home surface; a cold Stop URL renders its Trail, which the
+  URL already names.
 - **Auth is a gate with one route.** Signed-in → Home; signed-out → `/sign-in`;
   logout → the signed-out screen. Aligned with the signed-out design (#57) and
   Clerk's modal (this ADR does not re-decide admission — that is #77). First load
@@ -58,7 +61,8 @@ it files an Item into the Library and leaves the current route untouched.
 ## Consequences
 
 - **`apps/web` gains `react-router` (v7)** and a route tree matching the table
-  above — a build task downstream of this spec (#74), not done here.
+  above — a build task for the **downstream UI-build effort**, not done here — and
+  **not** part of #74 (the domain/schema migration), which does not cover the router.
 - **The right-sidebar detail pattern is load-bearing** for Stop and Item: any build
   must render detail beside a live canvas, not over it, and route it.
 - **Every surface is addressable**, which is what makes owner-scoped deep-linking,

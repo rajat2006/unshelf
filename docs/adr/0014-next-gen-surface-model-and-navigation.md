@@ -94,4 +94,7 @@ ADRs do not describe. Building that model is a **separate downstream effort — 
   Capture; not tabs, not a sidebar. Routing for these surfaces is ADR-0013.
 - **Labels become a first-class model concept** in the target model (many-to-many
   over Items), reversing ADR-0004's "Tag is not a domain term" for the next-gen
-  model — to be reflected in the glossary when #74 builds it.
+  model. **Label is now defined in the glossary** (CONTEXT.md — a free-text,
+  User-owned, many-to-many marker over Items in the Library, with *Tag* moved to
+  _Avoid_); its **model realisation — schema + enforcement — lands with #74**, not
+  here.

@@ -51,7 +51,8 @@ dark, until it reads tokens instead of literals.
 
 - **`apps/web` gains a token layer** (CSS custom properties) as the styling
   foundation; restyling any surface to Quiet Focus depends on it. This is a build
-  task, downstream of this spec (#74), not done here.
+  task for the **downstream UI-build effort**, not done here — and **not** part of
+  #74 (which is the coupled domain/schema migration, not the presentation build).
 - **Every colour decision routes through a token**, so the light/dark peers and the
   "never red for past-target" rule are enforced in one place, not per component.
 - **The font is a build-time pick** between Inter and `system-ui`; both satisfy the
