@@ -42,6 +42,20 @@ pinned Sandcastle version and Unshelf's provider set:
   the exact thread an addressed item answers). The extraction wrapper
   validates the emitted block the same way, so a malformed block self-corrects via
   same-session retry before anything is posted.
+- **`update-branch-output.ts`** — `updateBranchOutputSchema` (Zod): the
+  `update-branch` capability's `<output>` contract — an `outcome` ∈
+  merged/already-current/blocked, a `summary`, `conflicts[]` (each a `file` + a
+  one-line `resolution` note), and a `reason` (required when `blocked`).
+  Refinements require a `reason` for `blocked` and forbid `conflicts` on any
+  non-`merged` outcome, so a contradictory block self-corrects via same-session
+  retry. The agent's claim is not trusted alone — see `verify-branch-update.ts`.
+- **`verify-branch-update.ts`** — `verifyBranchUpdate(facts)`: a pure verifier
+  the `update-branch` runner calls to cross-check the agent's success claim
+  against the real git state (origin/main is now an ancestor of HEAD, HEAD
+  advanced when `merged`, no unresolved paths remain, the repo is not mid-merge,
+  the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
+  failure fails the runner so an aborted or half-finished merge can never be
+  pushed or reported as success (CVM's deterministic postconditions).
 - **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
   returning the new-side line numbers each file adds/changes. The `review`
   capability uses it to anchor unresolved findings to real changed lines when
@@ -117,6 +131,22 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   `addressed` items with zero commits. It does **not** change the PR's draft/ready
   state — that belongs to the review leg. Shares the per-PR concurrency group with
   `review`.
+- **`update-branch/`** — brings a stale or conflicted PR branch current with
+  `main` (workflow `agent-update-branch.yml`). The workflow resolves the common
+  cases **deterministically, without an agent**: an already-current branch is a
+  no-op, and a conflict-free merge is done with `git merge` in a shell step. Only
+  when that merge hits **real conflicts** is the agent invoked (via
+  `runWithExtraction`) — its produce pass re-merges `origin/main`, resolves the
+  conflicts, runs the repo's checks, and commits; the resumed extraction pass
+  emits the `<output>` block (`extraction.md`) validated against
+  `updateBranchOutputSchema`. Before anything is pushed, the runner cross-checks
+  the agent's claim against the real git state (`verify-branch-update.ts`); a
+  failed postcondition — or an agent that reports `outcome: blocked` — fails the
+  run into `agent:blocked` with the agent's reason, so an aborted merge is never
+  pushed or reported as success. Per invariant H the runner only commits + writes
+  files: the merge commit lands on the branch (the workflow pushes it — a plain,
+  non-force push) and `update_branch_comment.md` goes to `OUTPUT_DIR`. **Merge,
+  never rebase** — history only grows, so the non-force push is always valid.
 
 ## Pinned version
 
