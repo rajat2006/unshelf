@@ -74,13 +74,16 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
 - **`review/`** — drives the repo's **local `/code-review`** over the PR branch
-  (workflow `agent-review.yml`) via `runWithExtraction`: a produce pass runs the
-  two-axis review reasoning in prose, then a resumed extraction pass emits the
-  findings as one `<output>` block (`extraction.md`), validated against
-  `reviewOutputSchema` with same-session retry. Anchors are checked against the
-  real diff (`parseDiffLines`); the rendered `review_comment.md` is written to
-  `OUTPUT_DIR` for the workflow to post before `gh pr ready`. Reads only — never
-  commits, and uses no external skills registry.
+  (workflow `agent-review.yml`) via `runWithExtraction`. The produce pass reviews
+  along both axes, **fixes what it safely can and commits** the fixes, and
+  re-reviews; the resumed extraction pass emits the findings as one `<output>`
+  block (`extraction.md`), each marked `fixed` or `unresolved`, validated against
+  `reviewOutputSchema` with same-session retry. Per invariant H the runner only
+  commits + writes files: fix commits land on the branch (the workflow pushes
+  them) and a ready-to-POST GitHub *reviews* payload (`review_payload.json` — a
+  summary body plus inline comments for unresolved findings, anchored to the diff
+  via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
+  review, then `gh pr ready`. Uses no external skills registry.
 
 ## Pinned version
 

@@ -19,14 +19,29 @@ export const REVIEW_SEVERITIES = [
 ] as const;
 
 /**
+ * What the review agent did about a finding within the run.
+ *
+ * - `fixed` — the agent edited the code and committed a fix; the commit is on the
+ *   branch and the workflow pushes it. Reported for the record, not as an
+ *   actionable inline comment (the code already changed).
+ * - `unresolved` — left for a human: too risky/ambiguous to auto-fix, or out of
+ *   scope. Posted as an inline PR-review comment when its line anchors to the
+ *   (post-fix) diff, so a reviewer lands on the exact line.
+ */
+export const REVIEW_STATUSES = ["fixed", "unresolved"] as const;
+
+/**
  * One review finding. `file` is a repo-relative path and `line` (optional) a
  * new-side line number the review capability cross-checks against the actual PR
  * diff via {@link import("./parse-diff-lines").parseDiffLines} before posting, so
- * an anchor can't point a reviewer at a line the change never touched.
+ * an inline anchor can't point a reviewer at a line the change never touched (and
+ * so the GitHub reviews API, which rejects a whole review with an off-diff
+ * comment, isn't handed a bad anchor).
  */
 export const reviewFindingSchema = z.object({
   axis: z.enum(REVIEW_AXES),
   severity: z.enum(REVIEW_SEVERITIES),
+  status: z.enum(REVIEW_STATUSES),
   file: z.string().min(1),
   line: z.number().int().positive().optional(),
   title: z.string().min(1),
@@ -47,5 +62,6 @@ export const reviewOutputSchema = z.object({
   findings: z.array(reviewFindingSchema),
 });
 
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
 export type ReviewOutput = z.infer<typeof reviewOutputSchema>;

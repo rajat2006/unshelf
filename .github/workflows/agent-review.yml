@@ -123,8 +123,9 @@ jobs:
         with:
           ref: ${{ steps.gate.outputs.head_ref }}
           fetch-depth: 0
-          # AGENT_PAT keeps parity with implement's checkout; the review makes no
-          # push, so GITHUB_TOKEN would also do. Falls back when AGENT_PAT unset.
+          # AGENT_PAT because the review commits + pushes fixes (a push touching
+          # .github/workflows/ needs the `workflows` scope GITHUB_TOKEN lacks).
+          # Falls back to GITHUB_TOKEN, which still pushes ordinary code changes.
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Fetch the review base (origin/main)
@@ -158,6 +159,15 @@ jobs:
         if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
+      - name: Configure git identity
+        if: steps.gate.outputs.proceed == 'true'
+        # The review agent commits its fixes; git needs an author identity. Same
+        # bot identity implement uses.
+        run: |
+          set -euo pipefail
+          git config user.name "unshelf-agent[bot]"
+          git config user.email "unshelf-agent[bot]@users.noreply.github.com"
+
       - name: Run review
         if: steps.gate.outputs.proceed == 'true'
         env:
@@ -174,9 +184,30 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm exec tsx .sandcastle/review/review.ts
 
-      - name: Post findings on the PR
+      - name: Push review fixes
         if: steps.gate.outputs.proceed == 'true' && success()
-        run: gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/review_comment.md"
+        env:
+          HEAD_REF: ${{ steps.gate.outputs.head_ref }}
+        # Push the agent's fix commits back onto the PR branch BEFORE posting the
+        # review, so inline comments anchor to the pushed head. A no-op when the
+        # agent committed nothing. NOT a force-push: fixes only append to the head
+        # the run checked out; a rejected push means the branch moved under us and
+        # should fail loudly rather than clobber.
+        run: git push origin "HEAD:refs/heads/${HEAD_REF}"
+
+      - name: Post the review (summary + inline comments)
+        if: steps.gate.outputs.proceed == 'true' && success()
+        # review.ts wrote a ready-to-POST GitHub reviews-API body (event=COMMENT,
+        # a summary `body`, and any inline `comments` anchored to the diff). Post
+        # it as one review so findings land on their exact lines. If the reviews
+        # API rejects it (it 422s the whole review on a single off-diff anchor),
+        # fall back to the summary as a plain PR comment so findings still land.
+        run: |
+          set -uo pipefail
+          if ! gh api --method POST "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --input "${RUNNER_TEMP}/review_payload.json"; then
+            echo "Inline review POST failed — falling back to a plain summary comment."
+            gh pr comment "$PR_NUMBER" --body-file "${RUNNER_TEMP}/review_body.md"
+          fi
 
       - name: Mark the PR ready for review
         if: steps.gate.outputs.proceed == 'true' && success()

@@ -11,18 +11,21 @@ import { runWithExtraction } from "../run-with-extraction";
 
 /**
  * The `review` capability: drive the repo's local `/code-review` over the PR
- * branch and emit its findings as one structured `<output>` block.
+ * branch, fix what can be fixed safely, and emit the findings as one structured
+ * `<output>` block.
  *
  * Invoked by `.github/workflows/agent-review.yml` when a PR gets `agent:review`.
- * This is a **two-phase** capability ({@link runWithExtraction}): the produce
- * pass runs `/code-review` (a heavy, sub-agent-spawning analysis) reasoning in
- * prose, then a resumed extraction pass emits the findings JSON — so the agent
- * never has to both review and serialise rigid JSON in one turn, and a malformed
- * block self-corrects via same-session retry (≤3×) before anything is posted.
+ * A **two-phase** capability ({@link runWithExtraction}): the produce pass runs
+ * `/code-review`, applies + commits fixes, and re-reviews (reasoning in prose);
+ * the resumed extraction pass emits the findings JSON — so the agent never has to
+ * both review and serialise rigid JSON in one turn, and a malformed block
+ * self-corrects via same-session retry (≤3×) before anything is posted.
  *
- * The runner emits ONLY files (spec invariant H — no git/gh/label mutation):
- * `review_comment.md` (the findings, ready to post) is written to `OUTPUT_DIR`;
- * the workflow posts it and runs `gh pr ready`.
+ * Per invariant H the runner emits ONLY commits + output files: the fix commits
+ * land on the branch (the workflow pushes them) and `review_payload.json` — a
+ * ready-to-POST GitHub *reviews* API body — is written to `OUTPUT_DIR`. The
+ * workflow pushes, posts that review (a summary body plus inline comments), and
+ * runs `gh pr ready`.
  */
 
 const REVIEW_BASE = "origin/main";
@@ -50,69 +53,119 @@ const result = await runWithExtraction({
   output: sandcastle.Output.object({ tag: "output", schema: reviewOutputSchema }),
 });
 
-// Cross-check each finding's line anchor against the lines the PR actually
-// touched, so the posted comment can't point at a line the change never changed.
+// The diff now includes the agent's fix commits (the workflow pushes this exact
+// HEAD before posting), so its new-side line numbers are the ones an inline
+// review comment must anchor to — GitHub's reviews API rejects the whole review
+// if any comment points off-diff.
 const diff = execSync(`git diff ${REVIEW_BASE}...HEAD`, {
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
 });
 const changed = parseDiffLines(diff);
 
-const { markdown, anchored, dropped } = renderReviewComment(result.output, changed);
-fs.writeFileSync(path.join(ctx.outputDir, "review_comment.md"), markdown);
+const { payload, inline, fixed, unresolved } = buildReviewPayload(
+  result.output,
+  changed,
+);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "review_payload.json"),
+  JSON.stringify(payload, null, 2),
+);
+// The summary body on its own, so the workflow can fall back to a plain PR
+// comment if the reviews API rejects the inline review (it 422s the whole
+// review if a single anchor lands off-diff).
+fs.writeFileSync(path.join(ctx.outputDir, "review_body.md"), payload.body);
 
 console.log(
-  `\nReview complete: ${result.output.findings.length} finding(s) ` +
-    `(${anchored} line-anchored, ${dropped} anchor(s) dropped as out-of-diff).`,
+  `\nReview complete: ${result.output.findings.length} finding(s) — ` +
+    `${fixed} auto-fixed, ${unresolved} unresolved (${inline} posted inline).`,
 );
 console.log(`  ${result.output.summary}`);
 
+/** One inline comment in the GitHub "create a review" request body. */
+interface InlineComment {
+  readonly path: string;
+  readonly line: number;
+  readonly side: "RIGHT";
+  readonly body: string;
+}
+
+/** The GitHub "create a review" request body (POST /pulls/{n}/reviews). */
+interface ReviewPayload {
+  readonly event: "COMMENT";
+  readonly body: string;
+  readonly comments: InlineComment[];
+}
+
 /**
- * Render the findings as the Markdown comment the workflow posts. Findings are
- * grouped by axis and each renders `file:line` only when its line is genuinely a
- * changed line in the diff; an anchor outside the diff is dropped to `file`
- * (never silently rewritten to a wrong line). Returns the counts for logging.
+ * Build the reviews-API payload the workflow posts. Unresolved findings whose
+ * line is genuinely a changed line become inline comments (anchored `file:line`);
+ * unresolved findings without a valid anchor fall back to a "needs attention"
+ * list in the body; fixed findings are listed for the record (their code already
+ * changed). Returns the payload and counts for logging.
  */
-function renderReviewComment(
+function buildReviewPayload(
   review: ReviewOutput,
   changedLines: Map<string, Set<number>>,
-): { markdown: string; anchored: number; dropped: number } {
-  let anchored = 0;
-  let dropped = 0;
+): {
+  payload: ReviewPayload;
+  inline: number;
+  fixed: number;
+  unresolved: number;
+} {
+  const fixed = review.findings.filter((f) => f.status === "fixed");
+  const unresolved = review.findings.filter((f) => f.status === "unresolved");
 
-  const lines: string[] = ["## 🤖 Automated review", "", review.summary, ""];
-
-  if (review.findings.length === 0) {
-    lines.push("No standards or spec findings — the branch is clean.");
-    return { markdown: `${lines.join("\n")}\n`, anchored, dropped };
+  const comments: InlineComment[] = [];
+  const unanchored: typeof unresolved = [];
+  for (const f of unresolved) {
+    if (f.line !== undefined && changedLines.get(f.file)?.has(f.line)) {
+      comments.push({
+        path: f.file,
+        line: f.line,
+        side: "RIGHT",
+        body: `**[${f.axis} · ${f.severity}]** ${f.title}\n\n${f.detail}`,
+      });
+    } else {
+      unanchored.push(f);
+    }
   }
 
-  for (const axis of ["standards", "spec"] as const) {
-    const axisFindings = review.findings.filter((f) => f.axis === axis);
-    if (axisFindings.length === 0) {
-      continue;
+  const body: string[] = ["## 🤖 Automated review", "", review.summary, ""];
+
+  if (review.findings.length === 0) {
+    body.push("No standards or spec findings — the branch is clean.");
+  }
+
+  if (fixed.length > 0) {
+    body.push(`### ✅ Auto-fixed (${fixed.length})`, "");
+    for (const f of fixed) {
+      body.push(`- **[${f.axis} · ${f.severity}]** \`${f.file}\` — ${f.title}`);
     }
+    body.push("");
+  }
 
-    const heading = axis === "standards" ? "Standards" : "Spec";
-    lines.push(`### ${heading} (${axisFindings.length})`, "");
-
-    for (const f of axisFindings) {
-      const inDiff = f.line !== undefined && changedLines.get(f.file)?.has(f.line);
-      if (f.line !== undefined) {
-        if (inDiff) {
-          anchored += 1;
-        } else {
-          dropped += 1;
-        }
-      }
-      const location = inDiff ? `\`${f.file}:${f.line}\`` : `\`${f.file}\``;
-      lines.push(
-        `- **[${f.severity}]** ${location} — ${f.title}`,
+  if (unanchored.length > 0) {
+    body.push(`### 🔎 Needs attention (${unanchored.length})`, "");
+    for (const f of unanchored) {
+      body.push(
+        `- **[${f.axis} · ${f.severity}]** \`${f.file}\` — ${f.title}`,
         `  ${f.detail}`,
       );
     }
-    lines.push("");
+    body.push("");
   }
 
-  return { markdown: `${lines.join("\n")}\n`, anchored, dropped };
+  if (comments.length > 0) {
+    body.push(
+      `${comments.length} more unresolved finding(s) are posted as inline comments below.`,
+    );
+  }
+
+  return {
+    payload: { event: "COMMENT", body: `${body.join("\n")}\n`, comments },
+    inline: comments.length,
+    fixed: fixed.length,
+    unresolved: unresolved.length,
+  };
 }

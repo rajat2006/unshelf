@@ -2,11 +2,11 @@
 
 Review the changes on branch `{{BRANCH}}` — the branch implementing issue
 #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}} — using **this repo's own `/code-review`
-skill**. You are reviewing work that already exists; you are **not** implementing
-anything, **not** running tests, and **not** committing or pushing.
+skill**, **fix what you safely can**, and re-review the result.
 
-Do not use any external or third-party review skill. Use only the local
-`/code-review` skill defined in this repository (`.claude/skills/code-review/`).
+Use only the local `/code-review` skill defined in this repository
+(`.claude/skills/code-review/`). Do not use any external or third-party review
+skill.
 
 # CONTEXT
 
@@ -35,7 +35,11 @@ gh issue view {{ISSUE_NUMBER}} --comments
 Also read `CONTEXT.md` and any relevant `docs/adr/` for the domain rules the
 Standards axis should hold the change to.
 
-# HOW TO REVIEW
+# LIFECYCLE
+
+Work in this order:
+
+### 1. Review
 
 Run the `/code-review` skill with `origin/main` as the fixed point. It reviews
 along both axes in parallel sub-agents and reports them separately:
@@ -46,12 +50,53 @@ along both axes in parallel sub-agents and reports them separately:
   requirements missing or partial, is there scope creep, is anything implemented
   but wrong?
 
-Work through the whole diff. For every finding, note the axis, a severity
-(`blocking`, `high`, `medium`, `low`, or `nit`), the repo-relative file path,
-and — where the finding is about a specific added or changed line — that
-new-side line number as it appears in the diff. Reason in prose; do **not** emit
-any JSON or `<output>` block yet. A separate follow-up turn will ask you to emit
-the structured findings.
+### 2. Fix what you safely can
+
+For each finding, decide: can you fix it correctly and in scope, right now,
+without guessing at intent? If yes, **edit the code and fix it**. If it is risky,
+ambiguous, needs a product decision, or would balloon the change, **leave it for
+a human** — do not force a speculative fix.
+
+Keep fixes tight and on-topic for the finding. Run the repo's checks on what you
+touch:
+
+```
+turbo run typecheck
+turbo run test
+```
+
+Do not break the build. If a fix would fail typecheck/test and you can't make it
+pass cleanly, revert that fix and leave the finding unresolved instead.
+
+### 3. Commit your fixes
+
+Commit the fixes you made in focused commits with clear messages (e.g.
+`Fix review finding: extract duplicated distance calc`). **Commit only — do not
+push, do not touch PR labels, comments, or `gh` state.** The workflow pushes your
+commits and posts the review; your job is the commits and the findings report.
+
+If you fixed nothing (the branch was already clean, or every finding was left for
+a human), make no commits.
+
+### 4. Re-review
+
+Re-diff after your commits:
+
+```
+git diff origin/main...HEAD
+```
+
+Confirm your fixes actually resolved the findings they targeted and did not
+introduce anything new (a fix that trips another smell is itself a finding).
+
+# REPORTING
+
+Reason in prose throughout — do **not** emit any JSON or `<output>` block yet. A
+separate follow-up turn will ask you to emit the structured findings, where each
+finding is marked either `fixed` (you edited + committed it) or `unresolved`
+(left for a human). For `unresolved` findings about a specific line, note the
+**new-side line number in the post-fix diff**, since that is what an inline PR
+comment will anchor to.
 
 If the change is clean on an axis, say so — an axis with no findings is a valid
 outcome.

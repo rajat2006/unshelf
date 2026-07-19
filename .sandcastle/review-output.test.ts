@@ -6,6 +6,7 @@ function finding(overrides: Record<string, unknown> = {}) {
   return {
     axis: "standards",
     severity: "high",
+    status: "unresolved",
     file: "apps/web/src/trail/geometry.ts",
     line: 42,
     title: "Duplicated distance calc",
@@ -17,13 +18,30 @@ function finding(overrides: Record<string, unknown> = {}) {
 describe("reviewOutputSchema — the review <output> contract", () => {
   it("accepts a full, well-formed review", () => {
     const parsed = reviewOutputSchema.parse({
-      summary: "2 findings across both axes; nothing blocking.",
+      summary: "2 findings across both axes; one auto-fixed.",
       findings: [
-        finding(),
+        finding({ status: "fixed" }),
         finding({ axis: "spec", severity: "blocking", line: undefined }),
       ],
     });
     expect(parsed.findings).toHaveLength(2);
+    expect(parsed.findings[0].status).toBe("fixed");
+  });
+
+  it("rejects an unknown status", () => {
+    expect(() =>
+      reviewOutputSchema.parse({
+        summary: "s",
+        findings: [finding({ status: "wontfix" })],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a finding missing its status", () => {
+    const { status: _status, ...noStatus } = finding();
+    expect(() =>
+      reviewOutputSchema.parse({ summary: "s", findings: [noStatus] }),
+    ).toThrow();
   });
 
   it("accepts a clean review with zero findings", () => {
