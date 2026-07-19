@@ -28,6 +28,15 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
   present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
   (absence *is* Claude). Reads the issue's full label set.
+- **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
+  `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
+  standards/spec, `severity`, `file`, optional `line`, `title`, `detail`). The
+  extraction wrapper validates the emitted block against it, so a malformed block
+  self-corrects via same-session retry before anything is posted.
+- **`parse-diff-lines.ts`** — `parseDiffLines(diff)`: pure unified-diff parser
+  returning the new-side line numbers each file adds/changes. The `review`
+  capability uses it to cross-check finding line anchors against the real PR diff,
+  so a posted comment can't point a reviewer at a line the change never touched.
 - **`prepare-codex-auth.ts`** — `prepareCodexAuth(providerName)` (Unshelf-specific):
   the runner-side half of the Codex path. When the resolved provider is Codex it
   seeds `CODEX_AUTH_JSON` → `$CODEX_HOME/auth.json` **only if that file is absent**
@@ -64,6 +73,14 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (structured output *is* the work), writing flat text files the workflow feeds to
   `gh pr create --body-file`. Runs after the branch is pushed; reads and
   summarises, never commits.
+- **`review/`** — drives the repo's **local `/code-review`** over the PR branch
+  (workflow `agent-review.yml`) via `runWithExtraction`: a produce pass runs the
+  two-axis review reasoning in prose, then a resumed extraction pass emits the
+  findings as one `<output>` block (`extraction.md`), validated against
+  `reviewOutputSchema` with same-session retry. Anchors are checked against the
+  real diff (`parseDiffLines`); the rendered `review_comment.md` is written to
+  `OUTPUT_DIR` for the workflow to post before `gh pr ready`. Reads only — never
+  commits, and uses no external skills registry.
 
 ## Pinned version
 

@@ -143,6 +143,7 @@ seam; the runner-side scripts + prompts are documented in
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `agent-implement.yml` | `agent:implement` on a leaf issue | Cuts `agent/issue-<N>-<slug>` from `main`, runs the `implement` + `write-pr` capabilities, pushes, opens a **draft** PR, and adds `agent:review` via `AGENT_PAT`. PRDs (issues with sub-issues) are **silently skipped** for the PRD flow to handle; sub-issues (with a parent) and issues that already have an open PR are refused. |
+| `agent-review.yml` | `agent:review` on a PR (`pull_request_target`) | Checks out the PR branch, runs the `review` capability (the repo's local `/code-review`, no external skills registry), posts the findings as a PR comment, and marks the PR **ready** via `gh pr ready`. Shares a per-PR concurrency group with the other PR-mutating capabilities (queues, never cancels). A failed run leaves the PR a draft and comments the run URL; the `agent:review` label is always cleared so a retry is a clean re-add. This closes the implement → review → ready chain. |
 
 ## Cost model
 
