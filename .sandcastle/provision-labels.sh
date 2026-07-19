@@ -17,7 +17,8 @@ if [[ -n "$REPO" ]]; then
 fi
 
 # name | colour (hex, no #) | description
-# Three layers per spec §D: one provider label, then the agent state machine.
+# Four layers per spec §D + #70: one provider label, the agent state machine, and
+# the source:architecture-review provenance label.
 # There is deliberately NO `agent:claude` label — absence of `agent:codex` is Claude.
 labels=(
   "agent:codex|8250df|Provider (optional): run this issue on Codex/gpt-5.6-sol instead of the default Claude Code"
@@ -29,6 +30,9 @@ labels=(
   "agent:to-issues|c5def5|Trigger: expand this PRD issue into agent-sized child issues"
   "agent:queued|d4c5f9|Machine: blocked by another open issue; auto-promotes to agent:implement when the blocker closes"
   "agent:blocked|b60205|Machine: a run stopped (crash, timeout, or the agent asked for a human); see the linked run"
+  # Provenance (spec #70): marks a PRD proposed by the scheduled
+  # architecture-review agent — the dedupe key and the open-proposal-cap backlog.
+  "source:architecture-review|5319e7|Provenance: PRD proposed by the scheduled architecture-review agent"
 )
 
 for entry in "${labels[@]}"; do
@@ -41,4 +45,4 @@ for entry in "${labels[@]}"; do
     ${repo_arg[@]+"${repo_arg[@]}"} # +-guard: empty-array expansion is safe under `set -u` on Bash 3.2 (macOS)
 done
 
-echo "Done — ${#labels[@]} agent:* labels provisioned."
+echo "Done — ${#labels[@]} agent:* / source:* labels provisioned."
