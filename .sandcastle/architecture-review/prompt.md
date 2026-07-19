@@ -74,31 +74,46 @@ proposed — that is a valid, honest **skip**.
 
 For the chosen opportunity, draft a PRD body a maintainer could hand straight to
 `agent:to-issues`. Write **every** section below, in this order, in
-`/codebase-design` and `CONTEXT.md` vocabulary, referencing real modules, files,
-and ADRs by name. Each section must be **substantive** — a reader who has never
-seen the codebase should understand the problem and the plan. A structurally
-complete but thin sketch (headings with one hand-wavy line each) is a failure;
-prefer to **skip** over shipping a shallow PRD.
+`/codebase-design` and `CONTEXT.md` vocabulary, referencing real **modules,
+interfaces, and ADRs by name**. Each section must be **substantive** — a reader
+who has never seen the codebase should understand the problem and the plan. A
+structurally complete but thin sketch (headings with one hand-wavy line each) is
+a failure; prefer to **skip** over shipping a shallow PRD.
 
-- **Problem Statement** — the concrete friction the shallow module causes *today*.
-  Name the module and the files. Show *why* it's shallow: apply the deletion test
+**Talk in modules and interfaces — not file paths or code.** Name the domain
+concept and the seam ("the Stop intake module", "the extraction interface"), not
+`src/foo/bar.ts`. File paths and code snippets go **stale** the moment a file
+moves, and this PRD may sit in the backlog for weeks before anyone acts on it.
+The one narrow exception: a short **prototype interface sketch** — a handful of
+signature lines showing the small surface you're proposing — is allowed in the
+Solution or Implementation Decisions section, because that sketch *is* the
+proposal. No other code, and no `path/to/file` line references anywhere.
+
+- **Problem Statement** — written from the *user's* perspective (the maintainer
+  or agent living with the code): the concrete friction the shallow module causes
+  *today*. Name the module. Show *why* it's shallow: apply the deletion test
   (would deleting it concentrate complexity or just move it?), and describe the
-  bouncing-between-modules or leaked-seam symptom a maintainer or agent hits. Cite
-  the `CONTEXT.md` terms and any ADR the current shape strains.
-- **Solution** — the deepening. Which behaviour moves *behind* which interface, at
-  which seam; what the new interface looks like (the small surface) and what
-  complexity it now hides. Contrast before/after in terms of *depth*, *leverage*
-  for callers, and *locality* for maintainers.
-- **User Stories** — who benefits and how, one line each: the maintainer, the
-  autonomous agent navigating the code, the reviewer, the test author. Frame each
-  as "As a …, I want …, so that …".
-- **Implementation Decisions** — the concrete design calls: exact modules/files
+  bouncing-between-modules or leaked-seam symptom someone hits. Cite the
+  `CONTEXT.md` terms and any ADR the current shape strains.
+- **Solution** — written from the user's perspective too: what gets *easier*
+  once this is deepened. The deepening itself — which behaviour moves *behind*
+  which interface, at which seam; what the new interface looks like (the small
+  surface, optionally a prototype signature sketch) and what complexity it now
+  hides. Contrast before/after in terms of *depth*, *leverage* for callers, and
+  *locality* for maintainers.
+- **User Stories** — a **numbered list**, as long as it needs to be to cover
+  *every* aspect of the change (not a fixed four). Give each stakeholder as many
+  stories as the deepening touches — the maintainer, the autonomous agent
+  navigating the code, the reviewer, the test author, and anyone else affected.
+  Frame **each** as "As a …, I want …, so that …".
+- **Implementation Decisions** — the concrete design calls: the exact **modules**
   touched, the interface signature(s), what deliberately stays *out* of the
-  interface, migration/rollout order, and any call sites that must change. Enough
-  that decomposing this into child issues is mechanical.
+  interface, migration/rollout order, and which **callers** must change (name them
+  by module, not path). Enough that decomposing this into child issues is
+  mechanical.
 - **Testing Decisions** — how the deepened module is tested *through its
   interface* (the interface is the test surface), what becomes newly testable, and
-  which existing tests move or retire. Name the test files/harness this repo uses.
+  which existing tests move or retire. Name the test harness this repo uses.
 - **Out of Scope** — adjacent deepenings, refactors, or modules this PRD
   deliberately does *not* touch, so the change stays scoped to this one seam.
 - **Further Notes** — ADR ties (which decisions this respects or would amend),

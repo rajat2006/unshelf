@@ -56,12 +56,23 @@ jobs:
     steps:
       - name: Gate — open-proposal cap and dedupe list
         id: gate
-        # The `source:architecture-review` label is provisioned once by
-        # ./.sandcastle/provision-labels.sh (its canonical colour/description live
-        # there — not duplicated here), exactly as every other agent workflow
-        # relies on its labels already existing.
+        # CVM ensures its provenance label exists as part of the run itself, so a
+        # never-provisioned repo can still label (and later dedupe against) its
+        # first PRD. We create it idempotently WITHOUT `--force`: if it already
+        # exists the create is a no-op (`|| true`) and we never clobber the
+        # canonical colour/description that ./.sandcastle/provision-labels.sh owns
+        # (that script uses `--force` to reconcile). This also makes the
+        # `--label` queries below robust on a fresh repo, where filtering by a
+        # not-yet-created label would otherwise error.
         run: |
           set -euo pipefail
+
+          # Ensure the provenance label exists (bootstrap-only; provision-labels.sh
+          # remains the canonical source of its colour/description).
+          gh label create "$PROVENANCE_LABEL" \
+            --color 5319e7 \
+            --description "Provenance: PRD proposed by the scheduled architecture-review agent" \
+            2>/dev/null || true
 
           # The OPEN proposals gate the run (an un-triaged backlog shouldn't grow).
           # Explicit high --limit: `gh issue list` defaults to 30, which would
