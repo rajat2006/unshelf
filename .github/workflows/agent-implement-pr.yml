@@ -219,6 +219,37 @@ jobs:
         # branch moved under us and should fail loudly rather than clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
+      - name: Reply to and resolve addressed threads
+        if: steps.gate.outputs.proceed == 'true' && success()
+        # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
+        # addressed review thread. Reply on each thread and resolve it, closing
+        # the loop in-context (CVM parity). Best-effort per thread and never `set
+        # -e`: the fix commits are the deliverable and are already pushed, and a
+        # stale/already-resolved thread must not flip a successful run to blocked.
+        run: |
+          set -uo pipefail
+          file="${RUNNER_TEMP}/thread_replies.json"
+          if [ ! -s "$file" ] || [ "$(jq 'length' "$file")" = "0" ]; then
+            echo "No thread replies to post."
+            exit 0
+          fi
+          count=$(jq 'length' "$file")
+          for i in $(seq 0 $((count - 1))); do
+            tid=$(jq -r ".[$i].threadId" "$file")
+            body=$(jq -r ".[$i].body" "$file")
+            if gh api graphql -f threadId="$tid" -f body="$body" -f query='
+              mutation($threadId: ID!, $body: String!) {
+                addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) { comment { id } }
+              }'; then
+              gh api graphql -f threadId="$tid" -f query='
+                mutation($threadId: ID!) {
+                  resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } }
+                }' || echo "Could not resolve thread $tid (replied, but resolve failed)."
+            else
+              echo "Could not reply on thread $tid — skipping."
+            fi
+          done
+
       - name: Post the summary comment
         if: steps.gate.outputs.proceed == 'true' && success()
         # implement-pr.ts wrote a Markdown summary of what it addressed vs

@@ -26,6 +26,31 @@ describe("implementPrOutputSchema — the implement-pr <output> contract", () =>
     expect(parsed.items[1].status).toBe("deferred");
   });
 
+  it("accepts an addressed item carrying a threadId", () => {
+    const parsed = implementPrOutputSchema.parse({
+      summary: "1 comment addressed on its thread.",
+      items: [item({ threadId: "PRRT_kwDOABCD123" })],
+    });
+    expect(parsed.items[0].threadId).toBe("PRRT_kwDOABCD123");
+  });
+
+  it("accepts an item without a threadId (top-level comment)", () => {
+    const parsed = implementPrOutputSchema.parse({
+      summary: "1 comment addressed.",
+      items: [item()],
+    });
+    expect(parsed.items[0].threadId).toBeUndefined();
+  });
+
+  it("rejects an empty threadId when the key is present", () => {
+    expect(() =>
+      implementPrOutputSchema.parse({
+        summary: "s",
+        items: [item({ threadId: "" })],
+      }),
+    ).toThrow();
+  });
+
   it("accepts an item without a file (a PR-level comment)", () => {
     const parsed = implementPrOutputSchema.parse({
       summary: "1 comment addressed.",

@@ -91,9 +91,19 @@ if (commits === 0 && addressed > 0) {
 
 fs.writeFileSync(path.join(ctx.outputDir, "pr_comment.md"), body);
 
+// In-thread replies (CVM parity): each addressed item that carried its review
+// thread's node ID gets a reply + resolve posted by the workflow (invariant H:
+// the runner only writes the file; the workflow performs the gh mutation).
+const replies = buildThreadReplies(result.output);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "thread_replies.json"),
+  JSON.stringify(replies, null, 2),
+);
+
 console.log(
   `\nimplement-pr complete: ${result.output.items.length} comment(s) — ` +
-    `${addressed} addressed, ${deferred} deferred (${commits} commit(s)).`,
+    `${addressed} addressed, ${deferred} deferred (${commits} commit(s)); ` +
+    `${replies.length} thread repl${replies.length === 1 ? "y" : "ies"} queued.`,
 );
 console.log(`  ${result.output.summary}`);
 
@@ -145,6 +155,29 @@ function buildSummaryComment(review: ImplementPrOutput): {
     addressed: addressed.length,
     deferred: deferred.length,
   };
+}
+
+/** One in-thread reply the workflow posts + resolves via the GraphQL API. */
+interface ThreadReply {
+  readonly threadId: string;
+  readonly body: string;
+}
+
+/**
+ * Collect the in-thread replies to post: one per `addressed` item that carried
+ * its review thread's node ID. The reply body leads with the action so the
+ * reviewer sees what changed in-context; the workflow resolves the thread after
+ * replying. Deferred items are intentionally excluded — they stay open for a
+ * human — as are addressed items with no `threadId` (top-level comments with no
+ * thread to reply on; those are covered by the summary comment).
+ */
+function buildThreadReplies(review: ImplementPrOutput): ThreadReply[] {
+  return review.items
+    .filter((i) => i.status === "addressed" && i.threadId !== undefined)
+    .map((i) => ({
+      threadId: i.threadId as string,
+      body: `🤖 **Addressed.** ${i.action}`,
+    }));
 }
 
 /**

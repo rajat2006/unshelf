@@ -15,7 +15,8 @@ The block must match this shape:
       "comment": "short gist of the reviewer's point (not the full quote)",
       "status": "addressed",
       "file": "apps/web/src/trail/geometry.ts",
-      "action": "what you changed to satisfy it; for deferred, why you left it"
+      "action": "what you changed to satisfy it; for deferred, why you left it",
+      "threadId": "PRRT_kwDOABCD123"
     }
   ]
 }
@@ -36,5 +37,10 @@ Rules:
   comment that isn't tied to one path.
 - `action` — required, non-empty: what you changed (for `addressed`) or why you
   deferred it (for `deferred`).
+- `threadId` — the GraphQL node `id` of the review thread this item answers (the
+  `id` field from the `reviewThreads` query). Include it on an **`addressed`**
+  item so the workflow can reply on that exact thread and resolve it. **Omit it**
+  for a top-level PR comment that has no review thread, and for `deferred` items
+  (they stay open for a human). Use the real `id` — never invent one.
 
 Emit nothing after the closing `</output>` tag.

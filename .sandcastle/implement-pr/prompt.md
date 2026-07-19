@@ -18,7 +18,7 @@ gh api graphql -f owner="$1" -f name="$2" -F pr={{PR_NUMBER}} -f query='
     repository(owner:$owner,name:$name){
       pullRequest(number:$pr){
         reviewThreads(first:100){ nodes{
-          isResolved isOutdated path line
+          id isResolved isOutdated path line
           comments(first:20){ nodes{ author{login} body } } } }
         reviews(first:50){ nodes{ author{login} state body } } } } }'
 ```
@@ -54,7 +54,8 @@ Work in this order:
 
 Gather every actionable review comment — inline (file + line) and top-level.
 Ignore resolved/outdated threads and pure approvals. For each, decide the
-reviewer's actual ask.
+reviewer's actual ask. **Keep the `id` of each review thread you act on** — you
+will report it so the workflow can reply on that exact thread and resolve it.
 
 ### 2. Address what you safely can
 

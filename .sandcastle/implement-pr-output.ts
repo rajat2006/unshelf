@@ -16,12 +16,20 @@ export const IMPLEMENT_PR_STATUSES = ["addressed", "deferred"] as const;
  * the reviewer's point (not the full quote); `file` is an optional repo-relative
  * path for a line/file-scoped comment; `action` records what the agent changed
  * (for `addressed`) or why it left the comment alone (for `deferred`).
+ *
+ * `threadId` is the GitHub GraphQL node ID of the review thread this item answers
+ * (the `id` of a `reviewThreads` node from the produce-phase query). When present
+ * on an `addressed` item, the workflow posts a reply on that exact thread and
+ * resolves it — closing the loop in-context, CVM-style — instead of only listing
+ * it in the summary comment. Omitted for a top-level PR comment that isn't a
+ * review thread, and irrelevant for `deferred` items (left open for a human).
  */
 export const implementPrItemSchema = z.object({
   comment: z.string().min(1),
   status: z.enum(IMPLEMENT_PR_STATUSES),
   file: z.string().min(1).optional(),
   action: z.string().min(1),
+  threadId: z.string().min(1).optional(),
 });
 
 /**
