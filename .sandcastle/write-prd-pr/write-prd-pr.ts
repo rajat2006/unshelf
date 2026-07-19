@@ -3,9 +3,8 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { z } from "zod";
+import { loadPrdPrContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
-import { requireEnv } from "../require-env";
-import { resolveAgent } from "../resolve-agent";
 import { runWithRetry } from "../run-with-retry";
 
 /**
@@ -20,23 +19,18 @@ import { runWithRetry } from "../run-with-retry";
  * work, this uses {@link runWithRetry}: a single combined prompt drafts and
  * emits, retrying the same session on a malformed or non-conforming `<output>`.
  *
- * The title/body are written to `OUTPUT_DIR` as flat text files for the
+ * The title/body are written to `outputDir` as flat text files for the
  * workflow's `gh pr create --body-file`, keeping every git/gh mutation in the
- * workflow. Provider is resolved from the PRD's full label set.
+ * workflow. Provider and coordinates come from the shared PRD seam.
  */
 
-const prdNumber = requireEnv("PRD_NUMBER");
-const prdTitle = requireEnv("PRD_TITLE");
-const outputDir = requireEnv("OUTPUT_DIR");
-const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
-
-const { agent, model } = resolveAgent(labels);
-console.log(`Resolved provider model: ${model}`);
+const ctx = loadPrdPrContext();
+console.log(`Resolved provider model: ${ctx.model}`);
 
 // Same subscription-seat setup as implement-prd — this phase also runs the
 // agent, so it must authenticate identically (a no-op on the Claude Code
 // default).
-prepareCodexAuth(agent.name);
+prepareCodexAuth(ctx.agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must
 // contain `Closes #<PRD>` so merging the PR closes the PRD — enforced here, not
@@ -50,31 +44,31 @@ const PrdPrOutput = z
   })
   .refine(
     (o) =>
-      new RegExp(`closes\\s+#${prdNumber}\\b`, "i").test(o.prDescription),
+      new RegExp(`closes\\s+#${ctx.prdNumber}\\b`, "i").test(o.prDescription),
     {
       path: ["prDescription"],
-      message: `prDescription must contain "Closes #${prdNumber}" so the PR closes the PRD on merge`,
+      message: `prDescription must contain "Closes #${ctx.prdNumber}" so the PR closes the PRD on merge`,
     },
   );
 
 const result = await runWithRetry({
-  name: `write-prd-pr-#${prdNumber}`,
-  agent,
+  name: `write-prd-pr-#${ctx.prdNumber}`,
+  agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: {
-    PRD_NUMBER: prdNumber,
-    PRD_TITLE: prdTitle,
-  },
+  promptArgs: ctx.promptArgs,
   output: sandcastle.Output.object({ tag: "output", schema: PrdPrOutput }),
 });
 
-fs.writeFileSync(path.join(outputDir, "pr_title.txt"), result.output.prTitle);
 fs.writeFileSync(
-  path.join(outputDir, "pr_description.txt"),
+  path.join(ctx.outputDir, "pr_title.txt"),
+  result.output.prTitle,
+);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "pr_description.txt"),
   result.output.prDescription,
 );
 
-console.log(`\nWrote PRD PR metadata to ${outputDir}`);
+console.log(`\nWrote PRD PR metadata to ${ctx.outputDir}`);
 console.log(`  title: ${result.output.prTitle}`);

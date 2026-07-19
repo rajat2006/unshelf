@@ -356,10 +356,32 @@ jobs:
       - name: Re-check remaining open sub-issues
         if: steps.shape.outputs.mode == 'run' && success()
         id: remaining
+        env:
+          SUB_ISSUE_NUMBER: ${{ steps.shape.outputs.next_open_number }}
         run: |
-          set -euo pipefail
-          remaining=$(gh api "repos/${GH_REPO}/issues/${PRD_NUMBER}/sub_issues" \
-            --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo "0")
+          set -uo pipefail
+          # Fail CLOSED — this decides review-vs-chain, so a bad read must NOT
+          # default to 0 (which would request review while sub-issues remain).
+          # Retry to ride out transient blips; on persistent failure, exit 1 so
+          # the run neither chains nor hands off — the completed sub-issue is
+          # already closed and pushed, so a human just re-adds `agent:implement`
+          # to continue (the branch resumes and the next open sub-issue is picked
+          # up, or review is requested if none remain).
+          remaining=""
+          for attempt in 1 2 3; do
+            if remaining=$(gh api "repos/${GH_REPO}/issues/${PRD_NUMBER}/sub_issues" \
+                 --jq '[.[] | select(.state == "open")] | length' 2>/dev/null); then
+              break
+            fi
+            echo "remaining-count fetch attempt ${attempt} failed; retrying…"
+            remaining=""
+            sleep 3
+          done
+          if [ -z "$remaining" ]; then
+            echo "Could not determine remaining open sub-issues after retries — failing closed."
+            printf '%s\n' "Sub-issue #${SUB_ISSUE_NUMBER} was implemented, closed, and pushed, but the count of remaining open sub-issues could not be read (transient API failure), so the run neither requested review nor chained the next sub-issue. Re-add \`agent:implement\` to continue." > "${RUNNER_TEMP}/failure_reason.txt"
+            exit 1
+          fi
           echo "count=$remaining" >> "$GITHUB_OUTPUT"
 
       - name: Chain — re-label the PRD to pick up the next sub-issue

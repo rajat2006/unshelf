@@ -62,8 +62,16 @@ closing the PRD is the merged PR's job.
 sub-issue, or close the PRD — the workflow owns every git, `gh`, and label
 mutation.
 
-If you cannot complete this sub-issue — it is ambiguous, blocked on a decision,
-or needs a human — stop and explain why in your final message instead of
-committing a half-finished change. Leaving no commits is the correct signal for
-"a human needs to look at this"; the workflow will mark the PRD blocked at this
-sub-issue.
+# WHEN YOU FINISH
+
+After the work, you'll be asked to report the outcome. Reason in prose now and
+end your message by clearly stating which of these applies — do **not** emit any
+JSON yet:
+
+- **Completed** — you implemented #{{SUB_ISSUE_NUMBER}} in this run and committed
+  the work.
+- **Already satisfied** — the sub-issue was already fully implemented by an
+  earlier run, so there was nothing to do and you correctly made no new commits.
+- **Blocked** — you could **not** complete it (it is ambiguous, blocked on a
+  decision, or needs a human). Do **not** force a half-finished commit: leave the
+  branch untouched and explain why. A human will pick it up.

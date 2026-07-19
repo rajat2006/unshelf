@@ -1,65 +1,96 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import * as path from "node:path";
+import { loadPrdImplementContext } from "../capability-context";
+import { implementPrdOutputSchema } from "../implement-prd-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
-import { requireEnv } from "../require-env";
-import { resolveAgent } from "../resolve-agent";
+import { runWithExtraction } from "../run-with-extraction";
 
 /**
  * The `implement-prd` capability: implement ONE still-open sub-issue of a PRD
- * onto its accumulating branch.
+ * onto its accumulating branch, and report an explicit outcome.
  *
  * Invoked by `.github/workflows/agent-implement-prd.yml` once per sub-issue. The
- * workflow drives the PRD forward incrementally — it resumes the branch, runs
- * this for the first open sub-issue, closes that sub-issue, then re-labels the
- * PRD so the next run picks up the next one; review is requested only when every
- * sub-issue is closed. So this script's job is deliberately narrow: work exactly
- * `SUB_ISSUE_NUMBER`, commit on top of whatever earlier sub-issue runs left on
- * the branch, and never touch GitHub state (the workflow owns that).
+ * workflow drives the PRD forward incrementally — resume the branch, run this for
+ * the first open sub-issue, close it, re-label the PRD to fetch the next; review
+ * is requested only when every sub-issue is closed.
  *
- * Like `implement`, it calls `run()` directly — the *work is the commits*, which
- * the workflow pushes; there is nothing to extract. Unlike `implement`, there is
- * **no commit-count guard**: a sub-issue may already have been satisfied by an
- * earlier run (e.g. a retry after a mid-chain failure), so zero new commits is a
- * legitimate outcome and must still let the workflow close the sub-issue and
- * advance. A genuine failure surfaces as a non-zero exit (crash or the idle
- * watchdog), which the workflow's `failure()` path turns into `agent:blocked`.
+ * A **two-phase** capability ({@link runWithExtraction}): the produce pass
+ * implements the sub-issue (reasoning in prose, committing its work); the resumed
+ * extraction pass emits a `completed | already-satisfied | blocked` outcome. That
+ * three-way outcome is the point — a plain commit-count guard can't tell an
+ * already-done sub-issue (legitimately zero commits) from an agent that gave up
+ * and asked for a human (also zero commits), and closing the latter as "done"
+ * would silently drop unfinished work (spec #52's failure guarantee). So the
+ * agent reports which case it is, and this script fails the run on `blocked` (and
+ * on the contradiction of `completed` with no new commits) — leaving the
+ * sub-issue open and the PRD `agent:blocked` — while `completed`/`already-satisfied`
+ * let the workflow close the sub-issue and advance.
  *
- * Provider (Claude Code vs Codex) is resolved from the PRD's full label set, the
- * same seam every other capability uses.
+ * Per invariant H the runner never touches GitHub state: it only produces commits
+ * (the workflow pushes them) and, on failure, a `failure_reason.txt` the
+ * workflow's blocked path reads. Provider is resolved from the PRD's full label
+ * set via {@link loadPrdImplementContext}.
  */
 
-const prdNumber = requireEnv("PRD_NUMBER");
-const prdTitle = requireEnv("PRD_TITLE");
-const subIssueNumber = requireEnv("SUB_ISSUE_NUMBER");
-const subIssueTitle = requireEnv("SUB_ISSUE_TITLE");
-const branch = requireEnv("BRANCH");
-const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
-
-const { agent, model } = resolveAgent(labels);
-console.log(`Resolved provider model: ${model}`);
+const ctx = loadPrdImplementContext();
+console.log(`Resolved provider model: ${ctx.model}`);
 
 // Materialise the Codex subscription seat (auth.json + file credential store,
 // OPENAI_* stripped) before the run — a no-op on the Claude Code default.
-prepareCodexAuth(agent.name);
+prepareCodexAuth(ctx.agent.name);
 
-const result = await sandcastle.run({
-  name: `implement-prd-#${prdNumber}-sub-#${subIssueNumber}`,
-  agent,
+const result = await runWithExtraction({
+  name: `implement-prd-#${ctx.prdNumber}-sub-#${ctx.subIssueNumber}`,
+  agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   // Idle watchdog: fail the run if the agent produces no output for 10 minutes,
   // nested inside the workflow's outer 60-minute job timeout.
   idleTimeoutSeconds: 600,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: {
-    PRD_NUMBER: prdNumber,
-    PRD_TITLE: prdTitle,
-    SUB_ISSUE_NUMBER: subIssueNumber,
-    SUB_ISSUE_TITLE: subIssueTitle,
-    BRANCH: branch,
-  },
+  promptArgs: ctx.promptArgs,
+  extractionPrompt: fs.readFileSync(
+    path.join(import.meta.dirname, "extraction.md"),
+    "utf8",
+  ),
+  output: sandcastle.Output.object({
+    tag: "output",
+    schema: implementPrdOutputSchema,
+  }),
 });
 
-console.log(`\nImplementation finished for sub-issue #${subIssueNumber}.`);
-console.log(`  commits this run: ${result.commits.length}`);
+const { outcome, reason } = result.output;
+const commitsThisRun = result.commits.length;
+console.log(`\nSub-issue #${ctx.subIssueNumber} outcome: ${outcome} — ${reason}`);
+console.log(`  commits this run: ${commitsThisRun}`);
+
+if (outcome === "blocked") {
+  fail(
+    `Agent could not complete sub-issue #${ctx.subIssueNumber}: ${reason}`,
+  );
+}
+
+if (outcome === "completed" && commitsThisRun === 0) {
+  // "completed" claims the work was done in THIS run, so zero commits is a
+  // contradiction (a genuinely already-done sub-issue must be reported
+  // "already-satisfied"). Fail closed rather than close an unfinished sub-issue.
+  fail(
+    `Agent reported sub-issue #${ctx.subIssueNumber} "completed" but made no ` +
+      `commits this run. Treating as blocked to avoid closing unfinished work.`,
+  );
+}
+
+// `completed` (with commits) or `already-satisfied` — the workflow closes the
+// sub-issue and advances to the next one.
+
+/**
+ * Fail the run: write the reason where the workflow's `failure()` step reads it
+ * (to comment on the PRD) and exit non-zero.
+ */
+function fail(message: string): never {
+  console.error(`\nFAILED: ${message}`);
+  fs.writeFileSync(path.join(ctx.outputDir, "failure_reason.txt"), message);
+  process.exit(1);
+}
