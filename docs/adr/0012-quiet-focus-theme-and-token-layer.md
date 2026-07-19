@@ -3,7 +3,7 @@
 The web-UI redesign (wayfinder map #53) picked a visual direction for `apps/web`,
 and the direction chosen is the hard-to-reverse half: every restyled component will
 be built against it, so it is recorded here alongside the token mechanism it
-requires. The direction was chosen from a throwaway prototype (`prototype-theme.html`
+requires. The direction was chosen from a throwaway prototype (`apps/web/prototype-theme.html`
 on `worktree-issue-55-theme-prototype`, three directions rendered) and settled on
 issue #55; this ADR records the load-bearing outcome, not the exploration.
 
@@ -58,4 +58,4 @@ dark, until it reads tokens instead of literals.
 - **The Trail canvas is reskinned to these tokens** — see ADR-0010, updated by this
   effort: the warm survey-chart skin drops in favour of the cool-neutral surface.
 - **Full spec:** `docs/ui-design-spec.md` §1. Chosen from the throwaway
-  `prototype-theme.html` (`worktree-issue-55-theme-prototype`), never merged.
+  `apps/web/prototype-theme.html` (`worktree-issue-55-theme-prototype`), never merged.

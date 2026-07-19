@@ -50,7 +50,7 @@ each section below.
 
 **Decision:** [Theme direction](https://github.com/rajat2006/unshelf/issues/55) ·
 **ADR:** [0012](adr/0012-quiet-focus-theme-and-token-layer.md) ·
-**Prototype:** `prototype-theme.html` on `worktree-issue-55-theme-prototype`
+**Prototype:** `apps/web/prototype-theme.html` on `worktree-issue-55-theme-prototype`
 
 Quiet Focus makes "enable, don't automate" visual: calm, modern, minimal — **not**
 bookish, **not** map-themed.
