@@ -139,8 +139,8 @@ pinned Sandcastle version and Unshelf's provider set:
   (Codex refreshes the tokens in place mid-run, so a later phase must not clobber
   them), forces `cli_auth_credentials_store = "file"` in `config.toml` (the OS
   keyring is unreachable in CI), and strips `OPENAI_KEY`/`OPENAI_API_KEY` so Codex
-  uses the `gpt-5.6-sol` subscription seat, not the metered API. A no-op for the
-  Claude default. Every capability calls it immediately before `run()`, so the
+  uses the `gpt-5.6-sol` subscription seat, not the metered API. A no-op when the
+  run resolved to Claude. Every capability calls it immediately before `run()`, so the
   setup is uniform across phases. (The seeded secret needs a periodic re-paste —
   Codex's refresh token is single-use; see `docs/agents/sandcastle.md`.)
 - **`require-env.ts`** — `requireEnv(name)`: read a required env var or throw a

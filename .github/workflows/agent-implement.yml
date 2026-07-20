@@ -264,7 +264,7 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Codex subscription seat. Ignored on the Claude default; the run script's
+          # Codex subscription seat. Ignored when the run resolved to Claude; the run script's
           # prepareCodexAuth writes $CODEX_HOME/auth.json only when Codex is
           # resolved. OPENAI_KEY / OPENAI_API_KEY are deliberately NOT passed —
           # their presence would push Codex onto the metered API (spec #64).

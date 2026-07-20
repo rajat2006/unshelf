@@ -7,9 +7,19 @@ import {
 } from "./capability-context";
 import {
   BUILD_CLAUDE_MODEL,
+  CLAUDE_LABEL,
   CODEX_MODEL,
+  DEFAULT_PROVIDER,
   THINK_CLAUDE_MODEL,
 } from "./resolve-agent";
+
+/**
+ * The Sandcastle provider name an UNPINNED subject resolves to. Only the tests
+ * that exercise the default path itself use this; every test that asserts a
+ * specific model/effort pins the provider with an explicit label instead, so
+ * flipping DEFAULT_PROVIDER moves nothing here.
+ */
+const DEFAULT_AGENT_NAME = DEFAULT_PROVIDER === "codex" ? "codex" : "claude-code";
 
 const ENV_KEYS = [
   "ISSUE_NUMBER",
@@ -25,7 +35,9 @@ function setEnv(overrides: Record<string, string | undefined> = {}) {
     ISSUE_TITLE: "agent-implement workflow",
     BRANCH: "agent/issue-63-agent-implement-workflow",
     OUTPUT_DIR: "/run/tmp",
-    AGENT_LABELS: '["ready-for-agent","agent:implement"]',
+    // Pinned to Claude so the model/effort assertions below test the
+    // capability policy, not whatever DEFAULT_PROVIDER currently is.
+    AGENT_LABELS: `["ready-for-agent","agent:implement","${CLAUDE_LABEL}"]`,
   };
   for (const [key, value] of Object.entries({ ...base, ...overrides })) {
     if (value === undefined) delete process.env[key];
@@ -83,11 +95,11 @@ describe("loadCapabilityContext", () => {
     expect(ctx.labels).toContain("agent:codex");
   });
 
-  it("treats absent AGENT_LABELS as an empty set (Claude default)", () => {
+  it("treats absent AGENT_LABELS as an empty set (default provider)", () => {
     setEnv({ AGENT_LABELS: undefined });
     const ctx = loadCapabilityContext("implement");
     expect(ctx.labels).toEqual([]);
-    expect(ctx.agent.name).toBe("claude-code");
+    expect(ctx.agent.name).toBe(DEFAULT_AGENT_NAME);
   });
 
   it("throws when a required var (OUTPUT_DIR) is missing", () => {
@@ -156,7 +168,9 @@ function setPrdEnv(overrides: Record<string, string | undefined> = {}) {
     SUB_ISSUE_TITLE: "agent-implement-prd workflow",
     BRANCH: "agent/prd-52-build-the-sandcastle-platform",
     OUTPUT_DIR: "/run/tmp",
-    AGENT_LABELS: '["ready-for-agent","agent:implement"]',
+    // Pinned to Claude so the model/effort assertions below test the
+    // capability policy, not whatever DEFAULT_PROVIDER currently is.
+    AGENT_LABELS: `["ready-for-agent","agent:implement","${CLAUDE_LABEL}"]`,
   };
   for (const [key, value] of Object.entries({ ...base, ...overrides })) {
     if (value === undefined) delete process.env[key];
@@ -236,7 +250,7 @@ describe("loadPrdImplementContext", () => {
     });
   });
 
-  it("resolves the provider from the PRD's full label set (default Claude)", () => {
+  it("resolves the provider from the PRD's full label set (pinned Claude)", () => {
     setPrdEnv();
     const ctx = loadPrdImplementContext("implement-prd");
     expect(ctx.agent.name).toBe("claude-code");

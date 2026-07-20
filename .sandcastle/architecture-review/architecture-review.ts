@@ -42,9 +42,10 @@ import { runWithExtraction } from "../run-with-extraction";
  */
 
 const outputDir = requireEnv("OUTPUT_DIR");
-// No issue ⇒ no label set of its own; the provider defaults to Claude Code
-// (absence *is* Claude). A manual `workflow_dispatch` can still opt into Codex,
-// which the workflow serialises into AGENT_LABELS just like the issue flows.
+// No issue ⇒ no label set of its own, so an empty AGENT_LABELS resolves to
+// DEFAULT_PROVIDER — the cron path follows the same one knob as everything else.
+// A manual `workflow_dispatch` can pin either provider, which the workflow
+// serialises into AGENT_LABELS just like the issue flows.
 const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 const resolved = resolveAgent(labels, "architecture-review");
 logResolvedAgent(resolved);

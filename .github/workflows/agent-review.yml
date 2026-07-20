@@ -47,8 +47,6 @@ jobs:
           labels_json=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]')
           echo "labels_json=$labels_json" >> "$GITHUB_OUTPUT"
 
-          # Provider switch (spec #64): mirror resolveAgent() so the workflow's
-          # provider-specific setup matches what the runner resolves.
           # The provider is NOT decided here: it depends on DEFAULT_PROVIDER,
           # so it is resolved by the `Resolve provider` step below (after
           # checkout + install) via .sandcastle/print-provider.ts — the same
@@ -165,8 +163,8 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
-      # Codex CLI only when this PR opted in via `agent:codex`; the Claude default
-      # never pays for it. Runner-side auth is materialised by prepareCodexAuth.
+      # Codex CLI only when this run resolved to Codex; a Claude run never pays
+      # for it. Runner-side auth is materialised by prepareCodexAuth.
       - name: Install Codex CLI
         if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
@@ -184,7 +182,7 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
+          # Codex subscription seat — ignored when the run resolved to Claude; prepareCodexAuth
           # writes $CODEX_HOME/auth.json only when Codex is resolved. OPENAI_KEY /
           # OPENAI_API_KEY are deliberately NOT passed (spec #64).
           CODEX_HOME: ${{ runner.temp }}/.codex
