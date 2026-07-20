@@ -249,6 +249,68 @@ SET trail_id = (
 )
 WHERE s.trail_id IS NULL
   AND EXISTS (SELECT 1 FROM trails t WHERE t.user_id = s.user_id);
+
+-- Scope a Stop's edges to its Trail (#94, ADR-0014). Until now \`trail_edges\`
+-- carried only the User anchor (ADR-0010): the edge set scoped to a User *was*
+-- the Trail. The redesign gives a User many Trails, so an edge must also name the
+-- one Trail it belongs to, and *both* of its endpoints must be Stops on that Trail
+-- — a link can never span two Trails.
+--
+-- \`trail_id\` is enforced with composite owner foreign keys \`(from_stop_id,
+-- trail_id)\` and \`(to_stop_id, trail_id)\` into \`stops (id, trail_id)\`, the same
+-- belt-and-braces shape the same-User keys already use: an edge can only ever join
+-- two Stops that share its Trail, so there is no pairing of Stops on different
+-- Trails this table can hold, even for a write that bypasses the repository. The
+-- pre-existing \`(from_stop_id, user_id)\` / \`(to_stop_id, user_id)\` keys stay, so
+-- same-User is still enforced directly too. Both new keys cascade, so an edge dies
+-- with either endpoint exactly as before.
+--
+-- Like \`stops.trail_id\`, the column is added nullable and backfilled from each
+-- edge's \`from\` Stop (which the migration above has just adopted into a Trail), so
+-- a database that booted a pre-#94 branch keeps every edge, now scoped to the same
+-- Trail its Stops belong to. It stays nullable rather than \`NOT NULL\` only so the
+-- implicit-Trail migration can still simulate and adopt a legacy edge that predates
+-- the column; every edge the repository writes names its Trail.
+CREATE UNIQUE INDEX IF NOT EXISTS stops_id_trail_id_idx ON stops (id, trail_id);
+
+ALTER TABLE trail_edges ADD COLUMN IF NOT EXISTS trail_id uuid;
+
+UPDATE trail_edges e
+SET trail_id = s.trail_id
+FROM stops s
+WHERE e.from_stop_id = s.id
+  AND e.user_id = s.user_id
+  AND e.trail_id IS NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'trail_edges_from_trail_fk'
+      AND conrelid = 'trail_edges'::regclass
+  ) THEN
+    ALTER TABLE trail_edges
+      ADD CONSTRAINT trail_edges_from_trail_fk
+      FOREIGN KEY (from_stop_id, trail_id) REFERENCES stops (id, trail_id)
+      ON DELETE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'trail_edges_to_trail_fk'
+      AND conrelid = 'trail_edges'::regclass
+  ) THEN
+    ALTER TABLE trail_edges
+      ADD CONSTRAINT trail_edges_to_trail_fk
+      FOREIGN KEY (to_stop_id, trail_id) REFERENCES stops (id, trail_id)
+      ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- Reading and rewiring a Trail always scopes by \`(user_id, trail_id)\`, so index
+-- the Trail an edge belongs to.
+CREATE INDEX IF NOT EXISTS trail_edges_trail_id_idx
+  ON trail_edges (user_id, trail_id);
 `;
 
 /** Apply the schema to a database. Idempotent. */

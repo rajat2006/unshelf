@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { Item, Stop, StopDetail, StopId } from "@unshelf/shared";
 import { fetchStop } from "../api";
 import type { CurrentUser } from "../application-auth";
-import { AddStopForm } from "./AddStopForm";
 import { StopView } from "./StopView";
 
 interface StopsSectionProps {
@@ -10,7 +9,6 @@ interface StopsSectionProps {
   openStop: StopDetail | null;
   error: string | null;
   user: CurrentUser;
-  onStopsChanged: () => Promise<void>;
   onStopOpened: (stop: StopDetail | null) => void;
   onStopChanged: (stop: StopDetail) => void;
   onItemChanged: (item: Item) => void;
@@ -23,13 +21,16 @@ interface StopsSectionProps {
  * v1's whole organising surface is "your Stops, and the one you are looking at".
  * Opening a Stop replaces the list in place, so the phone gets the same flow as
  * the desktop with nothing extra to reflow (ADR-0008).
+ *
+ * Stops are *created* on a Trail now (ADR-0014, #94), not here — this transitional
+ * Library view only lists the User's Stops and opens one; sequencing and authoring
+ * live on the Trail canvas.
  */
 export function StopsSection({
   stops,
   openStop,
   error,
   user,
-  onStopsChanged,
   onStopOpened,
   onStopChanged,
   onItemChanged,
@@ -66,11 +67,10 @@ export function StopsSection({
         />
       ) : (
         <>
-          <AddStopForm user={user} onCreated={onStopsChanged} />
           {!stops && !error && <p>Loading your stops…</p>}
           {stops && stops.length === 0 && (
             <p style={{ opacity: 0.7 }}>
-              No stops yet — name one above to start grouping your items.
+              No stops yet — open a Trail to add stops and arrange them.
             </p>
           )}
           {stops && stops.length > 0 && (

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Item, Stop, StopDetail } from "@unshelf/shared";
+import type { Item, Stop, StopDetail, Trail } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -24,8 +24,32 @@ const setStatus = (clerkUserId: string, itemId: string, status: string) =>
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ status });
 
-const createStop = (clerkUserId: string, body: object) =>
-  request(app).post("/api/stops").set(TEST_USER_HEADER, clerkUserId).send(body);
+/**
+ * Each User's single Trail, minted lazily. A Stop belongs to exactly one Trail
+ * (#94), so creating one names the Trail it lands on; these tests care about the
+ * Stop, not which Trail holds it, so one Trail per User is plenty.
+ */
+const trailIds = new Map<string, Promise<string>>();
+const trailFor = (clerkUserId: string): Promise<string> => {
+  let existing = trailIds.get(clerkUserId);
+  if (!existing) {
+    existing = request(app)
+      .post("/api/trails")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ name: "Test Trail" })
+      .then((res) => (res.body as Trail).id);
+    trailIds.set(clerkUserId, existing);
+  }
+  return existing;
+};
+
+const createStop = async (clerkUserId: string, body: object) => {
+  const trailId = await trailFor(clerkUserId);
+  return request(app)
+    .post(`/api/trails/${trailId}/stops`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send(body);
+};
 
 const listStops = (clerkUserId: string) =>
   request(app).get("/api/stops").set(TEST_USER_HEADER, clerkUserId);
@@ -109,8 +133,14 @@ describe("POST /api/stops — create a Stop", () => {
   });
 
   it("refuses an unauthenticated create", async () => {
-    expect((await request(app).post("/api/stops").send({ name: "Anon" })).status)
-      .toBe(401);
+    const trailId = await trailFor("clerk_stop_create_anon_owner");
+    expect(
+      (
+        await request(app)
+          .post(`/api/trails/${trailId}/stops`)
+          .send({ name: "Anon" })
+      ).status,
+    ).toBe(401);
   });
 });
 

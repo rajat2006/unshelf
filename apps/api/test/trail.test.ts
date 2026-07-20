@@ -1,39 +1,80 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Item, Stop, TrailEdge, TrailNode, TrailView } from "@unshelf/shared";
+import type {
+  Item,
+  Stop,
+  Trail,
+  TrailEdge,
+  TrailNode,
+  TrailView,
+} from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
- * The Trail at the HTTP boundary (issue #22), driven against a real ephemeral
- * Postgres. These pin the topology ADR-0010 settled: the Trail is the adjacency
- * edge list scoped to a User — its nodes are the User's Stops, its edges these
- * rows — carrying no layout and no dates. The two invariants that cannot live in
- * a column are enforced and tested right here at the write seam: acyclicity (a
- * link is refused when it would close a cycle) and per-User isolation.
+ * The Trail's topology at the HTTP boundary (issue #22, scoped per Trail by #94),
+ * driven against a real ephemeral Postgres. These pin the topology ADR-0010
+ * settled: the Trail is an adjacency edge list — its nodes are its Stops, its
+ * edges these rows — carrying no layout and no dates. The redesign (ADR-0014)
+ * scopes that edge list to *one* Trail: a Stop belongs to exactly one Trail and a
+ * link can never span two, so the topology is read and written under a Trail id.
+ * The invariants that cannot live in a column are enforced and tested right here
+ * at the write seam: acyclicity, per-User isolation, and same-Trail endpoints.
  */
 let harness: TestApp;
 let app: Express;
 
-const createStop = (clerkUserId: string, name: string) =>
-  request(app)
-    .post("/api/stops")
+/**
+ * Each User's single Trail, minted lazily. Most tests need one Trail per User and
+ * do not care about its id; the cross-Trail tests below mint their own explicitly.
+ */
+const trailIds = new Map<string, Promise<string>>();
+const trailFor = (clerkUserId: string): Promise<string> => {
+  let existing = trailIds.get(clerkUserId);
+  if (!existing) {
+    existing = request(app)
+      .post("/api/trails")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ name: "Test Trail" })
+      .then((res) => (res.body as Trail).id);
+    trailIds.set(clerkUserId, existing);
+  }
+  return existing;
+};
+
+const createStop = async (clerkUserId: string, name: string) => {
+  const trailId = await trailFor(clerkUserId);
+  return request(app)
+    .post(`/api/trails/${trailId}/stops`)
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ name });
+};
 
-const connect = (clerkUserId: string, body: object) =>
-  request(app)
-    .post("/api/trail/edges")
+const connect = async (clerkUserId: string, body: object) => {
+  const trailId = await trailFor(clerkUserId);
+  return request(app)
+    .post(`/api/trails/${trailId}/edges`)
     .set(TEST_USER_HEADER, clerkUserId)
     .send(body);
+};
 
-const disconnect = (clerkUserId: string, fromStopId: string, toStopId: string) =>
-  request(app)
-    .delete(`/api/trail/edges/${fromStopId}/${toStopId}`)
+const disconnect = async (
+  clerkUserId: string,
+  fromStopId: string,
+  toStopId: string,
+) => {
+  const trailId = await trailFor(clerkUserId);
+  return request(app)
+    .delete(`/api/trails/${trailId}/edges/${fromStopId}/${toStopId}`)
     .set(TEST_USER_HEADER, clerkUserId);
+};
 
-const getTrail = (clerkUserId: string) =>
-  request(app).get("/api/trail").set(TEST_USER_HEADER, clerkUserId);
+const getTrail = async (clerkUserId: string) => {
+  const trailId = await trailFor(clerkUserId);
+  return request(app)
+    .get(`/api/trails/${trailId}/topology`)
+    .set(TEST_USER_HEADER, clerkUserId);
+};
 
 const capture = (clerkUserId: string, title: string) =>
   request(app)
@@ -83,7 +124,7 @@ afterAll(async () => {
   await harness?.stop();
 });
 
-describe("GET /api/trail — read the Trail", () => {
+describe("GET /api/trails/:trailId/topology — read a Trail", () => {
   it("reads back an empty Trail for a User with no edges", async () => {
     const res = await getTrail("clerk_trail_empty");
 
@@ -92,12 +133,27 @@ describe("GET /api/trail — read the Trail", () => {
   });
 
   it("refuses an unauthenticated read", async () => {
-    expect((await request(app).get("/api/trail")).status).toBe(401);
+    expect(
+      (
+        await request(app).get(
+          "/api/trails/00000000-0000-0000-0000-000000000000/topology",
+        )
+      ).status,
+    ).toBe(401);
+  });
+
+  it("treats another User's Trail id as missing", async () => {
+    const trailId = await trailFor("clerk_trail_topology_owner");
+    const res = await request(app)
+      .get(`/api/trails/${trailId}/topology`)
+      .set(TEST_USER_HEADER, "clerk_trail_topology_intruder");
+
+    expect(res.status).toBe(404);
   });
 });
 
-describe("the Trail's nodes are the User's Stops, with derived progress", () => {
-  it("returns every Stop as a node, even one with no edges", async () => {
+describe("the Trail's nodes are the Trail's Stops, with derived progress", () => {
+  it("returns every Stop on the Trail as a node, even one with no edges", async () => {
     const clerkUserId = "clerk_trail_nodes";
     await createStop(clerkUserId, "Alpha");
     await createStop(clerkUserId, "Beta");
@@ -140,14 +196,14 @@ describe("the Trail's nodes are the User's Stops, with derived progress", () => 
     ).toMatchObject({ done: 0, total: 0 });
   });
 
-  it("shows a User only their own Stops as nodes", async () => {
+  it("shows a User only their own Trail's Stops as nodes", async () => {
     await createStop("clerk_trail_nodes_owner", "Owner's stop");
     const view = (await getTrail("clerk_trail_nodes_intruder")).body as TrailView;
     expect(view.nodes).toEqual([]);
   });
 });
 
-describe("POST /api/trail/edges — draw an edge", () => {
+describe("POST /api/trails/:trailId/edges — draw an edge", () => {
   it("persists an edge and reads it back", async () => {
     const clerkUserId = "clerk_trail_persist";
     const [a, b] = await givenStops(clerkUserId, 2);
@@ -222,6 +278,9 @@ describe("POST /api/trail/edges — draw an edge", () => {
     const view = (await getTrail(clerkUserId)).body as TrailView;
     const edge = view.edges[0] as unknown as Record<string, unknown>;
 
+    // The edge the client reads is a bare adjacency pair plus its User anchor —
+    // its Trail is the route it was read under, not a field, and there is no date
+    // or position (ADR-0010).
     expect(Object.keys(edge).sort()).toEqual([
       "fromStopId",
       "toStopId",
@@ -263,10 +322,11 @@ describe("POST /api/trail/edges — draw an edge", () => {
 
   it("refuses an unauthenticated connect", async () => {
     const clerkUserId = "clerk_trail_connect_anon";
+    const trailId = await trailFor(clerkUserId);
     const [a, b] = await givenStops(clerkUserId, 2);
 
     const res = await request(app)
-      .post("/api/trail/edges")
+      .post(`/api/trails/${trailId}/edges`)
       .send({ fromStopId: a, toStopId: b });
 
     expect(res.status).toBe(401);
@@ -317,7 +377,91 @@ describe("the Trail is a DAG — cycles are refused at the write seam", () => {
   });
 });
 
-describe("DELETE /api/trail/edges — erase an edge and rewire", () => {
+describe("edges are scoped to one Trail — a link never spans two", () => {
+  it("refuses linking Stops on two different Trails of the same User", async () => {
+    const clerkUserId = "clerk_trail_cross";
+    const trailA = (
+      await request(app)
+        .post("/api/trails")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "Trail A" })
+    ).body as Trail;
+    const trailB = (
+      await request(app)
+        .post("/api/trails")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "Trail B" })
+    ).body as Trail;
+
+    const stopA = (
+      await request(app)
+        .post(`/api/trails/${trailA.id}/stops`)
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "On A" })
+    ).body as Stop;
+    const stopB = (
+      await request(app)
+        .post(`/api/trails/${trailB.id}/stops`)
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "On B" })
+    ).body as Stop;
+
+    // A Stop on Trail B is not on Trail A, so linking to it under Trail A is a
+    // 404, exactly as a foreign Stop is — and no edge is drawn.
+    const res = await request(app)
+      .post(`/api/trails/${trailA.id}/edges`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ fromStopId: stopA.id, toStopId: stopB.id });
+
+    expect(res.status).toBe(404);
+    const topology = (
+      await request(app)
+        .get(`/api/trails/${trailA.id}/topology`)
+        .set(TEST_USER_HEADER, clerkUserId)
+    ).body as TrailView;
+    expect(topology.edges).toEqual([]);
+  });
+
+  it("rejects a cross-Trail edge at the database boundary", async () => {
+    const clerkUserId = "clerk_trail_db_cross";
+    const trailA = (
+      await request(app)
+        .post("/api/trails")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "DB Trail A" })
+    ).body as Trail;
+    const trailB = (
+      await request(app)
+        .post("/api/trails")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "DB Trail B" })
+    ).body as Trail;
+    const stopA = (
+      await request(app)
+        .post(`/api/trails/${trailA.id}/stops`)
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "DB on A" })
+    ).body as Stop;
+    const stopB = (
+      await request(app)
+        .post(`/api/trails/${trailB.id}/stops`)
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ name: "DB on B" })
+    ).body as Stop;
+
+    // Same-Trail endpoints are the schema's guarantee, not just the route's: even
+    // a write that bypasses the repository cannot join Stops across two Trails.
+    await expect(
+      harness.pool.query(
+        `INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
+         VALUES ($1, $2, $3, $4)`,
+        [stopA.userId, trailA.id, stopA.id, stopB.id],
+      ),
+    ).rejects.toThrow();
+  });
+});
+
+describe("DELETE /api/trails/:trailId/edges — erase an edge and rewire", () => {
   it("removes an edge and reads back without it", async () => {
     const clerkUserId = "clerk_trail_remove";
     const [a, b] = await givenStops(clerkUserId, 2);
@@ -357,10 +501,13 @@ describe("DELETE /api/trail/edges — erase an edge and rewire", () => {
 
   it("refuses an unauthenticated disconnect", async () => {
     const clerkUserId = "clerk_trail_disconnect_anon";
+    const trailId = await trailFor(clerkUserId);
     const [a, b] = await givenStops(clerkUserId, 2);
     await connect(clerkUserId, { fromStopId: a, toStopId: b });
 
-    const res = await request(app).delete(`/api/trail/edges/${a}/${b}`);
+    const res = await request(app).delete(
+      `/api/trails/${trailId}/edges/${a}/${b}`,
+    );
 
     expect(res.status).toBe(401);
     expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([`${a}->${b}`]);
@@ -381,15 +528,20 @@ describe("edges follow their Stops", () => {
   });
 });
 
-describe("trail_edges — a bare adjacency list and nothing more", () => {
-  it("carries only its User anchor and the two endpoints — no position, no date", async () => {
+describe("trail_edges — an adjacency list scoped to one Trail and nothing more", () => {
+  it("carries its User anchor, its Trail, and the two endpoints — no position, no date", async () => {
     const { rows } = await harness.pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'trail_edges'`,
     );
     const columns = rows.map((row) => row.column_name).sort();
 
-    expect(columns).toEqual(["from_stop_id", "to_stop_id", "user_id"]);
+    expect(columns).toEqual([
+      "from_stop_id",
+      "to_stop_id",
+      "trail_id",
+      "user_id",
+    ]);
   });
 
   it("forbids a self-loop at the database", async () => {
@@ -463,15 +615,17 @@ describe("per-User isolation", () => {
   });
 
   it("cannot erase an edge on another User's Trail", async () => {
+    const ownerTrail = await trailFor("clerk_trail_iso_del_owner");
     const [a, b] = await givenStops("clerk_trail_iso_del_owner", 2);
     await connect("clerk_trail_iso_del_owner", { fromStopId: a, toStopId: b });
 
-    const res = await disconnect("clerk_trail_iso_del_intruder", a, b);
+    // The intruder acting on the owner's Trail id is refused it — a 404, as a
+    // foreign Trail always is — and the owner's edge is untouched.
+    const res = await request(app)
+      .delete(`/api/trails/${ownerTrail}/edges/${a}/${b}`)
+      .set(TEST_USER_HEADER, "clerk_trail_iso_del_intruder");
 
-    // The intruder's own (empty) Trail is what they act on and read back.
-    expect(res.status).toBe(200);
-    expect(edgePairs(res.body as TrailView)).toEqual([]);
-    // The owner's edge is untouched.
+    expect(res.status).toBe(404);
     expect(edgePairs((await getTrail("clerk_trail_iso_del_owner")).body)).toEqual(
       [`${a}->${b}`],
     );

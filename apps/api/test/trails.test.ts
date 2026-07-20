@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Stop, Trail } from "@unshelf/shared";
+import type { Stop, Trail, TrailView } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -100,21 +100,20 @@ describe("Trails at the HTTP boundary", () => {
     const trail = (await createTrail(user, { name: "Progress journey" }))
       .body as Trail;
 
-    // Two Stops on this Trail; one shared Item done, one still in progress.
+    // Two Stops created directly on this Trail; one shared Item done, one still
+    // in progress.
     const stopA = (
       await request(app)
-        .post("/api/stops")
+        .post(`/api/trails/${trail.id}/stops`)
         .set(TEST_USER_HEADER, user)
         .send({ name: "Stop A" })
     ).body as Stop;
     const stopB = (
       await request(app)
-        .post("/api/stops")
+        .post(`/api/trails/${trail.id}/stops`)
         .set(TEST_USER_HEADER, user)
         .send({ name: "Stop B" })
     ).body as Stop;
-    await placeStopOnTrail(user, stopA.id, trail.id);
-    await placeStopOnTrail(user, stopB.id, trail.id);
 
     const doneItem = (
       await request(app)
@@ -144,23 +143,61 @@ describe("Trails at the HTTP boundary", () => {
   });
 });
 
-/**
- * Assign a Stop to a Trail directly at the database. Trail-scoped Stop creation
- * is a downstream slice (#94); this test only needs the membership to exist so
- * derived progress has Stops to roll up.
- */
-async function placeStopOnTrail(
-  clerkUserId: string,
-  stopId: string,
-  trailId: string,
-): Promise<void> {
-  await harness.pool.query(
-    `UPDATE stops SET trail_id = $1
-     WHERE id = $2
-       AND user_id = (SELECT id FROM users WHERE clerk_user_id = $3)`,
-    [trailId, stopId, clerkUserId],
-  );
-}
+describe("a Stop belongs to exactly one Trail (#94)", () => {
+  const createStopOn = (clerkUserId: string, trailId: string, name: string) =>
+    request(app)
+      .post(`/api/trails/${trailId}/stops`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ name });
+
+  const topologyOf = (clerkUserId: string, trailId: string) =>
+    request(app)
+      .get(`/api/trails/${trailId}/topology`)
+      .set(TEST_USER_HEADER, clerkUserId);
+
+  it("lands a created Stop on its Trail, and on no other", async () => {
+    const user = "trail-stop-scoped-user";
+    const here = (await createTrail(user, { name: "Here" })).body as Trail;
+    const elsewhere = (await createTrail(user, { name: "Elsewhere" }))
+      .body as Trail;
+
+    const created = await createStopOn(user, here.id, "A waypoint");
+    expect(created.status).toBe(201);
+    const stop = created.body as Stop;
+
+    // It is a node on its own Trail…
+    const hereNodes = ((await topologyOf(user, here.id)).body as TrailView).nodes;
+    expect(hereNodes.map((n) => n.id)).toEqual([stop.id]);
+    // …and nowhere on another Trail of the same User.
+    const elsewhereNodes = (
+      (await topologyOf(user, elsewhere.id)).body as TrailView
+    ).nodes;
+    expect(elsewhereNodes).toEqual([]);
+  });
+
+  it("refuses creating a Stop on another User's Trail — a 404, never a landing", async () => {
+    const owner = "trail-stop-owner";
+    const intruder = "trail-stop-intruder";
+    const trail = (await createTrail(owner, { name: "Owner's Trail" }))
+      .body as Trail;
+
+    const res = await createStopOn(intruder, trail.id, "Trespasser");
+    expect(res.status).toBe(404);
+
+    // The Stop landed on no Trail — the owner's Trail is still empty.
+    const ownerNodes = ((await topologyOf(owner, trail.id)).body as TrailView)
+      .nodes;
+    expect(ownerNodes).toEqual([]);
+  });
+
+  it("refuses a Stop with no name on a real Trail", async () => {
+    const user = "trail-stop-noname-user";
+    const trail = (await createTrail(user, { name: "Named" })).body as Trail;
+
+    expect((await createStopOn(user, trail.id, "")).status).toBe(400);
+    expect((await createStopOn(user, trail.id, "   ")).status).toBe(400);
+  });
+});
 
 async function addItemToStop(
   clerkUserId: string,

@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { StopId, TrailNode, TrailView } from "@unshelf/shared";
+import type { StopId, TrailId, TrailNode, TrailView } from "@unshelf/shared";
 import { connectStops, createStop, disconnectStops } from "../api";
 import type { CurrentUser } from "../application-auth";
 import { canConnect, layout, type Placed } from "./geometry";
@@ -42,6 +42,8 @@ const isUnderway = (n: TrailNode) => n.done > 0 && n.done < n.total;
 const progressOf = (n: TrailNode) => (n.total > 0 ? n.done / n.total : 0);
 
 interface TrailCanvasProps {
+  /** The Trail being authored — every Stop and edge is scoped to it (#94). */
+  trailId: TrailId;
   trail: TrailView;
   user: CurrentUser;
   onTrailChanged: (trail: TrailView) => void;
@@ -54,6 +56,7 @@ interface TrailCanvasProps {
 type Draft = { from: StopId | null; mode: "next" | "fork" | "start" };
 
 export function TrailCanvas({
+  trailId,
   trail,
   user,
   onTrailChanged,
@@ -102,13 +105,13 @@ export function TrailCanvas({
     }
   }
 
-  /** Create a Stop, link it after `from` when there is one, then refresh. */
+  /** Create a Stop on this Trail, link it after `from` when there is one, then refresh. */
   async function createAndLink(name: string, from: StopId | null) {
     setBusy(true);
     setError(null);
     try {
-      const stop = await createStop(user, { name });
-      if (from) await connectStops(user, from, stop.id);
+      const stop = await createStop(user, trailId, { name });
+      if (from) await connectStops(user, trailId, from, stop.id);
       setDraft(null);
       await onRefresh();
     } catch (caught: unknown) {
@@ -119,10 +122,10 @@ export function TrailCanvas({
   }
 
   const link = (to: StopId) => {
-    if (linkingFrom) void run(() => connectStops(user, linkingFrom, to));
+    if (linkingFrom) void run(() => connectStops(user, trailId, linkingFrom, to));
   };
   const unlink = (from: StopId, to: StopId) =>
-    void run(() => disconnectStops(user, from, to));
+    void run(() => disconnectStops(user, trailId, from, to));
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
   const wander = (p: Placed<TrailNode>) =>

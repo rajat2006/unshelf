@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { StopId, TrailView, UserId } from "@unshelf/shared";
+import type { StopId, TrailId, TrailView, UserId } from "@unshelf/shared";
 import type { CurrentUser } from "../application-auth";
 import { TrailCanvas } from "./TrailCanvas";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
+const trailId = "00000000-0000-0000-0000-0000000000t1" as TrailId;
 const a = "00000000-0000-0000-0000-00000000000a" as StopId;
 const b = "00000000-0000-0000-0000-00000000000b" as StopId;
 
@@ -22,6 +23,7 @@ const trail: TrailView = {
 const render = (readOnly: boolean, view: TrailView = trail) =>
   renderToStaticMarkup(
     <TrailCanvas
+      trailId={trailId}
       trail={view}
       user={user}
       onTrailChanged={() => undefined}

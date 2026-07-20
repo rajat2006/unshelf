@@ -3,7 +3,6 @@ import type { Pool } from "pg";
 import type { HealthResponse } from "@unshelf/shared";
 import { createItemsRouter } from "./items/router";
 import { createStopsRouter } from "./stops/router";
-import { createTrailRouter } from "./trail/router";
 import { createTrailsRouter } from "./trails/router";
 
 /**
@@ -52,7 +51,6 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
 
   app.use("/api/items", createItemsRouter(pool, auth));
   app.use("/api/stops", createStopsRouter(pool, auth));
-  app.use("/api/trail", createTrailRouter(pool, auth));
   app.use("/api/trails", createTrailsRouter(pool, auth));
 
   return app;

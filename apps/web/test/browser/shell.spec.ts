@@ -59,11 +59,14 @@ test("the top bar carries the Trails and Library doors on every signed-in surfac
 test("the route table recognizes the Trail, Stop, and canonical Item routes", async ({
   page,
 }, testInfo) => {
+  // An unknown Trail id resolves the Trail route and surface (its landmark), then
+  // reports the miss inline without leaving the surface — the id is opaque, so a
+  // stale link is contained here, not a crash.
   await page.goto(appUrl(testInfo, "/trails/trail-xyz"));
   await expect(
     page.getByRole("heading", { level: 1, name: "Trail" }),
   ).toBeVisible();
-  await expect(page.getByText("trail-xyz")).toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible();
 
   await page.goto(appUrl(testInfo, "/trails/trail-xyz/stops/stop-abc"));
   await expect(

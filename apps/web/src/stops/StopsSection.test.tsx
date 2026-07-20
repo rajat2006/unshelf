@@ -48,7 +48,6 @@ const renderStops = (openStop: StopDetail | null) =>
       openStop={openStop}
       error={null}
       user={user}
-      onStopsChanged={async () => undefined}
       onStopOpened={() => undefined}
       onStopChanged={() => undefined}
       onItemChanged={() => undefined}

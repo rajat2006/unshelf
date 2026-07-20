@@ -77,9 +77,9 @@ test("the c shortcut opens Capture when focus is not in an editable control", as
 test("shortcuts are suppressed while focus is in an editable control", async ({
   page,
 }, testInfo) => {
-  // The store surface carries an editable field (the Stop composer); focus it.
-  await page.goto(appUrl(testInfo, "/library"));
-  const field = page.getByLabel("Stop name");
+  // Home carries an editable field (the Trail-name composer); focus it.
+  await page.goto(appUrl(testInfo, "/"));
+  const field = page.getByLabel("Trail name");
   await field.click();
   await page.keyboard.press("c");
   await expect(composer(page)).toBeHidden();
