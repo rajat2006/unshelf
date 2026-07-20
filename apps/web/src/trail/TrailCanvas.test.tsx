@@ -28,6 +28,7 @@ const render = (readOnly: boolean, view: TrailView = trail) =>
       user={user}
       onTrailChanged={() => undefined}
       onRefresh={async () => undefined}
+      onOpenStop={() => undefined}
       readOnly={readOnly}
     />,
   );

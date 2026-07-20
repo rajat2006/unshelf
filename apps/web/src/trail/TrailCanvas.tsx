@@ -48,6 +48,8 @@ interface TrailCanvasProps {
   user: CurrentUser;
   onTrailChanged: (trail: TrailView) => void;
   onRefresh: () => Promise<void>;
+  /** Open this Trail's Stop at its URL-owned detail route (#95). */
+  onOpenStop: (stopId: StopId) => void;
   /** Phone width views the Trail without authoring it (US 40, ADR-0008). */
   readOnly: boolean;
 }
@@ -61,6 +63,7 @@ export function TrailCanvas({
   user,
   onTrailChanged,
   onRefresh,
+  onOpenStop,
   readOnly,
 }: TrailCanvasProps) {
   const { nodes, edges } = trail;
@@ -340,6 +343,7 @@ export function TrailCanvas({
                 }
                 linking={linkingFrom !== null}
                 onPointerDown={(e) => startNodeDrag(n.id, e)}
+                onOpen={() => onOpenStop(n.id)}
                 onNext={() => setDraft({ from: n.id, mode: "next" })}
                 onFork={() => setDraft({ from: n.id, mode: "fork" })}
                 onStartLink={() => setLinkingFrom(n.id)}
@@ -426,6 +430,7 @@ interface WaypointProps {
   isLinkTarget: boolean;
   linking: boolean;
   onPointerDown: (e: ReactPointerEvent) => void;
+  onOpen: () => void;
   onNext: () => void;
   onFork: () => void;
   onStartLink: () => void;
@@ -454,6 +459,7 @@ function Waypoint({
   isLinkTarget,
   linking,
   onPointerDown,
+  onOpen,
   onNext,
   onFork,
   onStartLink,
@@ -466,6 +472,8 @@ function Waypoint({
   const underway = isUnderway(node);
   return (
     <div
+      role="group"
+      aria-label={`${node.name}: ${node.done} of ${node.total} items done`}
       onPointerDown={(e) => {
         e.stopPropagation();
         onPointerDown(e);
@@ -552,7 +560,15 @@ function Waypoint({
           overflowWrap: "anywhere",
         }}
       >
-        {node.name}
+        <button
+          type="button"
+          className="trail-stop-link"
+          aria-label={`Open ${node.name}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onOpen}
+        >
+          {node.name}
+        </button>
       </div>
 
       {!readOnly && (

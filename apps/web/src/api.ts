@@ -136,6 +136,18 @@ export async function fetchStop(
   return requestJson<StopDetail>(user, `/api/stops/${stopId}`);
 }
 
+/** Read a Stop only in the Trail context named by its detail URL. */
+export async function fetchTrailStop(
+  user: CurrentUser,
+  trailId: TrailId,
+  stopId: StopId,
+): Promise<StopDetail> {
+  return requestJson<StopDetail>(
+    user,
+    `/api/trails/${trailId}/stops/${stopId}`,
+  );
+}
+
 /**
  * Pull an Item from All into a Stop — a reference, never a copy, so the Item
  * stays in All and in any other Stop. Returns the Stop's new contents.

@@ -57,6 +57,11 @@ const listStops = (clerkUserId: string) =>
 const viewStop = (clerkUserId: string, stopId: string) =>
   request(app).get(`/api/stops/${stopId}`).set(TEST_USER_HEADER, clerkUserId);
 
+const viewTrailStop = (clerkUserId: string, trailId: string, stopId: string) =>
+  request(app)
+    .get(`/api/trails/${trailId}/stops/${stopId}`)
+    .set(TEST_USER_HEADER, clerkUserId);
+
 const addToStop = (clerkUserId: string, stopId: string, body: object) =>
   request(app)
     .post(`/api/stops/${stopId}/items`)
@@ -399,6 +404,30 @@ describe("GET /api/stops/:stopId — view a Stop's contents", () => {
     const { stop } = await givenItemAndStop("clerk_stop_view_anon");
 
     expect((await request(app).get(`/api/stops/${stop.id}`)).status).toBe(401);
+  });
+});
+
+describe("GET /api/trails/:trailId/stops/:stopId — view a Stop in its route context", () => {
+  it("treats mismatched and foreign Trail/Stop pairs exactly like missing ones", async () => {
+    const owner = "clerk_stop_route_context_owner";
+    const owningTrailId = await trailFor(owner);
+    const stop = (await createStop(owner, { name: "Contextual Stop" }))
+      .body as Stop;
+    const otherTrailId = (
+      await request(app)
+        .post("/api/trails")
+        .set(TEST_USER_HEADER, owner)
+        .send({ name: "Other Trail" })
+    ).body.id as string;
+
+    expect((await viewTrailStop(owner, owningTrailId, stop.id)).status).toBe(200);
+    expect((await viewTrailStop(owner, otherTrailId, stop.id)).status).toBe(404);
+    expect((await viewTrailStop(owner, owningTrailId, "not-a-stop-id")).status)
+      .toBe(404);
+    expect(
+      (await viewTrailStop("clerk_stop_route_context_intruder", owningTrailId, stop.id))
+        .status,
+    ).toBe(404);
   });
 });
 

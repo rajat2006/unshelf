@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router";
-import type { TrailId, TrailView } from "@unshelf/shared";
+import { useNavigate, useParams } from "react-router";
+import type { StopId, TrailId, TrailView } from "@unshelf/shared";
 import { fetchTrail } from "../api";
 import { useCurrentUser } from "../application-auth";
 import { TrailCanvas } from "../trail/TrailCanvas";
 import { usePhoneViewport } from "../trail/usePhoneViewport";
+import { StopSidebar } from "../stops/StopSidebar";
 
 /**
  * A single Trail's canvas (design spec §2, #94). The `:trailId` from the URL is
@@ -17,12 +18,13 @@ import { usePhoneViewport } from "../trail/usePhoneViewport";
  * The fetch resolves from the authenticated User, so a foreign or unknown Trail
  * reads back as not found rather than confirming the id. A failure is contained
  * here with a Retry — the signed-in chrome around it stays. Authoring is desktop
- * only; at phone width the canvas is view-only (US 40, ADR-0008). Opening a Stop
- * in a sidebar (`/stops/:stopId`) is a later slice (#95); the id is carried in the
- * URL but not yet acted on.
+ * only; at phone width the canvas is view-only (US 40, ADR-0008). A nested Stop
+ * route docks its detail beside this live surface; both reads remain scoped to
+ * the Trail named by the URL (#95).
  */
 export function TrailSurface() {
-  const { trailId } = useParams();
+  const { trailId, stopId } = useParams();
+  const navigate = useNavigate();
   const user = useCurrentUser();
   const readOnly = usePhoneViewport();
   const [trail, setTrail] = useState<TrailView | null>(null);
@@ -44,35 +46,49 @@ export function TrailSurface() {
   }, [refresh]);
 
   return (
-    <section aria-labelledby="trail-heading">
-      <h1 id="trail-heading">Trail</h1>
-      {error && (
-        <div role="alert">
-          <p style={{ color: "var(--muted)" }}>
-            Could not load this Trail: {error}
-          </p>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            style={{ minHeight: "44px", cursor: "pointer" }}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-      {!trail && !error && (
-        <p style={{ color: "var(--muted)" }}>Loading this Trail…</p>
-      )}
-      {trail && trailId && (
-        <TrailCanvas
+    <div className={stopId ? "trail-detail-layout" : undefined}>
+      <section aria-labelledby="trail-heading" className="trail-surface">
+        <h1 id="trail-heading">Trail</h1>
+        {error && (
+          <div role="alert">
+            <p style={{ color: "var(--muted)" }}>
+              Could not load this Trail: {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              style={{ minHeight: "44px", cursor: "pointer" }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!trail && !error && (
+          <p style={{ color: "var(--muted)" }}>Loading this Trail…</p>
+        )}
+        {trail && trailId && (
+          <TrailCanvas
+            trailId={trailId as TrailId}
+            trail={trail}
+            user={user}
+            onTrailChanged={setTrail}
+            onRefresh={refresh}
+            onOpenStop={(selectedStopId) =>
+              navigate(`/trails/${trailId}/stops/${selectedStopId}`)
+            }
+            readOnly={readOnly}
+          />
+        )}
+      </section>
+      {stopId && trailId && (
+        <StopSidebar
+          stopId={stopId as StopId}
           trailId={trailId as TrailId}
-          trail={trail}
           user={user}
-          onTrailChanged={setTrail}
-          onRefresh={refresh}
-          readOnly={readOnly}
+          onClose={() => navigate(`/trails/${trailId}`)}
+          onTrailChanged={refresh}
         />
       )}
-    </section>
+    </div>
   );
 }

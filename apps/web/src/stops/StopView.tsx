@@ -10,6 +10,8 @@ interface StopViewProps {
   onStopChanged: (stop: StopDetail) => void;
   onItemChanged: (item: Item) => void;
   onClose: () => void;
+  closeLabel?: string;
+  headingLevel?: 2 | 3;
 }
 
 /**
@@ -28,7 +30,10 @@ export function StopView({
   onStopChanged,
   onItemChanged,
   onClose,
+  closeLabel = "← All stops",
+  headingLevel = 3,
 }: StopViewProps) {
+  const Heading = `h${headingLevel}` as "h2" | "h3";
   return (
     <div>
       <div
@@ -40,9 +45,11 @@ export function StopView({
           justifyContent: "space-between",
         }}
       >
-        <h3 style={{ margin: 0, fontSize: "1.05rem", overflowWrap: "anywhere" }}>
+        <Heading
+          style={{ margin: 0, fontSize: "1.05rem", overflowWrap: "anywhere" }}
+        >
           {stop.name}
-        </h3>
+        </Heading>
         <button
           type="button"
           onClick={onClose}
@@ -53,13 +60,13 @@ export function StopView({
             cursor: "pointer",
           }}
         >
-          ← All stops
+          {closeLabel}
         </button>
       </div>
 
       {stop.items.length === 0 ? (
         <p style={{ opacity: 0.7 }}>
-          Nothing here yet — add items to this stop from All below.
+          Nothing here yet — add Items to this Stop from the Library.
         </p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>

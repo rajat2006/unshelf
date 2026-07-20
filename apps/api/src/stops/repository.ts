@@ -96,16 +96,40 @@ export async function getStop(
   userId: UserId,
   stopId: StopId,
 ): Promise<StopDetail | null> {
+  return getStopInScope(pool, userId, stopId, null);
+}
+
+async function getStopInScope(
+  pool: Pool,
+  userId: UserId,
+  stopId: StopId,
+  trailId: TrailId | null,
+): Promise<StopDetail | null> {
   const { rows } = await pool.query<StopRow>(
     `SELECT id, user_id, name
      FROM stops
-     WHERE id = $1 AND user_id = $2`,
-    [stopId, userId],
+     WHERE id = $1 AND user_id = $2
+       AND ($3::uuid IS NULL OR trail_id = $3)`,
+    [stopId, userId, trailId],
   );
   const stop = rows[0];
   if (!stop) return null;
 
   return { ...toStop(stop), items: await listItemsIn(pool, userId, stopId) };
+}
+
+/**
+ * Read Stop detail only when the URL's Trail and Stop belong together. Both ids
+ * are resolved under the authenticated User so a mismatch, a foreign id, and a
+ * missing id all collapse to the same null result.
+ */
+export async function getStopOnTrail(
+  pool: Pool,
+  userId: UserId,
+  trailId: TrailId,
+  stopId: StopId,
+): Promise<StopDetail | null> {
+  return getStopInScope(pool, userId, stopId, trailId);
 }
 
 async function listItemsIn(

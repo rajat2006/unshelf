@@ -70,6 +70,52 @@ body {
   min-width: 0;
 }
 
+.trail-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.trail-surface {
+  min-width: 0;
+}
+
+.stop-sidebar {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+
+.stop-sidebar button {
+  min-height: 44px;
+}
+
+.trail-stop-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  overflow-wrap: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 48rem) {
+  .trail-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stop-sidebar {
+    width: 100%;
+  }
+}
+
 body {
   background: var(--bg);
   color: var(--ink);

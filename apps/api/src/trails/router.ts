@@ -7,7 +7,7 @@ import type {
   StopId,
   TrailId,
 } from "@unshelf/shared";
-import { createStop } from "../stops/repository";
+import { createStop, getStopOnTrail } from "../stops/repository";
 import {
   connectStops,
   disconnectStops,
@@ -37,16 +37,24 @@ import { createTrail, getTrail, listTrails } from "./repository";
 export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
   const router = Router();
   router.use(...auth);
+  const uuidPattern =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
   // A `:trailId` that is not even shaped like our opaque id names no Trail, so it
   // answers as a missing one — a 404 — rather than reaching a uuid column that
   // would error on the malformed value. Runs after auth, so an unauthenticated
   // request is still a 401 first.
   router.param("trailId", (_req, res, next, value) => {
-    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-        value,
-      )) {
+    if (!uuidPattern.test(value)) {
       res.status(404).json({ error: "trail not found" });
+      return;
+    }
+    next();
+  });
+
+  router.param("stopId", (_req, res, next, value) => {
+    if (!uuidPattern.test(value)) {
+      res.status(404).json({ error: "stop not found" });
       return;
     }
     next();
@@ -95,6 +103,20 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
       return;
     }
     res.status(201).json(stop);
+  });
+
+  router.get("/:trailId/stops/:stopId", async (req, res) => {
+    const stop = await getStopOnTrail(
+      pool,
+      req.user!.id,
+      req.params.trailId as TrailId,
+      req.params.stopId as StopId,
+    );
+    if (!stop) {
+      res.status(404).json({ error: "stop not found" });
+      return;
+    }
+    res.json(stop);
   });
 
   router.get("/:trailId/topology", async (req, res) => {
