@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Item, Stop, StopDetail } from "@unshelf/shared";
-import { fetchAll, fetchStop, fetchStops } from "../api";
+import type { Item, Label, Stop, StopDetail } from "@unshelf/shared";
+import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
 import { useCurrentUser } from "../application-auth";
 import { LibraryItems } from "../items/LibraryItems";
 import { useCapture, useCaptureListener } from "../shell/CaptureController";
@@ -11,6 +11,7 @@ type LibraryState =
   | {
       status: "ready";
       items: Item[];
+      labels: Label[];
       stops: Stop[];
       stopDetails: StopDetail[];
     };
@@ -38,15 +39,16 @@ export function LibrarySurface({
     const generation = ++loadGeneration.current;
     setState({ status: "loading" });
     try {
-      const [items, stops] = await Promise.all([
+      const [items, labels, stops] = await Promise.all([
         fetchAll(user),
+        fetchLabels(user),
         fetchStops(user),
       ]);
       const stopDetails = await Promise.all(
         stops.map((stop) => fetchStop(user, stop.id)),
       );
       if (generation !== loadGeneration.current) return;
-      setState({ status: "ready", items, stops, stopDetails });
+      setState({ status: "ready", items, labels, stops, stopDetails });
     } catch {
       if (generation !== loadGeneration.current) return;
       setState({ status: "error" });
@@ -72,6 +74,14 @@ export function LibrarySurface({
               stop.id === changed.id ? changed : stop,
             ),
           }
+        : current,
+    );
+  }, []);
+
+  const addLabel = useCallback((created: Label) => {
+    setState((current) =>
+      current.status === "ready"
+        ? { ...current, labels: [...current.labels, created] }
         : current,
     );
   }, []);
@@ -104,10 +114,12 @@ export function LibrarySurface({
       {displayedState.status === "ready" && displayedState.items.length > 0 && (
         <LibraryItems
           items={displayedState.items}
+          labels={displayedState.labels}
           stops={displayedState.stops}
           stopDetails={displayedState.stopDetails}
           user={user}
           onItemChanged={replaceItem}
+          onLabelCreated={addLabel}
           onStopChanged={replaceStop}
         />
       )}

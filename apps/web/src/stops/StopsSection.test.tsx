@@ -40,6 +40,7 @@ const item: Item = {
   targetDate: "2026-08-01",
   pastTarget: false,
   completedAt: null,
+  labels: [],
 };
 
 const renderStops = (openStop: StopDetail | null) =>

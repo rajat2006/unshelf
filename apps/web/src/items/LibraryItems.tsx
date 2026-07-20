@@ -1,15 +1,18 @@
-import type { Item, Stop, StopDetail } from "@unshelf/shared";
+import type { Item, Label, Stop, StopDetail } from "@unshelf/shared";
 import type { CurrentUser } from "../application-auth";
 import { AddToStopControl } from "../stops/AddToStopControl";
 import { ItemRow } from "./ItemRow";
+import { ItemLabels } from "./ItemLabels";
 
 interface LibraryItemsProps {
   items: Item[];
+  labels: Label[];
   /** The User's Stops — what a Library Item can be pulled into. */
   stops: Stop[];
   stopDetails: StopDetail[];
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
+  onLabelCreated: (label: Label) => void;
   onStopChanged: (stop: StopDetail) => void;
 }
 
@@ -19,10 +22,12 @@ interface LibraryItemsProps {
  */
 export function LibraryItems({
   items,
+  labels,
   stops,
   stopDetails,
   user,
   onItemChanged,
+  onLabelCreated,
   onStopChanged,
 }: LibraryItemsProps) {
   return (
@@ -34,6 +39,13 @@ export function LibraryItems({
           user={user}
           onChanged={onItemChanged}
         >
+          <ItemLabels
+            item={item}
+            labels={labels}
+            user={user}
+            onItemChanged={onItemChanged}
+            onLabelCreated={onLabelCreated}
+          />
           <AddToStopControl
             item={item}
             stops={stops}

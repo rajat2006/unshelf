@@ -7,13 +7,16 @@ import {
   Type,
   type CreateItemRequest,
   type ItemId,
+  type LabelId,
   type UpdateItemStatusRequest,
   type UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
 import {
   createItem,
+  applyLabelToItem,
   getItem,
   listItems,
+  removeLabelFromItem,
   updateItemStatus,
   updateItemTargetDate,
 } from "./repository";
@@ -53,6 +56,34 @@ export function createItemsRouter(
     );
     if (!item) {
       res.status(404).json({ error: "item not found" });
+      return;
+    }
+    res.json(item);
+  });
+
+  router.post("/:itemId/labels/:labelId", async (req, res) => {
+    const item = await applyLabelToItem(
+      pool,
+      req.user!.id,
+      req.params.itemId as ItemId,
+      req.params.labelId as LabelId,
+    );
+    if (!item) {
+      res.status(404).json({ error: "item or label not found" });
+      return;
+    }
+    res.json(item);
+  });
+
+  router.delete("/:itemId/labels/:labelId", async (req, res) => {
+    const item = await removeLabelFromItem(
+      pool,
+      req.user!.id,
+      req.params.itemId as ItemId,
+      req.params.labelId as LabelId,
+    );
+    if (!item) {
+      res.status(404).json({ error: "item or label not found" });
       return;
     }
     res.json(item);

@@ -2,6 +2,7 @@ import express, { type Express, type RequestHandler } from "express";
 import type { Pool } from "pg";
 import type { HealthResponse } from "@unshelf/shared";
 import { createItemsRouter } from "./items/router";
+import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
 
@@ -50,6 +51,7 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
   });
 
   app.use("/api/items", createItemsRouter(pool, auth));
+  app.use("/api/labels", createLabelsRouter(pool, auth));
   app.use("/api/stops", createStopsRouter(pool, auth));
   app.use("/api/trails", createTrailsRouter(pool, auth));
 

@@ -126,6 +126,72 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
   ).toHaveValue("2000-01-01");
 });
 
+test("a Library Item creates, applies, and removes several private Labels by keyboard", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-labels`;
+  const foreignUser = `${user}-foreign`;
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Labelled handbook",
+      type: "book",
+    })
+  ).json()) as { id: string };
+  const systems = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Systems" })
+  ).json()) as { id: string };
+  const reading = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Reading" })
+  ).json()) as { id: string };
+  await testApi(
+    page,
+    foreignUser,
+    "/api/labels",
+    "POST",
+    { name: "Someone else's Label" },
+  );
+  await testApi(
+    page,
+    user,
+    `/api/items/${item.id}/labels/${systems.id}`,
+    "POST",
+  );
+
+  await page.goto(testAppUrl("/library", user));
+
+  const labels = page.getByRole("group", {
+    name: "Labels for Labelled handbook",
+  });
+  await expect(labels.getByRole("button", { name: "Remove Systems" })).toBeVisible();
+  await expect(labels.getByText("Someone else's Label")).toHaveCount(0);
+
+  await labels.getByLabel("Add a Label to Labelled handbook").selectOption(reading.id);
+  await labels
+    .getByRole("button", { name: "Apply Label", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(labels.getByRole("button", { name: "Remove Reading" })).toBeVisible();
+
+  await labels.getByLabel("New Label for Labelled handbook").fill("Architecture");
+  await labels.getByRole("button", { name: "Create and apply Label" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    labels.getByRole("button", { name: "Remove Architecture" }),
+  ).toBeVisible();
+
+  await labels.getByRole("button", { name: "Remove Systems" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(labels.getByRole("button", { name: "Remove Systems" })).toHaveCount(0);
+
+  const stored = (await (
+    await testApi(page, user, `/api/items/${item.id}`)
+  ).json()) as { labels: Array<{ name: string }> };
+  expect(stored.labels.map((label) => label.name)).toEqual([
+    "Architecture",
+    "Reading",
+  ]);
+});
+
 test("the Library keeps its shell while row-shaped loading resolves", async ({
   page,
 }, testInfo) => {

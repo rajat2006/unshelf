@@ -143,6 +143,33 @@ body {
   align-items: center;
 }
 
+.item-labels {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: 0;
+  border: 0;
+}
+
+.item-labels legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.item-labels__applied,
+.item-labels__control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.item-label-chip {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+}
+
 .item-control-input,
 .item-control-button {
   min-height: 44px;

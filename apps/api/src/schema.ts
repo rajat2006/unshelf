@@ -59,6 +59,34 @@ CREATE INDEX IF NOT EXISTS items_user_id_idx ON items (user_id);
 -- foreign keys on cross-domain joins.
 CREATE UNIQUE INDEX IF NOT EXISTS items_id_user_id_idx ON items (id, user_id);
 
+-- Labels are the User-owned, flat categorisation axis over the Library
+-- (ADR-0014). Names are free text and need not be unique: identity lives in the
+-- opaque id, while user_id keeps every Label inside one private space.
+CREATE TABLE IF NOT EXISTS labels (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users (id),
+  name text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS labels_user_id_idx ON labels (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS labels_id_user_id_idx ON labels (id, user_id);
+
+-- Label membership is a bare many-to-many set independent of Stop placement.
+-- The repeated User anchor plus paired owner foreign keys make it impossible to
+-- categorise one User's Item with another User's Label at the database boundary.
+CREATE TABLE IF NOT EXISTS item_labels (
+  user_id uuid NOT NULL REFERENCES users (id),
+  item_id uuid NOT NULL,
+  label_id uuid NOT NULL,
+  PRIMARY KEY (item_id, label_id),
+  CONSTRAINT item_labels_item_owner_fk FOREIGN KEY (item_id, user_id)
+    REFERENCES items (id, user_id) ON DELETE CASCADE,
+  CONSTRAINT item_labels_label_owner_fk FOREIGN KEY (label_id, user_id)
+    REFERENCES labels (id, user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS item_labels_label_id_idx ON item_labels (label_id);
+
 -- Stops: the single organising primitive (ADR-0004), scoped to a User like every
 -- other domain table. There is deliberately no \`kind\` column — one uniform Stop
 -- serves both a topic to learn and a project to build, because v1 makes the two

@@ -57,6 +57,22 @@ export type TrailId = string & {
   readonly [identifierBrand]: "TrailId";
 };
 
+export type LabelId = string & {
+  readonly [identifierBrand]: "LabelId";
+};
+
+/** A private, free-text marker the User applies across Library Items. */
+export interface Label {
+  id: LabelId;
+  userId: UserId;
+  name: string;
+}
+
+/** Create a flat Label. Its name is required and otherwise stored verbatim. */
+export interface CreateLabelRequest {
+  name: string;
+}
+
 /**
  * A single captured piece of learning material — the shared spine every later
  * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
@@ -93,6 +109,8 @@ export interface Item {
   pastTarget: boolean;
   /** When the Item entered *done*, ISO-8601, or null while not done. */
   completedAt: string | null;
+  /** The private Labels currently applied to this Item. */
+  labels: Label[];
 }
 
 /**
