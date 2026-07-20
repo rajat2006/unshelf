@@ -9,6 +9,7 @@ import { TYPE_LABELS } from "./presentation";
 interface ItemSidebarProps {
   itemId: ItemId;
   user: CurrentUser;
+  itemOverride?: Item;
   onClose: () => void;
   onItemChanged?: (item: Item) => void;
 }
@@ -17,6 +18,7 @@ interface ItemSidebarProps {
 export function ItemSidebar({
   itemId,
   user,
+  itemOverride,
   onClose,
   onItemChanged,
 }: ItemSidebarProps) {
@@ -42,12 +44,25 @@ export function ItemSidebar({
     onItemChanged?.(changed);
   };
 
+  const loadedItem = item?.id === itemId ? item : null;
+  const visibleItem = itemOverride?.id === itemId ? itemOverride : loadedItem;
+
   return (
     <aside
       className="item-sidebar"
-      aria-label={item ? `${item.title} details` : "Item details"}
+      aria-label={visibleItem ? `${visibleItem.title} details` : "Item details"}
     >
-      {!item && !error && <p>Loading Item details…</p>}
+      {!visibleItem && !error && (
+        <div
+          className="item-sidebar-skeleton"
+          role="status"
+          aria-label="Loading Item details"
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </div>
+      )}
       {error && (
         <div role="alert">
           <p>Could not load this Item: {error}</p>
@@ -56,20 +71,30 @@ export function ItemSidebar({
           </button>
         </div>
       )}
-      {item && (
+      {visibleItem && (
         <div>
           <div className="item-sidebar__heading">
             <div>
-              <h2>{item.title}</h2>
-              <p>{TYPE_LABELS[item.type]}</p>
+              <h2>{visibleItem.title}</h2>
+              <p>{TYPE_LABELS[visibleItem.type]}</p>
             </div>
             <button type="button" onClick={onClose}>
               Close details
             </button>
           </div>
-          <ItemStatusSelect item={item} user={user} onChanged={replaceItem} />
-          <ItemTargetDate item={item} user={user} onChanged={replaceItem} />
-          {item.source && <p className="item-source">{item.source}</p>}
+          <ItemStatusSelect
+            item={visibleItem}
+            user={user}
+            onChanged={replaceItem}
+          />
+          <ItemTargetDate
+            item={visibleItem}
+            user={user}
+            onChanged={replaceItem}
+          />
+          {visibleItem.source && (
+            <p className="item-source">{visibleItem.source}</p>
+          )}
         </div>
       )}
     </aside>

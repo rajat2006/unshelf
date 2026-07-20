@@ -21,11 +21,13 @@ type LibraryState =
  * surface owns Item facts and Stop placement only (#96).
  */
 interface LibrarySurfaceProps {
-  itemOverride?: Item;
+  itemOverrides?: Item[];
+  onItemChanged?: (item: Item) => void;
 }
 
 export function LibrarySurface({
-  itemOverride,
+  itemOverrides = [],
+  onItemChanged,
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
@@ -57,19 +59,9 @@ export function LibrarySurface({
   useCaptureListener(load);
 
   const replaceItem = useCallback((changed: Item) => {
-    setState((current) =>
-      current.status === "ready"
-        ? {
-            ...current,
-            items: replaceItemIn(current.items, changed),
-            stopDetails: current.stopDetails.map((stop) => ({
-              ...stop,
-              items: replaceItemIn(stop.items, changed),
-            })),
-          }
-        : current,
-    );
-  }, []);
+    setState((current) => replaceItemInLibraryState(current, changed));
+    onItemChanged?.(changed);
+  }, [onItemChanged]);
 
   const replaceStop = useCallback((changed: StopDetail) => {
     setState((current) =>
@@ -84,11 +76,16 @@ export function LibrarySurface({
     );
   }, []);
 
+  const displayedState = itemOverrides.reduce(
+    replaceItemInLibraryState,
+    state,
+  );
+
   return (
     <section className="library-surface" aria-labelledby="library-heading">
       <h1 id="library-heading">Library</h1>
-      {state.status === "loading" && <LibrarySkeleton />}
-      {state.status === "error" && (
+      {displayedState.status === "loading" && <LibrarySkeleton />}
+      {displayedState.status === "error" && (
         <div role="alert">
           <p>Couldn&apos;t load this</p>
           <button type="button" onClick={() => void load()}>
@@ -96,7 +93,7 @@ export function LibrarySurface({
           </button>
         </div>
       )}
-      {state.status === "ready" && state.items.length === 0 && (
+      {displayedState.status === "ready" && displayedState.items.length === 0 && (
         <div className="library-empty">
           <p>Nothing captured yet</p>
           <button type="button" onClick={capture.open}>
@@ -104,20 +101,11 @@ export function LibrarySurface({
           </button>
         </div>
       )}
-      {state.status === "ready" && state.items.length > 0 && (
+      {displayedState.status === "ready" && displayedState.items.length > 0 && (
         <LibraryItems
-          items={
-            itemOverride ? replaceItemIn(state.items, itemOverride) : state.items
-          }
-          stops={state.stops}
-          stopDetails={
-            itemOverride
-              ? state.stopDetails.map((stop) => ({
-                  ...stop,
-                  items: replaceItemIn(stop.items, itemOverride),
-                }))
-              : state.stopDetails
-          }
+          items={displayedState.items}
+          stops={displayedState.stops}
+          stopDetails={displayedState.stopDetails}
           user={user}
           onItemChanged={replaceItem}
           onStopChanged={replaceStop}
@@ -129,6 +117,22 @@ export function LibrarySurface({
 
 function replaceItemIn(items: Item[], changed: Item): Item[] {
   return items.map((item) => (item.id === changed.id ? changed : item));
+}
+
+function replaceItemInLibraryState(
+  state: LibraryState,
+  changed: Item,
+): LibraryState {
+  return state.status === "ready"
+    ? {
+        ...state,
+        items: replaceItemIn(state.items, changed),
+        stopDetails: state.stopDetails.map((stop) => ({
+          ...stop,
+          items: replaceItemIn(stop.items, changed),
+        })),
+      }
+    : state;
 }
 
 function LibrarySkeleton() {

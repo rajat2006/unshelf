@@ -301,6 +301,27 @@ body {
   min-height: 44px;
 }
 
+.item-sidebar-skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.item-sidebar-skeleton span {
+  display: block;
+  height: 1rem;
+  border-radius: var(--radius-1);
+  background: var(--line);
+}
+
+.item-sidebar-skeleton span:first-child {
+  width: 70%;
+  height: 1.5rem;
+}
+
+.item-sidebar-skeleton span:last-child {
+  min-height: 6rem;
+}
+
 .item-sidebar__heading {
   display: flex;
   flex-wrap: wrap;

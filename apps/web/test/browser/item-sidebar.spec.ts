@@ -46,7 +46,7 @@ test("every occurrence of an Item links to its one canonical URL", async ({
   );
 });
 
-test("a cold Item deep link opens beside its canonical Library at any viewport", async ({
+test("a bookmarked or refreshed Item opens beside its canonical Library at any viewport", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-item-cold-link`;
@@ -83,6 +83,9 @@ test("a cold Item deep link opens beside its canonical Library at any viewport",
   );
 
   await page.reload();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Library" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("complementary", { name: `${item.title} details` }),
   ).toBeVisible();
@@ -141,6 +144,22 @@ test("opening an Item from a Stop preserves its Trail and follows browser histor
   await expect(
     page.getByRole("complementary", { name: `${item.title} details` }),
   ).toBeVisible();
+
+  // The test harness selects its auth User from this query parameter on boot.
+  // Preserve it across the reload without disturbing React Router's history
+  // state, which carries the live Trail origin in production.
+  await page.evaluate((selectedUser) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("testUser", selectedUser);
+    window.history.replaceState(window.history.state, "", url);
+  }, user);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Trail" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
 });
 
 test("Item detail edits synchronize with the same Item in the underlying Library", async ({
@@ -171,12 +190,64 @@ test("Item detail edits synchronize with the same Item in the underlying Library
     "2099-08-20",
   );
 
+  await library
+    .getByRole("group", { name: `Status for ${item.title}` })
+    .getByRole("button", { name: "In progress" })
+    .click();
+  await expect(
+    sidebar
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
   await sidebar.getByRole("button", { name: "Close details" }).click();
   await expect(page).toHaveURL(/\/test\/browser\/library$/);
   await expect(
     page
       .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("navigating between Item sidebars keeps every shared Item synchronized", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one multi-Item history path");
+  const user = `${testInfo.project.name}-item-multi-sync`;
+  const { item: first } = await seedPlacedItem(page, user);
+  const second = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: `${user} Second Item`,
+      type: "article",
+    })
+  ).json()) as { id: string; title: string };
+
+  await page.goto(testAppUrl(`/items/${first.id}`, user));
+  const library = page.getByRole("region", { name: "Library" });
+  await page
+    .getByRole("complementary", { name: `${first.title} details` })
+    .getByRole("group", { name: `Status for ${first.title}` })
+    .getByRole("button", { name: "Done" })
+    .click();
+
+  await library.getByRole("link", { name: second.title }).click();
+  const secondSidebar = page.getByRole("complementary", {
+    name: `${second.title} details`,
+  });
+  await secondSidebar
+    .getByRole("group", { name: `Status for ${second.title}` })
+    .getByRole("button", { name: "In progress" })
+    .click();
+
+  await expect(
+    library
+      .getByRole("group", { name: `Status for ${first.title}` })
       .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    library
+      .getByRole("group", { name: `Status for ${second.title}` })
+      .getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -198,6 +269,37 @@ test("a foreign Item is missing without removing the underlying Library", async 
     "Could not load this Item",
   );
   await expect(page.getByText(item.title, { exact: true })).toHaveCount(0);
+});
+
+test("Item detail loading stays shaped inside the sidebar", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one loading path");
+  const user = `${testInfo.project.name}-item-loading`;
+  const { item } = await seedPlacedItem(page, user);
+  let releaseItem!: () => void;
+  await page.route(`**/api/items/${item.id}`, async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseItem = resolve;
+    });
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user), {
+    waitUntil: "domcontentloaded",
+  });
+  const sidebar = page.getByRole("complementary", { name: "Item details" });
+  await expect(
+    sidebar.getByRole("status", { name: "Loading Item details" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Library" }),
+  ).toBeVisible();
+
+  releaseItem();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
 });
 
 test("an Item detail failure retries inside the sidebar without replacing the Library", async ({

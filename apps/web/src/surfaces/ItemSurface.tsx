@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   useLocation,
   useNavigate,
@@ -21,7 +21,12 @@ export function ItemSurface() {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useCurrentUser();
-  const [changedItem, setChangedItem] = useState<Item>();
+  const [changedItems, setChangedItems] = useState<Record<string, Item>>({});
+  const recordItemChange = useCallback((changed: Item) => {
+    setChangedItems((current) => ({ ...current, [changed.id]: changed }));
+  }, []);
+  const changedItem = itemId ? changedItems[itemId] : undefined;
+  const itemOverrides = Object.values(changedItems);
   const backgroundLocation = readBackgroundLocation(location.state);
   const backgroundTrailId = backgroundLocation?.pathname.match(
     /^\/trails\/([^/]+)$/,
@@ -38,16 +43,23 @@ export function ItemSurface() {
             trailId={backgroundTrailId}
           />
         ) : (
-          <LibrarySurface itemOverride={changedItem} />
+          <LibrarySurface
+            itemOverrides={itemOverrides}
+            onItemChanged={recordItemChange}
+          />
         )
       ) : (
-        <LibrarySurface itemOverride={changedItem} />
+        <LibrarySurface
+          itemOverrides={itemOverrides}
+          onItemChanged={recordItemChange}
+        />
       )}
       {itemId && (
         <ItemSidebar
           itemId={itemId as ItemId}
           user={user}
-          onItemChanged={setChangedItem}
+          itemOverride={changedItem}
+          onItemChanged={recordItemChange}
           onClose={() =>
             backgroundLocation ? navigate(-1) : navigate("/library")
           }
