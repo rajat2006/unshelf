@@ -18,6 +18,7 @@
   --accent-h: #3b46a8;
   --on-accent: #ffffff;
   --done: #1f9d63;
+  --on-done: #0e0f13;
   --past: #767c88;
   --field-bg: #ffffff;
   --field-line: #d9dce2;
@@ -143,6 +144,9 @@ body {
 
 .top-bar__home {
   display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
   text-decoration: none;
 }
 
@@ -159,6 +163,9 @@ body {
 }
 
 .top-bar__door {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
   padding: var(--space-2);
   border-radius: var(--radius-1);
   color: var(--muted);
@@ -561,8 +568,8 @@ body {
 
 .trail-seal {
   display: grid;
-  width: var(--trail-seal-size);
-  height: var(--trail-seal-size);
+  width: 58px;
+  height: 58px;
   place-items: center;
   border: 4px double var(--on-accent);
   border-radius: 50%;
@@ -584,7 +591,11 @@ body {
 }
 
 .trail-waypoint__name.is-done {
-  color: var(--done);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--done);
+  text-decoration-thickness: 3px;
+  text-underline-offset: var(--space-1);
 }
 
 .trail-authoring-row,
@@ -650,7 +661,7 @@ body {
 }
 
 .trail-legend strong {
-  color: var(--done);
+  color: var(--ink);
 }
 
 .progress-ring {
@@ -907,6 +918,7 @@ body {
 
 .status-control__choices button.is-done.is-active {
   background: var(--done);
+  color: var(--on-done);
 }
 
 .item-source {
@@ -1086,7 +1098,12 @@ body {
 }
 
 .trail-stop-link {
-  padding: 0;
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
   border: 0;
   background: transparent;
   color: inherit;

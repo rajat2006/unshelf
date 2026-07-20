@@ -119,6 +119,40 @@ test("a Trail's Stops are private to its owner", async ({
   await expect(page.getByText("Owner only", { exact: true })).toHaveCount(0);
 });
 
+test("a desktop User forks and rejoins the Trail through its authoring controls", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "authoring is a desktop gesture (US 40)",
+  );
+  const user = `${testInfo.project.name}-trail-fork-rejoin`;
+
+  await page.goto(testAppUrl("/", user));
+  const { deepLink } = await startAndOpenTrail(page, "Forking journey", user);
+  await addFirstStop(page, "Foundation");
+
+  const foundation = page.getByRole("group", { name: /^Foundation:/ });
+  await foundation.getByRole("button", { name: "Add next Stop" }).click();
+  await page.getByPlaceholder("Name the new stop").fill("Main branch");
+  await page.getByPlaceholder("Name the new stop").press("Enter");
+
+  await foundation.getByRole("button", { name: "Fork a parallel branch" }).click();
+  await page.getByPlaceholder("Name the new stop").fill("Parallel branch");
+  await page.getByPlaceholder("Name the new stop").press("Enter");
+
+  const parallel = page.getByRole("group", { name: /^Parallel branch:/ });
+  await parallel.getByRole("button", { name: "Link to an existing Stop" }).click();
+  const rejoin = page
+    .getByRole("group", { name: /^Main branch:/ })
+    .getByRole("button", { name: "⇢ link here" });
+  await rejoin.focus();
+  await rejoin.press("Enter");
+
+  await page.goto(deepLink);
+  await expect(page.getByRole("button", { name: "Remove this link" })).toHaveCount(3);
+});
+
 test("at phone width the Trail is viewed, not authored", async ({
   page,
 }, testInfo) => {

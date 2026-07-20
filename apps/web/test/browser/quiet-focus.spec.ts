@@ -1,6 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { testAppUrl } from "./test-helpers";
+import { testApi, testAppUrl } from "./test-helpers";
+
+async function expectNoAccessibilityViolations(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+}
 
 async function startTrail(page: Page, user: string): Promise<void> {
   await page.goto(testAppUrl("/", user));
@@ -15,12 +20,11 @@ async function addStop(page: Page, name: string, first = false): Promise<void> {
   } else {
     await page.getByRole("button", { name: "Add next Stop" }).last().click();
   }
-  await page
-    .getByPlaceholder(first ? "Name your first stop" : "Name the new stop")
-    .fill(name);
-  await page
-    .getByPlaceholder(first ? "Name your first stop" : "Name the new stop")
-    .press("Enter");
+  const input = page.getByPlaceholder(
+    first ? "Name your first stop" : "Name the new stop",
+  );
+  await input.fill(name);
+  await input.press("Enter");
   await expect(page.getByRole("button", { name: `Open ${name}` })).toBeVisible();
 }
 
@@ -43,8 +47,7 @@ test("the Trail uses Quiet Focus in both color schemes and exposes non-color sta
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(canvas).toHaveCSS("background-color", "rgb(18, 19, 25)");
 
-  const results = await new AxeBuilder({ page }).analyze();
-  expect(results.violations).toEqual([]);
+  await expectNoAccessibilityViolations(page);
 });
 
 test("the shipped surfaces pass automated accessibility checks", async ({
@@ -53,8 +56,63 @@ test("the shipped surfaces pass automated accessibility checks", async ({
   const user = `${testInfo.project.name}-quiet-focus-a11y`;
   await page.goto(testAppUrl("/", user));
 
-  const results = await new AxeBuilder({ page }).analyze();
-  expect(results.violations).toEqual([]);
+  await expectNoAccessibilityViolations(page);
+});
+
+test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "one representative accessibility pass",
+  );
+  const user = `${testInfo.project.name}-quiet-focus-complete`;
+  const trail = (await (
+    await testApi(page, user, "/api/trails", "POST", { name: "Accessible Trail" })
+  ).json()) as { id: string };
+  const stop = (await (
+    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
+      name: "Complete Stop",
+    })
+  ).json()) as { id: string };
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Accessible Item",
+      type: "article",
+      source: "",
+    })
+  ).json()) as { id: string };
+  await testApi(page, user, `/api/stops/${stop.id}/items`, "POST", {
+    itemId: item.id,
+  });
+  await testApi(page, user, `/api/items/${item.id}/status`, "PATCH", {
+    status: "done",
+  });
+
+  await page.goto(testAppUrl(`/trails/${trail.id}`, user));
+  await expect(
+    page.getByText("Completed stop", { exact: true }).first(),
+  ).toBeAttached();
+  await expectNoAccessibilityViolations(page);
+
+  await page.goto(testAppUrl("/library", user));
+  await expect(page.getByRole("link", { name: "Accessible Item" })).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+  await page.getByRole("button", { name: "Capture", exact: true }).click();
+  await expectNoAccessibilityViolations(page);
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("link", { name: "Accessible Item" }).click();
+  await expect(
+    page.getByRole("complementary", { name: /Accessible Item details/ }),
+  ).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await expect(
+    page.getByRole("complementary", { name: /Complete Stop details/ }),
+  ).toBeVisible();
+  await expectNoAccessibilityViolations(page);
 });
 
 test("reduced motion removes Trail progress transitions", async ({ page }, testInfo) => {

@@ -241,7 +241,11 @@ export function TrailCanvas({
         onPointerMove={onPanMove}
         onPointerUp={onPanUp}
         onPointerLeave={onPanUp}
-        style={{ "--trail-height": `${Math.min(height, 560)}px` } as CSSProperties}
+        style={
+          {
+            "--trail-height": `${Math.min(height, 560)}px`,
+          } as CSSProperties
+        }
       >
         <div
           className="trail-canvas__ground"
@@ -496,13 +500,28 @@ function Waypoint({
           ) : linking ? null : (
             <div className="trail-authoring-row">
               <Tip label="Add the next stop in sequence">
-                <IconButton label="＋" accessibleLabel="Add next Stop" onClick={onNext} busy={busy} />
+                <IconButton
+                  label="＋"
+                  accessibleLabel="Add next Stop"
+                  onClick={onNext}
+                  busy={busy}
+                />
               </Tip>
               <Tip label="Fork a parallel branch">
-                <IconButton label="⑃" accessibleLabel="Fork a parallel branch" onClick={onFork} busy={busy} />
+                <IconButton
+                  label="⑃"
+                  accessibleLabel="Fork a parallel branch"
+                  onClick={onFork}
+                  busy={busy}
+                />
               </Tip>
               <Tip label="Link to an existing stop">
-                <IconButton label="⇢" accessibleLabel="Link to an existing Stop" onClick={onStartLink} busy={busy} />
+                <IconButton
+                  label="⇢"
+                  accessibleLabel="Link to an existing Stop"
+                  onClick={onStartLink}
+                  busy={busy}
+                />
               </Tip>
             </div>
           )}
@@ -549,7 +568,12 @@ function DraftForm({
         }}
         className="trail-draft__input"
       />
-      <button type="submit" disabled={busy} className="trail-draft__button" aria-label="Create Stop">
+      <button
+        type="submit"
+        disabled={busy}
+        className="trail-draft__button"
+        aria-label="Create Stop"
+      >
         ✓
       </button>
       <button
@@ -570,9 +594,8 @@ function DraftForm({
  * legible without its colour.
  */
 function Seal() {
-  const s = R * 2;
   return (
-    <div className="trail-seal" style={{ "--trail-seal-size": `${s}px` } as CSSProperties}>
+    <div className="trail-seal">
       <span aria-hidden="true">✓</span>
       <span className="visually-hidden">Completed stop</span>
     </div>
