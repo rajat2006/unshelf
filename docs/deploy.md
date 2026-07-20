@@ -79,7 +79,7 @@ horizontal scaling — is [ADR-0011](adr/0011-traefik-owns-routing-caddy-serves-
 | `VITE_CLERK_PUBLISHABLE_KEY` | web (**build arg**) | Same publishable key; Vite inlines it at build. |
 
 The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
-(Google-only, invite-restricted) or the invite gate silently breaks.
+(Google-only, sign-up open) or admission silently drifts from ADR-0001.
 
 ## First deploy (operator steps)
 
@@ -96,8 +96,8 @@ The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
    labels. Postgres data persists in the `unshelf-db` named volume.
 6. **Verify end to end**:
    - `https://$DOMAIN/api/health` → `{"status":"ok","db":"up",...}`
-   - `https://$DOMAIN/` → the SPA loads and Google sign-in works for an invited
-     identity.
+   - `https://$DOMAIN/` → the SPA loads and Google sign-in works for any Google
+     account (first sign-in creates the User).
 
 The API applies its schema on boot (`applySchema`, idempotent), so there is no
 separate migration step for v1.
@@ -119,8 +119,9 @@ environment exists, there first).
 ## Backups — a tracked, time-boxed risk
 
 v1 ships **no scheduled Postgres backups** — a conscious, time-boxed risk with a
-firm trigger to close it (stand up off-box backups before invite-only opens to
-public self-serve). The decision and its rationale are
+firm trigger to close it (stand up off-box backups before anyone but the founder
+holds data here — see the ADR: #77 removed the invite gate that used to define
+that milestone). The decision and its rationale are
 [ADR-0009 → "Data portability & backups"](adr/0009-v1-stack-and-hosting.md);
 the fast-follow that closes it is
 **[#40](https://github.com/rajat2006/unshelf/issues/40)**.
