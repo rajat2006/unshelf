@@ -1,4 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/** Capture an Item through the global overlay (#92): open, fill, submit, close. */
+async function capture(
+  page: Page,
+  fields: { title: string; type: string },
+): Promise<void> {
+  await page.getByRole("button", { name: "Capture", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Capture" });
+  await dialog.getByLabel("Title").fill(fields.title);
+  await dialog.getByLabel("Type").selectOption(fields.type);
+  await dialog.getByRole("button", { name: "Add to Library" }).click();
+  await expect(dialog).toBeHidden();
+}
 
 test("an authenticated User can capture an Item that remains private and persisted", async ({
   context,
@@ -21,9 +34,7 @@ test("an authenticated User can capture an Item that remains private and persist
   const secondTitle = `${testInfo.project.name} private Item`;
 
   await page.goto(`/test/browser/?testUser=${encodeURIComponent(firstUser)}`);
-  await page.getByLabel("Title").fill(firstTitle);
-  await page.getByLabel("Type").selectOption("article");
-  await page.getByRole("button", { name: "Add to All" }).click();
+  await capture(page, { title: firstTitle, type: "article" });
   await expect(page.getByText(firstTitle, { exact: true })).toBeVisible();
 
   await page.reload();
@@ -32,9 +43,7 @@ test("an authenticated User can capture an Item that remains private and persist
   const secondPage = await context.newPage();
   await secondPage.goto(`/test/browser/?testUser=${encodeURIComponent(secondUser)}`);
   await expect(secondPage.getByText(firstTitle, { exact: true })).toHaveCount(0);
-  await secondPage.getByLabel("Title").fill(secondTitle);
-  await secondPage.getByLabel("Type").selectOption("book");
-  await secondPage.getByRole("button", { name: "Add to All" }).click();
+  await capture(secondPage, { title: secondTitle, type: "book" });
   await expect(secondPage.getByText(secondTitle, { exact: true })).toBeVisible();
   await secondPage.close();
 
