@@ -125,9 +125,26 @@ cat ~/.codex/auth.json # paste the whole file as the secret value
 
 A **fine-grained personal access token**, scoped to this repo, with:
 
-- **Contents** — Read and write
-- **Pull requests** — Read and write
-- **Workflows** — Read and write
+| Permission | Access | Why |
+| --- | --- | --- |
+| **Metadata** | Read | Mandatory for every fine-grained token; GitHub adds it automatically. |
+| **Contents** | Read and write | Checkout at `fetch-depth: 0`, and pushing the agent branches. |
+| **Issues** | Read and write | **Every `gh issue edit --add-label`** — the PRD chain, `agent-promote-queued`'s `agent:queued` → `agent:implement` promotion, and the `agent:blocked` refusals. Also the `gh pr edit --add-label "agent:review"` hand-off *(unverified — PR labels are served by the issues API, but no run has exercised that path yet; grant it regardless, the issue paths require it)*. |
+| **Pull requests** | Read and write | `gh pr create` for the draft PRs — see the policy note below. |
+| **Workflows** | Read and write | Pushing commits that touch `.github/workflows/`, which `GITHUB_TOKEN` cannot do at all. |
+
+**Issues is the easy one to miss** — it is not implied by Pull requests, and omitting it does
+not fail loudly. The label steps catch the error and fall back to `GITHUB_TOKEN`, which
+applies the label successfully but as `github-actions[bot]`, so **no downstream workflow
+fires** and the chain silently stalls mid-PRD. The symptom is a run that completes green,
+re-labels the issue, and then nothing happens. Confirm by checking the actor on the label
+event (`gh api repos/OWNER/REPO/issues/events --jq '.[] | select(.event=="labeled")'`) — it
+must be your own login, never `github-actions[bot]`. The failing step logs it too:
+
+```
+GraphQL: Resource not accessible by personal access token (repository.issue)
+AGENT_PAT label add failed; falling back to GITHUB_TOKEN (chain will need a manual re-label).
+```
 
 Needed because the default `GITHUB_TOKEN` lacks the `workflows` scope and cannot trigger a
 downstream workflow when it adds a label — so the implement → review → ready chain would
