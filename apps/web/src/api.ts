@@ -3,12 +3,14 @@ import type {
   ConnectStopsRequest,
   CreateItemRequest,
   CreateStopRequest,
+  CreateTrailRequest,
   Item,
   ItemId,
   Status,
   Stop,
   StopDetail,
   StopId,
+  Trail,
   TrailView,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
@@ -80,6 +82,26 @@ export async function updateItemTargetDate(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Every Trail the current User owns, each with derived progress (ADR-0014). The
+ * Trails index lists these; the layout is the api's, the order oldest-first.
+ */
+export async function fetchTrails(user: CurrentUser): Promise<Trail[]> {
+  return requestJson<Trail[]>(user, "/api/trails");
+}
+
+/** Create a Trail. It starts with no Stops, so it reads back at 0/0 progress. */
+export async function createTrail(
+  user: CurrentUser,
+  input: CreateTrailRequest,
+): Promise<Trail> {
+  return requestJson<Trail>(user, "/api/trails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
 }
 

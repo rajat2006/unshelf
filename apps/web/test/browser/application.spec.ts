@@ -33,7 +33,9 @@ test("an authenticated User can capture an Item that remains private and persist
   const firstTitle = `${testInfo.project.name} persisted Item`;
   const secondTitle = `${testInfo.project.name} private Item`;
 
-  await page.goto(`/test/browser/?testUser=${encodeURIComponent(firstUser)}`);
+  await page.goto(
+    `/test/browser/library?testUser=${encodeURIComponent(firstUser)}`,
+  );
   await capture(page, { title: firstTitle, type: "article" });
   await expect(page.getByText(firstTitle, { exact: true })).toBeVisible();
 
@@ -41,7 +43,9 @@ test("an authenticated User can capture an Item that remains private and persist
   await expect(page.getByText(firstTitle, { exact: true })).toBeVisible();
 
   const secondPage = await context.newPage();
-  await secondPage.goto(`/test/browser/?testUser=${encodeURIComponent(secondUser)}`);
+  await secondPage.goto(
+    `/test/browser/library?testUser=${encodeURIComponent(secondUser)}`,
+  );
   await expect(secondPage.getByText(firstTitle, { exact: true })).toHaveCount(0);
   await capture(secondPage, { title: secondTitle, type: "book" });
   await expect(secondPage.getByText(secondTitle, { exact: true })).toBeVisible();

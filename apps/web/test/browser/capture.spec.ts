@@ -77,9 +77,8 @@ test("the c shortcut opens Capture when focus is not in an editable control", as
 test("shortcuts are suppressed while focus is in an editable control", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
-
-  // A text field on the surface: typing must not be hijacked into opening Capture.
+  // The store surface carries an editable field (the Stop composer); focus it.
+  await page.goto(appUrl(testInfo, "/library"));
   const field = page.getByLabel("Stop name");
   await field.click();
   await page.keyboard.press("c");
@@ -107,8 +106,7 @@ test("a successful capture lands the Item in the Library and leaves the User on 
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/\/test\/browser\/library(\?|$)/);
 
-  // It entered the store (the Library, the "All" catch-all), reachable from Home.
-  await page.getByRole("link", { name: "Trails", exact: true }).click();
+  // It entered the store — the Library, where every capture lands — and shows there.
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 });
 
@@ -118,7 +116,7 @@ test("Capture preserves Source verbatim and allows duplicate Sources", async ({
   const source = "https://example.com/same";
   const first = `${testInfo.project.name} dup one`;
   const second = `${testInfo.project.name} dup two`;
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/library"));
 
   for (const title of [first, second]) {
     await captureButton(page).click();
@@ -158,7 +156,7 @@ test("an API failure stays visible and recoverable inside the overlay", async ({
   context,
 }, testInfo) => {
   const title = `${testInfo.project.name} retried Item`;
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/library"));
 
   let failNext = true;
   await context.route("**/api/items", async (route) => {
