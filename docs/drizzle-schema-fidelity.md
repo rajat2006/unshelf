@@ -41,6 +41,21 @@ ERROR:  there is no unique constraint matching given keys for referenced table "
 failure mode the ticket was worried about (declared in TypeScript, silently dropped from the
 SQL). It cannot reach a database in a wrong state; it simply refuses to run.
 
+This is a known upstream bug, not a misuse of the API:
+[drizzle-orm#4638](https://github.com/drizzle-team/drizzle-orm/issues/4638) is an exact match
+(a composite `foreignKey()` targeting a composite `uniqueIndex()`), filed 2025-06-12 and closed
+2026-01-03 as `bug/fixed-in-beta`;
+[#3260](https://github.com/drizzle-team/drizzle-orm/issues/3260) reports the same ordering
+inversion more broadly. There is **no config option or schema-level API that controls emitted
+statement order** — the [config file
+docs](https://orm.drizzle.team/docs/drizzle-config-file) expose nothing of the kind, and
+`breakpoints` only inserts `--> statement-breakpoint` markers. Nor do the [indexes &
+constraints docs](https://orm.drizzle.team/docs/indexes-constraints) warn that a composite FK
+target must be a `unique()` constraint. The fix landed only in the **v1 line** (from the
+`alternation-engine` rewrite, [PR
+#4439](https://github.com/drizzle-team/drizzle-orm/pull/4439)) and will not be backported to
+0.31.x — see [Which version line](#which-version-line) below.
+
 ### Fix: declare the FK targets as `unique()`, not `uniqueIndex()`
 
 A composite **unique constraint** is emitted *inline in `CREATE TABLE`*, which is necessarily
@@ -74,6 +89,43 @@ so reordering statements cannot desynchronise it.
 It is still the worse option: it is a trap that rearms. Any *future* migration introducing a new
 composite-FK-target index needs the same hand edit, and the person writing it will not know
 that. Prefer `unique()` and let the tool stay correct on its own.
+
+## Which version line
+
+Because the ordering fix exists only in the v1 release candidate, the version choice is now a
+real decision rather than "take latest". All three configurations below were run end to end
+against our actual schema; all three produce a database semantically identical to today's.
+
+| | Applies unedited | DDL vs today | Cost |
+| --- | --- | --- | --- |
+| **A. `drizzle-kit@0.31.10` + `unique()`** | yes | +5 `pg_constraint` rows, same indexes | none material |
+| B. `drizzle-kit@0.31.10` + `uniqueIndex()` + hand edit | no — needs the edit | exact | a trap that rearms on every future composite-FK-target index |
+| C. `drizzle-kit@1.0.0-rc.4` + `uniqueIndex()` | yes | exact | it is a release candidate |
+
+**Recommendation: A.** Pin the stable line and declare composite FK targets with `unique()`.
+
+Option C was verified, not assumed: on `drizzle-kit@1.0.0-rc.4` / `drizzle-orm@1.0.0-rc.4` the
+five `CREATE UNIQUE INDEX` statements are emitted at lines 70–81, *before* the composite foreign
+keys at lines 83–98, and the migration applies to an empty database with no hand editing and no
+`unique()` substitution. Its resulting schema diffs clean against today's.
+
+It is still the wrong bet right now. `npm dist-tags` for `drizzle-kit` are `latest: 0.31.10`,
+`beta: 1.0.0-beta.22`, `rc: 1.0.0-rc.4` — v1 is not released. More to the point, v1 **changes
+the migration folder layout** from `drizzle/0000_name.sql` to
+`drizzle/<timestamp>_<name>/migration.sql` (+ a per-migration `snapshot.json`), which is exactly
+the surface [#104](https://github.com/rajat2006/unshelf/issues/104) is deciding about. Adopting
+a release candidate whose output layout is still moving, in the same change that retires
+`applySchema`-on-boot, stacks two unsettled things. Option A costs five rows in a catalogue
+table; that is a much smaller price than a moving target.
+
+Worth revisiting once v1 ships — at which point `unique()` can stay as-is anyway, since it is
+correct on both lines.
+
+> One incidental finding while testing C: putting two `drizzle-orm` versions in one pnpm
+> workspace breaks `drizzle-kit`, which resolved `drizzle-orm/_relations` against the hoisted
+> `node_modules/.pnpm/node_modules/drizzle-orm` copy rather than its own. Not a problem for a
+> single-version workspace, but it rules out side-by-side evaluation in place — the two lines
+> had to be tested in separate workspaces.
 
 ## Feature-by-feature results
 
@@ -216,7 +268,8 @@ type. Both are worth having; they catch different mistakes at different times.
 ## Method and environment
 
 - `drizzle-orm@0.45.2`, `drizzle-kit@0.31.10`, `pg@8.22.0`, `tsx@4.23.1`, `tsup@8.5.1`,
-  `typescript@5.9.3`, Node 23.10.0, pnpm 11.12.0, PostgreSQL 16.14 in Docker.
+  `typescript@5.9.3`, Node 23.10.0, pnpm 11.12.0, PostgreSQL 16.14 in Docker. The v1 comparison
+  used `drizzle-orm@1.0.0-rc.4` / `drizzle-kit@1.0.0-rc.4` in a separate workspace.
 - Reference database `today` built by applying the real `SCHEMA_SQL` (imported directly from
   `apps/api/src/schema.ts`, unmodified) to an empty database.
 - Candidate databases built by applying `drizzle-kit generate`'s output to empty databases.
@@ -229,9 +282,19 @@ type. Both are worth having; they catch different mistakes at different times.
 
 Nothing here reopens the ORM choice. The composite tenancy foreign keys — the load-bearing
 thing the ticket flagged as a potential deal-breaker — are expressible, generated, applied, and
-enforced. The conversion ticket should carry forward three concrete decisions:
+enforced.
 
-1. Declare composite FK targets with `unique()`, never `uniqueIndex()`.
-2. Add a `default` export condition to `packages/shared`, and make the generate task depend on
+[#106](https://github.com/rajat2006/unshelf/issues/106) (replace `SCHEMA_SQL` with a TypeScript
+schema and migration `0000`) should carry forward four concrete decisions:
+
+1. Pin `drizzle-kit@0.31.10`, not the v1 release candidate.
+2. Declare composite FK targets with `unique()`, never `uniqueIndex()`.
+3. Add a `default` export condition to `packages/shared`, and make the generate task depend on
    `^build`.
-3. Use `text(…, { enum: … })` for `type` and `status`, keeping the explicit `check()` alongside.
+4. Use `text(…, { enum: … })` for `type` and `status`, keeping the explicit `check()` alongside.
+
+[#104](https://github.com/rajat2006/unshelf/issues/104) (where migrations run) gains one input:
+the generated `drizzle/` folder is a **runtime asset**. `tsup` bundles the TypeScript but not
+the `.sql` files, so whatever runs the migrations needs that directory present on the Dokploy
+VPS. It also gains one constraint from the recommendation above — pinning 0.31.10 keeps the
+folder layout fixed at `drizzle/0000_name.sql` while that decision is being made.
