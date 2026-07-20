@@ -63,8 +63,8 @@ const proposalList =
     ? pastProposals.map((t) => `- ${t}`).join("\n")
     : "_(none yet — nothing has been proposed before)_";
 
-// Same subscription-seat setup as the other agent phases — a no-op on the Claude
-// Code default.
+// Same subscription-seat setup as the other agent phases — a no-op when the run
+// resolved to Claude.
 prepareCodexAuth(agent.name);
 
 const result = await runWithExtraction({
