@@ -1,0 +1,97 @@
+/*
+ * Quiet Focus — the locked token layer (ADR-0012, design spec §1). Every colour
+ * decision routes through a custom property so the light/dark peers and the
+ * "never red for past-target" rule are enforced in one place, not per component.
+ * Switching light↔dark redefines ~ten tokens; nothing else changes.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Palette — light (design spec §1 token table). */
+  --bg: #fafafb;
+  --surface: #ffffff;
+  --ink: #16181d;
+  --muted: #676c76;
+  --line: #e6e8ec;
+  --accent: #4b57c4;
+  --accent-h: #3b46a8;
+  --on-accent: #ffffff;
+  --done: #1f9d63;
+  --past: #767c88;
+  --field-bg: #ffffff;
+  --field-line: #d9dce2;
+  --trail-bg: #f4f5f7;
+
+  /* Spacing — the 4px grid, and radii 6 / 8 / 10. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 40px;
+  --radius-1: 6px;
+  --radius-2: 8px;
+  --radius-3: 10px;
+
+  /* One modern grotesque for everything — the native stack, zero webfont cost. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+/* Dark is a peer, not an add-on: the same ten roles, redefined. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f13;
+    --surface: #16181d;
+    --ink: #eceef3;
+    --muted: #8b909b;
+    --line: #24272e;
+    --accent: #7c88ff;
+    --accent-h: #99a2ff;
+    --on-accent: #0e0f13;
+    --done: #35c081;
+    --past: #868c98;
+    --field-bg: #1a1c22;
+    --field-line: #2c2f38;
+    --trail-bg: #121319;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  /* Reflow to any width with no page-level horizontal scroll (ADR-0008). */
+  overflow-x: hidden;
+}
+
+/* Keyboard focus is always visible, in both themes. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Honour a reduced-motion preference — no transition or animation discomfort. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

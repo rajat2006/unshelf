@@ -28,7 +28,8 @@ export function ApplicationAuthProvider({
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
-function useApplicationAuth(): ApplicationAuth {
+/** The whole application-auth handle: status plus the provider's controls. */
+export function useApplicationAuth(): ApplicationAuth {
   const auth = useContext(AuthContext);
   if (!auth) throw new Error("ApplicationAuthProvider is required");
   return auth;
