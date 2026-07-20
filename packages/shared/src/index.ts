@@ -53,6 +53,26 @@ export type StopId = string & {
   readonly [identifierBrand]: "StopId";
 };
 
+export type TrailId = string & {
+  readonly [identifierBrand]: "TrailId";
+};
+
+export type LabelId = string & {
+  readonly [identifierBrand]: "LabelId";
+};
+
+/** A private, free-text marker the User applies across Library Items. */
+export interface Label {
+  id: LabelId;
+  userId: UserId;
+  name: string;
+}
+
+/** Create a flat Label. Its name is required and otherwise stored verbatim. */
+export interface CreateLabelRequest {
+  name: string;
+}
+
 /**
  * A single captured piece of learning material — the shared spine every later
  * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
@@ -89,6 +109,8 @@ export interface Item {
   pastTarget: boolean;
   /** When the Item entered *done*, ISO-8601, or null while not done. */
   completedAt: string | null;
+  /** The private Labels currently applied to this Item. */
+  labels: Label[];
 }
 
 /**
@@ -181,6 +203,41 @@ export interface CreateStopRequest {
  */
 export interface AddStopItemRequest {
   itemId: ItemId;
+}
+
+/**
+ * A first-class Trail — one User's learning journey, owning a canvas of Stops and
+ * forks (ADR-0014, CONTEXT.md *Trail*). A User owns *many* Trails, each with an
+ * opaque, stable `id` that does not change when the Trail is renamed, so its URL
+ * (`/trails/:id`) survives presentation changes. Scoped to a User like every
+ * domain record (ADR-0001): listing and reading resolve from the authenticated
+ * User, so another User's Trail is indistinguishable from a missing one.
+ *
+ * `done` and `total` are the Trail's *derived* progress — how many of the Items
+ * across its Stops are *done* out of how many it holds, counted per distinct Item
+ * so an Item pulled into two of the Trail's Stops is not double-counted. Like the
+ * per-node progress on `TrailNode` and the derived `pastTarget` (ADR-0005) it is
+ * computed on every read, never stored; an empty Trail reads as 0/0.
+ */
+export interface Trail {
+  /** This Trail's opaque, stable id (uuid) — the `:trailId` its URL carries. */
+  id: TrailId;
+  /** The owning User — the tenancy anchor this Trail is scoped to. */
+  userId: UserId;
+  /** What the User calls this Trail — required, stored exactly as typed. */
+  name: string;
+  /** When this Trail was created, ISO-8601 — the stable order the index lists in. */
+  createdAt: string;
+  /** How many distinct Items across the Trail's Stops are *done* (0 when none). */
+  done: number;
+  /** How many distinct Items the Trail's Stops hold in total. */
+  total: number;
+}
+
+/** Create a Trail. `name` is required; the new Trail starts with no Stops. */
+export interface CreateTrailRequest {
+  /** What to call the Trail — required, stored exactly as typed. */
+  name: string;
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   Stop,
   StopDetail,
   StopId,
+  TrailId,
   UserId,
 } from "@unshelf/shared";
 import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
@@ -32,19 +33,32 @@ const toStop = (row: StopRow): Stop => ({
   name: row.name,
 });
 
-/** Create an empty, named Stop for a User. The name is stored exactly as given. */
+/**
+ * Create an empty, named Stop on one of the User's Trails (ADR-0014). A Stop
+ * belongs to exactly one Trail, so creation names it: the insert selects the
+ * Trail id back through `trails` scoped to the same User, which is what makes a
+ * Stop incapable of landing on a Trail that is not the caller's — there is no
+ * pairing of a User and another User's Trail this statement can write. When the
+ * Trail is not this User's the select finds nothing and no row is inserted, so
+ * this returns null and the router answers 404, exactly as a missing Trail does.
+ * The name is stored exactly as given.
+ */
 export async function createStop(
   pool: Pool,
   userId: UserId,
+  trailId: TrailId,
   input: CreateStopRequest,
-): Promise<Stop> {
+): Promise<Stop | null> {
   const { rows } = await pool.query<StopRow>(
-    `INSERT INTO stops (user_id, name)
-     VALUES ($1, $2)
+    `INSERT INTO stops (user_id, trail_id, name)
+     SELECT $1, trails.id, $3
+     FROM trails
+     WHERE trails.id = $2 AND trails.user_id = $1
      RETURNING id, user_id, name`,
-    [userId, input.name],
+    [userId, trailId, input.name],
   );
-  return toStop(rows[0]!);
+  const stop = rows[0];
+  return stop ? toStop(stop) : null;
 }
 
 /**
@@ -82,16 +96,40 @@ export async function getStop(
   userId: UserId,
   stopId: StopId,
 ): Promise<StopDetail | null> {
+  return getStopInScope(pool, userId, stopId, null);
+}
+
+async function getStopInScope(
+  pool: Pool,
+  userId: UserId,
+  stopId: StopId,
+  trailId: TrailId | null,
+): Promise<StopDetail | null> {
   const { rows } = await pool.query<StopRow>(
     `SELECT id, user_id, name
      FROM stops
-     WHERE id = $1 AND user_id = $2`,
-    [stopId, userId],
+     WHERE id = $1 AND user_id = $2
+       AND ($3::uuid IS NULL OR trail_id = $3)`,
+    [stopId, userId, trailId],
   );
   const stop = rows[0];
   if (!stop) return null;
 
   return { ...toStop(stop), items: await listItemsIn(pool, userId, stopId) };
+}
+
+/**
+ * Read Stop detail only when the URL's Trail and Stop belong together. Both ids
+ * are resolved under the authenticated User so a mismatch, a foreign id, and a
+ * missing id all collapse to the same null result.
+ */
+export async function getStopOnTrail(
+  pool: Pool,
+  userId: UserId,
+  trailId: TrailId,
+  stopId: StopId,
+): Promise<StopDetail | null> {
+  return getStopInScope(pool, userId, stopId, trailId);
 }
 
 async function listItemsIn(

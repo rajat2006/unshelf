@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { StopId, TrailView, UserId } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { StopId, TrailId, TrailView, UserId } from "@unshelf/shared";
+import type { CurrentUser } from "../application-auth";
 import { TrailCanvas } from "./TrailCanvas";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
+const trailId = "00000000-0000-0000-0000-0000000000t1" as TrailId;
 const a = "00000000-0000-0000-0000-00000000000a" as StopId;
 const b = "00000000-0000-0000-0000-00000000000b" as StopId;
 
@@ -22,15 +23,17 @@ const trail: TrailView = {
 const render = (readOnly: boolean, view: TrailView = trail) =>
   renderToStaticMarkup(
     <TrailCanvas
+      trailId={trailId}
       trail={view}
       user={user}
       onTrailChanged={() => undefined}
       onRefresh={async () => undefined}
+      onOpenStop={() => undefined}
       readOnly={readOnly}
     />,
   );
 
-describe("Trail canvas — the Adventure map", () => {
+describe("Trail canvas — Quiet Focus", () => {
   it("draws each Stop as a waypoint with its name and progress", () => {
     const markup = render(false);
 
@@ -39,6 +42,12 @@ describe("Trail canvas — the Adventure map", () => {
     expect(markup).toContain("1/3"); // the underway ring shows its fraction
     expect(markup).toContain("You are here"); // B is the frontier
     expect(markup).toContain("<path"); // the trail is drawn as segments
+    expect(markup).toContain("Completed stop");
+    expect(markup).toContain("Solid path: walked");
+    expect(markup).toContain("Dotted path: ahead");
+    expect(markup).not.toContain("Compass");
+    expect(markup).not.toContain("ochre");
+    expect(markup).not.toContain("pine");
   });
 
   it("offers arranging controls on desktop", () => {

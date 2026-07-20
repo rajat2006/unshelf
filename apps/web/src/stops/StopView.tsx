@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, ItemId, StopDetail, StopId } from "@unshelf/shared";
 import { removeItemFromStop } from "../api";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { ItemRow } from "../items/ItemRow";
 
 interface StopViewProps {
@@ -10,6 +10,8 @@ interface StopViewProps {
   onStopChanged: (stop: StopDetail) => void;
   onItemChanged: (item: Item) => void;
   onClose: () => void;
+  closeLabel?: string;
+  headingLevel?: 2 | 3;
 }
 
 /**
@@ -28,41 +30,31 @@ export function StopView({
   onStopChanged,
   onItemChanged,
   onClose,
+  closeLabel = "← All stops",
+  headingLevel = 3,
 }: StopViewProps) {
+  const Heading = `h${headingLevel}` as "h2" | "h3";
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: "1.05rem", overflowWrap: "anywhere" }}>
+      <div className="stop-view__heading">
+        <Heading>
           {stop.name}
-        </h3>
+        </Heading>
         <button
           type="button"
           onClick={onClose}
-          style={{
-            fontSize: "0.85rem",
-            padding: "0.5rem 0.75rem",
-            minHeight: "44px",
-            cursor: "pointer",
-          }}
+          className="quiet-button"
         >
-          ← All stops
+          {closeLabel}
         </button>
       </div>
 
       {stop.items.length === 0 ? (
-        <p style={{ opacity: 0.7 }}>
-          Nothing here yet — add items to this stop from All below.
+        <p className="quiet-copy">
+          Nothing here yet — add Items to this Stop from the Library.
         </p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        <ul className="stop-view__items">
           {stop.items.map((item) => (
             <ItemRow
               key={item.id}
@@ -118,22 +110,17 @@ function RemoveFromStop({
   }
 
   return (
-    <div style={{ marginTop: "0.35rem" }}>
+    <div className="stop-view__remove">
       <button
         type="button"
         disabled={removing}
         onClick={() => void remove()}
-        style={{
-          fontSize: "0.85rem",
-          padding: "0.5rem 0.75rem",
-          minHeight: "44px",
-          cursor: removing ? "wait" : "pointer",
-        }}
+        className="quiet-button"
       >
         {removing ? "Removing…" : "Remove from stop"}
       </button>
       {error && (
-        <div role="alert" style={{ color: "crimson", fontSize: "0.85rem" }}>
+        <div role="alert" className="surface-error">
           Could not remove from the stop: {error}
         </div>
       )}

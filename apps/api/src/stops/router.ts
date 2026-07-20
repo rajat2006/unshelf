@@ -1,14 +1,8 @@
 import { Router, type RequestHandler } from "express";
 import type { Pool } from "pg";
-import type {
-  AddStopItemRequest,
-  CreateStopRequest,
-  ItemId,
-  StopId,
-} from "@unshelf/shared";
+import type { AddStopItemRequest, ItemId, StopId } from "@unshelf/shared";
 import {
   addItemToStop,
-  createStop,
   getStop,
   listStops,
   removeItemFromStop,
@@ -24,6 +18,12 @@ import {
  * membership: what the User changed is what the Stop now holds, and it saves the
  * client a re-read to find out.
  *
+ * A Stop is *created* under its owning Trail (`POST /api/trails/:trailId/stops`,
+ * #94), because a Stop belongs to exactly one Trail — there is no Trail-less Stop
+ * to create here. This router keeps the reads and the membership writes: listing
+ * every Stop the User owns (across their Trails), reading one, and pulling Items
+ * into and out of it.
+ *
  * A Stop or Item belonging to another User answers exactly as a missing one does
  * — 404, never 403 — so the boundary never confirms that someone else's id is a
  * real id.
@@ -31,16 +31,6 @@ import {
 export function createStopsRouter(pool: Pool, auth: RequestHandler[]): Router {
   const router = Router();
   router.use(...auth);
-
-  router.post("/", async (req, res) => {
-    const input = parseCreateStop(req.body);
-    if (!input) {
-      res.status(400).json({ error: "a name is required" });
-      return;
-    }
-    const stop = await createStop(pool, req.user!.id, input);
-    res.status(201).json(stop);
-  });
 
   router.get("/", async (req, res) => {
     res.json(await listStops(pool, req.user!.id));
@@ -93,14 +83,6 @@ export function createStopsRouter(pool: Pool, auth: RequestHandler[]): Router {
   });
 
   return router;
-}
-
-/** Validate a create-Stop payload at the HTTP seam without altering User input. */
-function parseCreateStop(body: unknown): CreateStopRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || name.trim().length === 0) return null;
-  return { name };
 }
 
 /** Validate an add-to-Stop payload: one Item id, and nothing else to carry. */

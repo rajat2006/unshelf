@@ -3,6 +3,8 @@ import type {
   CreateItemRequest,
   Item,
   ItemId,
+  Label,
+  LabelId,
   Status,
   Type,
   UserId,
@@ -18,6 +20,7 @@ export interface ItemRow {
   target_date: string | null;
   past_target: boolean;
   completed_at: Date | null;
+  labels: Label[];
 }
 
 /**
@@ -33,14 +36,28 @@ export interface ItemRow {
  * stale. `COALESCE` makes a missing date simply not past, rather than unknown.
  * "Today" is the database's, the single clock all Users are compared against.
  *
- * The columns are unqualified, so a query using this must have exactly one `items`
- * in scope — select from `items` and put any Stop membership in a subquery.
+ * Columns are qualified against `items`; Stop and Label membership stay in
+ * subqueries so this projection still reads the same shared Item at every seam.
  */
-export const ITEM_PROJECTION = `id, user_id, title, source, type, status,
-                         target_date::text AS target_date,
-                         (COALESCE(target_date < CURRENT_DATE, false)
-                          AND status <> 'done') AS past_target,
-                         completed_at`;
+export const ITEM_PROJECTION = `items.id, items.user_id, items.title,
+                         items.source, items.type, items.status,
+                         items.target_date::text AS target_date,
+                         (COALESCE(items.target_date < CURRENT_DATE, false)
+                          AND items.status <> 'done') AS past_target,
+                         items.completed_at,
+                         COALESCE((
+                           SELECT jsonb_agg(
+                             jsonb_build_object(
+                               'id', labels.id,
+                               'userId', labels.user_id,
+                               'name', labels.name
+                             ) ORDER BY labels.name, labels.id
+                           )
+                           FROM item_labels
+                           JOIN labels ON labels.id = item_labels.label_id
+                           WHERE item_labels.item_id = items.id
+                             AND item_labels.user_id = items.user_id
+                         ), '[]'::jsonb) AS labels`;
 
 export const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
@@ -52,6 +69,7 @@ export const toItem = (row: ItemRow): Item => ({
   targetDate: row.target_date,
   pastTarget: row.past_target,
   completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+  labels: row.labels,
 });
 
 /**
@@ -86,6 +104,21 @@ export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
     [userId],
   );
   return rows.map(toItem);
+}
+
+/** Read one Item through both its stable identity and authenticated owner. */
+export async function getItem(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT ${ITEM_PROJECTION}
+     FROM items
+     WHERE id = $1 AND user_id = $2`,
+    [itemId, userId],
+  );
+  return rows[0] ? toItem(rows[0]) : null;
 }
 
 /**
@@ -136,4 +169,50 @@ export async function updateItemTargetDate(
     [itemId, userId, targetDate],
   );
   return rows[0] ? toItem(rows[0]) : null;
+}
+
+/** Apply one owned Label to one owned Item; repeating the request is a no-op. */
+export async function applyLabelToItem(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+  labelId: LabelId,
+): Promise<Item | null> {
+  const { rows } = await pool.query(
+    `INSERT INTO item_labels (user_id, item_id, label_id)
+     SELECT $3, items.id, labels.id
+     FROM items, labels
+     WHERE items.id = $1 AND labels.id = $2
+       AND items.user_id = $3 AND labels.user_id = $3
+     ON CONFLICT (item_id, label_id) DO UPDATE
+       SET user_id = EXCLUDED.user_id
+     RETURNING item_id`,
+    [itemId, labelId, userId],
+  );
+  return rows.length > 0 ? getItem(pool, userId, itemId) : null;
+}
+
+/** Remove only Label membership; repeating removal preserves the requested set. */
+export async function removeLabelFromItem(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+  labelId: LabelId,
+): Promise<Item | null> {
+  const { rows } = await pool.query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM items, labels
+       WHERE items.id = $1 AND labels.id = $2
+         AND items.user_id = $3 AND labels.user_id = $3
+     ) AS allowed`,
+    [itemId, labelId, userId],
+  );
+  if (!rows[0]?.allowed) return null;
+
+  await pool.query(
+    `DELETE FROM item_labels
+     WHERE item_id = $1 AND label_id = $2 AND user_id = $3`,
+    [itemId, labelId, userId],
+  );
+  return getItem(pool, userId, itemId);
 }

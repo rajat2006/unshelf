@@ -1,62 +1,99 @@
-import { CurrentSpace } from "./items/CurrentSpace";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "./auth";
+import { useEffect } from "react";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  type Location,
+  useLocation,
+  useNavigate,
+} from "react-router";
+import { useApplicationAuth } from "./application-auth";
+import { AuthPlaceholder } from "./shell/AuthPlaceholder";
+import { NotFound } from "./shell/NotFound";
+import { Shell } from "./shell/Shell";
+import { SignInScreen } from "./shell/SignInScreen";
+import { HomeSurface } from "./surfaces/HomeSurface";
+import { ItemSurface } from "./surfaces/ItemSurface";
+import { LibrarySurface } from "./surfaces/LibrarySurface";
+import { TrailSurface } from "./surfaces/TrailSurface";
 
 /**
- * The v1 shell, gated by Google sign-in. A signed-out visitor sees only the
- * sign-in call to action (sign-up *is* sign-in — the first Google sign-in
- * creates the User, ADR-0001); a signed-in User sees their space: capture an Item,
- * browse All (issue #17), and group Items into Stops (issue #20). Everything
- * reflows to phone width so an Item can be captured the moment it is found
- * (ADR-0008).
+ * The routed Unshelf shell (design spec §3–§5, ADR-0013).
+ *
+ * Auth resolution precedes route gating: while it resolves, only the neutral
+ * wordmark placeholder shows — no route flashes a sign-in wall or signed-out
+ * content. Once resolved, `/sign-in` is the single auth route; every other route
+ * requires a signed-in User, so a signed-out visitor is redirected to sign-in
+ * with their intended destination preserved. Signing in restores that
+ * destination; an unknown route recovers to Home.
  */
 export function App() {
+  const { status } = useApplicationAuth();
+
+  if (status === "loading") {
+    return <AuthPlaceholder />;
+  }
+
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "40rem",
-        margin: "0 auto",
-        padding: "clamp(1rem, 4vw, 2rem)",
-        boxSizing: "border-box",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "1rem",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>Unshelf</h1>
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
-      </header>
-
-      <SignedOut>
-        <section style={{ marginTop: "2rem" }}>
-          <p>A place to organise your learning. Sign in to begin.</p>
-          <SignInButton>
-            <button
-              type="button"
-              style={{
-                fontSize: "1rem",
-                padding: "0.75rem 1.25rem",
-                minHeight: "44px",
-                cursor: "pointer",
-              }}
-            >
-              Sign in with Google
-            </button>
-          </SignInButton>
-        </section>
-      </SignedOut>
-
-      <SignedIn>
-        <CurrentSpace />
-      </SignedIn>
-    </main>
+    <Routes>
+      <Route path="/sign-in" element={<SignInRoute />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<Shell />}>
+          <Route index element={<HomeSurface />} />
+          <Route
+            path="library"
+            element={<LibrarySurface labelFilterEnabled />}
+          />
+          <Route path="trails/:trailId" element={<TrailSurface />} />
+          <Route
+            path="trails/:trailId/stops/:stopId"
+            element={<TrailSurface />}
+          />
+          <Route path="items/:itemId" element={<ItemSurface />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Route>
+    </Routes>
   );
+}
+
+/**
+ * Gate every private surface. A signed-out visitor is sent to `/sign-in` with
+ * the route they intended carried in history state, so it can be restored once
+ * they sign in.
+ */
+function RequireAuth() {
+  const { status } = useApplicationAuth();
+  const location = useLocation();
+  if (status === "signed-out") {
+    return <Navigate to="/sign-in" replace state={{ from: location }} />;
+  }
+  return <Outlet />;
+}
+
+/**
+ * The `/sign-in` route: the chrome-less screen while signed out, and — once auth
+ * resolves signed-in — a redirect to the intended private route (or Home when
+ * there was none, e.g. a signed-in User visiting `/sign-in` directly).
+ */
+function SignInRoute() {
+  const { status } = useApplicationAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const intended = (location.state as { from?: Location } | null)?.from;
+  const destination = intended
+    ? `${intended.pathname}${intended.search}${intended.hash}`
+    : "/";
+
+  useEffect(() => {
+    if (status === "signed-in") {
+      navigate(destination, { replace: true });
+    }
+  }, [status, destination, navigate]);
+
+  if (status === "signed-in") {
+    return null;
+  }
+  return <SignInScreen />;
 }

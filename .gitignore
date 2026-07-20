@@ -5,6 +5,8 @@ dist/
 build/
 .turbo/
 coverage/
+playwright-report/
+test-results/
 
 # Local Claude Code worktrees (not part of the repo)
 .claude/worktrees/

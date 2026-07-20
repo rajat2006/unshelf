@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import {
   Status,
@@ -10,7 +11,7 @@ import {
   type StopId,
   type UserId,
 } from "@unshelf/shared";
-import type { CurrentUser } from "../auth";
+import type { CurrentUser } from "../application-auth";
 import { StopsSection } from "./StopsSection";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -39,31 +40,31 @@ const item: Item = {
   targetDate: "2026-08-01",
   pastTarget: false,
   completedAt: null,
+  labels: [],
 };
 
 const renderStops = (openStop: StopDetail | null) =>
   renderToStaticMarkup(
-    <StopsSection
-      stops={stops}
-      openStop={openStop}
-      error={null}
-      user={user}
-      onStopsChanged={async () => undefined}
-      onStopOpened={() => undefined}
-      onStopChanged={() => undefined}
-      onItemChanged={() => undefined}
-    />,
+    <MemoryRouter initialEntries={[`/trails/trail-1/stops/${stopId}`]}>
+      <StopsSection
+        stops={stops}
+        openStop={openStop}
+        error={null}
+        user={user}
+        onStopOpened={() => undefined}
+        onStopChanged={() => undefined}
+        onItemChanged={() => undefined}
+      />
+    </MemoryRouter>,
   );
 
 describe("Stops smoke coverage", () => {
-  it("renders the Stops list with phone-safe, tappable controls", () => {
+  it("renders every Stop as an operable list choice", () => {
     const markup = renderStops(null);
 
     expect(markup).toContain("Learn CSS");
     expect(markup).toContain("Build the API");
-    expect(markup).toContain("width:100%");
-    expect(markup).toContain("min-height:44px");
-    expect(markup).toContain("overflow-wrap:anywhere");
+    expect(markup.match(/<button/g)).toHaveLength(2);
   });
 
   it("renders a Stop detail with the Item facts shared by All", () => {
@@ -75,6 +76,5 @@ describe("Stops smoke coverage", () => {
     expect(markup).toContain("https://example.com/layouts");
     expect(markup).toContain("Remove from stop");
     expect(markup).toContain("All stops");
-    expect(markup).toContain("min-height:44px");
   });
 });
