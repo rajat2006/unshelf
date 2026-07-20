@@ -4,6 +4,7 @@ import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadPrdPrContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { logResolvedAgent } from "../resolve-agent";
 import { runWithRetry } from "../run-with-retry";
 import {
   renderSliceBody,
@@ -31,7 +32,7 @@ import {
  */
 
 const ctx = loadPrdPrContext("to-issues");
-console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
+logResolvedAgent(ctx);
 
 // Same subscription-seat setup as every other capability — this phase runs the
 // agent, so it authenticates identically (a no-op on the Claude Code default).

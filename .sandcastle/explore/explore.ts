@@ -7,6 +7,7 @@ import { loadIssueCapabilityContext } from "../capability-context";
 import { exploreOutputSchema } from "../explore-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { requireEnv } from "../require-env";
+import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 import { verifyExploreReadOnly } from "../verify-explore-read-only";
 
@@ -21,7 +22,7 @@ import { verifyExploreReadOnly } from "../verify-explore-read-only";
  */
 
 const ctx = loadIssueCapabilityContext("explore");
-console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
+logResolvedAgent(ctx);
 const issueContext = fs.readFileSync(requireEnv("ISSUE_CONTEXT_FILE"), "utf8");
 const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
@@ -34,8 +35,7 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Raised from 600 so a longer-thinking model is not killed mid-turn (#88).
-  idleTimeoutSeconds: 1200,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: { ...ctx.promptArgs, ISSUE_CONTEXT: issueContext },
   extractionPrompt: fs.readFileSync(

@@ -5,6 +5,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadPrdImplementContext } from "../capability-context";
 import { implementPrdOutputSchema } from "../implement-prd-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 import { verifyImplementPrdOutcome } from "../verify-implement-prd";
 
@@ -36,7 +37,7 @@ import { verifyImplementPrdOutcome } from "../verify-implement-prd";
  */
 
 const ctx = loadPrdImplementContext("implement-prd");
-console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
+logResolvedAgent(ctx);
 
 // Materialise the Codex subscription seat (auth.json + file credential store,
 // OPENAI_* stripped) before the run — a no-op on the Claude Code default.
@@ -47,10 +48,7 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Idle watchdog: fail the run if the agent produces no output for 20 minutes,
-  // nested inside the workflow's outer 60-minute job timeout. Raised from 600 so
-  // a longer-thinking model is not killed mid-turn (#88).
-  idleTimeoutSeconds: 1200,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: ctx.promptArgs,
   extractionPrompt: fs.readFileSync(
