@@ -295,6 +295,14 @@ jobs:
         id: open_pr
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
+          # Overrides the job-level GITHUB_TOKEN. Creating a PR with GITHUB_TOKEN
+          # is gated by the repo's "Allow GitHub Actions to create and approve
+          # pull requests" setting — off by default, and it fails the run with
+          # "GitHub Actions is not permitted to create or approve pull requests".
+          # A PAT is not subject to that policy. It also means the resulting
+          # pull_request event can trigger downstream workflows, which a
+          # GITHUB_TOKEN-created PR never does.
+          GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")

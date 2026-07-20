@@ -134,6 +134,13 @@ downstream workflow when it adds a label — so the implement → review → rea
 stall without it. It is also the preferred checkout token (`fetch-depth: 0`), falling back
 to `GITHUB_TOKEN` when absent.
 
+It is likewise what opens the draft PRs. `gh pr create` under `GITHUB_TOKEN` is gated by the
+repo's **Settings → Actions → General → "Allow GitHub Actions to create and approve pull
+requests"** checkbox, which is **off by default** — with it off the run dies on
+*"GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"*
+no matter what the job's `permissions:` block grants. A PAT is not subject to that policy,
+and the PR it opens can trigger downstream workflows.
+
 ### `GITHUB_TOKEN` (auto-provided — do not create)
 
 GitHub injects this automatically. It is only the checkout fallback when `AGENT_PAT` is
