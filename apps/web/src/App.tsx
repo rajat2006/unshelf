@@ -40,7 +40,10 @@ export function App() {
       <Route element={<RequireAuth />}>
         <Route element={<Shell />}>
           <Route index element={<HomeSurface />} />
-          <Route path="library" element={<LibrarySurface />} />
+          <Route
+            path="library"
+            element={<LibrarySurface labelFilterEnabled />}
+          />
           <Route path="trails/:trailId" element={<TrailSurface />} />
           <Route
             path="trails/:trailId/stops/:stopId"

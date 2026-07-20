@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Item, Label, Stop, StopDetail } from "@unshelf/shared";
+import type { Item, Label, LabelId, Stop, StopDetail } from "@unshelf/shared";
+import { useSearchParams } from "react-router";
 import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
 import { useCurrentUser } from "../application-auth";
 import { LibraryItems } from "../items/LibraryItems";
@@ -18,20 +19,24 @@ type LibraryState =
 
 /**
  * The Library is the flat store every capture lands in and the per-row home for
- * triage. Labels and their URL filter arrive in later slices (#98–#99); this
- * surface owns Item facts and Stop placement only (#96).
+ * triage. The optional Label filter is owned by the URL so refresh, bookmarks,
+ * and browser history restore the same view (ADR-0013).
  */
 interface LibrarySurfaceProps {
   itemOverrides?: Item[];
   onItemChanged?: (item: Item) => void;
+  /** Only `/library` owns this query; Item routes embed unfiltered Library. */
+  labelFilterEnabled?: boolean;
 }
 
 export function LibrarySurface({
   itemOverrides = [],
   onItemChanged,
+  labelFilterEnabled = false,
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [state, setState] = useState<LibraryState>({ status: "loading" });
   const loadGeneration = useRef(0);
 
@@ -90,6 +95,40 @@ export function LibrarySurface({
     replaceItemInLibraryState,
     state,
   );
+  const activeLabelId = labelFilterEnabled ? searchParams.get("label") : null;
+  const activeLabel =
+    displayedState.status === "ready"
+      ? displayedState.labels.find((label) => label.id === activeLabelId)
+      : undefined;
+  const hasUnknownLabel =
+    displayedState.status === "ready" &&
+    activeLabelId !== null &&
+    !activeLabel;
+  const visibleItems = displayedState.status !== "ready" || hasUnknownLabel
+    ? []
+    : activeLabel
+      ? displayedState.items.filter((item) =>
+          item.labels.some((label) => label.id === activeLabel.id),
+        )
+      : displayedState.items;
+  const filteredEmptyMessage =
+    displayedState.status === "ready" && displayedState.items.length > 0
+      ? hasUnknownLabel
+        ? "Label unavailable"
+        : activeLabel && visibleItems.length === 0
+          ? `No Items match "${activeLabel.name}"`
+          : null
+      : null;
+
+  const selectLabel = useCallback(
+    (labelId: LabelId | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (labelId) next.set("label", labelId);
+      else next.delete("label");
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
 
   return (
     <section className="library-surface" aria-labelledby="library-heading">
@@ -103,17 +142,52 @@ export function LibrarySurface({
           </button>
         </div>
       )}
-      {displayedState.status === "ready" && displayedState.items.length === 0 && (
+      {displayedState.status === "ready" &&
+        labelFilterEnabled &&
+        (displayedState.labels.length > 0 || hasUnknownLabel) && (
+          <fieldset className="library-label-filter">
+            <legend>Filter by Label</legend>
+            <button
+              type="button"
+              aria-label="Show all Items"
+              aria-pressed={activeLabelId === null}
+              onClick={() => selectLabel(null)}
+            >
+              All Items
+            </button>
+            {displayedState.labels.map((label) => (
+              <button
+                type="button"
+                key={label.id}
+                aria-label={`Filter by ${label.name}`}
+                aria-pressed={label.id === activeLabel?.id}
+                onClick={() => selectLabel(label.id)}
+              >
+                {label.name}
+              </button>
+            ))}
+          </fieldset>
+        )}
+      {displayedState.status === "ready" &&
+        displayedState.items.length === 0 && (
+          <div className="library-empty">
+            <p>Nothing captured yet</p>
+            <button type="button" onClick={capture.open}>
+              Capture your first Item
+            </button>
+          </div>
+        )}
+      {filteredEmptyMessage && (
         <div className="library-empty">
-          <p>Nothing captured yet</p>
-          <button type="button" onClick={capture.open}>
-            Capture your first Item
+          <p>{filteredEmptyMessage}</p>
+          <button type="button" onClick={() => selectLabel(null)}>
+            Clear Label filter
           </button>
         </div>
       )}
-      {displayedState.status === "ready" && displayedState.items.length > 0 && (
+      {displayedState.status === "ready" && visibleItems.length > 0 && (
         <LibraryItems
-          items={displayedState.items}
+          items={visibleItems}
           labels={displayedState.labels}
           stops={displayedState.stops}
           stopDetails={displayedState.stopDetails}

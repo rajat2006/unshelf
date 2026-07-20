@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { Type } from "@unshelf/shared";
 import { testApi, testAppUrl } from "./test-helpers";
 
 async function seedTrailStop(page: Page, user: string, name: string) {
@@ -9,6 +10,28 @@ async function seedTrailStop(page: Page, user: string, name: string) {
     await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", { name })
   ).json()) as { id: string; name: string };
   return { ...stop, trailId: trail.id };
+}
+
+async function seedLabelledItem(
+  page: Page,
+  user: string,
+  title: string,
+  type: Type,
+  labelName: string,
+) {
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", { title, type })
+  ).json()) as { id: string };
+  const label = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: labelName })
+  ).json()) as { id: string };
+  await testApi(
+    page,
+    user,
+    `/api/items/${item.id}/labels/${label.id}`,
+    "POST",
+  );
+  return { item, label };
 }
 
 test("the Library triages one shared Item across Status, Target date, and Stops", async ({
@@ -190,6 +213,177 @@ test("a Library Item creates, applies, and removes several private Labels by key
     "Architecture",
     "Reading",
   ]);
+});
+
+test("selecting and clearing a Label filter updates the URL and visible Library Items", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-label-filter`;
+  const { item: labelled, label: systems } = await seedLabelledItem(
+    page,
+    user,
+    "Distributed systems notes",
+    Type.Article,
+    "Systems",
+  );
+  await testApi(page, user, "/api/items", "POST", {
+    title: "Unlabelled reading",
+    type: "book",
+  });
+
+  await page.goto(testAppUrl("/library", user));
+  await page.getByRole("button", { name: "Filter by Systems" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`[?&]label=${systems.id}(?:&|$)`));
+  await expect(page.getByText("Distributed systems notes", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unlabelled reading", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show all Items" }).click();
+
+  await expect(page).not.toHaveURL(/[?&]label=/);
+  await expect(page.getByText("Distributed systems notes", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unlabelled reading", { exact: true })).toBeVisible();
+  const stored = (await (
+    await testApi(page, user, `/api/items/${labelled.id}`)
+  ).json()) as { labels: Array<{ id: string }> };
+  expect(stored.labels.map((label) => label.id)).toEqual([systems.id]);
+
+  await page.getByRole("link", { name: "Trails", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "Filter by Label" }),
+  ).toHaveCount(0);
+});
+
+test("a bookmarked Label filter survives refresh and follows browser history", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-label-history`;
+  const { label: systems } = await seedLabelledItem(
+    page,
+    user,
+    "Systems Item",
+    Type.Article,
+    "Systems",
+  );
+  await seedLabelledItem(
+    page,
+    user,
+    "Design Item",
+    Type.Video,
+    "Design",
+  );
+
+  await page.goto(testAppUrl("/library", user, { label: systems.id }));
+  await expect(page.getByText("Systems Item", { exact: true })).toBeVisible();
+  await expect(page.getByText("Design Item", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Filter by Systems" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await page.reload();
+  await expect(page.getByText("Systems Item", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Filter by Design" }).click();
+  await expect(page.getByText("Design Item", { exact: true })).toBeVisible();
+  await expect(page.getByText("Systems Item", { exact: true })).toHaveCount(0);
+
+  await page.goBack();
+  await expect(page.getByText("Systems Item", { exact: true })).toBeVisible();
+  await expect(page.getByText("Design Item", { exact: true })).toHaveCount(0);
+
+  await page.goForward();
+  await expect(page.getByText("Design Item", { exact: true })).toBeVisible();
+  await expect(page.getByText("Systems Item", { exact: true })).toHaveCount(0);
+});
+
+test("an empty Label result names the filter and clears back to the complete Library", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-label-empty`;
+  await testApi(page, user, "/api/items", "POST", {
+    title: "An unlabelled Item",
+    type: "other",
+  });
+  const systems = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Systems" })
+  ).json()) as { id: string };
+
+  await page.goto(testAppUrl("/library", user, { label: systems.id }));
+
+  await expect(page.getByText('No Items match "Systems"', { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Capture your first Item" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear Label filter" }).click();
+
+  await expect(page).not.toHaveURL(/[?&]label=/);
+  await expect(page.getByText("An unlabelled Item", { exact: true })).toBeVisible();
+});
+
+test("foreign and invalid Label filters share one private recoverable state", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-label-private`;
+  const foreignUser = `${user}-foreign`;
+  await testApi(page, user, "/api/items", "POST", {
+    title: "Owner's visible Item",
+    type: "course",
+  });
+  const foreignLabel = (await (
+    await testApi(page, foreignUser, "/api/labels", "POST", {
+      name: "Secret foreign Label",
+    })
+  ).json()) as { id: string };
+
+  for (const labelId of [foreignLabel.id, "not-a-label-id"]) {
+    await page.goto(testAppUrl("/library", user, { label: labelId }));
+
+    await expect(page.getByText("Label unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByText("Secret foreign Label", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Owner's visible Item", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear Label filter" }).click();
+
+    await expect(page).not.toHaveURL(/[?&]label=/);
+    await expect(page.getByText("Owner's visible Item", { exact: true })).toBeVisible();
+  }
+});
+
+test("Label query parameters do not create filters outside the Library route", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-label-route-boundary`;
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Canonical Item",
+      type: "article",
+    })
+  ).json()) as { id: string };
+  const label = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Systems" })
+  ).json()) as { id: string };
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user, { label: label.id }));
+
+  await expect(
+    page.getByRole("complementary", { name: "Canonical Item details" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Filter by Label" }),
+  ).toHaveCount(0);
+});
+
+test("a truly empty Library still offers Capture with an invalid Label filter", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-empty-invalid-label`;
+
+  await page.goto(testAppUrl("/library", user, { label: "not-a-label-id" }));
+
+  await expect(page.getByText("Nothing captured yet", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Capture your first Item" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Show all Items" }).click();
+  await expect(page).not.toHaveURL(/[?&]label=/);
 });
 
 test("the Library keeps its shell while row-shaped loading resolves", async ({

@@ -110,6 +110,39 @@ body {
   width: min(60%, 12rem);
 }
 
+.library-label-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  margin: var(--space-5) 0 0;
+  border: 0;
+}
+
+.library-label-filter legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.library-label-filter button {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-3);
+  background: var(--field-bg);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.library-label-filter button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 .item-row {
   min-width: 0;
   padding: var(--space-4);
