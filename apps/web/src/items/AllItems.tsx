@@ -32,7 +32,7 @@ export function AllItems({
       {error && <p style={{ color: "crimson" }}>Could not reach your space: {error}</p>}
       {!items && !error && <p>Loading your space…</p>}
       {items && items.length === 0 && (
-        <p style={{ opacity: 0.7 }}>Nothing captured yet — add your first item above.</p>
+        <p style={{ opacity: 0.7 }}>Nothing captured yet — use Capture to add your first item.</p>
       )}
       {items && items.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { Item, Stop, StopDetail, TrailView } from "@unshelf/shared";
 import { fetchAll, fetchStops, fetchTrail } from "../api";
 import { useCurrentUser } from "../application-auth";
+import { useCaptureListener } from "../shell/CaptureController";
 import { StopsSection } from "../stops/StopsSection";
 import { TrailSection } from "../trail/TrailSection";
-import { AddItemForm } from "./AddItemForm";
 import { AllItems } from "./AllItems";
 
 /**
@@ -45,6 +45,10 @@ export function CurrentSpace() {
     void refresh();
   }, [refresh]);
 
+  // Capture now lives in the global shell (ADR-0014); when an Item lands there,
+  // this store — where every capture goes — pulls in the new record.
+  useCaptureListener(refresh);
+
   /**
    * Put a changed Item back wherever it is shown — All and the open Stop alike.
    * The api returned one Item; both views are just places that Item appears, so
@@ -67,7 +71,6 @@ export function CurrentSpace() {
 
   return (
     <section style={{ marginTop: "2rem" }}>
-      <AddItemForm user={user} onCaptured={refresh} />
       <StopsSection
         stops={stops}
         openStop={openStop}
