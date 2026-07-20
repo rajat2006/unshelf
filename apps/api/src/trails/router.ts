@@ -1,12 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import type { Pool } from "pg";
-import type {
-  ConnectStopsRequest,
-  CreateStopRequest,
-  CreateTrailRequest,
-  StopId,
-  TrailId,
-} from "@unshelf/shared";
+import type { ConnectStopsRequest, StopId, TrailId } from "@unshelf/shared";
 import { createStop, getStopOnTrail } from "../stops/repository";
 import {
   connectStops,
@@ -14,6 +8,7 @@ import {
   getTrail as getTrailTopology,
 } from "../trail/repository";
 import { createTrail, getTrail, listTrails } from "./repository";
+import { parseRequiredName } from "../validation";
 
 /**
  * Mount the authenticated Trail HTTP interface at `/api/trails`.
@@ -65,7 +60,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
   });
 
   router.post("/", async (req, res) => {
-    const input = parseCreateTrail(req.body);
+    const input = parseRequiredName(req.body);
     if (!input) {
       res.status(400).json({ error: "a name is required" });
       return;
@@ -87,7 +82,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
   });
 
   router.post("/:trailId/stops", async (req, res) => {
-    const input = parseCreateStop(req.body);
+    const input = parseRequiredName(req.body);
     if (!input) {
       res.status(400).json({ error: "a name is required" });
       return;
@@ -181,22 +176,6 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
   });
 
   return router;
-}
-
-/** Validate a create payload at the HTTP seam: a non-empty name, and nothing else. */
-function parseCreateTrail(body: unknown): CreateTrailRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || name.length === 0) return null;
-  return { name };
-}
-
-/** Validate a create-Stop payload at the HTTP seam without altering User input. */
-function parseCreateStop(body: unknown): CreateStopRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || name.trim().length === 0) return null;
-  return { name };
 }
 
 /** Validate a connect payload at the HTTP seam: two Stop ids, and nothing else. */

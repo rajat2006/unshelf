@@ -59,6 +59,7 @@ describe("Trails at the HTTP boundary", () => {
     const user = "trails-invalid-user";
     expect((await createTrail(user, {})).status).toBe(400);
     expect((await createTrail(user, { name: "" })).status).toBe(400);
+    expect((await createTrail(user, { name: "   " })).status).toBe(400);
     expect((await listTrails(user)).body).toEqual([]);
   });
 
@@ -188,6 +189,19 @@ describe("a Stop belongs to exactly one Trail (#94)", () => {
     const ownerNodes = ((await topologyOf(owner, trail.id)).body as TrailView)
       .nodes;
     expect(ownerNodes).toEqual([]);
+  });
+
+  it("rejects a Trail-less Stop at the database boundary", async () => {
+    const user = "trail-stop-db-anchor";
+    const trail = (await createTrail(user, { name: "Anchored" })).body as Trail;
+    const stop = (await createStopOn(user, trail.id, "On the Trail")).body as Stop;
+
+    await expect(
+      harness.pool.query(
+        `UPDATE stops SET trail_id = NULL WHERE id = $1`,
+        [stop.id],
+      ),
+    ).rejects.toThrow();
   });
 
   it("refuses a Stop with no name on a real Trail", async () => {

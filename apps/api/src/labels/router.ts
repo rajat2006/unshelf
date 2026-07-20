@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import type { Pool } from "pg";
-import type { CreateLabelRequest } from "@unshelf/shared";
 import { createLabel, listLabels } from "./repository";
+import { parseRequiredName } from "../validation";
 
 export function createLabelsRouter(
   pool: Pool,
@@ -15,7 +15,7 @@ export function createLabelsRouter(
   });
 
   router.post("/", async (req, res) => {
-    const input = parseCreateLabel(req.body);
+    const input = parseRequiredName(req.body);
     if (!input) {
       res.status(400).json({ error: "a Label name is required" });
       return;
@@ -24,11 +24,4 @@ export function createLabelsRouter(
   });
 
   return router;
-}
-
-function parseCreateLabel(body: unknown): CreateLabelRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || name.trim().length === 0) return null;
-  return { name };
 }

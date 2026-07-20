@@ -558,6 +558,20 @@ describe("trail_edges — an adjacency list scoped to one Trail and nothing more
     ).rejects.toThrow();
   });
 
+  it("requires every edge to carry its Trail anchor", async () => {
+    const clerkUserId = "clerk_trail_db_anchor";
+    const [from, to] = await givenStops(clerkUserId, 2);
+    const owner = (await createStop(clerkUserId, "Owner anchor")).body as Stop;
+
+    await expect(
+      harness.pool.query(
+        `INSERT INTO trail_edges (user_id, from_stop_id, to_stop_id)
+         VALUES ($1, $2, $3)`,
+        [owner.userId, from, to],
+      ),
+    ).rejects.toThrow();
+  });
+
   it("rejects a cross-User edge at the database boundary", async () => {
     const aliceOwner = (await createStop("clerk_trail_db_alice", "Alice"))
       .body as Stop;

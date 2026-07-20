@@ -37,6 +37,14 @@ async function seedLegacySpace(clerkUserId: string): Promise<{
   stopIds: string[];
   itemId: string;
 }> {
+  // Recreate the pre-#94 migration window. The current schema closes this path
+  // with NOT NULL after backfilling, so a legacy fixture must explicitly reopen
+  // it before inserting the orphaned rows that an upgrade would encounter.
+  await pool.query(
+    `ALTER TABLE trail_edges ALTER COLUMN trail_id DROP NOT NULL;
+     ALTER TABLE stops ALTER COLUMN trail_id DROP NOT NULL;`,
+  );
+
   const { rows: userRows } = await pool.query<{ id: string }>(
     `INSERT INTO users (clerk_user_id) VALUES ($1) RETURNING id`,
     [clerkUserId],

@@ -135,9 +135,9 @@ rejection are unchanged.
   same-User is still enforced directly too.
 - **`stops` gains a `trail_id`** (ADR-0014, minted first in #93, made load-bearing here):
   a Stop belongs to exactly one Trail. Creation happens under the Trail
-  (`POST /api/trails/:trailId/stops`); there is no Trail-less Stop. The column stays
-  nullable only so the implicit-Trail migration can still adopt legacy orphans — every
-  Stop the API writes names its Trail.
+  (`POST /api/trails/:trailId/stops`); there is no Trail-less Stop. The migration
+  adds the column nullable, adopts legacy orphans, then makes it `NOT NULL`; the
+  database and API therefore enforce the same rule.
 - **The topology is read and written under a Trail id** — `GET/POST/DELETE` under
   `/api/trails/:trailId/{topology,edges}` — so a read returns only that Trail's nodes
   and edges, and a cross-Trail or foreign endpoint is a 404, exactly as an unknown one is.

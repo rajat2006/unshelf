@@ -229,9 +229,9 @@ CREATE INDEX IF NOT EXISTS trails_user_id_idx ON trails (user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS trails_id_user_id_idx ON trails (id, user_id);
 
 -- A Stop belongs to exactly one Trail (ADR-0014, Stop-as-waypoint). The column is
--- added nullable here so existing Stops can be adopted by the migration below
--- before the constraint that makes it mandatory lands with the Stop-scoping slice
--- (#94). The composite owner foreign key keeps a Stop and its Trail owned by the
+-- added nullable here only for the migration window so existing Stops can be
+-- adopted by the backfill below before this slice makes the column mandatory.
+-- The composite owner foreign key keeps a Stop and its Trail owned by the
 -- same User — an edge this table can never cross even when \`trail_id\` is set by a
 -- write that bypasses the repository.
 ALTER TABLE stops ADD COLUMN IF NOT EXISTS trail_id uuid;
@@ -278,6 +278,10 @@ SET trail_id = (
 WHERE s.trail_id IS NULL
   AND EXISTS (SELECT 1 FROM trails t WHERE t.user_id = s.user_id);
 
+-- The backfill has adopted every legacy Stop. From this point on the database,
+-- not only the API, enforces the domain rule that a Stop has exactly one Trail.
+ALTER TABLE stops ALTER COLUMN trail_id SET NOT NULL;
+
 -- Scope a Stop's edges to its Trail (#94, ADR-0014). Until now \`trail_edges\`
 -- carried only the User anchor (ADR-0010): the edge set scoped to a User *was*
 -- the Trail. The redesign gives a User many Trails, so an edge must also name the
@@ -293,12 +297,11 @@ WHERE s.trail_id IS NULL
 -- same-User is still enforced directly too. Both new keys cascade, so an edge dies
 -- with either endpoint exactly as before.
 --
--- Like \`stops.trail_id\`, the column is added nullable and backfilled from each
--- edge's \`from\` Stop (which the migration above has just adopted into a Trail), so
--- a database that booted a pre-#94 branch keeps every edge, now scoped to the same
--- Trail its Stops belong to. It stays nullable rather than \`NOT NULL\` only so the
--- implicit-Trail migration can still simulate and adopt a legacy edge that predates
--- the column; every edge the repository writes names its Trail.
+-- Like \`stops.trail_id\`, the column is added nullable for the migration window
+-- and backfilled from each edge's \`from\` Stop (which the migration above has just
+-- adopted into a Trail), so a database that booted a pre-#94 branch keeps every
+-- edge. Once backfilled it becomes mandatory, closing the null path around the
+-- same-Trail foreign keys.
 CREATE UNIQUE INDEX IF NOT EXISTS stops_id_trail_id_idx ON stops (id, trail_id);
 
 ALTER TABLE trail_edges ADD COLUMN IF NOT EXISTS trail_id uuid;
@@ -309,6 +312,10 @@ FROM stops s
 WHERE e.from_stop_id = s.id
   AND e.user_id = s.user_id
   AND e.trail_id IS NULL;
+
+-- As with Stops, the migration window is now closed: every edge must carry the
+-- Trail anchor used by the same-Trail endpoint foreign keys below.
+ALTER TABLE trail_edges ALTER COLUMN trail_id SET NOT NULL;
 
 DO $$
 BEGIN
