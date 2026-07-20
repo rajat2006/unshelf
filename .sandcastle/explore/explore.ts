@@ -7,6 +7,7 @@ import { loadIssueCapabilityContext } from "../capability-context";
 import { exploreOutputSchema } from "../explore-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { requireEnv } from "../require-env";
+import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 import { verifyExploreReadOnly } from "../verify-explore-read-only";
 
@@ -20,8 +21,8 @@ import { verifyExploreReadOnly } from "../verify-explore-read-only";
  * repository files — `comment.md` in `OUTPUT_DIR` is its only artifact.
  */
 
-const ctx = loadIssueCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadIssueCapabilityContext("explore");
+logResolvedAgent(ctx);
 const issueContext = fs.readFileSync(requireEnv("ISSUE_CONTEXT_FILE"), "utf8");
 const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
@@ -34,7 +35,7 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  idleTimeoutSeconds: 600,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: { ...ctx.promptArgs, ISSUE_CONTEXT: issueContext },
   extractionPrompt: fs.readFileSync(

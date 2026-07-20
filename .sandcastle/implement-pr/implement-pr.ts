@@ -9,6 +9,7 @@ import {
 } from "../implement-pr-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { requireEnv } from "../require-env";
+import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 
 /**
@@ -31,12 +32,12 @@ import { runWithExtraction } from "../run-with-extraction";
  * comments; the ready transition belongs to review.
  */
 
-const ctx = loadCapabilityContext();
+const ctx = loadCapabilityContext("implement-pr");
 // The PR whose review comments we are addressing. Its number is the subject; the
 // prompt reads its threads via `gh`. Kept separate from ISSUE_NUMBER (the
 // originating spec issue) so the prompt can reference both.
 const prNumber = requireEnv("PR_NUMBER");
-console.log(`Resolved provider model: ${ctx.model}`);
+logResolvedAgent(ctx);
 
 // Same subscription-seat setup as the other agent phases — a no-op on the Claude
 // Code default.
@@ -47,8 +48,7 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Idle watchdog inside the workflow's 60-min job timeout, matching implement.
-  idleTimeoutSeconds: 600,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   // PR_NUMBER augments the shared promptArgs (ISSUE_NUMBER/ISSUE_TITLE/BRANCH) so
   // the prompt can point the agent at the PR's own review threads.

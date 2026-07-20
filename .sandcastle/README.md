@@ -28,10 +28,38 @@ pinned Sandcastle version and Unshelf's provider set:
   emission, the same reliability win, rather than protecting a side effect.
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
-- **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
-  present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
-  (absence *is* Claude). Both providers run with explicit `medium` reasoning
-  effort. Reads the issue's full label set.
+- **`resolve-agent.ts`** — `resolveAgent(labels, capability)` (Unshelf-specific):
+  two independent axes. The **label set** picks the provider — `agent:codex`
+  present ⇒ Codex, absent ⇒ Claude Code (absence *is* Claude) — reading the
+  subject's full set, not just the trigger label. The **capability** then picks
+  that provider's model and reasoning effort from a per-capability policy
+  (`CAPABILITY_POLICY`), so exploration, implementation, and review each carry
+  the profile they need without changing a provider-wide constant. The policy
+  encodes a two-tier split: a **Build tier** (`implement`, `implement-prd`,
+  `implement-pr`, `update-branch`) runs lean on Claude Code's `claude-opus-4-8`
+  at `medium`, letting `review` carry the completeness check; a **Think tier**
+  carries `claude-fable-5`, with `write-pr`/`write-prd-pr` at `medium` and the
+  judgement-dense `review`/`to-issues`/`architecture-review`/`explore` at `high`
+  (Codex `xhigh`). Effort types are derived from Sandcastle's own factory
+  options, and `Capability` is a closed union over a `Record`, so adding a runner
+  without a policy entry fails the typecheck rather than inheriting a default.
+  Also here: `IDLE_TIMEOUT_SECONDS`, the shared idle-watchdog value every runner
+  that sets one passes to `run` (1200s, raised for `claude-fable-5`'s longer
+  turns), and `logResolvedAgent`, the one resolved-model/effort log line every
+  runner emits.
+
+  | Capability | Claude model | Claude effort | Codex model | Codex effort |
+  |---|---|---|---|---|
+  | `implement` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `implement-prd` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `implement-pr` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `update-branch` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `write-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `write-prd-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `to-issues` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `architecture-review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `explore` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
 - **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
   `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
   standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional
@@ -266,4 +294,9 @@ type definitions. Two 0.12 behaviours the wrappers depend on:
 - `StructuredOutputError` carries `sessionId`/`rawMatched`/`cause`, which is what
   makes same-session resume-with-feedback possible.
 
-Models follow spec §C (`claude-opus-4-8`, not CVM's `claude-opus-4-6`).
+Models follow the per-capability policy in `resolve-agent.ts` (issue #88): the
+Build tier on `claude-opus-4-8` and the Think tier on `claude-fable-5`, not CVM's
+`claude-opus-4-6` or a single provider-wide model. Effort is per capability, not
+uniform. `claude-fable-5` availability on the `CLAUDE_CODE_OAUTH_TOKEN` seat was
+confirmed manually; no API key is introduced, and both providers remain on flat
+subscription seats.

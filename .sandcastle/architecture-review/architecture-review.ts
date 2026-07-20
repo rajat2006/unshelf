@@ -5,7 +5,11 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { architectureReviewOutputSchema } from "../architecture-review-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { requireEnv } from "../require-env";
-import { resolveAgent } from "../resolve-agent";
+import {
+  IDLE_TIMEOUT_SECONDS,
+  logResolvedAgent,
+  resolveAgent,
+} from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 
 /**
@@ -42,8 +46,9 @@ const outputDir = requireEnv("OUTPUT_DIR");
 // (absence *is* Claude). A manual `workflow_dispatch` can still opt into Codex,
 // which the workflow serialises into AGENT_LABELS just like the issue flows.
 const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
-const { agent, model } = resolveAgent(labels);
-console.log(`Resolved provider model: ${model}`);
+const resolved = resolveAgent(labels, "architecture-review");
+logResolvedAgent(resolved);
+const { agent } = resolved;
 
 // The titles of every past `source:architecture-review` proposal — OPEN and
 // CLOSED — so the agent proposes something genuinely fresh and never re-raises an
@@ -66,9 +71,7 @@ const result = await runWithExtraction({
   agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Idle watchdog inside the workflow's 60-min job timeout, matching the other
-  // capabilities.
-  idleTimeoutSeconds: 600,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: { EXISTING_PROPOSALS: proposalList },
   extractionPrompt: fs.readFileSync(

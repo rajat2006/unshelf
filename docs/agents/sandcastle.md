@@ -24,7 +24,7 @@ issue out of the agent lane; it is never applied by a machine.
 
 | Label | Meaning |
 | --- | --- |
-| `agent:codex` | Optional. Present ⇒ run on Codex (`gpt-5.6-sol`, medium effort). **Absent ⇒ Claude Code (`claude-opus-4-8`, medium effort)** — a default needs no label, so there is deliberately **no `agent:claude`**. Applied to an issue, it is **propagated onto the PR** by `agent-implement` so the review runs on the same provider (each workflow resolves its provider from its own subject's label set). |
+| `agent:codex` | Optional **provider** switch. Present ⇒ run on Codex; **absent ⇒ Claude Code** — a default needs no label, so there is deliberately **no `agent:claude`**. It selects the provider only; the **model and reasoning effort are chosen per capability** by the policy in `.sandcastle/resolve-agent.ts` (issue #88), not fixed by this label — a Build-tier capability runs Claude on `claude-opus-4-8`/`medium` (Codex `gpt-5.6-sol`/`medium`), a Think-tier capability runs Claude on `claude-fable-5` at `medium` or `high` (Codex `gpt-5.6-sol` at `medium` or `xhigh`). Applied to an issue, it is **propagated onto the PR** by `agent-implement` so the review runs on the same provider (each workflow resolves its provider from its own subject's label set). |
 
 ### 3. Agent state machine
 
