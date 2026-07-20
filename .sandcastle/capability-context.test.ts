@@ -5,7 +5,11 @@ import {
   loadPrdImplementContext,
   loadPrdPrContext,
 } from "./capability-context";
-import { BUILD_CLAUDE_MODEL, CODEX_MODEL } from "./resolve-agent";
+import {
+  BUILD_CLAUDE_MODEL,
+  CODEX_MODEL,
+  THINK_CLAUDE_MODEL,
+} from "./resolve-agent";
 
 const ENV_KEYS = [
   "ISSUE_NUMBER",
@@ -56,12 +60,19 @@ describe("loadCapabilityContext", () => {
     });
   });
 
-  it("forwards the capability into resolution (model + effort)", () => {
+  it("forwards the capability into resolution (implement → Build tier Claude)", () => {
     setEnv();
     const ctx = loadCapabilityContext("implement");
     expect(ctx.agent.name).toBe("claude-code");
     expect(ctx.model).toBe(BUILD_CLAUDE_MODEL);
     expect(ctx.effort).toBe("medium");
+  });
+
+  it("forwards a different capability's model + effort (review → Think tier)", () => {
+    setEnv();
+    const ctx = loadCapabilityContext("review");
+    expect(ctx.model).toBe(THINK_CLAUDE_MODEL);
+    expect(ctx.effort).toBe("high");
   });
 
   it("routes to Codex when agent:codex is anywhere in the label set", () => {

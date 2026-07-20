@@ -33,12 +33,29 @@ pinned Sandcastle version and Unshelf's provider set:
   present ⇒ Codex, absent ⇒ Claude Code (absence *is* Claude) — reading the
   subject's full set, not just the trigger label. The **capability** then picks
   that provider's model and reasoning effort from a per-capability policy
-  (`CAPABILITY_POLICY`), so each capability can be tuned without changing a
-  provider-wide constant. Effort types are derived from Sandcastle's own factory
+  (`CAPABILITY_POLICY`), so exploration, implementation, and review each carry
+  the profile they need without changing a provider-wide constant. The policy
+  encodes a two-tier split: a **Build tier** (`implement`, `implement-prd`,
+  `implement-pr`, `update-branch`) runs lean on Claude Code's `claude-opus-4-8`
+  at `medium`, letting `review` carry the completeness check; a **Think tier**
+  carries `claude-fable-5`, with `write-pr`/`write-prd-pr` at `medium` and the
+  judgement-dense `review`/`to-issues`/`architecture-review`/`explore` at `high`
+  (Codex `xhigh`). Effort types are derived from Sandcastle's own factory
   options, and `Capability` is a closed union over a `Record`, so adding a runner
   without a policy entry fails the typecheck rather than inheriting a default.
-  The policy values are still uniform (`claude-opus-4-8`/`medium`,
-  `gpt-5.6-sol`/`medium`) at this seam-only step; the tier policy lands next.
+
+  | Capability | Claude model | Claude effort | Codex model | Codex effort |
+  |---|---|---|---|---|
+  | `implement` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `implement-prd` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `implement-pr` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `update-branch` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `write-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `write-prd-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
+  | `review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `to-issues` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `architecture-review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `explore` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
 - **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
   `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
   standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional
@@ -273,6 +290,9 @@ type definitions. Two 0.12 behaviours the wrappers depend on:
 - `StructuredOutputError` carries `sessionId`/`rawMatched`/`cause`, which is what
   makes same-session resume-with-feedback possible.
 
-Models resolve through the per-capability policy in `resolve-agent.ts` — at this
-seam-only step still `claude-opus-4-8` (not CVM's `claude-opus-4-6`) and
-`gpt-5.6-sol` uniformly.
+Models follow the per-capability policy in `resolve-agent.ts` (issue #88): the
+Build tier on `claude-opus-4-8` and the Think tier on `claude-fable-5`, not CVM's
+`claude-opus-4-6` or a single provider-wide model. Effort is per capability, not
+uniform. `claude-fable-5` availability on the `CLAUDE_CODE_OAUTH_TOKEN` seat was
+confirmed manually; no API key is introduced, and both providers remain on flat
+subscription seats.

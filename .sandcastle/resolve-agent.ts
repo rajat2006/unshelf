@@ -59,18 +59,28 @@ interface CapabilityPolicy {
 export const CODEX_MODEL = "gpt-5.6-sol";
 
 /**
- * The Claude model. This is the seam-only commit: every capability still
- * resolves to the previous provider-wide model and `medium` effort, so this
- * refactor changes no observable behaviour. The capability-specific tier policy
- * lands in the follow-up commit.
+ * Build tier — the model for capabilities that write code. They run lean on
+ * Claude Code's strongest coding model and let `review`'s Spec axis carry the
+ * completeness check (US-8). A capability belongs to this tier iff its policy
+ * entry names this constant.
  */
 export const BUILD_CLAUDE_MODEL = "claude-opus-4-8";
 
 /**
- * The capability policy. Every capability names its Claude and Codex model and
- * effort independently through the seam introduced here; the values are still
- * uniform (`claude-opus-4-8`/`medium`, `gpt-5.6-sol`/`medium`) until the tier
- * policy lands.
+ * Think tier — the model for judgement-dense capabilities (reviewing,
+ * decomposing, surveying, exploring, PR-authoring). They carry the stronger
+ * reasoning model; the effort is layered per capability in the policy below.
+ */
+export const THINK_CLAUDE_MODEL = "claude-fable-5";
+
+/**
+ * The capability policy (issue #88). Every capability names its Claude and Codex
+ * model and effort independently; the tier a capability belongs to is legible
+ * from which model constant its entry references. Build-tier capabilities stay
+ * at `medium`; the four judgement-dense capabilities that most change downstream
+ * outcomes (`review`, `to-issues`, `architecture-review`, `explore`) carry the
+ * higher effort each provider offers (`high` for Claude, `xhigh` for Codex —
+ * the top level both providers share).
  */
 const CAPABILITY_POLICY: Record<Capability, CapabilityPolicy> = {
   implement: {
@@ -90,28 +100,28 @@ const CAPABILITY_POLICY: Record<Capability, CapabilityPolicy> = {
     codex: { model: CODEX_MODEL, effort: "medium" },
   },
   "write-pr": {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "medium" },
     codex: { model: CODEX_MODEL, effort: "medium" },
   },
   "write-prd-pr": {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "medium" },
     codex: { model: CODEX_MODEL, effort: "medium" },
   },
   review: {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
-    codex: { model: CODEX_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
+    codex: { model: CODEX_MODEL, effort: "xhigh" },
   },
   "to-issues": {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
-    codex: { model: CODEX_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
+    codex: { model: CODEX_MODEL, effort: "xhigh" },
   },
   "architecture-review": {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
-    codex: { model: CODEX_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
+    codex: { model: CODEX_MODEL, effort: "xhigh" },
   },
   explore: {
-    claude: { model: BUILD_CLAUDE_MODEL, effort: "medium" },
-    codex: { model: CODEX_MODEL, effort: "medium" },
+    claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
+    codex: { model: CODEX_MODEL, effort: "xhigh" },
   },
 };
 

@@ -31,9 +31,10 @@ const result = await sandcastle.run({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Idle watchdog: fail the run if the agent produces no output for 10 minutes,
+  // Idle watchdog: fail the run if the agent produces no output for 20 minutes,
   // nested inside the workflow's outer 60-minute job timeout (spec §guardrails).
-  idleTimeoutSeconds: 600,
+  // Raised from 600 so a longer-thinking model is not killed mid-turn (#88).
+  idleTimeoutSeconds: 1200,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: ctx.promptArgs,
 });

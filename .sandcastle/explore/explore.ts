@@ -34,7 +34,8 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  idleTimeoutSeconds: 600,
+  // Raised from 600 so a longer-thinking model is not killed mid-turn (#88).
+  idleTimeoutSeconds: 1200,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: { ...ctx.promptArgs, ISSUE_CONTEXT: issueContext },
   extractionPrompt: fs.readFileSync(

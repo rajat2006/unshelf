@@ -6,20 +6,33 @@ import {
   type Capability,
   BUILD_CLAUDE_MODEL,
   CODEX_MODEL,
+  THINK_CLAUDE_MODEL,
   resolveAgent,
 } from "./resolve-agent";
 
 /**
- * The capability policy the resolver is checked against. Table-driven so a
- * missing policy entry or an accidental fallback is visible: every capability
- * names its exact Claude and Codex model + effort. This seam-only commit keeps
- * every capability on the previous uniform values; the tier policy lands next.
+ * The capability policy, restated here from issue #88's table as the independent
+ * source of truth the resolver is checked against. Table-driven so a missing
+ * policy entry or an accidental fallback is visible: every capability names its
+ * exact Claude and Codex model + effort.
  */
-const uniform = {
+const build = {
   claudeModel: "claude-opus-4-8",
   claudeEffort: "medium",
   codexModel: "gpt-5.6-sol",
   codexEffort: "medium",
+};
+const thinkLight = {
+  claudeModel: "claude-fable-5",
+  claudeEffort: "medium",
+  codexModel: "gpt-5.6-sol",
+  codexEffort: "medium",
+};
+const thinkHeavy = {
+  claudeModel: "claude-fable-5",
+  claudeEffort: "high",
+  codexModel: "gpt-5.6-sol",
+  codexEffort: "xhigh",
 };
 const POLICY: Record<
   Capability,
@@ -30,16 +43,16 @@ const POLICY: Record<
     codexEffort: string;
   }
 > = {
-  implement: uniform,
-  "implement-prd": uniform,
-  "implement-pr": uniform,
-  "update-branch": uniform,
-  "write-pr": uniform,
-  "write-prd-pr": uniform,
-  review: uniform,
-  "to-issues": uniform,
-  "architecture-review": uniform,
-  explore: uniform,
+  implement: build,
+  "implement-prd": build,
+  "implement-pr": build,
+  "update-branch": build,
+  "write-pr": thinkLight,
+  "write-prd-pr": thinkLight,
+  review: thinkHeavy,
+  "to-issues": thinkHeavy,
+  "architecture-review": thinkHeavy,
+  explore: thinkHeavy,
 };
 
 const CAPABILITIES = Object.keys(POLICY) as Capability[];
@@ -93,11 +106,18 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
     });
   });
 
-  it("resolves the Claude model at medium effort", () => {
+  it("puts a Build-tier capability on claude-opus-4-8 at medium", () => {
     const { model, effort } = resolveAgent([], "implement");
     expect(model).toBe(BUILD_CLAUDE_MODEL);
     expect(model).toBe("claude-opus-4-8");
     expect(effort).toBe("medium");
+  });
+
+  it("puts a Think-tier capability on claude-fable-5 at its stated effort", () => {
+    const { model, effort } = resolveAgent([], "review");
+    expect(model).toBe(THINK_CLAUDE_MODEL);
+    expect(model).toBe("claude-fable-5");
+    expect(effort).toBe("high");
   });
 
   it("keeps every capability on the one Codex model", () => {
