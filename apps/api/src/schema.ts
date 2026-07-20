@@ -179,6 +179,76 @@ CREATE TABLE IF NOT EXISTS trail_edges (
 -- the layout's longest-path layering walks.
 CREATE INDEX IF NOT EXISTS trail_edges_to_stop_id_idx
   ON trail_edges (user_id, to_stop_id);
+
+-- trails: the Trail promoted to a first-class, User-owned record (ADR-0014). Until
+-- this ticket the Trail was not a table — it was the edge set scoped to a User
+-- (ADR-0010). The redesign gives one User *many* Trails, so the journey needs an
+-- identity of its own: an opaque \`id\` that a URL carries and that survives a
+-- rename, a \`name\`, and \`created_at\` (the stable order the index lists in). There
+-- is deliberately no progress column — a Trail's progress is *derived* on read
+-- from its Stops' Items (like the derived \`past_target\`, ADR-0005), never stored.
+CREATE TABLE IF NOT EXISTS trails (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users (id),
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS trails_user_id_idx ON trails (user_id);
+
+-- Expose the owner beside the id, as items and stops do, so a later membership
+-- (a Stop belonging to a Trail) can prove both ends belong to the same User.
+CREATE UNIQUE INDEX IF NOT EXISTS trails_id_user_id_idx ON trails (id, user_id);
+
+-- A Stop belongs to exactly one Trail (ADR-0014, Stop-as-waypoint). The column is
+-- added nullable here so existing Stops can be adopted by the migration below
+-- before the constraint that makes it mandatory lands with the Stop-scoping slice
+-- (#94). The composite owner foreign key keeps a Stop and its Trail owned by the
+-- same User — an edge this table can never cross even when \`trail_id\` is set by a
+-- write that bypasses the repository.
+ALTER TABLE stops ADD COLUMN IF NOT EXISTS trail_id uuid;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'stops_trail_owner_fk'
+      AND conrelid = 'stops'::regclass
+  ) THEN
+    ALTER TABLE stops
+      ADD CONSTRAINT stops_trail_owner_fk
+      FOREIGN KEY (trail_id, user_id) REFERENCES trails (id, user_id)
+      ON DELETE CASCADE;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS stops_trail_id_idx ON stops (trail_id);
+
+-- Migrate each existing User's implicit Trail into one explicit Trail (ADR-0014).
+-- Before this ticket a User's Stops and edges *were* their one Trail with no row
+-- of its own; promotion mints exactly that row and adopts the orphaned Stops into
+-- it, losing nothing — the Stops, their edges, and their Item memberships are all
+-- untouched, only newly owned by a named Trail.
+--
+-- Both steps are idempotent, so this is safe on every boot. A Trail is minted only
+-- for a User who has a Stop not yet on any Trail *and* has no Trail yet, so a
+-- second run mints nothing; the backfill only touches Stops whose \`trail_id\` is
+-- still null. New Users have no orphaned Stops, so they start with an empty index.
+INSERT INTO trails (user_id, name)
+SELECT DISTINCT s.user_id, 'My Trail'
+FROM stops s
+WHERE s.trail_id IS NULL
+  AND NOT EXISTS (SELECT 1 FROM trails t WHERE t.user_id = s.user_id);
+
+UPDATE stops s
+SET trail_id = (
+  SELECT t.id FROM trails t
+  WHERE t.user_id = s.user_id
+  ORDER BY t.created_at, t.id
+  LIMIT 1
+)
+WHERE s.trail_id IS NULL
+  AND EXISTS (SELECT 1 FROM trails t WHERE t.user_id = s.user_id);
 `;
 
 /** Apply the schema to a database. Idempotent. */
