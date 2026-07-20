@@ -51,10 +51,10 @@ export function StopsSection({
   }
 
   return (
-    <section style={{ marginTop: "2.5rem" }}>
-      <h2 style={{ fontSize: "1.2rem" }}>Stops</h2>
+    <section className="stops-section">
+      <h2>Stops</h2>
       {error && (
-        <p style={{ color: "crimson" }}>Could not reach your stops: {error}</p>
+        <p className="surface-error">Could not reach your stops: {error}</p>
       )}
 
       {openStop ? (
@@ -69,38 +69,23 @@ export function StopsSection({
         <>
           {!stops && !error && <p>Loading your stops…</p>}
           {stops && stops.length === 0 && (
-            <p style={{ opacity: 0.7 }}>
+            <p className="quiet-copy">
               No stops yet — open a Trail to add stops and arrange them.
             </p>
           )}
           {stops && stops.length > 0 && (
-            <ul style={{ listStyle: "none", padding: 0, margin: "0.75rem 0 0" }}>
+            <ul className="stops-list">
               {stops.map((stop) => (
-                <li
-                  key={stop.id}
-                  style={{ borderTop: "1px solid rgba(0,0,0,0.1)" }}
-                >
+                <li key={stop.id}>
                   <button
                     type="button"
                     disabled={opening !== null}
                     onClick={() => void open(stop.id)}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      background: "none",
-                      border: "none",
-                      font: "inherit",
-                      fontWeight: 600,
-                      padding: "0.75rem 0",
-                      minHeight: "44px",
-                      cursor: opening ? "wait" : "pointer",
-                      overflowWrap: "anywhere",
-                    }}
+                    className="stops-list__button"
                   >
                     {stop.name}
                     {opening === stop.id && (
-                      <span style={{ fontWeight: 400, opacity: 0.7 }}>
+                      <span className="quiet-copy">
                         {" "}
                         — opening…
                       </span>
@@ -111,7 +96,7 @@ export function StopsSection({
             </ul>
           )}
           {openError && (
-            <div role="alert" style={{ color: "crimson", fontSize: "0.85rem" }}>
+            <div role="alert" className="surface-error">
               Could not open the stop: {openError}
             </div>
           )}

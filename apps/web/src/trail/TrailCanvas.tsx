@@ -1,4 +1,9 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { StopId, TrailId, TrailNode, TrailView } from "@unshelf/shared";
 import { connectStops, createStop, disconnectStops } from "../api";
 import type { CurrentUser } from "../application-auth";
@@ -6,13 +11,13 @@ import { canConnect, layout, type Placed } from "./geometry";
 import { ProgressRing } from "./ProgressRing";
 
 /**
- * The Trail canvas — the Adventure map ADR-0010 chose (prototype Variant R). The
+ * The Trail canvas — ADR-0010's topology-as-journey, reskinned to Quiet Focus.
  * User's Stops are waypoints on a horizontal trodden trail; sequence runs
  * left→right, a fork is a Stop with several out-edges, a join several in-edges.
  * Every position is *derived* from the topology (`layout`), never stored, so the
  * same edge set renders here on the desktop and, read-only, on the phone (US 40).
  *
- * Progress reads as a journey: a completed Stop is a sealed pine medallion, one
+ * Progress reads as a journey: a completed Stop is a sealed green medallion, one
  * underway shows its ring filling, and the ground *behind* a completed Stop is
  * drawn as trail already walked — all derived from Item Statuses, nothing stored
  * on the Trail. On desktop it is authored by arranging, not data entry (US 39):
@@ -26,16 +31,6 @@ const COL_W = 240;
 const LANE_H = 150;
 const PAD = 76;
 const R = 29;
-
-// Two desaturated survey-chart tones: pine = achieved, ochre = where you are now.
-const PINE = "#356a5b";
-const PINE_DK = "#2b564a";
-const OCHRE = "#9c7328";
-const WALKED = "#4d7a6d";
-const AHEAD = "#c6bea9";
-const TRACK = "#d9d1bd";
-const INK = "#3c3529";
-const MUTE = "#8a806a";
 
 const isDone = (n: TrailNode) => n.total > 0 && n.done >= n.total;
 const isUnderway = (n: TrailNode) => n.done > 0 && n.done < n.total;
@@ -76,11 +71,14 @@ export function TrailCanvas({
   const [draft, setDraft] = useState<Draft | null>(null);
 
   // Pan the whole map (drag background) — a pure viewport offset, no stored state.
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [grabbing, setGrabbing] = useState(false);
-  const panFrom = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(
-    null,
-  );
+  const panFrom = useRef<{
+    sx: number;
+    sy: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
   // Per-Stop manual nudge for rearranging — VIEW-ONLY, never written to the model
   // (ADR-0010's "no stored layout" still holds; it resets on reload).
   const [offsets, setOffsets] = useState<Record<string, { dx: number; dy: number }>>(
@@ -153,7 +151,14 @@ export function TrailCanvas({
 
   // ---- pointer handlers (desktop authoring; pan works read-only too) ----
   const onPanDown = (e: ReactPointerEvent) => {
-    panFrom.current = { sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y };
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    panFrom.current = {
+      sx: e.clientX,
+      sy: e.clientY,
+      scrollLeft: canvas.scrollLeft,
+      scrollTop: canvas.scrollTop,
+    };
     setGrabbing(true);
   };
   const startNodeDrag = (id: string, e: ReactPointerEvent) => {
@@ -179,8 +184,10 @@ export function TrailCanvas({
       return;
     }
     const f = panFrom.current;
-    if (!f) return;
-    setPan({ x: f.ox + (e.clientX - f.sx), y: f.oy + (e.clientY - f.sy) });
+    const canvas = canvasRef.current;
+    if (!f || !canvas) return;
+    canvas.scrollLeft = f.scrollLeft - (e.clientX - f.sx);
+    canvas.scrollTop = f.scrollTop - (e.clientY - f.sy);
   };
   const onPanUp = () => {
     panFrom.current = null;
@@ -190,7 +197,7 @@ export function TrailCanvas({
 
   if (nodes.length === 0) {
     return (
-      <div>
+      <div className="trail-empty">
         {draft ? (
           <DraftForm
             busy={busy}
@@ -204,14 +211,14 @@ export function TrailCanvas({
               type="button"
               disabled={busy}
               onClick={() => setDraft({ from: null, mode: "start" })}
-              style={startBtn}
+              className="quiet-button quiet-button--primary"
             >
               ＋ Start your trail
             </button>
           )
         )}
         {readOnly && (
-          <p style={{ opacity: 0.7 }}>
+          <p className="quiet-copy">
             No stops on your trail yet. Add some on a wider screen to arrange them.
           </p>
         )}
@@ -223,78 +230,33 @@ export function TrailCanvas({
   const rearranged = Object.keys(offsets).length > 0;
 
   return (
-    <div>
-      <style>{CANVAS_CSS}</style>
+    <section aria-label="Trail journey">
       <div
+        ref={canvasRef}
+        role="region"
+        aria-label="Trail canvas"
+        tabIndex={0}
+        className={`trail-canvas${grabbing ? " is-grabbing" : ""}`}
         onPointerDown={onPanDown}
         onPointerMove={onPanMove}
         onPointerUp={onPanUp}
         onPointerLeave={onPanUp}
-        style={{
-          position: "relative",
-          height: Math.min(height, 560),
-          overflow: "hidden",
-          borderRadius: 10,
-          boxShadow: "inset 0 0 0 1px rgba(90,78,52,0.16)",
-          cursor: grabbing ? "grabbing" : "grab",
-          background: "#eee8da",
-          touchAction: "none",
-          userSelect: "none",
-        }}
+        style={{ "--trail-height": `${Math.min(height, 560)}px` } as CSSProperties}
       >
         <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            transform: `translate(${pan.x}px, ${pan.y}px)`,
-            width,
-            height,
-            background:
-              "linear-gradient(155deg, #f3efe4 0%, #ece6d7 55%, #e3dcc9 100%)",
-          }}
+          className="trail-canvas__ground"
+          style={
+            {
+              "--trail-width": `${width}px`,
+              "--trail-content-height": `${height}px`,
+            } as CSSProperties
+          }
         >
-          {/* survey-chart texture: fine graticule + faint contour rings */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              backgroundImage:
-                "linear-gradient(rgba(120,100,60,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(120,100,60,0.045) 1px, transparent 1px)",
-              backgroundSize: "38px 38px",
-              pointerEvents: "none",
-            }}
-          />
-          <svg
-            width={width}
-            height={height}
-            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-            aria-hidden="true"
-          >
-            {[
-              { cx: width * 0.83, cy: height * 0.22 },
-              { cx: width * 0.16, cy: height * 0.8 },
-            ].map((c, i) =>
-              [0, 1, 2, 3, 4].map((k) => (
-                <circle
-                  key={`${i}-${k}`}
-                  cx={c.cx}
-                  cy={c.cy}
-                  r={22 + k * 20}
-                  fill="none"
-                  stroke="rgba(120,100,60,0.07)"
-                  strokeWidth={1}
-                />
-              )),
-            )}
-          </svg>
-          <Compass x={PAD - 20} y={PAD - 36} />
-
           {/* the trail: dotted ahead beneath, solid walked ground on top */}
           <svg
             width={width}
             height={height}
-            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+            className="trail-canvas__edges"
             aria-hidden="true"
           >
             {edges.map((e) => (
@@ -303,7 +265,7 @@ export function TrailCanvas({
                 pos={pos}
                 from={e.fromStopId}
                 to={e.toStopId}
-                stroke={AHEAD}
+                stroke="var(--line)"
                 width={3.5}
                 dotted
               />
@@ -316,7 +278,7 @@ export function TrailCanvas({
                   pos={pos}
                   from={e.fromStopId}
                   to={e.toStopId}
-                  stroke={WALKED}
+                  stroke="var(--done)"
                   width={5}
                 />
               ))}
@@ -369,21 +331,13 @@ export function TrailCanvas({
                   disabled={busy}
                   onPointerDown={(ev) => ev.stopPropagation()}
                   onClick={() => unlink(e.fromStopId, e.toStopId)}
-                  style={{
-                    position: "absolute",
-                    left: (a.x + b.x) / 2 - 10,
-                    top: (a.y + b.y) / 2 - 10,
-                    width: 20,
-                    height: 20,
-                    lineHeight: "18px",
-                    padding: 0,
-                    borderRadius: "50%",
-                    border: "1px solid #cabf9f",
-                    background: "rgba(248,244,235,0.94)",
-                    color: "#8a4b3f",
-                    fontSize: "0.62rem",
-                    cursor: busy ? "wait" : "pointer",
-                  }}
+                  className="trail-edge-remove"
+                  style={
+                    {
+                      "--trail-x": `${(a.x + b.x) / 2 - 22}px`,
+                      "--trail-y": `${(a.y + b.y) / 2 - 22}px`,
+                    } as CSSProperties
+                  }
                 >
                   ✕
                 </button>
@@ -396,23 +350,24 @@ export function TrailCanvas({
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setOffsets({})}
-            style={resetBtn}
+            className="trail-reset quiet-button"
           >
             ↺ reset layout
           </button>
         )}
       </div>
 
-      <p style={{ fontSize: "0.8rem", color: "#7a6f52", marginTop: "0.6rem" }}>
-        <strong style={{ color: PINE }}>Pine = completed</strong> (and ground
-        you've covered); <strong style={{ color: OCHRE }}>ochre = where you are
-        now</strong>.{" "}
+      <p className="trail-legend">
+        <strong><span aria-hidden="true">✓</span> Completed stop</strong>
+        <span>Solid path: walked</span>
+        <span>Dotted path: ahead</span>
+        <span>Ring + “You are here”: current frontier</span>.{" "}
         {readOnly
           ? "Drag the map to pan. Open on a wider screen to arrange it."
           : "Drag to pan; ＋ adds the next stop, ⑃ forks a branch, ⇢ links to another, ✕ removes a link."}
       </p>
       {error && <ErrorLine error={error} />}
-    </div>
+    </section>
   );
 }
 
@@ -441,7 +396,7 @@ interface WaypointProps {
 }
 
 /**
- * One Stop as a waypoint: its medallion (sealed pine when done, a filling ring
+ * One Stop as a waypoint: its medallion (sealed green when done, a filling ring
  * while underway, a hollow ring when not started), its name, and — on desktop —
  * the control that fits the moment: the ＋/⑃/⇢ authoring row when idle, a target
  * prompt while a link is being drawn, or the inline name field while a new Stop
@@ -478,69 +433,33 @@ function Waypoint({
         e.stopPropagation();
         onPointerDown(e);
       }}
-      style={{
-        position: "absolute",
-        left: x - 96,
-        top: y - R - 16,
-        width: 192,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 6,
-        cursor: readOnly ? "grab" : "grab",
-        touchAction: "none",
-      }}
+      className="trail-waypoint"
+      style={
+        {
+          "--trail-x": `${x - 96}px`,
+          "--trail-y": `${y - R - 16}px`,
+        } as CSSProperties
+      }
     >
       {isFrontier && (
-        <div
-          style={{
-            fontSize: "0.55rem",
-            fontWeight: 700,
-            color: OCHRE,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-          }}
-        >
+        <div className="trail-waypoint__frontier">
           You are here
         </div>
       )}
 
-      <div
-        title={`${node.done} of ${node.total} items done`}
-        style={{ borderRadius: "50%" }}
-      >
+      <div title={`${node.done} of ${node.total} items done`} className="trail-medallion">
         {done ? (
           <Seal />
         ) : (
-          <div
-            style={{
-              width: R * 2,
-              height: R * 2,
-              borderRadius: "50%",
-              background: underway ? "#faf8f1" : "#f0ece0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: isFrontier
-                ? `0 0 0 1.5px ${OCHRE}`
-                : "inset 0 0 0 1px rgba(80,66,40,0.14)",
-            }}
-          >
+          <div className={`trail-medallion__ring${isFrontier ? " is-frontier" : ""}`}>
             <ProgressRing
               size={R * 2 - 8}
               stroke={5}
               progress={progressOf(node)}
-              track={TRACK}
-              fill={isFrontier || underway ? OCHRE : MUTE}
+              track="var(--field-line)"
+              fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
               center={
-                <span
-                  style={{
-                    fontSize: "0.7rem",
-                    fontWeight: 700,
-                    color: INK,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
+                <span className="trail-progress-label">
                   {`${node.done}/${node.total}`}
                 </span>
               }
@@ -549,17 +468,7 @@ function Waypoint({
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: "0.72rem",
-          fontWeight: 600,
-          letterSpacing: "0.03em",
-          color: done ? PINE : INK,
-          textAlign: "center",
-          lineHeight: 1.2,
-          overflowWrap: "anywhere",
-        }}
-      >
+      <div className={`trail-waypoint__name${done ? " is-done" : ""}`}>
         <button
           type="button"
           className="trail-stop-link"
@@ -585,15 +494,15 @@ function Waypoint({
           ) : isLinkTarget ? (
             <RowButton label="⇢ link here" onClick={onLinkHere} busy={busy} />
           ) : linking ? null : (
-            <div style={{ display: "flex", gap: 5 }}>
+            <div className="trail-authoring-row">
               <Tip label="Add the next stop in sequence">
-                <IconButton label="＋" onClick={onNext} busy={busy} />
+                <IconButton label="＋" accessibleLabel="Add next Stop" onClick={onNext} busy={busy} />
               </Tip>
               <Tip label="Fork a parallel branch">
-                <IconButton label="⑃" onClick={onFork} busy={busy} />
+                <IconButton label="⑃" accessibleLabel="Fork a parallel branch" onClick={onFork} busy={busy} />
               </Tip>
               <Tip label="Link to an existing stop">
-                <IconButton label="⇢" onClick={onStartLink} busy={busy} />
+                <IconButton label="⇢" accessibleLabel="Link to an existing Stop" onClick={onStartLink} busy={busy} />
               </Tip>
             </div>
           )}
@@ -626,7 +535,7 @@ function DraftForm({
         e.preventDefault();
         submit();
       }}
-      style={{ display: "flex", gap: 4, alignItems: "center" }}
+      className="trail-draft"
     >
       <input
         // eslint-disable-next-line jsx-a11y/no-autofocus
@@ -638,24 +547,17 @@ function DraftForm({
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
         }}
-        style={{
-          font: "inherit",
-          fontSize: "0.72rem",
-          padding: "0.3rem 0.4rem",
-          width: "8.5rem",
-          border: "1px solid #cabf9f",
-          borderRadius: 5,
-        }}
+        className="trail-draft__input"
       />
-      <button type="submit" disabled={busy} style={draftBtn} title="Create">
+      <button type="submit" disabled={busy} className="trail-draft__button" aria-label="Create Stop">
         ✓
       </button>
       <button
         type="button"
         disabled={busy}
         onClick={onCancel}
-        style={draftBtn}
-        title="Cancel"
+        className="trail-draft__button"
+        aria-label="Cancel new Stop"
       >
         ✕
       </button>
@@ -664,40 +566,15 @@ function DraftForm({
 }
 
 /**
- * A completed Stop: a matte pine disc with an engraved rim — a "sealed" milestone.
- * A solid disc against hollow rings is enough to read as done; no coin sheen, no
- * checkmark, keeping it considered rather than gamey.
+ * A completed Stop: a sealed green medallion with a check, so completion remains
+ * legible without its colour.
  */
 function Seal() {
   const s = R * 2;
   return (
-    <div
-      style={{
-        width: s,
-        height: s,
-        borderRadius: "50%",
-        background: `linear-gradient(160deg, ${PINE} 0%, ${PINE_DK} 100%)`,
-        boxShadow: "0 1px 3px rgba(43,86,74,0.35)",
-      }}
-    >
-      <svg width={s} height={s} viewBox="0 0 100 100" style={{ display: "block" }}>
-        <circle
-          cx={50}
-          cy={50}
-          r={33}
-          fill="none"
-          stroke="rgba(255,255,255,0.28)"
-          strokeWidth={1.5}
-        />
-        <circle
-          cx={50}
-          cy={50}
-          r={27}
-          fill="none"
-          stroke="rgba(0,0,0,0.14)"
-          strokeWidth={1}
-        />
-      </svg>
+    <div className="trail-seal" style={{ "--trail-seal-size": `${s}px` } as CSSProperties}>
+      <span aria-hidden="true">✓</span>
+      <span className="visually-hidden">Completed stop</span>
     </div>
   );
 }
@@ -733,33 +610,14 @@ function TrailSeg({
   );
 }
 
-/** Decorative compass rose — a small, muted survey-chart flourish. */
-function Compass({ x, y }: { x: number; y: number }) {
-  return (
-    <svg
-      width={50}
-      height={50}
-      viewBox="0 0 54 54"
-      style={{ position: "absolute", left: x, top: y, opacity: 0.4, pointerEvents: "none" }}
-      aria-hidden="true"
-    >
-      <circle cx={27} cy={27} r={20} fill="none" stroke="#9a824e" strokeWidth={1} />
-      <circle cx={27} cy={27} r={13} fill="none" stroke="#9a824e" strokeWidth={0.7} />
-      <path d="M27 8 L30 27 L27 46 L24 27 Z" fill="#9a824e" opacity={0.8} />
-      <path d="M8 27 L27 24 L46 27 L27 30 Z" fill="#9a824e" opacity={0.5} />
-      <text x={27} y={6} textAnchor="middle" fontSize={7} fontWeight={700} fill="#8a6d3a">
-        N
-      </text>
-    </svg>
-  );
-}
-
 function IconButton({
   label,
+  accessibleLabel,
   onClick,
   busy,
 }: {
   label: string;
+  accessibleLabel: string;
   onClick: () => void;
   busy: boolean;
 }) {
@@ -768,19 +626,8 @@ function IconButton({
       type="button"
       disabled={busy}
       onClick={onClick}
-      style={{
-        fontSize: "0.76rem",
-        width: "1.7rem",
-        height: "1.7rem",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        border: "1px solid #d3c8a9",
-        background: "rgba(250,247,240,0.9)",
-        color: "#6b5f43",
-        borderRadius: 6,
-        cursor: busy ? "wait" : "pointer",
-      }}
+      className="trail-icon-button"
+      aria-label={accessibleLabel}
     >
       {label}
     </button>
@@ -801,16 +648,7 @@ function RowButton({
       type="button"
       disabled={busy}
       onClick={onClick}
-      style={{
-        font: "inherit",
-        fontSize: "0.7rem",
-        padding: "0.25rem 0.55rem",
-        border: "1px solid #cabf9f",
-        background: "rgba(250,247,240,0.9)",
-        color: "#6b5f43",
-        borderRadius: 6,
-        cursor: busy ? "wait" : "pointer",
-      }}
+      className="trail-row-button"
     >
       {label}
     </button>
@@ -819,7 +657,7 @@ function RowButton({
 
 function ErrorLine({ error }: { error: string }) {
   return (
-    <div role="alert" style={{ color: "crimson", fontSize: "0.85rem" }}>
+    <div role="alert" className="surface-error">
       Could not change the trail: {error}
     </div>
   );
@@ -833,56 +671,3 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
     </span>
   );
 }
-
-const startBtn: React.CSSProperties = {
-  font: "inherit",
-  fontSize: "0.9rem",
-  padding: "0.6rem 1rem",
-  minHeight: "44px",
-  border: "1px solid #cabf9f",
-  background: "rgba(250,247,240,0.9)",
-  color: "#6b5f43",
-  borderRadius: 8,
-  cursor: "pointer",
-};
-
-const draftBtn: React.CSSProperties = {
-  fontSize: "0.72rem",
-  width: "1.6rem",
-  height: "1.6rem",
-  border: "1px solid #cabf9f",
-  background: "rgba(250,247,240,0.9)",
-  color: "#6b5f43",
-  borderRadius: 5,
-  cursor: "pointer",
-};
-
-const resetBtn: React.CSSProperties = {
-  position: "absolute",
-  right: 12,
-  bottom: 12,
-  fontSize: "0.7rem",
-  letterSpacing: "0.03em",
-  padding: "0.3rem 0.6rem",
-  border: "1px solid #cabf9f",
-  background: "rgba(248,244,235,0.94)",
-  color: "#6b5f43",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
-const CANVAS_CSS = `
-  .tw-tip { position: relative; display: inline-flex; }
-  .tw-tip-label {
-    position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%);
-    background: #2f2a20; color: #f4efe4; font-size: 0.66rem; font-weight: 500;
-    padding: 0.22rem 0.5rem; border-radius: 5px; white-space: nowrap;
-    opacity: 0; pointer-events: none; transition: opacity .12s ease; z-index: 30;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  }
-  .tw-tip-label::after {
-    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-    border: 4px solid transparent; border-top-color: #2f2a20;
-  }
-  .tw-tip:hover .tw-tip-label { opacity: 1; }
-`;

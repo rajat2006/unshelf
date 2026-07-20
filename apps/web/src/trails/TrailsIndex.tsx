@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import type { Trail } from "@unshelf/shared";
 
@@ -43,9 +43,9 @@ export function TrailsIndex({
       {trails.length === 0 ? (
         <EmptyTrails />
       ) : (
-        <ul style={gridStyle}>
+        <ul className="trail-card-grid">
           {trails.map((trail) => (
-            <li key={trail.id} style={{ listStyle: "none" }}>
+            <li key={trail.id}>
               <TrailCard trail={trail} />
             </li>
           ))}
@@ -64,11 +64,11 @@ function progressLabel(trail: Trail): string {
 /** One Trail as a card that opens the Trail at its opaque, stable URL. */
 function TrailCard({ trail }: { trail: Trail }) {
   return (
-    <Link to={`/trails/${trail.id}`} style={cardStyle}>
-      <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
+    <Link to={`/trails/${trail.id}`} className="trail-card">
+      <span className="trail-card__name">
         {trail.name}
       </span>
-      <span style={{ color: "var(--muted)" }}>{progressLabel(trail)}</span>
+      <span className="trail-card__progress">{progressLabel(trail)}</span>
     </Link>
   );
 }
@@ -76,7 +76,7 @@ function TrailCard({ trail }: { trail: Trail }) {
 /** The empty index: a quiet prompt whose only action starts the first Trail. */
 function EmptyTrails() {
   return (
-    <p style={{ color: "var(--muted)", marginTop: "var(--space-5)" }}>
+    <p className="trails-empty">
       No Trails yet — name one above to start.
     </p>
   );
@@ -105,22 +105,22 @@ function NewTrailForm({
   }
 
   return (
-    <form onSubmit={submit} style={formStyle}>
-      <label htmlFor="new-trail-name" style={{ fontWeight: 600 }}>
+    <form onSubmit={submit} className="new-trail-form">
+      <label htmlFor="new-trail-name">
         Trail name
       </label>
-      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+      <div className="new-trail-form__controls">
         <input
           id="new-trail-name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="e.g. Learn Rust"
-          style={inputStyle}
+          className="new-trail-form__input"
         />
         <button
           type="submit"
           disabled={!trimmed || creating}
-          style={buttonStyle}
+          className="quiet-button quiet-button--primary"
         >
           Start a Trail
         </button>
@@ -132,9 +132,9 @@ function NewTrailForm({
 /** Card-shaped skeletons, not a spinner (design spec §6): layout stays stable. */
 function TrailsSkeleton() {
   return (
-    <div role="status" aria-label="Loading Trails" style={gridStyle}>
+    <div role="status" aria-label="Loading Trails" className="trail-card-grid">
       {[0, 1, 2].map((key) => (
-        <div key={key} aria-hidden="true" style={skeletonStyle} />
+        <div key={key} aria-hidden="true" className="trail-card-skeleton" />
       ))}
     </div>
   );
@@ -143,79 +143,11 @@ function TrailsSkeleton() {
 /** The surface-scoped error: it never removes the shell — just the body. */
 function TrailsError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div role="alert" style={errorStyle}>
-      <p style={{ margin: 0 }}>Couldn't load this</p>
-      <button type="button" onClick={onRetry} style={buttonStyle}>
+    <div role="alert" className="surface-error-panel">
+      <p>Couldn't load this</p>
+      <button type="button" onClick={onRetry} className="quiet-button quiet-button--primary">
         Retry
       </button>
     </div>
   );
 }
-
-const gridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-  gap: "var(--space-4)",
-  padding: 0,
-  margin: "var(--space-5) 0 0",
-};
-
-const cardStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-2)",
-  padding: "var(--space-4)",
-  minHeight: "88px",
-  borderRadius: "var(--radius-3)",
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
-  color: "var(--ink)",
-  textDecoration: "none",
-};
-
-const skeletonStyle: CSSProperties = {
-  minHeight: "88px",
-  borderRadius: "var(--radius-3)",
-  border: "1px solid var(--line)",
-  background: "var(--trail-bg)",
-};
-
-const formStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-2)",
-  maxWidth: "480px",
-};
-
-const inputStyle: CSSProperties = {
-  flex: "1 1 200px",
-  minHeight: "44px",
-  padding: "0 var(--space-3)",
-  borderRadius: "var(--radius-2)",
-  border: "1px solid var(--field-line)",
-  background: "var(--field-bg)",
-  color: "var(--ink)",
-};
-
-const buttonStyle: CSSProperties = {
-  minHeight: "44px",
-  padding: "0 var(--space-4)",
-  borderRadius: "var(--radius-2)",
-  border: "1px solid transparent",
-  background: "var(--accent)",
-  color: "var(--on-accent)",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const errorStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-3)",
-  alignItems: "flex-start",
-  marginTop: "var(--space-5)",
-  padding: "var(--space-4)",
-  borderRadius: "var(--radius-2)",
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
-};

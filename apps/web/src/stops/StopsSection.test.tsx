@@ -59,14 +59,12 @@ const renderStops = (openStop: StopDetail | null) =>
   );
 
 describe("Stops smoke coverage", () => {
-  it("renders the Stops list with phone-safe, tappable controls", () => {
+  it("renders every Stop as an operable list choice", () => {
     const markup = renderStops(null);
 
     expect(markup).toContain("Learn CSS");
     expect(markup).toContain("Build the API");
-    expect(markup).toContain("width:100%");
-    expect(markup).toContain("min-height:44px");
-    expect(markup).toContain("overflow-wrap:anywhere");
+    expect(markup.match(/<button/g)).toHaveLength(2);
   });
 
   it("renders a Stop detail with the Item facts shared by All", () => {
@@ -78,6 +76,5 @@ describe("Stops smoke coverage", () => {
     expect(markup).toContain("https://example.com/layouts");
     expect(markup).toContain("Remove from stop");
     expect(markup).toContain("All stops");
-    expect(markup).toContain("min-height:44px");
   });
 });

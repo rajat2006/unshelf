@@ -59,20 +59,24 @@ export function TrailSurface({
         <h1 id="trail-heading">Trail</h1>
         {error && (
           <div role="alert">
-            <p style={{ color: "var(--muted)" }}>
+            <p className="quiet-copy">
               Could not load this Trail: {error}
             </p>
             <button
               type="button"
               onClick={() => void refresh()}
-              style={{ minHeight: "44px", cursor: "pointer" }}
+              className="quiet-button"
             >
               Retry
             </button>
           </div>
         )}
         {!trail && !error && (
-          <p style={{ color: "var(--muted)" }}>Loading this Trail…</p>
+          <div className="trail-skeleton" role="status" aria-label="Loading Trail canvas">
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </div>
         )}
         {trail && trailId && (
           <TrailCanvas

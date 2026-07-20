@@ -17,13 +17,7 @@ export function Shell() {
   return (
     <CaptureProvider>
       <TopBar />
-      <main
-        style={{
-          maxWidth: "72rem",
-          margin: "0 auto",
-          padding: "clamp(var(--space-4), 4vw, var(--space-6))",
-        }}
-      >
+      <main className="app-main">
         <Outlet />
       </main>
     </CaptureProvider>

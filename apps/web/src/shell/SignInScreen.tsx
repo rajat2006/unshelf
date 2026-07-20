@@ -11,38 +11,11 @@ import { Wordmark } from "./Wordmark";
  */
 export function SignInScreen() {
   return (
-    <main
-      style={{
-        minHeight: "100dvh",
-        display: "grid",
-        placeItems: "center",
-        padding: "var(--space-5)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "var(--space-5)",
-        }}
-      >
+    <main className="sign-in-screen">
+      <div className="sign-in-screen__content">
         <Wordmark />
         <SignInButton>
-          <button
-            type="button"
-            style={{
-              font: "inherit",
-              fontWeight: 550,
-              padding: "var(--space-3) var(--space-5)",
-              minHeight: "44px",
-              cursor: "pointer",
-              color: "var(--on-accent)",
-              background: "var(--accent)",
-              border: "none",
-              borderRadius: "var(--radius-2)",
-            }}
-          >
+          <button type="button" className="sign-in-action">
             Sign in with Google
           </button>
         </SignInButton>

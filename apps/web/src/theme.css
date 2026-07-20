@@ -22,6 +22,8 @@
   --field-bg: #ffffff;
   --field-line: #d9dce2;
   --trail-bg: #f4f5f7;
+  --trail-grid: color-mix(in srgb, var(--line) 65%, transparent);
+  --shadow: color-mix(in srgb, var(--ink) 14%, transparent);
 
   /* Spacing — the 4px grid, and radii 6 / 8 / 10. */
   --space-1: 4px;
@@ -68,6 +70,632 @@ html,
 body {
   margin: 0;
   min-width: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.quiet-copy {
+  color: var(--muted);
+}
+
+.quiet-link {
+  color: var(--accent);
+}
+
+.auth-placeholder,
+.sign-in-screen {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: var(--space-5);
+}
+
+.sign-in-screen__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.wordmark {
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.sign-in-action,
+.top-bar__capture {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sign-in-action {
+  padding: var(--space-3) var(--space-5);
+}
+
+.top-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.top-bar__home {
+  display: inline-flex;
+  text-decoration: none;
+}
+
+.top-bar__nav,
+.top-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.top-bar__actions {
+  margin-left: auto;
+  gap: var(--space-3);
+}
+
+.top-bar__door {
+  padding: var(--space-2);
+  border-radius: var(--radius-1);
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.top-bar__door[aria-current="page"],
+.top-bar__door.active {
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: var(--space-1);
+}
+
+.app-main {
+  width: 100%;
+  max-width: 72rem;
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(var(--space-4), 4vw, var(--space-6));
+}
+
+.capture-dialog {
+  width: min(28rem, calc(100vw - var(--space-5)));
+  max-width: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.capture-dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.capture-form {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.capture-form__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.capture-form__heading h2,
+.capture-form__intro,
+.capture-form__error {
+  margin: 0;
+}
+
+.capture-form__heading h2 {
+  font-size: 1.2rem;
+}
+
+.capture-form__intro {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.capture-form__field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.capture-form__input {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-1);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.capture-form__close {
+  min-height: 44px;
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.capture-form__submit {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capture-form__submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.capture-form__error {
+  color: var(--ink);
+}
+
+.trail-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: var(--space-4);
+  padding: 0;
+  margin: var(--space-5) 0 0;
+  list-style: none;
+}
+
+.trail-card {
+  display: flex;
+  min-height: 88px;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.trail-card__name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.trail-card__progress,
+.trails-empty {
+  color: var(--muted);
+}
+
+.trails-empty {
+  margin-top: var(--space-5);
+}
+
+.trail-card-skeleton {
+  min-height: 88px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--trail-bg);
+}
+
+.new-trail-form {
+  display: flex;
+  max-width: 30rem;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.new-trail-form > label {
+  font-weight: 650;
+}
+
+.new-trail-form__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.new-trail-form__input {
+  min-width: 0;
+  min-height: 44px;
+  flex: 1 1 12.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.surface-error-panel {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.surface-error-panel p {
+  margin: 0;
+}
+
+.trail-skeleton {
+  position: relative;
+  min-height: 18rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--trail-bg);
+}
+
+.trail-skeleton span {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border: 8px solid var(--line);
+  border-radius: 50%;
+}
+
+.trail-skeleton span:nth-child(1) { left: 10%; top: 35%; }
+.trail-skeleton span:nth-child(2) { left: 42%; top: 48%; }
+.trail-skeleton span:nth-child(3) { left: 75%; top: 30%; }
+
+.stop-view__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.stop-view__heading h2,
+.stop-view__heading h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.stop-view__items,
+.stops-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.stop-view__remove {
+  margin-top: var(--space-2);
+}
+
+.stops-section {
+  margin-top: var(--space-6);
+}
+
+.stops-section h2 {
+  font-size: 1.2rem;
+}
+
+.stops-list {
+  margin-top: var(--space-3);
+}
+
+.stops-list li {
+  border-top: 1px solid var(--line);
+}
+
+.stops-list__button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-3) 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.quiet-button,
+.trail-draft__button,
+.trail-icon-button,
+.trail-row-button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.quiet-button {
+  padding: var(--space-2) var(--space-4);
+}
+
+.quiet-button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.surface-error {
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.trail-canvas {
+  position: relative;
+  width: 100%;
+  height: var(--trail-height);
+  min-height: 12rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background-color: var(--trail-bg);
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  user-select: none;
+  overscroll-behavior: contain;
+}
+
+.trail-canvas.is-grabbing {
+  cursor: grabbing;
+}
+
+.trail-canvas__ground {
+  position: relative;
+  width: var(--trail-width);
+  height: var(--trail-content-height);
+  min-width: 100%;
+  min-height: 100%;
+  background-color: var(--trail-bg);
+  background-image:
+    linear-gradient(var(--trail-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--trail-grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.trail-canvas__edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.trail-waypoint {
+  position: absolute;
+  left: var(--trail-x);
+  top: var(--trail-y);
+  display: flex;
+  width: 192px;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: grab;
+  touch-action: none;
+}
+
+.trail-waypoint__frontier {
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.trail-medallion,
+.trail-medallion__ring {
+  border-radius: 50%;
+}
+
+.trail-medallion__ring {
+  display: flex;
+  width: 58px;
+  height: 58px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.trail-medallion__ring.is-frontier {
+  outline: 3px double var(--accent);
+  outline-offset: 2px;
+}
+
+.trail-progress-label {
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.trail-seal {
+  display: grid;
+  width: var(--trail-seal-size);
+  height: var(--trail-seal-size);
+  place-items: center;
+  border: 4px double var(--on-accent);
+  border-radius: 50%;
+  background: var(--done);
+  color: var(--on-accent);
+  font-size: 1.4rem;
+  font-weight: 800;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.trail-waypoint__name {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.trail-waypoint__name.is-done {
+  color: var(--done);
+}
+
+.trail-authoring-row,
+.trail-draft {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.trail-icon-button,
+.trail-draft__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.trail-row-button {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.75rem;
+}
+
+.trail-draft__input {
+  width: 8.5rem;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-1);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.trail-edge-remove {
+  position: absolute;
+  left: var(--trail-x);
+  top: var(--trail-y);
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--field-line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.trail-reset {
+  position: sticky;
+  left: calc(100% - 9rem);
+  bottom: var(--space-3);
+}
+
+.trail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.trail-legend strong {
+  color: var(--done);
+}
+
+.progress-ring {
+  display: block;
+}
+
+.progress-ring__value {
+  transition: stroke-dashoffset 350ms ease;
+}
+
+.progress-ring__center {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.tw-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.tw-tip-label {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  z-index: 30;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-1);
+  background: var(--ink);
+  box-shadow: 0 4px 12px var(--shadow);
+  color: var(--surface);
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+}
+
+.tw-tip:hover .tw-tip-label,
+.tw-tip:focus-within .tw-tip-label {
+  opacity: 1;
 }
 
 .library-surface {
@@ -197,6 +825,26 @@ body {
   gap: var(--space-2);
 }
 
+.item-labels button,
+.item-labels select,
+.item-labels input,
+.library-empty button,
+.library-surface [role="alert"] button {
+  min-height: 44px;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.item-labels input,
+.item-labels select {
+  min-width: 0;
+}
+
 .item-label-chip {
   border-color: var(--accent);
   color: var(--accent);
@@ -311,6 +959,36 @@ body {
 }
 
 @media (max-width: 30rem) {
+  .top-bar {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .top-bar__nav {
+    order: 3;
+    width: 100%;
+  }
+
+  .top-bar__door {
+    flex: 1 1 0;
+    text-align: center;
+  }
+
+  .app-main {
+    padding: var(--space-4);
+  }
+
+  .capture-dialog {
+    width: calc(100vw - var(--space-4));
+    max-height: calc(100dvh - var(--space-4));
+    padding: var(--space-4);
+    overflow-y: auto;
+  }
+
+  .new-trail-form__controls > * {
+    width: 100%;
+  }
+
   .status-control__choices {
     display: flex;
     width: 100%;
@@ -320,6 +998,10 @@ body {
     flex: 1 1 0;
     min-width: 0;
     padding-inline: var(--space-2);
+  }
+
+  .trail-legend {
+    display: grid;
   }
 }
 

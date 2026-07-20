@@ -33,7 +33,7 @@ const render = (readOnly: boolean, view: TrailView = trail) =>
     />,
   );
 
-describe("Trail canvas — the Adventure map", () => {
+describe("Trail canvas — Quiet Focus", () => {
   it("draws each Stop as a waypoint with its name and progress", () => {
     const markup = render(false);
 
@@ -42,6 +42,12 @@ describe("Trail canvas — the Adventure map", () => {
     expect(markup).toContain("1/3"); // the underway ring shows its fraction
     expect(markup).toContain("You are here"); // B is the frontier
     expect(markup).toContain("<path"); // the trail is drawn as segments
+    expect(markup).toContain("Completed stop");
+    expect(markup).toContain("Solid path: walked");
+    expect(markup).toContain("Dotted path: ahead");
+    expect(markup).not.toContain("Compass");
+    expect(markup).not.toContain("ochre");
+    expect(markup).not.toContain("pine");
   });
 
   it("offers arranging controls on desktop", () => {

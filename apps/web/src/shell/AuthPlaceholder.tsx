@@ -7,16 +7,7 @@ import { Wordmark } from "./Wordmark";
  */
 export function AuthPlaceholder() {
   return (
-    <div
-      role="status"
-      aria-label="Loading Unshelf"
-      style={{
-        minHeight: "100dvh",
-        display: "grid",
-        placeItems: "center",
-        padding: "var(--space-5)",
-      }}
-    >
+    <div role="status" aria-label="Loading Unshelf" className="auth-placeholder">
       <Wordmark />
     </div>
   );

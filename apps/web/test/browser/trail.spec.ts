@@ -68,7 +68,7 @@ test("a desktop User adds the first Stop, extends the sequence, and it persists"
   await addFirstStop(page, "Learn the basics");
 
   // Extend that Stop into the next — one gesture creates a Stop and links it.
-  await page.getByRole("button", { name: "＋", exact: true }).click();
+  await page.getByRole("button", { name: "Add next Stop" }).click();
   const next = page.getByPlaceholder("Name the new stop");
   await next.fill("Build something");
   await next.press("Enter");

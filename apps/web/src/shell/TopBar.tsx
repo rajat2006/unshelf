@@ -15,14 +15,6 @@ import { Wordmark } from "./Wordmark";
  * current axis is apparent to sighted and assistive-technology Users alike.
  */
 
-const doorStyle = ({ isActive }: { isActive: boolean }) => ({
-  textDecoration: "none",
-  color: isActive ? "var(--ink)" : "var(--muted)",
-  fontWeight: isActive ? 600 : 500,
-  padding: "var(--space-1) var(--space-2)",
-  borderRadius: "var(--radius-1)",
-});
-
 export function TopBar() {
   const { open } = useCapture();
   const location = useLocation();
@@ -30,61 +22,32 @@ export function TopBar() {
     location.pathname === "/library" || location.pathname.startsWith("/items/");
 
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-4)",
-        padding: "var(--space-3) var(--space-4)",
-        borderBottom: "1px solid var(--line)",
-        background: "var(--surface)",
-      }}
-    >
+    <header className="top-bar">
       <NavLink
         to="/"
         aria-label="Unshelf — go to Trails"
-        style={{ display: "inline-flex", textDecoration: "none" }}
+        className="top-bar__home"
         end
       >
         <Wordmark />
       </NavLink>
-      <nav
-        aria-label="Primary"
-        style={{ display: "flex", gap: "var(--space-2)" }}
-      >
-        <NavLink to="/" end style={doorStyle}>
+      <nav aria-label="Primary" className="top-bar__nav">
+        <NavLink to="/" end className="top-bar__door">
           Trails
         </NavLink>
         <Link
           to="/library"
-          style={doorStyle({ isActive: libraryActive })}
+          className={`top-bar__door${libraryActive ? " active" : ""}`}
           aria-current={libraryActive ? "page" : undefined}
         >
           Library
         </Link>
       </nav>
-      <div
-        style={{
-          marginLeft: "auto",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-3)",
-        }}
-      >
+      <div className="top-bar__actions">
         <button
           type="button"
           onClick={open}
-          style={{
-            font: "inherit",
-            fontWeight: 550,
-            color: "var(--on-accent)",
-            background: "var(--accent)",
-            border: "none",
-            borderRadius: "var(--radius-2)",
-            padding: "var(--space-2) var(--space-4)",
-            minHeight: "40px",
-            cursor: "pointer",
-          }}
+          className="top-bar__capture"
         >
           Capture
         </button>

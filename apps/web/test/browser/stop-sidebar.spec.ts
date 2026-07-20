@@ -62,7 +62,7 @@ test("a Stop route opens beside its interactive Trail and follows browser histor
   await expect(
     page.getByRole("heading", { level: 1, name: "Trail" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "＋", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Add next Stop" })).toBeEnabled();
 
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/trails/${trailId}$`));
