@@ -111,6 +111,10 @@ describe("loadIssueCapabilityContext", () => {
       issueNumber: "63",
       issueTitle: "agent-implement workflow",
       outputDir: "/run/tmp",
+      // Think-tier resolution — distinct from the Build tier, so a resolver
+      // that ignored the forwarded capability would fail here.
+      model: THINK_CLAUDE_MODEL,
+      effort: "high",
       promptArgs: {
         ISSUE_NUMBER: "63",
         ISSUE_TITLE: "agent-implement workflow",
@@ -127,6 +131,9 @@ describe("loadIssueCapabilityContext", () => {
     const ctx = loadIssueCapabilityContext("explore");
     expect(ctx.agent.name).toBe("codex");
     expect(ctx.model).toBe(CODEX_MODEL);
+    // explore's Codex entry, not the old uniform medium — proves the capability
+    // reached resolution on the Codex path too.
+    expect(ctx.effort).toBe("xhigh");
     expect(ctx.labels).toEqual(["agent:explore", "agent:codex"]);
   });
 });
@@ -188,6 +195,13 @@ describe("loadPrdPrContext", () => {
     expect(ctx.model).toBe(CODEX_MODEL);
   });
 
+  it("forwards the capability into resolution (to-issues → Think tier, high)", () => {
+    setPrdEnv();
+    const ctx = loadPrdPrContext("to-issues");
+    expect(ctx.model).toBe(THINK_CLAUDE_MODEL);
+    expect(ctx.effort).toBe("high");
+  });
+
   it("throws when a required var (PRD_NUMBER) is missing", () => {
     setPrdEnv({ PRD_NUMBER: undefined });
     expect(() => loadPrdPrContext("write-prd-pr")).toThrow("PRD_NUMBER");
@@ -228,6 +242,15 @@ describe("loadPrdImplementContext", () => {
     expect(ctx.agent.name).toBe("claude-code");
     expect(ctx.model).toBe(BUILD_CLAUDE_MODEL);
     expect(ctx.effort).toBe("medium");
+  });
+
+  it("forwards the caller's capability rather than assuming implement-prd", () => {
+    setPrdEnv();
+    // implement-prd's own entry matches the old global default, so prove the
+    // forwarding wire with a capability whose policy is distinct.
+    const ctx = loadPrdImplementContext("review");
+    expect(ctx.model).toBe(THINK_CLAUDE_MODEL);
+    expect(ctx.effort).toBe("high");
   });
 
   it("throws when the sub-issue var (SUB_ISSUE_NUMBER) is missing", () => {
