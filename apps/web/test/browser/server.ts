@@ -6,6 +6,7 @@ import {
   BROWSER_HARNESS_API_ORIGIN,
   BROWSER_HARNESS_API_PORT,
   BROWSER_HARNESS_HOST,
+  BROWSER_HARNESS_WEB_ORIGIN,
   BROWSER_HARNESS_WEB_PORT,
   testUserFromAuthorization,
 } from "./harness";
@@ -32,6 +33,35 @@ const vite = await createViteServer({
     },
   },
 });
+
+// The app is a client-routed SPA (react-router), so a deep link or a refresh on
+// a nested route (e.g. /test/browser/library) must serve the harness entry
+// document, not 404. Vite's own SPA fallback targets the root index.html; the
+// harness is mounted under /test/browser, so rewrite navigation requests there
+// before Vite's middleware chain resolves them.
+function rewriteDeepLinksToHarnessEntry(
+  req: { method?: string; url?: string; headers: { accept?: string } },
+  _res: unknown,
+  next: () => void,
+) {
+  if (
+    req.method === "GET" &&
+    req.headers.accept?.includes("text/html") &&
+    req.url
+  ) {
+    const url = new URL(req.url, BROWSER_HARNESS_WEB_ORIGIN);
+    if (url.pathname.startsWith("/test/browser")) {
+      url.pathname = "/test/browser/";
+      req.url = `${url.pathname}${url.search}`;
+    }
+  }
+  next();
+}
+vite.middlewares.stack.unshift({
+  route: "",
+  handle: rewriteDeepLinksToHarnessEntry as never,
+});
+
 await vite.listen();
 
 let stopping = false;
