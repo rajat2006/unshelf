@@ -17,11 +17,13 @@ if [[ -n "$REPO" ]]; then
 fi
 
 # name | colour (hex, no #) | description
-# Four layers per spec §D + #70: one provider label, the agent state machine, and
+# Four layers per spec §D + #70: the provider labels, the agent state machine, and
 # the source:architecture-review provenance label.
-# There is deliberately NO `agent:claude` label — absence of `agent:codex` is Claude.
+# Both provider labels are optional and symmetric: each PINS a subject to that
+# provider, and neither present means DEFAULT_PROVIDER (.sandcastle/resolve-agent.ts).
 labels=(
-  "agent:codex|8250df|Provider (optional): run this issue on Codex/gpt-5.6-sol instead of the default Claude Code"
+  "agent:claude|8250df|Provider (optional): pin this issue to Claude Code, whatever the default provider is"
+  "agent:codex|8250df|Provider (optional): pin this issue to Codex/gpt-5.6-sol, whatever the default provider is"
   "agent:implement|0e8a16|Human trigger: start an autonomous implementation run on this issue"
   "agent:in-progress|fbca04|Machine: a run is actively working this issue (added on start, removed on finish)"
   "agent:review|1d76db|Machine: an implement run finished; fire the automated PR review"

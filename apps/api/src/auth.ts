@@ -30,8 +30,9 @@ export type Identify = (
 /**
  * Build the middleware that turns an authenticated request into a current User:
  * identify the external id, provision our `users` row, and set `req.user`.
- * Unauthenticated requests are refused with 401 — the code-side half of the
- * invite gate (Clerk's allowlist + invitations decide *who* ever authenticates).
+ * Unauthenticated requests are refused with 401. Admission is open (ADR-0001):
+ * anyone Clerk authenticates gets a User row provisioned on first request —
+ * sign-up is sign-in, and there is no allowlist to consult.
  */
 export function createAuthMiddleware(
   pool: Pool,

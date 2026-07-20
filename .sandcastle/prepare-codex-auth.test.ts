@@ -138,7 +138,7 @@ describe("prepareCodexAuth — materialise the Codex subscription seat before ru
     expect(() => prepareCodexAuth("codex", env)).toThrow(/not valid JSON/);
   });
 
-  it("is a no-op for the Claude Code default — writes nothing, strips nothing", () => {
+  it("is a no-op when the run resolved to Claude Code — writes nothing, strips nothing", () => {
     env.OPENAI_API_KEY = "sk-should-survive-non-codex";
 
     prepareCodexAuth("claude-code", env);

@@ -6,7 +6,7 @@ Node/Express API (`apps/api`) over **Postgres**, sharing one domain package
 **Dokploy**, with **Clerk** for authentication. This is the last decision on the
 v1-spec map (ADR-0008 already fixed a responsive web client off a hosted backend;
 ADR-0001 fixed always-on multi-tenant with Google social-login). The stack is
-sized to a **solo founder** shipping a small, plainly-relational, invite-gated app
+sized to a **solo founder** shipping a small, plainly-relational, single-purpose app
 and to the founder's own tastes — one language end to end, a boring relational
 core, and infrastructure the founder owns.
 
@@ -48,10 +48,11 @@ Docker service.
 
 ## Auth: Clerk (managed), behind guardrails that keep it reversible
 
-Authentication is **Clerk** — a managed service providing Google OAuth and a
-native **allowlist + invitations** feature that maps directly onto ADR-0001's
-invite-only → public-self-serve gating. Chosen for **speed to a working
-invite-gated login and offloaded security surface**, which is the right trade for
+Authentication is **Clerk** — a managed service providing Google OAuth, where
+signing in for the first time creates the account (ADR-0001's open sign-up), and
+a native **allowlist + invitations** feature should admission ever need gating
+again. Chosen for **speed to a working Google login and offloaded security
+surface**, which is the right trade for
 a solo founder: auth is the easiest thing to get subtly wrong, and a slip there is
 not an ordinary bug but a breach of the per-User isolation that *is* the tenancy
 model (ADR-0001).
@@ -94,12 +95,16 @@ named fast-follows.
 - **Operational backups** (scheduled off-box Postgres dumps) — deferred, **but
   recorded here as a conscious, time-boxed risk.** On a single VPS with no backup,
   one hardware failure is irreversible total data loss. This is defensible *only*
-  while the repo is greenfield and invite-only with near-zero data. The trigger to
+  while the repo is greenfield with near-zero data. The trigger to
   close it: **stand up Dokploy's scheduled off-box backups (to S3-compatible
-  storage) before the invite-only phase opens to public self-serve** — before
-  Unshelf holds user data whose loss would betray the "escape your scattered tools
-  into one safe place" promise. Deferring past that milestone is not sanctioned by
-  this ADR.
+  storage) before anyone but the founder holds data here** — before Unshelf holds
+  user data whose loss would betray the "escape your scattered tools into one safe
+  place" promise. Deferring past that milestone is not sanctioned by this ADR.
+
+  *(#77 removed the invite gate; this trigger originally read "before the
+  invite-only phase opens to public self-serve". With admission open from launch,
+  the milestone is now the first non-founder User, not a phase change — so the
+  backup fast-follow (#40) is closer than it was, not further.)*
 
 ## Considered options
 

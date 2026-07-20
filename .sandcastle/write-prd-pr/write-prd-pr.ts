@@ -5,6 +5,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { z } from "zod";
 import { loadPrdPrContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { logResolvedAgent } from "../resolve-agent";
 import { runWithRetry } from "../run-with-retry";
 
 /**
@@ -24,12 +25,12 @@ import { runWithRetry } from "../run-with-retry";
  * workflow. Provider and coordinates come from the shared PRD seam.
  */
 
-const ctx = loadPrdPrContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadPrdPrContext("write-prd-pr");
+logResolvedAgent(ctx);
 
 // Same subscription-seat setup as implement-prd — this phase also runs the
-// agent, so it must authenticate identically (a no-op on the Claude Code
-// default).
+// agent, so it must authenticate identically (a no-op when the run resolved to
+// Claude).
 prepareCodexAuth(ctx.agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must

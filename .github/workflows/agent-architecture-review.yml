@@ -19,12 +19,13 @@ on:
   workflow_dispatch:
     inputs:
       provider:
-        description: "Agent provider (default: Claude Code)"
+        description: "Agent provider (default: whatever DEFAULT_PROVIDER is set to)"
         type: choice
         options:
+          - default
           - claude
           - codex
-        default: claude
+        default: default
 
 env:
   # Provenance label CVM applies to every architecture-review proposal — the
@@ -97,21 +98,22 @@ jobs:
             --limit 1000 --json title --jq '[.[].title]')
           echo "proposals=$(echo "$proposals" | jq -c '.')" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve provider
+      - name: Serialise the provider input into a label set
         if: steps.gate.outputs.proceed == 'true'
-        id: provider
-        # No label trigger, so the provider comes from the dispatch input and
-        # defaults to Claude Code (the cron path always uses the default). Mirror
-        # resolveAgent()'s contract by serialising the choice into AGENT_LABELS.
+        id: provider_input
+        # No label trigger, so the provider choice comes from the dispatch input.
+        # Mirror resolveAgent()'s contract by serialising it into AGENT_LABELS:
+        # `default` (and the cron path, whose input is empty) sends an EMPTY set,
+        # which resolves to DEFAULT_PROVIDER — so the schedule follows the same
+        # one knob as everything else. The `Resolve provider` step below turns
+        # this into the actual provider.
         run: |
           set -euo pipefail
-          if [ "${{ github.event.inputs.provider }}" = "codex" ]; then
-            echo "labels_json=[\"agent:codex\"]" >> "$GITHUB_OUTPUT"
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "labels_json=[]" >> "$GITHUB_OUTPUT"
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          case "${{ github.event.inputs.provider }}" in
+            codex) echo 'labels_json=["agent:codex"]' >> "$GITHUB_OUTPUT" ;;
+            claude) echo 'labels_json=["agent:claude"]' >> "$GITHUB_OUTPUT" ;;
+            *) echo "labels_json=[]" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Checkout main
         if: steps.gate.outputs.proceed == 'true'
@@ -136,13 +138,23 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.provider_input.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
-      # Codex CLI only when a manual dispatch opted in via the provider input; the
-      # scheduled default never pays for it. Runner-side auth is materialised by
-      # prepareCodexAuth.
+      # Codex CLI only when this run resolved to Codex; a Claude run never pays
+      # for it. Runner-side auth is materialised by prepareCodexAuth.
       - name: Install Codex CLI
         if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
@@ -151,12 +163,12 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Codex subscription seat — ignored on the Claude default; prepareCodexAuth
+          # Codex subscription seat — ignored when the run resolved to Claude; prepareCodexAuth
           # writes $CODEX_HOME/auth.json only when Codex is resolved. OPENAI_KEY /
           # OPENAI_API_KEY are deliberately NOT passed (spec #64).
           CODEX_HOME: ${{ runner.temp }}/.codex
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-          AGENT_LABELS: ${{ steps.provider.outputs.labels_json }}
+          AGENT_LABELS: ${{ steps.provider_input.outputs.labels_json }}
           EXISTING_PROPOSALS: ${{ steps.gate.outputs.proposals }}
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm --dir .sandcastle exec tsx architecture-review/architecture-review.ts

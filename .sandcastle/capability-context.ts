@@ -1,4 +1,4 @@
-import { resolveAgent, type ResolvedAgent } from "./resolve-agent";
+import { resolveAgent, type Capability, type ResolvedAgent } from "./resolve-agent";
 import { requireEnv } from "./require-env";
 
 /**
@@ -20,10 +20,13 @@ export interface IssueCapabilityContext extends ResolvedAgent {
 
 /**
  * Assemble a branchless, issue-shaped capability context from `process.env`.
- * Required vars throw via {@link requireEnv}; provider routing uses the full
- * `AGENT_LABELS` set just like every branch-mutating capability.
+ * Required vars throw via {@link requireEnv}; the `AGENT_LABELS` set chooses the
+ * provider and the caller's `capability` chooses that provider's model + effort,
+ * just like every branch-mutating capability.
  */
-export function loadIssueCapabilityContext(): IssueCapabilityContext {
+export function loadIssueCapabilityContext(
+  capability: Capability,
+): IssueCapabilityContext {
   const issueNumber = requireEnv("ISSUE_NUMBER");
   const issueTitle = requireEnv("ISSUE_TITLE");
   const outputDir = requireEnv("OUTPUT_DIR");
@@ -34,7 +37,7 @@ export function loadIssueCapabilityContext(): IssueCapabilityContext {
     issueTitle,
     outputDir,
     labels,
-    ...resolveAgent(labels),
+    ...resolveAgent(labels, capability),
     promptArgs: {
       ISSUE_NUMBER: issueNumber,
       ISSUE_TITLE: issueTitle,
@@ -70,15 +73,19 @@ export interface CapabilityContext extends ResolvedAgent {
  * this is the one place that reads it.
  *
  * The provider is resolved from the issue's FULL label set (`AGENT_LABELS`, a
- * JSON array), not just the just-added trigger label — that is what lets the
- * `agent:codex` provider label be applied independently of `agent:implement`.
+ * JSON array), not just the just-added trigger label — that is what lets a
+ * provider label (`agent:claude` / `agent:codex`) be applied independently of
+ * `agent:implement`. With neither present the default provider applies.
+ * The `capability` the caller passes chooses that provider's model + effort.
  *
  * Required vars (`ISSUE_NUMBER`, `ISSUE_TITLE`, `BRANCH`, `OUTPUT_DIR`) throw via
  * {@link requireEnv} when missing — a missing one is a workflow wiring bug that
  * should land the issue in `agent:blocked`, not run against a silent default.
  */
-export function loadCapabilityContext(): CapabilityContext {
-  const issue = loadIssueCapabilityContext();
+export function loadCapabilityContext(
+  capability: Capability,
+): CapabilityContext {
+  const issue = loadIssueCapabilityContext(capability);
   const branch = requireEnv("BRANCH");
 
   return {
@@ -131,12 +138,14 @@ export interface PrdImplementContext extends PrdPrContext {
 }
 
 /**
- * Assemble the {@link PrdPrContext} for `write-prd-pr` from `process.env`. Reads
- * only the PRD coordinates (the PR body describes the whole PRD, not a single
- * sub-issue) and resolves the provider from the PRD's full label set. Required
- * vars throw via {@link requireEnv}.
+ * Assemble the {@link PrdPrContext} for the PRD-shaped capabilities
+ * (`write-prd-pr`, `to-issues`) from `process.env`. Reads only the PRD
+ * coordinates (the body describes the whole PRD, not a single sub-issue) and
+ * resolves the provider from the PRD's full label set; the caller's `capability`
+ * chooses that provider's model + effort. Required vars throw via
+ * {@link requireEnv}.
  */
-export function loadPrdPrContext(): PrdPrContext {
+export function loadPrdPrContext(capability: Capability): PrdPrContext {
   const prdNumber = requireEnv("PRD_NUMBER");
   const prdTitle = requireEnv("PRD_TITLE");
   const outputDir = requireEnv("OUTPUT_DIR");
@@ -147,7 +156,7 @@ export function loadPrdPrContext(): PrdPrContext {
     prdTitle,
     outputDir,
     labels,
-    ...resolveAgent(labels),
+    ...resolveAgent(labels, capability),
     promptArgs: {
       PRD_NUMBER: prdNumber,
       PRD_TITLE: prdTitle,
@@ -160,9 +169,12 @@ export function loadPrdPrContext(): PrdPrContext {
  * `process.env` — the PRD coordinates plus the single sub-issue this run works
  * (`SUB_ISSUE_NUMBER`/`SUB_ISSUE_TITLE`) and the accumulating `BRANCH`. Provider
  * is resolved from the PRD's full label set, the same seam every other capability
- * uses. Required vars throw via {@link requireEnv}.
+ * uses; the caller's `capability` chooses that provider's model + effort.
+ * Required vars throw via {@link requireEnv}.
  */
-export function loadPrdImplementContext(): PrdImplementContext {
+export function loadPrdImplementContext(
+  capability: Capability,
+): PrdImplementContext {
   const prdNumber = requireEnv("PRD_NUMBER");
   const prdTitle = requireEnv("PRD_TITLE");
   const subIssueNumber = requireEnv("SUB_ISSUE_NUMBER");
@@ -179,7 +191,7 @@ export function loadPrdImplementContext(): PrdImplementContext {
     branch,
     outputDir,
     labels,
-    ...resolveAgent(labels),
+    ...resolveAgent(labels, capability),
     promptArgs: {
       PRD_NUMBER: prdNumber,
       PRD_TITLE: prdTitle,

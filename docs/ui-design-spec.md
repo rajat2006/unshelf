@@ -196,9 +196,10 @@ behind one named door; tags demoted inside it; capture a quiet global action).
 - **First load holds on a neutral, wordmark-only placeholder** until Clerk resolves
   auth — no sign-in-wall flash. The signed-in shell (§3) renders only once auth
   resolves signed-in. Rejection is Clerk's default.
-- This spec **asserts no invite-only claim**. The auth *admission* model (sign-in =
-  sign-up; invite-gating relaxed) revises ADR-0001 and is decided separately —
-  [#77](https://github.com/rajat2006/unshelf/issues/77), out of scope for this map.
+- This spec **asserts no invite-only claim**, which the auth *admission* model has
+  since caught up with: sign-in **is** sign-up and there is no invite gate
+  ([#77](https://github.com/rajat2006/unshelf/issues/77), now folded into
+  ADR-0001).
 
 ## 6. Per-surface states
 
@@ -278,8 +279,9 @@ Per ADR-0008 (single responsive web app, desktop-primary, must reflow to phone):
 - **Building** the redesign — a downstream effort — **including building the
   next-gen model** the IA assumes (multiple Trails, labels over the store,
   Stop-as-waypoint): [#74](https://github.com/rajat2006/unshelf/issues/74).
-- The **auth admission model** (sign-in = sign-up; invite-gating relaxed), which
-  revises ADR-0001: [#77](https://github.com/rajat2006/unshelf/issues/77).
+- The **auth admission model** (sign-in = sign-up; no invite gate) — decided in
+  [#77](https://github.com/rajat2006/unshelf/issues/77) and now part of ADR-0001,
+  not this spec.
 - **Label-at-capture** — capture stays pure intake:
   [#75](https://github.com/rajat2006/unshelf/issues/75).
 - Cross-user / public **shareable links** — no sharing model on the roadmap;

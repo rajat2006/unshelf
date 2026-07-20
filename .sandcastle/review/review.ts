@@ -6,6 +6,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
 import { parseDiffLines } from "../parse-diff-lines";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { reviewOutputSchema, type ReviewOutput } from "../review-output";
 import { runWithExtraction } from "../run-with-extraction";
 
@@ -30,11 +31,11 @@ import { runWithExtraction } from "../run-with-extraction";
 
 const REVIEW_BASE = "origin/main";
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("review");
+logResolvedAgent(ctx);
 
-// Same subscription-seat setup as the other agent phases — a no-op on the Claude
-// Code default.
+// Same subscription-seat setup as the other agent phases — a no-op when the run
+// resolved to Claude.
 prepareCodexAuth(ctx.agent.name);
 
 const result = await runWithExtraction({
@@ -42,8 +43,7 @@ const result = await runWithExtraction({
   agent: ctx.agent,
   sandbox: noSandbox(),
   logging: { type: "stdout" },
-  // Idle watchdog inside the workflow's 60-min job timeout, matching implement.
-  idleTimeoutSeconds: 600,
+  idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: ctx.promptArgs,
   extractionPrompt: fs.readFileSync(

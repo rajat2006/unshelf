@@ -5,6 +5,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { z } from "zod";
 import { loadCapabilityContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { logResolvedAgent } from "../resolve-agent";
 import { runWithRetry } from "../run-with-retry";
 
 /**
@@ -22,11 +23,11 @@ import { runWithRetry } from "../run-with-retry";
  * the workflow.
  */
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("write-pr");
+logResolvedAgent(ctx);
 
 // Same subscription-seat setup as implement — this phase also runs the agent, so
-// it must authenticate identically (a no-op on the Claude Code default).
+// it must authenticate identically (a no-op when the run resolved to Claude Code).
 prepareCodexAuth(ctx.agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must
