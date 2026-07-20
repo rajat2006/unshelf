@@ -20,7 +20,13 @@ type LibraryState =
  * triage. Labels and their URL filter arrive in later slices (#98–#99); this
  * surface owns Item facts and Stop placement only (#96).
  */
-export function LibrarySurface() {
+interface LibrarySurfaceProps {
+  itemOverride?: Item;
+}
+
+export function LibrarySurface({
+  itemOverride,
+}: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
   const [state, setState] = useState<LibraryState>({ status: "loading" });
@@ -100,9 +106,18 @@ export function LibrarySurface() {
       )}
       {state.status === "ready" && state.items.length > 0 && (
         <LibraryItems
-          items={state.items}
+          items={
+            itemOverride ? replaceItemIn(state.items, itemOverride) : state.items
+          }
           stops={state.stops}
-          stopDetails={state.stopDetails}
+          stopDetails={
+            itemOverride
+              ? state.stopDetails.map((stop) => ({
+                  ...stop,
+                  items: replaceItemIn(stop.items, itemOverride),
+                }))
+              : state.stopDetails
+          }
           user={user}
           onItemChanged={replaceItem}
           onStopChanged={replaceStop}

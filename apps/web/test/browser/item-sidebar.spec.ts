@@ -1,0 +1,232 @@
+import { expect, test, type Page } from "@playwright/test";
+import { testApi, testAppUrl } from "./test-helpers";
+
+async function seedPlacedItem(page: Page, user: string) {
+  const trail = (await (
+    await testApi(page, user, "/api/trails", "POST", { name: `${user} Trail` })
+  ).json()) as { id: string };
+  const stop = (await (
+    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
+      name: `${user} Stop`,
+    })
+  ).json()) as { id: string; name: string };
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: `${user} Item`,
+      type: "course",
+      source: "https://example.com/course",
+    })
+  ).json()) as { id: string; title: string };
+  await testApi(page, user, `/api/stops/${stop.id}/items`, "POST", {
+    itemId: item.id,
+  });
+  return { trail, stop, item };
+}
+
+test("every occurrence of an Item links to its one canonical URL", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-canonical-link`;
+  const { trail, stop, item } = await seedPlacedItem(page, user);
+  const canonicalPath = `/test/browser/items/${item.id}`;
+
+  await page.goto(testAppUrl("/library", user));
+  await expect(page.getByRole("link", { name: item.title })).toHaveAttribute(
+    "href",
+    canonicalPath,
+  );
+
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${stop.name} details`,
+  });
+  await expect(sidebar.getByRole("link", { name: item.title })).toHaveAttribute(
+    "href",
+    canonicalPath,
+  );
+});
+
+test("a cold Item deep link opens beside its canonical Library at any viewport", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-cold-link`;
+  const { item } = await seedPlacedItem(page, user);
+  await testApi(page, user, `/api/items/${item.id}/status`, "PATCH", {
+    status: "in_progress",
+  });
+  await testApi(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
+    targetDate: "2099-06-15",
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Library" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Library", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  await expect(sidebar).toBeVisible();
+  await expect(
+    sidebar.getByRole("heading", { level: 2, name: item.title }),
+  ).toBeVisible();
+  await expect(
+    sidebar
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
+    "2099-06-15",
+  );
+
+  await page.reload();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
+
+  const widths = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    page: document.documentElement.scrollWidth,
+  }));
+  expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+});
+
+test("opening an Item from a Stop preserves its Trail and follows browser history", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "desktop context behavior");
+  const user = `${testInfo.project.name}-item-trail-context`;
+  const { trail, stop, item } = await seedPlacedItem(page, user);
+  const stopPath = `/trails/${trail.id}/stops/${stop.id}`;
+
+  await page.goto(testAppUrl(stopPath, user));
+  const stopSidebar = page.getByRole("complementary", {
+    name: `${stop.name} details`,
+  });
+  await stopSidebar.getByRole("link", { name: item.title }).click();
+
+  await expect(page).toHaveURL(
+    new RegExp(`/test/browser/items/${item.id}$`),
+  );
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Trail" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: `Open ${stop.name}` }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
+  await expect(stopSidebar).toHaveCount(0);
+
+  await page
+    .getByRole("complementary", { name: `${item.title} details` })
+    .getByRole("group", { name: `Status for ${item.title}` })
+    .getByRole("button", { name: "Done" })
+    .click();
+  await expect(
+    page.getByRole("group", { name: `${stop.name}: 1 of 1 items done` }),
+  ).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`${stopPath}(\\?|$)`));
+  await expect(
+    page.getByRole("complementary", { name: `${stop.name} details` }),
+  ).toBeVisible();
+
+  await page.goForward();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
+});
+
+test("Item detail edits synchronize with the same Item in the underlying Library", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one synchronization path");
+  const user = `${testInfo.project.name}-item-sync`;
+  const { item } = await seedPlacedItem(page, user);
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const library = page.getByRole("region", { name: "Library" });
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+
+  await sidebar
+    .getByRole("group", { name: `Status for ${item.title}` })
+    .getByRole("button", { name: "Done" })
+    .click();
+  await expect(
+    library
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await sidebar.getByLabel(`Target date for ${item.title}`).fill("2099-08-20");
+  await expect(library.getByLabel(`Target date for ${item.title}`)).toHaveValue(
+    "2099-08-20",
+  );
+
+  await sidebar.getByRole("button", { name: "Close details" }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/library$/);
+  await expect(
+    page
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a foreign Item is missing without removing the underlying Library", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one tenancy presentation path");
+  const owner = `${testInfo.project.name}-item-private-owner`;
+  const intruder = `${testInfo.project.name}-item-private-intruder`;
+  const { item } = await seedPlacedItem(page, owner);
+
+  await page.goto(testAppUrl(`/items/${item.id}`, intruder));
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Library" }),
+  ).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Item details" });
+  await expect(sidebar.getByRole("alert")).toContainText(
+    "Could not load this Item",
+  );
+  await expect(page.getByText(item.title, { exact: true })).toHaveCount(0);
+});
+
+test("an Item detail failure retries inside the sidebar without replacing the Library", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one retry path");
+  const user = `${testInfo.project.name}-item-retry`;
+  const { item } = await seedPlacedItem(page, user);
+  let failing = true;
+  await context.route(`**/api/items/${item.id}`, async (route) => {
+    if (route.request().method() === "GET" && failing) {
+      await route.fulfill({ status: 503, json: { error: "temporarily down" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", { name: "Item details" });
+  await expect(sidebar.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Library" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: item.title })).toBeVisible();
+
+  failing = false;
+  await sidebar.getByRole("button", { name: "Retry" }).click();
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
+});

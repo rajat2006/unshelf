@@ -72,9 +72,13 @@ test("the route table recognizes the Trail, Stop, and canonical Item routes", as
 
   await page.goto(appUrl(testInfo, "/items/item-123"));
   await expect(
-    page.getByRole("heading", { level: 1, name: "Item" }),
+    page.getByRole("heading", { level: 1, name: "Library" }),
   ).toBeVisible();
-  await expect(page.getByText("item-123")).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary", { name: "Item details" })
+      .getByRole("alert"),
+  ).toBeVisible();
 });
 
 test("an unknown route recovers to Home", async ({ page }, testInfo) => {

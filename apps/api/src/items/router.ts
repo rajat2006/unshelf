@@ -12,6 +12,7 @@ import {
 } from "@unshelf/shared";
 import {
   createItem,
+  getItem,
   listItems,
   updateItemStatus,
   updateItemTargetDate,
@@ -38,6 +39,23 @@ export function createItemsRouter(
   router.get("/", async (req, res) => {
     const items = await listItems(pool, req.user!.id);
     res.json(items);
+  });
+
+  router.get("/:itemId", async (req, res) => {
+    if (!UUID_PATTERN.test(req.params.itemId)) {
+      res.status(404).json({ error: "item not found" });
+      return;
+    }
+    const item = await getItem(
+      pool,
+      req.user!.id,
+      req.params.itemId as ItemId,
+    );
+    if (!item) {
+      res.status(404).json({ error: "item not found" });
+      return;
+    }
+    res.json(item);
   });
 
   router.patch("/:itemId/status", async (req, res) => {
@@ -109,6 +127,8 @@ function parseUpdateItemStatus(body: unknown): UpdateItemStatusRequest | null {
 }
 
 const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Whether a string is a real calendar date in `YYYY-MM-DD`. Unlike `source`,

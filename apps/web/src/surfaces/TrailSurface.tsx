@@ -22,8 +22,16 @@ import { StopSidebar } from "../stops/StopSidebar";
  * route docks its detail beside this live surface; both reads remain scoped to
  * the Trail named by the URL (#95).
  */
-export function TrailSurface() {
-  const { trailId, stopId } = useParams();
+interface TrailSurfaceProps {
+  trailId?: TrailId;
+}
+
+export function TrailSurface({
+  trailId: selectedTrailId,
+}: TrailSurfaceProps = {}) {
+  const params = useParams();
+  const trailId = selectedTrailId ?? params.trailId;
+  const stopId = selectedTrailId ? undefined : params.stopId;
   const navigate = useNavigate();
   const user = useCurrentUser();
   const readOnly = usePhoneViewport();

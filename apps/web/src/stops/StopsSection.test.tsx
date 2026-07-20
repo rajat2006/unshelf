@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import {
   Status,
@@ -43,15 +44,17 @@ const item: Item = {
 
 const renderStops = (openStop: StopDetail | null) =>
   renderToStaticMarkup(
-    <StopsSection
-      stops={stops}
-      openStop={openStop}
-      error={null}
-      user={user}
-      onStopOpened={() => undefined}
-      onStopChanged={() => undefined}
-      onItemChanged={() => undefined}
-    />,
+    <MemoryRouter initialEntries={[`/trails/trail-1/stops/${stopId}`]}>
+      <StopsSection
+        stops={stops}
+        openStop={openStop}
+        error={null}
+        user={user}
+        onStopOpened={() => undefined}
+        onStopChanged={() => undefined}
+        onItemChanged={() => undefined}
+      />
+    </MemoryRouter>,
   );
 
 describe("Stops smoke coverage", () => {

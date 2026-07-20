@@ -88,6 +88,21 @@ export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
   return rows.map(toItem);
 }
 
+/** Read one Item through both its stable identity and authenticated owner. */
+export async function getItem(
+  pool: Pool,
+  userId: UserId,
+  itemId: ItemId,
+): Promise<Item | null> {
+  const { rows } = await pool.query<ItemRow>(
+    `SELECT ${ITEM_PROJECTION}
+     FROM items
+     WHERE id = $1 AND user_id = $2`,
+    [itemId, userId],
+  );
+  return rows[0] ? toItem(rows[0]) : null;
+}
+
 /**
  * Change an Item's single shared Status. Completion is banked only when entering
  * done and cleared when leaving it; writing the current Status again preserves

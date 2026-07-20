@@ -43,6 +43,14 @@ export async function fetchAll(user: CurrentUser): Promise<Item[]> {
   return requestJson<Item[]>(user, "/api/items");
 }
 
+/** Fetch one Item at its authenticated, canonical read endpoint. */
+export async function fetchItem(
+  user: CurrentUser,
+  itemId: ItemId,
+): Promise<Item> {
+  return requestJson<Item>(user, `/api/items/${itemId}`);
+}
+
 /** Capture an Item — the one uniform insert (ADR-0007). Returns the new Item. */
 export async function captureItem(
   user: CurrentUser,

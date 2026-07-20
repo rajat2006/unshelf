@@ -1,4 +1,4 @@
-import { NavLink } from "react-router";
+import { Link, NavLink, useLocation } from "react-router";
 import { UserButton } from "../application-auth";
 import { useCapture } from "./CaptureController";
 import { Wordmark } from "./Wordmark";
@@ -25,6 +25,9 @@ const doorStyle = ({ isActive }: { isActive: boolean }) => ({
 
 export function TopBar() {
   const { open } = useCapture();
+  const location = useLocation();
+  const libraryActive =
+    location.pathname === "/library" || location.pathname.startsWith("/items/");
 
   return (
     <header
@@ -52,9 +55,13 @@ export function TopBar() {
         <NavLink to="/" end style={doorStyle}>
           Trails
         </NavLink>
-        <NavLink to="/library" style={doorStyle}>
+        <Link
+          to="/library"
+          style={doorStyle({ isActive: libraryActive })}
+          aria-current={libraryActive ? "page" : undefined}
+        >
           Library
-        </NavLink>
+        </Link>
       </nav>
       <div
         style={{

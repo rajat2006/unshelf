@@ -25,6 +25,11 @@ const capture = (clerkUserId: string, body: object) =>
 const listAll = (clerkUserId: string) =>
   request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId);
 
+const readItem = (clerkUserId: string, itemId: string) =>
+  request(app)
+    .get(`/api/items/${itemId}`)
+    .set(TEST_USER_HEADER, clerkUserId);
+
 const setStatus = (clerkUserId: string, itemId: string, status: string) =>
   request(app)
     .patch(`/api/items/${itemId}/status`)
@@ -196,6 +201,43 @@ describe("shared Item vocabulary", () => {
       expect(all[0]!.status).toBe(status);
     },
   );
+});
+
+describe("GET /api/items/:itemId — canonical Item read", () => {
+  it("reads the authenticated User's Item at its canonical endpoint", async () => {
+    const item = (
+      await capture("clerk_item_read_owner", {
+        title: "Canonical Item",
+        type: "article",
+      })
+    ).body as Item;
+
+    const res = await readItem("clerk_item_read_owner", item.id);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(item);
+  });
+
+  it("treats another User's Item as missing", async () => {
+    const item = (
+      await capture("clerk_item_read_private", {
+        title: "Private Item",
+        type: "book",
+      })
+    ).body as Item;
+
+    const foreign = await readItem("clerk_item_read_intruder", item.id);
+    const missing = await readItem(
+      "clerk_item_read_intruder",
+      "00000000-0000-0000-0000-000000000000",
+    );
+    const malformed = await readItem("clerk_item_read_intruder", "item-123");
+
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toEqual(missing.body);
+    expect(malformed.status).toBe(404);
+    expect(malformed.body).toEqual(missing.body);
+  });
 });
 
 describe("PATCH /api/items/:itemId/status — track Status", () => {

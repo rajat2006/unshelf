@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
+import { Link, useLocation } from "react-router";
 import type { CurrentUser } from "../application-auth";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
@@ -27,9 +28,23 @@ interface ItemRowProps {
  * nowhere left to omit them from.
  */
 export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
+  const location = useLocation();
+  const trailPath = location.pathname.match(
+    /^(\/trails\/[^/]+)\/stops\/[^/]+$/,
+  )?.[1];
+  const backgroundLocation = trailPath
+    ? { ...location, pathname: trailPath, search: "", hash: "" }
+    : location;
+
   return (
     <li className="item-row">
-      <div className="item-row__title">{item.title}</div>
+      <Link
+        className="item-row__title"
+        to={`/items/${item.id}`}
+        state={{ backgroundLocation }}
+      >
+        {item.title}
+      </Link>
       <div className="item-row__type">{TYPE_LABELS[item.type]}</div>
       <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
       <ItemTargetDate item={item} user={user} onChanged={onChanged} />
