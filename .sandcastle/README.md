@@ -29,9 +29,11 @@ pinned Sandcastle version and Unshelf's provider set:
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
 - **`resolve-agent.ts`** — `resolveAgent(labels, capability)` (Unshelf-specific):
-  two independent axes. The **label set** picks the provider — `agent:codex`
-  present ⇒ Codex, absent ⇒ Claude Code (absence *is* Claude) — reading the
-  subject's full set, not just the trigger label. The **capability** then picks
+  two independent axes. The **label set** picks the provider via
+  `resolveProvider` — an explicit `agent:claude` / `agent:codex` pin wins,
+  otherwise the `DEFAULT_PROVIDER` constant in this file (the one knob to flip
+  when the subscription changes) — reading the subject's full set, not just the
+  trigger label. The **capability** then picks
   that provider's model and reasoning effort from a per-capability policy
   (`CAPABILITY_POLICY`), so exploration, implementation, and review each carry
   the profile they need without changing a provider-wide constant. The policy
@@ -125,6 +127,12 @@ pinned Sandcastle version and Unshelf's provider set:
   building the inline PR-review comments, so a comment can't point at a line the
   change never touched — and so the reviews API (which 422s the whole review on a
   single off-diff anchor) is never handed a bad line.
+- **`print-provider.ts`** — the workflows' window onto `resolveProvider`: reads
+  `AGENT_LABELS` and prints `provider=` / `is_codex=` / `provider_label=` as
+  GitHub-Actions outputs, so a workflow's provider-specific setup (Codex CLI
+  install, provider-label propagation onto a PR) is decided by the same code the
+  runner uses rather than a `jq` re-implementation that drifts when
+  `DEFAULT_PROVIDER` flips.
 - **`prepare-codex-auth.ts`** — `prepareCodexAuth(providerName)` (Unshelf-specific):
   the runner-side half of the Codex path. When the resolved provider is Codex it
   seeds `CODEX_AUTH_JSON` → `$CODEX_HOME/auth.json` **only if that file is absent**
@@ -166,8 +174,8 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   summarises, never commits.
 - **`explore/`** — the read-only issue investigation capability (workflow
   `agent-explore.yml`). A human applies `agent:explore`; the workflow reads the
-  full label set and optionally routes through Codex when `agent:codex` is also
-  present. The produce pass verifies the issue against `main`, assesses
+  full label set, so a provider pin (`agent:claude` / `agent:codex`, else
+  `DEFAULT_PROVIDER`) routes it like every other capability. The produce pass verifies the issue against `main`, assesses
   difficulty, relevant files, open questions, implementation shape, and useful
   test seams; the resumed extraction pass validates one non-empty Markdown
   comment. The workflow fetches issue context before withholding GitHub

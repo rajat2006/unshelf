@@ -46,15 +46,10 @@ jobs:
           labels_json=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '[.labels[].name]')
           echo "labels_json=$labels_json" >> "$GITHUB_OUTPUT"
 
-          # Provider switch (spec #64): `agent:codex` present ⇒ run on Codex, which
-          # needs the codex CLI installed and the subscription seat materialised.
-          # Absent ⇒ Claude Code default. Mirrors resolveAgent() so the workflow's
-          # provider-specific setup matches what the runner resolves.
-          if echo "$labels_json" | jq -e 'index("agent:codex")' >/dev/null; then
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The provider is NOT decided here: it depends on DEFAULT_PROVIDER, so
+          # it is resolved by the `Resolve provider` step below (after checkout +
+          # install) via .sandcastle/print-provider.ts — the same code the runner
+          # uses. Nothing before that step is provider-specific.
 
           # Defensive re-check: the trigger label must still be present (it could
           # have been removed between the event and this run).
@@ -243,15 +238,26 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
-      # Codex CLI only when this issue opted in via `agent:codex` — the Claude
-      # default never pays for it. Runner-side auth (auth.json + file credential
-      # store) is materialised by `prepareCodexAuth` inside the run scripts.
+      # Codex CLI only when this run resolved to Codex — a Claude run never pays
+      # for it. Runner-side auth (auth.json + file credential store) is
+      # materialised by `prepareCodexAuth` inside the run scripts.
       - name: Install Codex CLI
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Run implement
@@ -314,17 +320,21 @@ jobs:
             --body-file "${RUNNER_TEMP}/pr_description.txt")
           echo "pr_number=$(basename "$pr_url")" >> "$GITHUB_OUTPUT"
 
-      - name: Propagate provider label (agent:codex) to the PR
-        if: steps.gate.outputs.proceed == 'true' && success() && steps.gate.outputs.is_codex == 'true'
+      - name: Propagate the resolved provider label to the PR
+        if: steps.gate.outputs.proceed == 'true' && success()
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
         # Provider continuity (spec §C/#64): the review workflow resolves its
-        # provider from the PR's OWN label set, so a Codex-implemented issue must
-        # carry agent:codex onto the PR — otherwise its review silently falls back
-        # to Claude. Added BEFORE agent:review below so it is already present when
-        # the review gate reads the PR labels. GITHUB_TOKEN is fine here:
-        # agent:codex triggers no downstream workflow (only agent:review does).
-        run: gh pr edit "$PR_NUMBER" --add-label "agent:codex"
+        # provider from the PR's OWN label set, so the PR must carry the label
+        # for whichever provider implemented it — otherwise a later flip of
+        # DEFAULT_PROVIDER would review the branch on the other provider. Pinning
+        # explicitly (agent:claude or agent:codex, not just agent:codex) makes
+        # the PR's provider independent of the default. Added BEFORE agent:review
+        # below so it is already present when the review gate reads the PR
+        # labels. GITHUB_TOKEN is fine here: neither provider label triggers a
+        # downstream workflow (only agent:review does).
+        run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
 
       - name: Request automated review (add agent:review)
         if: steps.gate.outputs.proceed == 'true' && success()

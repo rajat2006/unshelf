@@ -49,11 +49,10 @@ jobs:
 
           # Provider switch (spec #64): mirror resolveAgent() so the workflow's
           # provider-specific setup matches what the runner resolves.
-          if echo "$labels_json" | jq -e 'index("agent:codex")' >/dev/null; then
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The provider is NOT decided here: it depends on DEFAULT_PROVIDER,
+          # so it is resolved by the `Resolve provider` step below (after
+          # checkout + install) via .sandcastle/print-provider.ts — the same
+          # code the runner uses. Nothing before that step is provider-specific.
 
           # Defensive re-check: the trigger label must still be present (it could
           # have been removed between the event and this run).
@@ -151,6 +150,17 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
@@ -158,7 +168,7 @@ jobs:
       # Codex CLI only when this PR opted in via `agent:codex`; the Claude default
       # never pays for it. Runner-side auth is materialised by prepareCodexAuth.
       - name: Install Codex CLI
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Configure git identity

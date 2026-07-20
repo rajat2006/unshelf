@@ -5,9 +5,13 @@ import { describe, expect, it } from "vitest";
 import {
   type Capability,
   BUILD_CLAUDE_MODEL,
+  CLAUDE_LABEL,
+  CODEX_LABEL,
   CODEX_MODEL,
+  DEFAULT_PROVIDER,
   THINK_CLAUDE_MODEL,
   resolveAgent,
+  resolveProvider,
 } from "./resolve-agent";
 
 /**
@@ -61,9 +65,9 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
   describe.each(CAPABILITIES)("capability %s", (capability) => {
     const expected = POLICY[capability];
 
-    it("resolves the Claude entry when agent:codex is absent", () => {
+    it("resolves the Claude entry when pinned to Claude", () => {
       const { agent, model, effort } = resolveAgent(
-        ["ready-for-agent"],
+        [CLAUDE_LABEL, "ready-for-agent"],
         capability,
       );
 
@@ -73,7 +77,7 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
     });
 
     it("builds Claude Code with the configured effort", () => {
-      const { agent } = resolveAgent([], capability);
+      const { agent } = resolveAgent([CLAUDE_LABEL], capability);
 
       expect(
         agent.buildPrintCommand({
@@ -83,9 +87,9 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
       ).toContain(`--effort ${expected.claudeEffort}`);
     });
 
-    it("resolves the Codex entry when agent:codex is present", () => {
+    it("resolves the Codex entry when pinned to Codex", () => {
       const { agent, model, effort } = resolveAgent(
-        ["agent:codex", "ready-for-agent"],
+        [CODEX_LABEL, "ready-for-agent"],
         capability,
       );
 
@@ -107,14 +111,14 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
   });
 
   it("puts a Build-tier capability on claude-opus-4-8 at medium", () => {
-    const { model, effort } = resolveAgent([], "implement");
+    const { model, effort } = resolveAgent([CLAUDE_LABEL], "implement");
     expect(model).toBe(BUILD_CLAUDE_MODEL);
     expect(model).toBe("claude-opus-4-8");
     expect(effort).toBe("medium");
   });
 
   it("puts a Think-tier capability on claude-fable-5 at its stated effort", () => {
-    const { model, effort } = resolveAgent([], "review");
+    const { model, effort } = resolveAgent([CLAUDE_LABEL], "review");
     expect(model).toBe(THINK_CLAUDE_MODEL);
     expect(model).toBe("claude-fable-5");
     expect(effort).toBe("high");
@@ -126,9 +130,11 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
     }
   });
 
-  it("treats an empty label set as the Claude default (absence is Claude)", () => {
+  it("treats an empty label set as the default provider", () => {
     const { agent } = resolveAgent([], "implement");
-    expect(agent.name).toBe("claude-code");
+    expect(agent.name).toBe(
+      DEFAULT_PROVIDER === "codex" ? "codex" : "claude-code",
+    );
   });
 
   it("finds agent:codex regardless of its position in the set", () => {
@@ -139,12 +145,46 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
     expect(agent.name).toBe("codex");
   });
 
-  it("does not treat a lookalike label as the Codex switch", () => {
-    const { agent } = resolveAgent(
-      ["agent:codex-experimental", "codex"],
-      "implement",
+  it("does not treat a lookalike label as a provider switch", () => {
+    expect(
+      resolveProvider(["agent:codex-experimental", "codex", "agent:claude-x"]),
+    ).toBe(DEFAULT_PROVIDER);
+  });
+});
+
+describe("resolveProvider — explicit label wins, otherwise the default", () => {
+  it("pins to Codex on agent:codex", () => {
+    expect(resolveProvider([CODEX_LABEL])).toBe("codex");
+  });
+
+  it("pins to Claude on agent:claude", () => {
+    expect(resolveProvider([CLAUDE_LABEL])).toBe("claude");
+  });
+
+  it("pins regardless of the label's position in the set", () => {
+    expect(
+      resolveProvider(["agent:implement", "ready-for-agent", CODEX_LABEL]),
+    ).toBe("codex");
+    expect(
+      resolveProvider(["agent:implement", "ready-for-agent", CLAUDE_LABEL]),
+    ).toBe("claude");
+  });
+
+  it("falls back to the default when neither provider label is present", () => {
+    expect(resolveProvider([])).toBe(DEFAULT_PROVIDER);
+    expect(resolveProvider(["agent:implement", "ready-for-agent"])).toBe(
+      DEFAULT_PROVIDER,
     );
-    expect(agent.name).toBe("claude-code");
+  });
+
+  it("falls back to the default when BOTH provider labels are present", () => {
+    // Ambiguous pinning resolves to the default rather than silently preferring
+    // one label over the other.
+    expect(resolveProvider([CLAUDE_LABEL, CODEX_LABEL])).toBe(DEFAULT_PROVIDER);
+  });
+
+  it("keeps DEFAULT_PROVIDER to the two supported providers", () => {
+    expect(["claude", "codex"]).toContain(DEFAULT_PROVIDER);
   });
 });
 

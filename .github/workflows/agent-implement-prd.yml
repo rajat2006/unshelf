@@ -57,11 +57,10 @@ jobs:
           # Provider switch (spec #64): `agent:codex` present ⇒ Codex, needing the
           # codex CLI + subscription seat; absent ⇒ Claude Code. Mirrors
           # resolveAgent() so the workflow's setup matches what the runner resolves.
-          if echo "$labels_json" | jq -e 'index("agent:codex")' >/dev/null; then
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The provider is NOT decided here: it depends on DEFAULT_PROVIDER,
+          # so it is resolved by the `Resolve provider` step below (after
+          # checkout + install) via .sandcastle/print-provider.ts — the same
+          # code the runner uses. Nothing before that step is provider-specific.
 
           # Defensive re-check: the trigger label must still be present (it could
           # have been removed between the event and this run).
@@ -287,6 +286,17 @@ jobs:
         if: steps.shape.outputs.mode == 'run'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.shape.outputs.mode == 'run'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.shape.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.shape.outputs.mode == 'run'
         run: npm install -g @anthropic-ai/claude-code
@@ -295,7 +305,7 @@ jobs:
       # default never pays for it. Runner-side auth is materialised by
       # `prepareCodexAuth` inside the run scripts.
       - name: Install Codex CLI
-        if: steps.shape.outputs.mode == 'run' && steps.shape.outputs.is_codex == 'true'
+        if: steps.shape.outputs.mode == 'run' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Run implement-prd (one sub-issue)
@@ -385,15 +395,18 @@ jobs:
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Propagate provider label (agent:codex) to the PR
-        if: steps.shape.outputs.mode == 'run' && success() && steps.open_pr.outputs.created == 'true' && steps.shape.outputs.is_codex == 'true'
+      - name: Propagate the resolved provider label to the PR
+        if: steps.shape.outputs.mode == 'run' && success() && steps.open_pr.outputs.created == 'true'
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
         # Provider continuity (spec §C/#64): the review workflow resolves its
-        # provider from the PR's OWN label set, so a Codex-implemented PRD must
-        # carry agent:codex onto the PR. Only meaningful on PR creation (the first
-        # sub-issue run); GITHUB_TOKEN is fine — agent:codex triggers nothing.
-        run: gh pr edit "$PR_NUMBER" --add-label "agent:codex"
+        # provider from the PR's OWN label set, so the PR must carry the label for
+        # whichever provider implemented the PRD — pinned explicitly (agent:claude
+        # or agent:codex) so a later flip of DEFAULT_PROVIDER can't review the
+        # branch on the other provider. Only meaningful on PR creation (the first
+        # sub-issue run); GITHUB_TOKEN is fine — neither label triggers anything.
+        run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
 
       - name: Re-check remaining open sub-issues
         if: steps.shape.outputs.mode == 'run' && success()
