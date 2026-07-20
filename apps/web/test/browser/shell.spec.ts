@@ -120,12 +120,18 @@ test("a signed-out visitor sees the chrome-less sign-in screen and no navigation
 test("a valid intended private route survives sign-in", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/library", { authState: "signed-out" }));
+  const labelId = "00000000-0000-0000-0000-000000000123";
+  await page.goto(
+    appUrl(testInfo, "/library", { authState: "signed-out", label: labelId }),
+  );
   await expect(page).toHaveURL(/\/test\/browser\/sign-in$/);
 
   await page.getByRole("button", { name: "Sign in with Google" }).click();
 
-  await expect(page).toHaveURL(/\/test\/browser\/library$/);
+  await expect.poll(() => new URL(page.url()).pathname).toBe(
+    "/test/browser/library",
+  );
+  expect(new URL(page.url()).searchParams.get("label")).toBe(labelId);
   await expect(
     page.getByRole("heading", { level: 1, name: "Library" }),
   ).toBeVisible();

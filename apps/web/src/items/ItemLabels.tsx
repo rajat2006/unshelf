@@ -1,30 +1,23 @@
 import { useMemo, useState } from "react";
 import type { Item, Label, LabelId } from "@unshelf/shared";
 import type { CurrentUser } from "../application-auth";
-import {
-  applyLabelToItem,
-  createLabel,
-  removeLabelFromItem,
-} from "../api";
+import { applyLabelToItem, removeLabelFromItem } from "../api";
 
 interface ItemLabelsProps {
   item: Item;
   labels: Label[];
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
-  onLabelCreated: (label: Label) => void;
 }
 
-/** Keyboard-operable Label membership and creation at the Library Item seam. */
+/** Keyboard-operable membership for Labels already available to the User. */
 export function ItemLabels({
   item,
   labels,
   user,
   onItemChanged,
-  onLabelCreated,
 }: ItemLabelsProps) {
   const [selectedId, setSelectedId] = useState<LabelId | null>(null);
-  const [newName, setNewName] = useState("");
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const appliedIds = useMemo(
@@ -55,21 +48,6 @@ export function ItemLabels({
       (changed) => {
         onItemChanged(changed);
         setSelectedId(null);
-      },
-    );
-  }
-
-  async function createAndApply() {
-    if (newName.trim().length === 0) return;
-    await runLabelMutation(
-      async () => {
-        const label = await createLabel(user, newName);
-        onLabelCreated(label);
-        return applyLabelToItem(user, item.id, label.id);
-      },
-      (changed) => {
-        onItemChanged(changed);
-        setNewName("");
       },
     );
   }
@@ -123,20 +101,6 @@ export function ItemLabels({
         </select>
         <button type="button" disabled={!selectedId} onClick={() => void applySelected()}>
           Apply Label
-        </button>
-      </div>
-      <div className="item-labels__control">
-        <input
-          aria-label={`New Label for ${item.title}`}
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-        />
-        <button
-          type="button"
-          disabled={newName.trim().length === 0}
-          onClick={() => void createAndApply()}
-        >
-          Create and apply Label
         </button>
       </div>
       {failed && <p role="alert">Couldn&apos;t update Labels</p>}

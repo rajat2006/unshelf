@@ -149,7 +149,7 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
   ).toHaveValue("2000-01-01");
 });
 
-test("a Library Item creates, applies, and removes several private Labels by keyboard", async ({
+test("a Library Item applies and removes provisioned private Labels by keyboard", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-library-labels`;
@@ -195,12 +195,10 @@ test("a Library Item creates, applies, and removes several private Labels by key
   await page.keyboard.press("Enter");
   await expect(labels.getByRole("button", { name: "Remove Reading" })).toBeVisible();
 
-  await labels.getByLabel("New Label for Labelled handbook").fill("Architecture");
-  await labels.getByRole("button", { name: "Create and apply Label" }).focus();
-  await page.keyboard.press("Enter");
+  await expect(labels.getByLabel("New Label for Labelled handbook")).toHaveCount(0);
   await expect(
-    labels.getByRole("button", { name: "Remove Architecture" }),
-  ).toBeVisible();
+    labels.getByRole("button", { name: "Create and apply Label" }),
+  ).toHaveCount(0);
 
   await labels.getByRole("button", { name: "Remove Systems" }).focus();
   await page.keyboard.press("Enter");
@@ -209,10 +207,7 @@ test("a Library Item creates, applies, and removes several private Labels by key
   const stored = (await (
     await testApi(page, user, `/api/items/${item.id}`)
   ).json()) as { labels: Array<{ name: string }> };
-  expect(stored.labels.map((label) => label.name)).toEqual([
-    "Architecture",
-    "Reading",
-  ]);
+  expect(stored.labels.map((label) => label.name)).toEqual(["Reading"]);
 });
 
 test("selecting and clearing a Label filter updates the URL and visible Library Items", async ({

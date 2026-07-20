@@ -4,6 +4,7 @@ import {
   Outlet,
   Route,
   Routes,
+  type Location,
   useLocation,
   useNavigate,
 } from "react-router";
@@ -80,9 +81,10 @@ function SignInRoute() {
   const { status } = useApplicationAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const intended = (location.state as { from?: { pathname?: string } } | null)
-    ?.from?.pathname;
-  const destination = intended ?? "/";
+  const intended = (location.state as { from?: Location } | null)?.from;
+  const destination = intended
+    ? `${intended.pathname}${intended.search}${intended.hash}`
+    : "/";
 
   useEffect(() => {
     if (status === "signed-in") {

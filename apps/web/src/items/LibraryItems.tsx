@@ -12,7 +12,6 @@ interface LibraryItemsProps {
   stopDetails: StopDetail[];
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
-  onLabelCreated: (label: Label) => void;
   onStopChanged: (stop: StopDetail) => void;
 }
 
@@ -27,7 +26,6 @@ export function LibraryItems({
   stopDetails,
   user,
   onItemChanged,
-  onLabelCreated,
   onStopChanged,
 }: LibraryItemsProps) {
   return (
@@ -44,7 +42,6 @@ export function LibraryItems({
             labels={labels}
             user={user}
             onItemChanged={onItemChanged}
-            onLabelCreated={onLabelCreated}
           />
           <AddToStopControl
             item={item}

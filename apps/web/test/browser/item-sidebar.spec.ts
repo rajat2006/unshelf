@@ -81,6 +81,9 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
     "2099-06-15",
   );
+  await expect(
+    sidebar.getByRole("link", { name: "https://example.com/course" }),
+  ).toHaveAttribute("href", "https://example.com/course");
 
   await page.reload();
   await expect(
@@ -95,6 +98,32 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
     page: document.documentElement.scrollWidth,
   }));
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+});
+
+test("opening an Item preserves its filtered Library beneath the sidebar", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-filter-context`;
+  const { item } = await seedPlacedItem(page, user);
+  const label = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Selected" })
+  ).json()) as { id: string };
+  await testApi(page, user, `/api/items/${item.id}/labels/${label.id}`, "POST");
+  await testApi(page, user, "/api/items", "POST", {
+    title: "Outside the filter",
+    type: "book",
+  });
+
+  await page.goto(testAppUrl("/library", user, { label: label.id }));
+  await page.getByRole("link", { name: item.title }).click();
+
+  await expect(
+    page.getByRole("button", { name: "Filter by Selected" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Outside the filter", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: `${item.title} details` }),
+  ).toBeVisible();
 });
 
 test("opening an Item from a Stop preserves its Trail and follows browser history", async ({

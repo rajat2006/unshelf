@@ -1,7 +1,6 @@
 import type {
   AddStopItemRequest,
   ConnectStopsRequest,
-  CreateLabelRequest,
   CreateItemRequest,
   CreateStopRequest,
   CreateTrailRequest,
@@ -100,19 +99,6 @@ export async function updateItemTargetDate(
 /** Every private Label owned by the current User. */
 export async function fetchLabels(user: CurrentUser): Promise<Label[]> {
   return requestJson<Label[]>(user, "/api/labels");
-}
-
-/** Create a private, free-text Label. */
-export async function createLabel(
-  user: CurrentUser,
-  name: string,
-): Promise<Label> {
-  const body: CreateLabelRequest = { name };
-  return requestJson<Label>(user, "/api/labels", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
 }
 
 /** Apply one Label to an Item, returning its current Label set. */

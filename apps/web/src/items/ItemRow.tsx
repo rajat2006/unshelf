@@ -6,6 +6,7 @@ import { readItemBackgroundLocation } from "./item-route-state";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
+import { ItemSource } from "./ItemSource";
 
 interface ItemRowProps {
   item: Item;
@@ -55,31 +56,7 @@ export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
       <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
       <ItemTargetDate item={item} user={user} onChanged={onChanged} />
       {children}
-      {item.source && <Source source={item.source} />}
+      {item.source && <ItemSource source={item.source} />}
     </li>
-  );
-}
-
-/** Render an HTTP Source as a tappable link and every other Source as inert text. */
-function Source({ source }: { source: string }) {
-  let href: string | null = null;
-  try {
-    const url = new URL(source);
-    if (url.protocol === "http:" || url.protocol === "https:") href = source;
-  } catch {
-    href = null;
-  }
-
-  return href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="item-source item-source--link"
-    >
-      {source}
-    </a>
-  ) : (
-    <div className="item-source item-source--muted">{source}</div>
   );
 }

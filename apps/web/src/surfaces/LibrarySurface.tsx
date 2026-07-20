@@ -25,18 +25,27 @@ type LibraryState =
 interface LibrarySurfaceProps {
   itemOverrides?: Item[];
   onItemChanged?: (item: Item) => void;
-  /** Only `/library` owns this query; Item routes embed unfiltered Library. */
+  /** `/library`, or its preserved background beneath Item detail, owns this query. */
   labelFilterEnabled?: boolean;
+  /** The preserved Library query beneath an Item route. */
+  labelFilterSearch?: string;
+  /** Item routes use this to leave detail before changing Library filters. */
+  onLabelFilterChange?: (searchParams: URLSearchParams) => void;
 }
 
 export function LibrarySurface({
   itemOverrides = [],
   onItemChanged,
   labelFilterEnabled = false,
+  labelFilterSearch,
+  onLabelFilterChange,
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [routeSearchParams, setRouteSearchParams] = useSearchParams();
+  const searchParams = labelFilterSearch === undefined
+    ? routeSearchParams
+    : new URLSearchParams(labelFilterSearch);
   const [state, setState] = useState<LibraryState>({ status: "loading" });
   const loadGeneration = useRef(0);
 
@@ -83,14 +92,6 @@ export function LibrarySurface({
     );
   }, []);
 
-  const addLabel = useCallback((created: Label) => {
-    setState((current) =>
-      current.status === "ready"
-        ? { ...current, labels: [...current.labels, created] }
-        : current,
-    );
-  }, []);
-
   const displayedState = itemOverrides.reduce(
     replaceItemInLibraryState,
     state,
@@ -125,9 +126,10 @@ export function LibrarySurface({
       const next = new URLSearchParams(searchParams);
       if (labelId) next.set("label", labelId);
       else next.delete("label");
-      setSearchParams(next);
+      if (onLabelFilterChange) onLabelFilterChange(next);
+      else setRouteSearchParams(next);
     },
-    [searchParams, setSearchParams],
+    [onLabelFilterChange, searchParams, setRouteSearchParams],
   );
 
   return (
@@ -193,7 +195,6 @@ export function LibrarySurface({
           stopDetails={displayedState.stopDetails}
           user={user}
           onItemChanged={replaceItem}
-          onLabelCreated={addLabel}
           onStopChanged={replaceStop}
         />
       )}

@@ -838,7 +838,6 @@ body {
 
 .item-labels button,
 .item-labels select,
-.item-labels input,
 .library-empty button,
 .library-surface [role="alert"] button {
   min-height: 44px;
@@ -851,7 +850,6 @@ body {
   font: inherit;
 }
 
-.item-labels input,
 .item-labels select {
   min-width: 0;
 }
@@ -1055,24 +1053,28 @@ body {
   min-height: 44px;
 }
 
-.item-sidebar-skeleton {
+.item-sidebar-skeleton,
+.stop-sidebar-skeleton {
   display: grid;
   gap: var(--space-3);
 }
 
-.item-sidebar-skeleton span {
+.item-sidebar-skeleton span,
+.stop-sidebar-skeleton span {
   display: block;
   height: 1rem;
   border-radius: var(--radius-1);
   background: var(--line);
 }
 
-.item-sidebar-skeleton span:first-child {
+.item-sidebar-skeleton span:first-child,
+.stop-sidebar-skeleton span:first-child {
   width: 70%;
   height: 1.5rem;
 }
 
-.item-sidebar-skeleton span:last-child {
+.item-sidebar-skeleton span:last-child,
+.stop-sidebar-skeleton span:last-child {
   min-height: 6rem;
 }
 

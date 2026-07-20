@@ -31,6 +31,10 @@ export function ItemSurface() {
   const backgroundTrailId = backgroundLocation?.pathname.match(
     /^\/trails\/([^/]+)$/,
   )?.[1] as TrailId | undefined;
+  const backgroundIsLibrary = backgroundLocation?.pathname === "/library";
+  const backgroundLibrarySearch = backgroundIsLibrary
+    ? backgroundLocation.search
+    : "";
 
   return (
     <div className="item-detail-layout">
@@ -46,6 +50,14 @@ export function ItemSurface() {
           <LibrarySurface
             itemOverrides={itemOverrides}
             onItemChanged={recordItemChange}
+            labelFilterEnabled={backgroundIsLibrary}
+            labelFilterSearch={backgroundLibrarySearch}
+            onLabelFilterChange={(next) =>
+              navigate({
+                pathname: "/library",
+                search: next.size > 0 ? `?${next.toString()}` : "",
+              })
+            }
           />
         )
       ) : (

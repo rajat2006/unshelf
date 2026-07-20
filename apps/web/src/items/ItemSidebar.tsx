@@ -4,6 +4,7 @@ import { fetchItem } from "../api";
 import type { CurrentUser } from "../application-auth";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
+import { ItemSource } from "./ItemSource";
 import { TYPE_LABELS } from "./presentation";
 
 interface ItemSidebarProps {
@@ -92,9 +93,7 @@ export function ItemSidebar({
             user={user}
             onChanged={replaceItem}
           />
-          {visibleItem.source && (
-            <p className="item-source">{visibleItem.source}</p>
-          )}
+          {visibleItem.source && <ItemSource source={visibleItem.source} />}
         </div>
       )}
     </aside>

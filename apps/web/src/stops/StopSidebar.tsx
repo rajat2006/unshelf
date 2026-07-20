@@ -56,7 +56,17 @@ export function StopSidebar({
       className="stop-sidebar"
       aria-label={stop ? `${stop.name} details` : "Stop details"}
     >
-      {!stop && !error && <p>Loading Stop details…</p>}
+      {!stop && !error && (
+        <div
+          className="stop-sidebar-skeleton"
+          role="status"
+          aria-label="Loading Stop details"
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </div>
+      )}
       {error && (
         <div role="alert">
           <p>Could not load this Stop: {error}</p>

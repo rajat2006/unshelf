@@ -208,3 +208,34 @@ test("a Stop detail failure retries inside the sidebar without replacing the Tra
     page.getByRole("complementary", { name: `${stop.name} details` }),
   ).toBeVisible();
 });
+
+test("Stop detail loading stays shaped inside the sidebar", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one loading path");
+  const user = `${testInfo.project.name}-stop-sidebar-loading`;
+  const { trail, stop } = await seedStopWithItem(page, user);
+  let releaseStop!: () => void;
+  await page.route(`**/api/trails/${trail.id}/stops/${stop.id}`, async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user), {
+    waitUntil: "domcontentloaded",
+  });
+  const sidebar = page.getByRole("complementary", { name: "Stop details" });
+  await expect(
+    sidebar.getByRole("status", { name: "Loading Stop details" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Trail" }),
+  ).toBeVisible();
+
+  releaseStop();
+  await expect(
+    page.getByRole("complementary", { name: `${stop.name} details` }),
+  ).toBeVisible();
+});
