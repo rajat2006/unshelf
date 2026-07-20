@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
-import { Link, useLocation, type Location } from "react-router";
+import { Link, useLocation } from "react-router";
 import type { CurrentUser } from "../application-auth";
+import { readItemBackgroundLocation } from "./item-route-state";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
@@ -29,7 +30,7 @@ interface ItemRowProps {
  */
 export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
   const location = useLocation();
-  const preservedBackground = readBackgroundLocation(location.state);
+  const preservedBackground = readItemBackgroundLocation(location.state);
   const originLocation =
     location.pathname.startsWith("/items/") && preservedBackground
       ? preservedBackground
@@ -57,16 +58,6 @@ export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
       {item.source && <Source source={item.source} />}
     </li>
   );
-}
-
-function readBackgroundLocation(state: unknown): Location | null {
-  if (typeof state !== "object" || state === null) return null;
-  const candidate = (state as { backgroundLocation?: unknown })
-    .backgroundLocation;
-  if (typeof candidate !== "object" || candidate === null) return null;
-  return typeof (candidate as { pathname?: unknown }).pathname === "string"
-    ? (candidate as Location)
-    : null;
 }
 
 /** Render an HTTP Source as a tappable link and every other Source as inert text. */

@@ -3,11 +3,11 @@ import {
   useLocation,
   useNavigate,
   useParams,
-  type Location,
 } from "react-router";
 import type { Item, ItemId, TrailId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth";
 import { ItemSidebar } from "../items/ItemSidebar";
+import { readItemBackgroundLocation } from "../items/item-route-state";
 import { LibrarySurface } from "./LibrarySurface";
 import { TrailSurface } from "./TrailSurface";
 
@@ -27,7 +27,7 @@ export function ItemSurface() {
   }, []);
   const changedItem = itemId ? changedItems[itemId] : undefined;
   const itemOverrides = Object.values(changedItems);
-  const backgroundLocation = readBackgroundLocation(location.state);
+  const backgroundLocation = readItemBackgroundLocation(location.state);
   const backgroundTrailId = backgroundLocation?.pathname.match(
     /^\/trails\/([^/]+)$/,
   )?.[1] as TrailId | undefined;
@@ -67,14 +67,4 @@ export function ItemSurface() {
       )}
     </div>
   );
-}
-
-function readBackgroundLocation(state: unknown): Location | null {
-  if (typeof state !== "object" || state === null) return null;
-  const candidate = (state as { backgroundLocation?: unknown })
-    .backgroundLocation;
-  if (typeof candidate !== "object" || candidate === null) return null;
-  return typeof (candidate as { pathname?: unknown }).pathname === "string"
-    ? (candidate as Location)
-    : null;
 }
