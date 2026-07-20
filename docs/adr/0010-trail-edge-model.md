@@ -114,3 +114,34 @@ write-time acyclicity all stand.
 - **Full spec:** `docs/ui-design-spec.md` §8. Reskin drawn in
   `apps/web/prototype-screens.html` (`worktree-issue-59-screens-prototype`), never
   merged.
+
+## Update — the edge list gains a Trail anchor (2026-07-20, #94)
+
+The next-gen model (ADR-0014) demotes the Stop to a **per-Trail waypoint** and gives
+a User **many Trails**, so the "edge set scoped to a User *is* the Trail" reading this
+ADR settled no longer holds: a User's edges now belong to *different* Trails, and a
+link must never span two. Building that (#94) **does** change the edge-list shape the
+reskin note above said was untouched — the one place this ADR's persistence decision
+is superseded rather than reskinned. Everything else stands: derived layout (no stored
+positions), write-time acyclicity, set semantics, and the database-enforced self-loop
+rejection are unchanged.
+
+- **`trail_edges` gains a `trail_id`.** The row is now
+  `trail_edges(user_id, trail_id, from_stop_id, to_stop_id)`. Same-Trail endpoints are
+  enforced the same belt-and-braces way as the tenancy anchor: composite owner foreign
+  keys `(from_stop_id, trail_id)` and `(to_stop_id, trail_id)` into `stops(id, trail_id)`
+  make an edge across two Trails unwritable even by a query that bypasses the repository.
+  The pre-existing `(from_stop_id, user_id)` / `(to_stop_id, user_id)` keys stay, so
+  same-User is still enforced directly too.
+- **`stops` gains a `trail_id`** (ADR-0014, minted first in #93, made load-bearing here):
+  a Stop belongs to exactly one Trail. Creation happens under the Trail
+  (`POST /api/trails/:trailId/stops`); there is no Trail-less Stop. The column stays
+  nullable only so the implicit-Trail migration can still adopt legacy orphans — every
+  Stop the API writes names its Trail.
+- **The topology is read and written under a Trail id** — `GET/POST/DELETE` under
+  `/api/trails/:trailId/{topology,edges}` — so a read returns only that Trail's nodes
+  and edges, and a cross-Trail or foreign endpoint is a 404, exactly as an unknown one is.
+- **The `TrailEdge` contract is unchanged.** The client still reads a bare
+  `{ userId, fromStopId, toStopId }`: the Trail is the route it was read under, not a
+  field, the same way the edge carries no position or date. `trail_id` is an enforcement
+  anchor, not a domain fact the client reconciles.
