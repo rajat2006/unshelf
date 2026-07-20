@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAppUrl } from "./test-helpers";
 
 /**
  * The routed Quiet Focus shell (#91): route table, auth gate, intended-route
@@ -12,11 +13,7 @@ function appUrl(
   path: string,
   params: Record<string, string> = {},
 ): string {
-  const search = new URLSearchParams({
-    testUser: `${testInfo.project.name}-shell-user`,
-    ...params,
-  });
-  return `/test/browser${path}?${search.toString()}`;
+  return testAppUrl(path, `${testInfo.project.name}-shell-user`, params);
 }
 
 async function pageHasNoHorizontalOverflow(page: Page): Promise<boolean> {

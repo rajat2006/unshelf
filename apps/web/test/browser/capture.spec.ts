@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAppUrl } from "./test-helpers";
 
 /**
  * Capture as a global chrome action (#92, design spec §3, ADR-0014). Capture is a
@@ -14,8 +15,7 @@ function appUrl(
   path: string,
   user = `${testInfo.project.name}-capture-user`,
 ): string {
-  const search = new URLSearchParams({ testUser: user });
-  return `/test/browser${path}?${search.toString()}`;
+  return testAppUrl(path, user);
 }
 
 function captureButton(page: Page) {

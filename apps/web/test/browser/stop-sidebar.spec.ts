@@ -1,17 +1,12 @@
-import { expect, test, type APIResponse, type Page } from "@playwright/test";
-import { testBearerToken, type TestUserId } from "./harness";
-
-function appUrl(path: string, user: string): string {
-  const search = new URLSearchParams({ testUser: user });
-  return `/test/browser${path}?${search.toString()}`;
-}
+import { expect, test, type Page } from "@playwright/test";
+import { testApi, testAppUrl } from "./test-helpers";
 
 async function openTrailWithStop(
   page: Page,
   user: string,
 ): Promise<{ trailId: string; stopName: string }> {
   const stopName = `${user} Stop`;
-  await page.goto(appUrl("/", user));
+  await page.goto(testAppUrl("/", user));
   await page.getByLabel("Trail name").fill(`${user} Trail`);
   await page.getByRole("button", { name: "Start a Trail" }).click();
   await page.getByRole("link", { name: new RegExp(`${user} Trail`) }).click();
@@ -23,46 +18,28 @@ async function openTrailWithStop(
   return { trailId, stopName };
 }
 
-async function api(
-  page: Page,
-  user: string,
-  path: string,
-  method = "GET",
-  data?: object,
-): Promise<APIResponse> {
-  const response = await page.request.fetch(path, {
-    method,
-    data,
-    headers: {
-      Authorization: `Bearer ${testBearerToken(user as TestUserId)}`,
-    },
-  });
-  expect(response.ok(), `${method} ${path}`).toBe(true);
-  return response;
-}
-
 async function seedStopWithItem(page: Page, user: string) {
   const trail = (await (
-    await api(page, user, "/api/trails", "POST", { name: `${user} Trail` })
+    await testApi(page, user, "/api/trails", "POST", { name: `${user} Trail` })
   ).json()) as { id: string };
   const stop = (await (
-    await api(page, user, `/api/trails/${trail.id}/stops`, "POST", {
+    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
       name: `${user} Stop`,
     })
   ).json()) as { id: string; name: string };
   const item = (await (
-    await api(page, user, "/api/items", "POST", {
+    await testApi(page, user, "/api/items", "POST", {
       title: `${user} Item`,
       type: "course",
     })
   ).json()) as { id: string; title: string };
-  await api(page, user, `/api/items/${item.id}/status`, "PATCH", {
+  await testApi(page, user, `/api/items/${item.id}/status`, "PATCH", {
     status: "in_progress",
   });
-  await api(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
+  await testApi(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
     targetDate: "2099-06-15",
   });
-  await api(page, user, `/api/stops/${stop.id}/items`, "POST", {
+  await testApi(page, user, `/api/stops/${stop.id}/items`, "POST", {
     itemId: item.id,
   });
   return { trail, stop, item };
@@ -103,7 +80,7 @@ test("a cold Stop deep link restores its Trail and shared Item facts at any view
   const user = `${testInfo.project.name}-stop-sidebar-cold`;
   const { trail, stop, item } = await seedStopWithItem(page, user);
 
-  await page.goto(appUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
   const sidebar = page.getByRole("complementary", {
     name: `${stop.name} details`,
   });
@@ -115,10 +92,17 @@ test("a cold Stop deep link restores its Trail and shared Item facts at any view
     page.getByRole("button", { name: `Open ${stop.name}` }),
   ).toBeVisible();
   await expect(sidebar.getByText(item.title, { exact: true })).toBeVisible();
-  await expect(sidebar.getByLabel("Status")).toHaveValue("in_progress");
-  await expect(sidebar.getByLabel("Target date")).toHaveValue("2099-06-15");
+  const status = sidebar.getByRole("group", {
+    name: `Status for ${item.title}`,
+  });
+  await expect(
+    status.getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
+    "2099-06-15",
+  );
 
-  await sidebar.getByLabel("Status").selectOption("done");
+  await status.getByRole("button", { name: "Done" }).click();
   await expect(
     page.getByRole("group", {
       name: `${stop.name}: 1 of 1 items done`,
@@ -147,15 +131,15 @@ test("removing an Item from the sidebar preserves the Item and its other Stop", 
   const user = `${testInfo.project.name}-stop-sidebar-remove`;
   const { trail, stop, item } = await seedStopWithItem(page, user);
   const otherStop = (await (
-    await api(page, user, `/api/trails/${trail.id}/stops`, "POST", {
+    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
       name: "Other Stop",
     })
   ).json()) as { id: string };
-  await api(page, user, `/api/stops/${otherStop.id}/items`, "POST", {
+  await testApi(page, user, `/api/stops/${otherStop.id}/items`, "POST", {
     itemId: item.id,
   });
 
-  await page.goto(appUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
   const sidebar = page.getByRole("complementary", {
     name: `${stop.name} details`,
   });
@@ -174,12 +158,12 @@ test("removing an Item from the sidebar preserves the Item and its other Stop", 
       name: `${stop.name}: 0 of 0 items done`,
     }),
   ).toBeVisible();
-  const library = (await (await api(page, user, "/api/items")).json()) as Array<{
+  const library = (await (await testApi(page, user, "/api/items")).json()) as Array<{
     id: string;
   }>;
   expect(library.map((listed) => listed.id)).toContain(item.id);
   const otherDetail = (await (
-    await api(page, user, `/api/trails/${trail.id}/stops/${otherStop.id}`)
+    await testApi(page, user, `/api/trails/${trail.id}/stops/${otherStop.id}`)
   ).json()) as { items: Array<{ id: string }> };
   expect(otherDetail.items.map((listed) => listed.id)).toContain(item.id);
 });
@@ -190,10 +174,10 @@ test("a Stop detail failure retries inside the sidebar without replacing the Tra
   test.skip(testInfo.project.name === "phone", "one representative retry path");
   const user = `${testInfo.project.name}-stop-sidebar-retry`;
   const trail = (await (
-    await api(page, user, "/api/trails", "POST", { name: "Retry Trail" })
+    await testApi(page, user, "/api/trails", "POST", { name: "Retry Trail" })
   ).json()) as { id: string };
   const stop = (await (
-    await api(page, user, `/api/trails/${trail.id}/stops`, "POST", {
+    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
       name: "Retry Stop",
     })
   ).json()) as { id: string; name: string };
@@ -209,7 +193,7 @@ test("a Stop detail failure retries inside the sidebar without replacing the Tra
     },
   );
 
-  await page.goto(appUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
   const loadingSidebar = page.getByRole("complementary", {
     name: "Stop details",
   });

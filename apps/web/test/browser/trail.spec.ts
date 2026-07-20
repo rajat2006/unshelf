@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAppUrl } from "./test-helpers";
 
 /**
  * Authoring one Trail through the application seam (#94, ADR-0010/0014). A Trail
@@ -12,11 +13,6 @@ import { expect, test, type Page } from "@playwright/test";
 
 interface TestInfoLike {
   project: { name: string };
-}
-
-function appUrl(path: string, user: string): string {
-  const search = new URLSearchParams({ testUser: user });
-  return `/test/browser${path}?${search.toString()}`;
 }
 
 function defaultUser(testInfo: TestInfoLike): string {
@@ -40,7 +36,7 @@ async function startAndOpenTrail(
   await card.click();
   await expect(page).toHaveURL(/\/trails\/[0-9a-f-]{36}$/);
   const trailId = /trails\/([0-9a-f-]{36})/.exec(page.url())![1]!;
-  return { trailId, deepLink: appUrl(`/trails/${trailId}`, user) };
+  return { trailId, deepLink: testAppUrl(`/trails/${trailId}`, user) };
 }
 
 /** Add the first Stop to an empty Trail via the desktop "start" affordance. */
@@ -61,7 +57,7 @@ test("a desktop User adds the first Stop, extends the sequence, and it persists"
   );
   const user = defaultUser(testInfo);
 
-  await page.goto(appUrl("/", user));
+  await page.goto(testAppUrl("/", user));
   const { deepLink } = await startAndOpenTrail(
     page,
     `${testInfo.project.name} authoring journey`,
@@ -104,7 +100,7 @@ test("a Trail's Stops are private to its owner", async ({
   );
 
   const owner = `${testInfo.project.name}-trail-owner`;
-  await page.goto(appUrl("/", owner));
+  await page.goto(testAppUrl("/", owner));
   const { trailId } = await startAndOpenTrail(
     page,
     `${testInfo.project.name} private topology`,
@@ -115,7 +111,7 @@ test("a Trail's Stops are private to its owner", async ({
   // A different User opening the very same Trail URL is refused it — the topology
   // is resolved from the authenticated User, so a foreign id reads as not found.
   const stranger = `${testInfo.project.name}-trail-stranger`;
-  await page.goto(appUrl(`/trails/${trailId}`, stranger));
+  await page.goto(testAppUrl(`/trails/${trailId}`, stranger));
   await expect(
     page.getByRole("heading", { level: 1, name: "Trail" }),
   ).toBeVisible();
@@ -132,7 +128,7 @@ test("at phone width the Trail is viewed, not authored", async ({
   );
   const user = defaultUser(testInfo);
 
-  await page.goto(appUrl("/", user));
+  await page.goto(testAppUrl("/", user));
   await startAndOpenTrail(
     page,
     `${testInfo.project.name} view-only journey`,

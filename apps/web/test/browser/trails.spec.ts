@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAppUrl } from "./test-helpers";
 
 /**
  * The Trails index at Home (#93, design spec §2/§6, ADR-0014). Home is Trails-only:
@@ -13,8 +14,7 @@ function appUrl(
   path: string,
   user = `${testInfo.project.name}-trails-user`,
 ): string {
-  const search = new URLSearchParams({ testUser: user });
-  return `/test/browser${path}?${search.toString()}`;
+  return testAppUrl(path, user);
 }
 
 async function startTrail(page: Page, name: string): Promise<void> {

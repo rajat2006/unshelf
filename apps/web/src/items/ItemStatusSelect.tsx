@@ -1,15 +1,8 @@
 import { useState } from "react";
-import { ITEM_STATUSES, type Item, type Status } from "@unshelf/shared";
+import { ITEM_STATUSES, Status, type Item } from "@unshelf/shared";
 import { updateItemStatus } from "../api";
 import type { CurrentUser } from "../application-auth";
-import {
-  ITEM_CONTROL_CAPTION_STYLE,
-  ITEM_CONTROL_ERROR_STYLE,
-  ITEM_CONTROL_LABEL_STYLE,
-  ITEM_CONTROL_ROW_STYLE,
-  ITEM_CONTROL_STYLE,
-  STATUS_LABELS,
-} from "./presentation";
+import { STATUS_LABELS } from "./presentation";
 
 interface ItemStatusSelectProps {
   item: Item;
@@ -39,25 +32,35 @@ export function ItemStatusSelect({
   }
 
   return (
-    <div style={ITEM_CONTROL_ROW_STYLE}>
-      <label style={ITEM_CONTROL_LABEL_STYLE}>
-        <span style={ITEM_CONTROL_CAPTION_STYLE}>Status</span>
-        <select
-          value={item.status}
-          disabled={saving}
-          onChange={(event) => void change(event.target.value as Status)}
-          style={ITEM_CONTROL_STYLE}
-        >
+    <div className="item-control-row">
+      <fieldset
+        className="status-control"
+        aria-label={`Status for ${item.title}`}
+        disabled={saving}
+      >
+        <legend>Status</legend>
+        <div className="status-control__choices">
           {ITEM_STATUSES.map((status) => (
-            <option key={status} value={status}>
+            <button
+              key={status}
+              type="button"
+              className={[
+                status === item.status ? "is-active" : "",
+                status === Status.Done ? "is-done" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-pressed={status === item.status}
+              onClick={() => void change(status)}
+            >
               {STATUS_LABELS[status]}
-            </option>
+            </button>
           ))}
-        </select>
-        {saving && <span style={ITEM_CONTROL_CAPTION_STYLE}>Saving…</span>}
-      </label>
+        </div>
+        {saving && <span className="item-control-caption">Saving…</span>}
+      </fieldset>
       {error && (
-        <div role="alert" style={ITEM_CONTROL_ERROR_STYLE}>
+        <div role="alert" className="item-control-error">
           Could not change Status: {error}
         </div>
       )}
