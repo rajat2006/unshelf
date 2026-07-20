@@ -42,8 +42,8 @@ const outputDir = requireEnv("OUTPUT_DIR");
 // (absence *is* Claude). A manual `workflow_dispatch` can still opt into Codex,
 // which the workflow serialises into AGENT_LABELS just like the issue flows.
 const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
-const { agent, model } = resolveAgent(labels);
-console.log(`Resolved provider model: ${model}`);
+const { agent, model, effort } = resolveAgent(labels, "architecture-review");
+console.log(`Resolved provider model: ${model} (effort: ${effort})`);
 
 // The titles of every past `source:architecture-review` proposal — OPEN and
 // CLOSED — so the agent proposes something genuinely fresh and never re-raises an

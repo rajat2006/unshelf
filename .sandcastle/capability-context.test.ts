@@ -5,7 +5,7 @@ import {
   loadPrdImplementContext,
   loadPrdPrContext,
 } from "./capability-context";
-import { CLAUDE_MODEL, CODEX_MODEL } from "./resolve-agent";
+import { BUILD_CLAUDE_MODEL, CODEX_MODEL } from "./resolve-agent";
 
 const ENV_KEYS = [
   "ISSUE_NUMBER",
@@ -39,7 +39,7 @@ describe("loadCapabilityContext", () => {
 
   it("reads the issue coordinates and output dir from the environment", () => {
     setEnv();
-    const ctx = loadCapabilityContext();
+    const ctx = loadCapabilityContext("implement");
 
     expect(ctx.issueNumber).toBe("63");
     expect(ctx.issueTitle).toBe("agent-implement workflow");
@@ -49,23 +49,24 @@ describe("loadCapabilityContext", () => {
 
   it("exposes promptArgs shaped for {{...}} substitution", () => {
     setEnv();
-    expect(loadCapabilityContext().promptArgs).toEqual({
+    expect(loadCapabilityContext("implement").promptArgs).toEqual({
       ISSUE_NUMBER: "63",
       ISSUE_TITLE: "agent-implement workflow",
       BRANCH: "agent/issue-63-agent-implement-workflow",
     });
   });
 
-  it("resolves the provider from the full label set (default is Claude)", () => {
+  it("forwards the capability into resolution (model + effort)", () => {
     setEnv();
-    const ctx = loadCapabilityContext();
+    const ctx = loadCapabilityContext("implement");
     expect(ctx.agent.name).toBe("claude-code");
-    expect(ctx.model).toBe(CLAUDE_MODEL);
+    expect(ctx.model).toBe(BUILD_CLAUDE_MODEL);
+    expect(ctx.effort).toBe("medium");
   });
 
   it("routes to Codex when agent:codex is anywhere in the label set", () => {
     setEnv({ AGENT_LABELS: '["agent:codex","agent:implement"]' });
-    const ctx = loadCapabilityContext();
+    const ctx = loadCapabilityContext("implement");
     expect(ctx.agent.name).toBe("codex");
     expect(ctx.model).toBe(CODEX_MODEL);
     expect(ctx.labels).toContain("agent:codex");
@@ -73,14 +74,14 @@ describe("loadCapabilityContext", () => {
 
   it("treats absent AGENT_LABELS as an empty set (Claude default)", () => {
     setEnv({ AGENT_LABELS: undefined });
-    const ctx = loadCapabilityContext();
+    const ctx = loadCapabilityContext("implement");
     expect(ctx.labels).toEqual([]);
     expect(ctx.agent.name).toBe("claude-code");
   });
 
   it("throws when a required var (OUTPUT_DIR) is missing", () => {
     setEnv({ OUTPUT_DIR: undefined });
-    expect(() => loadCapabilityContext()).toThrow("OUTPUT_DIR");
+    expect(() => loadCapabilityContext("implement")).toThrow("OUTPUT_DIR");
   });
 });
 
@@ -95,7 +96,7 @@ describe("loadIssueCapabilityContext", () => {
   it("loads a read-only issue capability without requiring a branch", () => {
     setEnv({ BRANCH: undefined });
 
-    expect(loadIssueCapabilityContext()).toMatchObject({
+    expect(loadIssueCapabilityContext("explore")).toMatchObject({
       issueNumber: "63",
       issueTitle: "agent-implement workflow",
       outputDir: "/run/tmp",
@@ -112,7 +113,7 @@ describe("loadIssueCapabilityContext", () => {
       AGENT_LABELS: '["agent:explore","agent:codex"]',
     });
 
-    const ctx = loadIssueCapabilityContext();
+    const ctx = loadIssueCapabilityContext("explore");
     expect(ctx.agent.name).toBe("codex");
     expect(ctx.model).toBe(CODEX_MODEL);
     expect(ctx.labels).toEqual(["agent:explore", "agent:codex"]);
@@ -155,7 +156,7 @@ describe("loadPrdPrContext", () => {
 
   it("reads the PRD coordinates and output dir", () => {
     setPrdEnv();
-    const ctx = loadPrdPrContext();
+    const ctx = loadPrdPrContext("write-prd-pr");
     expect(ctx.prdNumber).toBe("52");
     expect(ctx.prdTitle).toBe("Build the Sandcastle platform");
     expect(ctx.outputDir).toBe("/run/tmp");
@@ -163,7 +164,7 @@ describe("loadPrdPrContext", () => {
 
   it("exposes only PRD promptArgs (no sub-issue — the body is whole-PRD)", () => {
     setPrdEnv();
-    expect(loadPrdPrContext().promptArgs).toEqual({
+    expect(loadPrdPrContext("write-prd-pr").promptArgs).toEqual({
       PRD_NUMBER: "52",
       PRD_TITLE: "Build the Sandcastle platform",
     });
@@ -171,14 +172,14 @@ describe("loadPrdPrContext", () => {
 
   it("resolves the provider from the PRD's full label set", () => {
     setPrdEnv({ AGENT_LABELS: '["agent:codex","agent:implement"]' });
-    const ctx = loadPrdPrContext();
+    const ctx = loadPrdPrContext("write-prd-pr");
     expect(ctx.agent.name).toBe("codex");
     expect(ctx.model).toBe(CODEX_MODEL);
   });
 
   it("throws when a required var (PRD_NUMBER) is missing", () => {
     setPrdEnv({ PRD_NUMBER: undefined });
-    expect(() => loadPrdPrContext()).toThrow("PRD_NUMBER");
+    expect(() => loadPrdPrContext("write-prd-pr")).toThrow("PRD_NUMBER");
   });
 });
 
@@ -192,7 +193,7 @@ describe("loadPrdImplementContext", () => {
 
   it("reads the PRD coordinates, the sub-issue, and the branch", () => {
     setPrdEnv();
-    const ctx = loadPrdImplementContext();
+    const ctx = loadPrdImplementContext("implement-prd");
     expect(ctx.prdNumber).toBe("52");
     expect(ctx.subIssueNumber).toBe("68");
     expect(ctx.subIssueTitle).toBe("agent-implement-prd workflow");
@@ -201,7 +202,7 @@ describe("loadPrdImplementContext", () => {
 
   it("exposes promptArgs shaped for {{...}} substitution", () => {
     setPrdEnv();
-    expect(loadPrdImplementContext().promptArgs).toEqual({
+    expect(loadPrdImplementContext("implement-prd").promptArgs).toEqual({
       PRD_NUMBER: "52",
       PRD_TITLE: "Build the Sandcastle platform",
       SUB_ISSUE_NUMBER: "68",
@@ -212,13 +213,14 @@ describe("loadPrdImplementContext", () => {
 
   it("resolves the provider from the PRD's full label set (default Claude)", () => {
     setPrdEnv();
-    const ctx = loadPrdImplementContext();
+    const ctx = loadPrdImplementContext("implement-prd");
     expect(ctx.agent.name).toBe("claude-code");
-    expect(ctx.model).toBe(CLAUDE_MODEL);
+    expect(ctx.model).toBe(BUILD_CLAUDE_MODEL);
+    expect(ctx.effort).toBe("medium");
   });
 
   it("throws when the sub-issue var (SUB_ISSUE_NUMBER) is missing", () => {
     setPrdEnv({ SUB_ISSUE_NUMBER: undefined });
-    expect(() => loadPrdImplementContext()).toThrow("SUB_ISSUE_NUMBER");
+    expect(() => loadPrdImplementContext("implement-prd")).toThrow("SUB_ISSUE_NUMBER");
   });
 });

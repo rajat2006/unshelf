@@ -20,8 +20,8 @@ import { verifyExploreReadOnly } from "../verify-explore-read-only";
  * repository files — `comment.md` in `OUTPUT_DIR` is its only artifact.
  */
 
-const ctx = loadIssueCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadIssueCapabilityContext("explore");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 const issueContext = fs.readFileSync(requireEnv("ISSUE_CONTEXT_FILE"), "utf8");
 const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",

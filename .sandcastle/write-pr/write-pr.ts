@@ -22,8 +22,8 @@ import { runWithRetry } from "../run-with-retry";
  * the workflow.
  */
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("write-pr");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as implement — this phase also runs the agent, so
 // it must authenticate identically (a no-op on the Claude Code default).

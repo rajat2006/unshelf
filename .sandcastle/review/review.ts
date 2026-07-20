@@ -30,8 +30,8 @@ import { runWithExtraction } from "../run-with-extraction";
 
 const REVIEW_BASE = "origin/main";
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("review");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as the other agent phases — a no-op on the Claude
 // Code default.

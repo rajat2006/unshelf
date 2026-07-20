@@ -30,8 +30,8 @@ import {
  * BRANCH env is involved.
  */
 
-const ctx = loadPrdPrContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadPrdPrContext("to-issues");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as every other capability — this phase runs the
 // agent, so it authenticates identically (a no-op on the Claude Code default).

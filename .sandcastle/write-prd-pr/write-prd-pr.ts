@@ -24,8 +24,8 @@ import { runWithRetry } from "../run-with-retry";
  * workflow. Provider and coordinates come from the shared PRD seam.
  */
 
-const ctx = loadPrdPrContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadPrdPrContext("write-prd-pr");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as implement-prd — this phase also runs the
 // agent, so it must authenticate identically (a no-op on the Claude Code

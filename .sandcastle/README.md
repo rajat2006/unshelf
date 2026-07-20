@@ -28,10 +28,17 @@ pinned Sandcastle version and Unshelf's provider set:
   emission, the same reliability win, rather than protecting a side effect.
 - **`retry-feedback.ts`** — `buildRetryFeedback`: the retry prompt built from a
   `StructuredOutputError`, echoing what the agent emitted and why it failed.
-- **`resolve-agent.ts`** — `resolveAgent(labels)` (Unshelf-specific): `agent:codex`
-  present ⇒ Codex on `gpt-5.6-sol`; absent ⇒ Claude Code on `claude-opus-4-8`
-  (absence *is* Claude). Both providers run with explicit `medium` reasoning
-  effort. Reads the issue's full label set.
+- **`resolve-agent.ts`** — `resolveAgent(labels, capability)` (Unshelf-specific):
+  two independent axes. The **label set** picks the provider — `agent:codex`
+  present ⇒ Codex, absent ⇒ Claude Code (absence *is* Claude) — reading the
+  subject's full set, not just the trigger label. The **capability** then picks
+  that provider's model and reasoning effort from a per-capability policy
+  (`CAPABILITY_POLICY`), so each capability can be tuned without changing a
+  provider-wide constant. Effort types are derived from Sandcastle's own factory
+  options, and `Capability` is a closed union over a `Record`, so adding a runner
+  without a policy entry fails the typecheck rather than inheriting a default.
+  The policy values are still uniform (`claude-opus-4-8`/`medium`,
+  `gpt-5.6-sol`/`medium`) at this seam-only step; the tier policy lands next.
 - **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
   `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
   standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional
@@ -266,4 +273,6 @@ type definitions. Two 0.12 behaviours the wrappers depend on:
 - `StructuredOutputError` carries `sessionId`/`rawMatched`/`cause`, which is what
   makes same-session resume-with-feedback possible.
 
-Models follow spec §C (`claude-opus-4-8`, not CVM's `claude-opus-4-6`).
+Models resolve through the per-capability policy in `resolve-agent.ts` — at this
+seam-only step still `claude-opus-4-8` (not CVM's `claude-opus-4-6`) and
+`gpt-5.6-sol` uniformly.

@@ -42,8 +42,8 @@ import { verifyBranchUpdate } from "../verify-branch-update";
  * posts that comment.
  */
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("update-branch");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as the other agent phases — a no-op on the Claude
 // Code default.

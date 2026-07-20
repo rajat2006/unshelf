@@ -19,8 +19,8 @@ import { prepareCodexAuth } from "../prepare-codex-auth";
  * blocked path) rather than pushing an empty branch and opening an empty PR.
  */
 
-const ctx = loadCapabilityContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadCapabilityContext("implement");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Materialise the Codex subscription seat (auth.json + file credential store,
 // OPENAI_* stripped) before the run — a no-op on the Claude Code default.

@@ -35,8 +35,8 @@ import { verifyImplementPrdOutcome } from "../verify-implement-prd";
  * set via {@link loadPrdImplementContext}.
  */
 
-const ctx = loadPrdImplementContext();
-console.log(`Resolved provider model: ${ctx.model}`);
+const ctx = loadPrdImplementContext("implement-prd");
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Materialise the Codex subscription seat (auth.json + file credential store,
 // OPENAI_* stripped) before the run — a no-op on the Claude Code default.

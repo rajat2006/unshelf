@@ -31,12 +31,12 @@ import { runWithExtraction } from "../run-with-extraction";
  * comments; the ready transition belongs to review.
  */
 
-const ctx = loadCapabilityContext();
+const ctx = loadCapabilityContext("implement-pr");
 // The PR whose review comments we are addressing. Its number is the subject; the
 // prompt reads its threads via `gh`. Kept separate from ISSUE_NUMBER (the
 // originating spec issue) so the prompt can reference both.
 const prNumber = requireEnv("PR_NUMBER");
-console.log(`Resolved provider model: ${ctx.model}`);
+console.log(`Resolved provider model: ${ctx.model} (effort: ${ctx.effort})`);
 
 // Same subscription-seat setup as the other agent phases — a no-op on the Claude
 // Code default.
