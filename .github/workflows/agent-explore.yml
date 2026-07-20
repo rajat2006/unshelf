@@ -45,11 +45,10 @@ jobs:
           done
 
           echo "labels_json=$labels_json" >> "$GITHUB_OUTPUT"
-          if echo "$labels_json" | jq -e 'index("agent:codex")' >/dev/null; then
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The provider is NOT decided here: it depends on DEFAULT_PROVIDER,
+          # so it is resolved by the `Resolve provider` step below (after
+          # checkout + install) via .sandcastle/print-provider.ts — the same
+          # code the runner uses. Nothing before that step is provider-specific.
 
           # The trigger may have been removed while this run was queued. In that
           # case leave the issue alone instead of resurrecting a cancelled run.
@@ -106,12 +105,23 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Install Codex CLI
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Run explore

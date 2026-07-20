@@ -73,8 +73,9 @@ export interface CapabilityContext extends ResolvedAgent {
  * this is the one place that reads it.
  *
  * The provider is resolved from the issue's FULL label set (`AGENT_LABELS`, a
- * JSON array), not just the just-added trigger label — that is what lets the
- * `agent:codex` provider label be applied independently of `agent:implement`.
+ * JSON array), not just the just-added trigger label — that is what lets a
+ * provider label (`agent:claude` / `agent:codex`) be applied independently of
+ * `agent:implement`. With neither present the default provider applies.
  * The `capability` the caller passes chooses that provider's model + effort.
  *
  * Required vars (`ISSUE_NUMBER`, `ISSUE_TITLE`, `BRANCH`, `OUTPUT_DIR`) throw via

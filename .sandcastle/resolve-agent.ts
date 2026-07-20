@@ -3,12 +3,42 @@ import * as path from "node:path";
 import { claudeCode, codex } from "@ai-hero/sandcastle";
 import type { AgentProvider } from "@ai-hero/sandcastle";
 
+/** The providers a subject can run on. */
+export type Provider = "claude" | "codex";
+
 /**
- * The one provider label. Its presence opts an issue into Codex; its absence is
- * Claude Code. There is deliberately no `agent:claude` label — a default needs
- * no label, and absence *is* Claude (spec §C).
+ * The provider labels. Each one pins a subject to that provider explicitly;
+ * neither present means {@link DEFAULT_PROVIDER}. Both present is ambiguous and
+ * also falls back to the default rather than silently preferring one.
  */
+export const CLAUDE_LABEL = "agent:claude";
 export const CODEX_LABEL = "agent:codex";
+
+/**
+ * The provider an unlabelled subject runs on — the one knob to flip when the
+ * subscription changes (`"claude"` ⇄ `"codex"`). Every runner and every
+ * workflow reads the provider through {@link resolveProvider}, so flipping this
+ * constant moves the whole platform; the `agent:*` labels above stay available
+ * to pin an individual issue or PR to the other provider.
+ */
+export const DEFAULT_PROVIDER: Provider = "claude";
+
+/**
+ * Resolve the provider from a subject's full label set: an explicit provider
+ * label wins, otherwise {@link DEFAULT_PROVIDER}. This is the single source of
+ * truth — `.sandcastle/print-provider.ts` exposes it to the workflows so their
+ * provider-specific setup (Codex CLI install, provider-label propagation) can
+ * never drift from what the runner resolves.
+ */
+export function resolveProvider(labels: readonly string[]): Provider {
+  const claude = labels.includes(CLAUDE_LABEL);
+  const codex = labels.includes(CODEX_LABEL);
+
+  if (claude && codex) return DEFAULT_PROVIDER;
+  if (claude) return "claude";
+  if (codex) return "codex";
+  return DEFAULT_PROVIDER;
+}
 
 /**
  * The reasoning-effort levels each provider accepts, derived from Sandcastle's
@@ -147,9 +177,10 @@ export interface ResolvedAgent {
  * Resolve which coding agent works a subject, and with what model and effort,
  * from its full label set and the capability being executed.
  *
- * The label set chooses the provider — `agent:codex` present → Codex, absent →
- * Claude Code (absence *is* Claude, the only provider switch, read from the
- * whole label set rather than a single just-added label). The capability then
+ * The label set chooses the provider via {@link resolveProvider} — an explicit
+ * `agent:claude` / `agent:codex` label wins, otherwise {@link DEFAULT_PROVIDER}
+ * (read from the whole label set rather than a single just-added label). The
+ * capability then
  * chooses that provider's model and effort from {@link CAPABILITY_POLICY}, so a
  * read-only exploration, an implementation, and a review can each carry the
  * reasoning profile they need without changing a provider-wide constant.
@@ -160,7 +191,7 @@ export function resolveAgent(
 ): ResolvedAgent {
   const policy = CAPABILITY_POLICY[capability];
 
-  if (labels.includes(CODEX_LABEL)) {
+  if (resolveProvider(labels) === "codex") {
     const { model, effort } = policy.codex;
     return {
       agent: codex(model, {

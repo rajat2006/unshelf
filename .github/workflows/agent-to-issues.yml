@@ -67,13 +67,10 @@ jobs:
           fi
           echo "labels_json=$labels_json" >> "$GITHUB_OUTPUT"
 
-          # Provider switch (spec #64): mirrors resolveAgent() so the workflow's
-          # provider-specific setup matches what the runner resolves.
-          if echo "$labels_json" | jq -e 'index("agent:codex")' >/dev/null; then
-            echo "is_codex=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_codex=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The provider is NOT decided here: it depends on DEFAULT_PROVIDER,
+          # so it is resolved by the `Resolve provider` step below (after
+          # checkout + install) via .sandcastle/print-provider.ts — the same
+          # code the runner uses. Nothing before that step is provider-specific.
 
           # Defensive re-check: the trigger label must still be present (it could
           # have been removed between the event and this run).
@@ -242,22 +239,33 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pnpm install --frozen-lockfile
 
+      # THE provider decision for this run. Delegated to the resolver the runner
+      # itself uses, so the workflow's provider-specific setup can never drift
+      # from it — an explicit `agent:claude` / `agent:codex` label wins, and
+      # otherwise DEFAULT_PROVIDER in `.sandcastle/resolve-agent.ts` decides.
+      - name: Resolve provider
+        if: steps.gate.outputs.proceed == 'true'
+        id: provider
+        env:
+          AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
+        run: pnpm --dir .sandcastle exec tsx print-provider.ts | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Claude Code
         if: steps.gate.outputs.proceed == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
-      # Codex CLI only when this issue opted in via `agent:codex` — the Claude
-      # default never pays for it. Runner-side auth is materialised by
+      # Codex CLI only when this run resolved to Codex — a Claude run never pays
+      # for it. Runner-side auth is materialised by
       # `prepareCodexAuth` inside the run script.
       - name: Install Codex CLI
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.is_codex == 'true'
+        if: steps.gate.outputs.proceed == 'true' && steps.provider.outputs.is_codex == 'true'
         run: npm install -g @openai/codex
 
       - name: Run to-issues
         if: steps.gate.outputs.proceed == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Codex subscription seat. Ignored on the Claude default; the run
+          # Codex subscription seat. Ignored when the run resolved to Claude; the run
           # script's prepareCodexAuth writes $CODEX_HOME/auth.json only when Codex
           # is resolved. OPENAI_KEY / OPENAI_API_KEY are deliberately NOT passed.
           CODEX_HOME: ${{ runner.temp }}/.codex
@@ -323,7 +331,7 @@ jobs:
           {
             printf '%s\n\n' '`agent:to-issues` decomposed this PRD into sub-issues, in build order:'
             cat "${RUNNER_TEMP}/created_children.txt"
-            printf '\n%s\n' 'Each is linked as a sub-issue. Triage them and apply `agent:implement` (optionally `agent:codex`) where ready — no state label was applied automatically.'
+            printf '\n%s\n' 'Each is linked as a sub-issue. Triage them and apply `agent:implement` where ready — no state label was applied automatically. Each runs on the default provider unless you pin one with `agent:claude` or `agent:codex`.'
           } > "${RUNNER_TEMP}/to_issues_comment.md"
           gh issue comment "$ISSUE_NUMBER" --body-file "${RUNNER_TEMP}/to_issues_comment.md"
 

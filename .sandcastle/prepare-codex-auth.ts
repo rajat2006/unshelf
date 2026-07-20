@@ -5,8 +5,9 @@ import { requireEnv } from "./require-env";
 
 /**
  * The provider name Sandcastle's `codex()` builder reports (`ctx.agent.name`).
- * Only this provider needs the auth-file materialisation below; the Claude Code
- * default authenticates purely from `CLAUDE_CODE_OAUTH_TOKEN` in the env.
+ * Only this provider needs the auth-file materialisation below; Claude Code
+ * authenticates purely from `CLAUDE_CODE_OAUTH_TOKEN` in the env. Keyed off the
+ * RESOLVED provider, so it is correct whichever way `DEFAULT_PROVIDER` points.
  */
 export const CODEX_PROVIDER = "codex";
 
@@ -26,7 +27,7 @@ export const OPENAI_KEY_VARS = ["OPENAI_KEY", "OPENAI_API_KEY"] as const;
  * Called by every capability script immediately before `sandcastle.run()`, so the
  * setup is uniform across phases (spec #52 / #64).
  *
- * For the Claude Code default (`providerName !== "codex"`) this is a no-op — its
+ * When the run resolved to Claude Code (`providerName !== "codex"`) this is a no-op — its
  * token lives in the env and needs no file materialisation.
  *
  * For Codex it does three things, in the order Codex needs them:

@@ -34,8 +34,8 @@ const REVIEW_BASE = "origin/main";
 const ctx = loadCapabilityContext("review");
 logResolvedAgent(ctx);
 
-// Same subscription-seat setup as the other agent phases — a no-op on the Claude
-// Code default.
+// Same subscription-seat setup as the other agent phases — a no-op when the run
+// resolved to Claude.
 prepareCodexAuth(ctx.agent.name);
 
 const result = await runWithExtraction({

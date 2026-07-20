@@ -24,7 +24,7 @@ const ctx = loadCapabilityContext("implement");
 logResolvedAgent(ctx);
 
 // Materialise the Codex subscription seat (auth.json + file credential store,
-// OPENAI_* stripped) before the run — a no-op on the Claude Code default.
+// OPENAI_* stripped) before the run — a no-op when the run resolved to Claude.
 prepareCodexAuth(ctx.agent.name);
 
 const result = await sandcastle.run({

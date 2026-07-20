@@ -29,8 +29,8 @@ const ctx = loadPrdPrContext("write-prd-pr");
 logResolvedAgent(ctx);
 
 // Same subscription-seat setup as implement-prd — this phase also runs the
-// agent, so it must authenticate identically (a no-op on the Claude Code
-// default).
+// agent, so it must authenticate identically (a no-op when the run resolved to
+// Claude).
 prepareCodexAuth(ctx.agent.name);
 
 // `prTitle` is capped at GitHub's 256-char PR-title limit. `prDescription` must

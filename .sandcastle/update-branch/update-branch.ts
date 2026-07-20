@@ -46,8 +46,8 @@ import { verifyBranchUpdate } from "../verify-branch-update";
 const ctx = loadCapabilityContext("update-branch");
 logResolvedAgent(ctx);
 
-// Same subscription-seat setup as the other agent phases — a no-op on the Claude
-// Code default.
+// Same subscription-seat setup as the other agent phases — a no-op when the run
+// resolved to Claude.
 prepareCodexAuth(ctx.agent.name);
 
 // Snapshot the pre-run git state so the postcondition check can tell "a merge
