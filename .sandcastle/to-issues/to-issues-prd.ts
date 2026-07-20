@@ -35,7 +35,7 @@ const ctx = loadPrdPrContext("to-issues");
 logResolvedAgent(ctx);
 
 // Same subscription-seat setup as every other capability — this phase runs the
-// agent, so it authenticates identically (a no-op on the Claude Code default).
+// agent, so it authenticates identically (a no-op when the run resolved to Claude).
 prepareCodexAuth(ctx.agent.name);
 
 const result = await runWithRetry({

@@ -331,7 +331,7 @@ jobs:
           {
             printf '%s\n\n' '`agent:to-issues` decomposed this PRD into sub-issues, in build order:'
             cat "${RUNNER_TEMP}/created_children.txt"
-            printf '\n%s\n' 'Each is linked as a sub-issue. Triage them and apply `agent:implement` (optionally `agent:codex`) where ready — no state label was applied automatically.'
+            printf '\n%s\n' 'Each is linked as a sub-issue. Triage them and apply `agent:implement` where ready — no state label was applied automatically. Each runs on the default provider unless you pin one with `agent:claude` or `agent:codex`.'
           } > "${RUNNER_TEMP}/to_issues_comment.md"
           gh issue comment "$ISSUE_NUMBER" --body-file "${RUNNER_TEMP}/to_issues_comment.md"
 

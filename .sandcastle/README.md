@@ -217,7 +217,7 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   GitHub-native analogue of CVM's interactive `/improve-codebase-architecture`.
   Unlike the others it has **no label trigger and no originating issue/PR**, so it
   reads its own minimal env (the open proposals to dedupe against, an optional
-  `AGENT_LABELS` for the provider — Claude by default — plus `OUTPUT_DIR`) instead
+  `AGENT_LABELS` for the provider — empty ⇒ `DEFAULT_PROVIDER` — plus `OUTPUT_DIR`) instead
   of `loadCapabilityContext`. The produce pass surveys the tree in prose for the
   **single freshest deepening opportunity** — described directly with the
   `/codebase-design` vocabulary, **not** by running the interactive

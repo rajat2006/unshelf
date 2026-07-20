@@ -138,8 +138,10 @@ cat ~/.codex/auth.json # paste the whole file as the secret value
   So a pasted secret runs cleanly for about a week, then a codex run fails with
   *"refresh token was already used"* — at which point re-run `codex login` and repaste
   `CODEX_AUTH_JSON`. Fully hands-off operation (writing the refreshed `auth.json` back to
-  the secret + serialising codex runs) is deferred to a follow-up; Codex is opt-in and
-  Claude Code (the no-label default) has no such lifecycle.
+  the secret + serialising codex runs) is deferred to a follow-up. This lifecycle is
+  Codex-only — Claude Code authenticates from `CLAUDE_CODE_OAUTH_TOKEN` and has none of
+  it — so the re-paste cadence bites only to the extent that runs actually resolve to
+  Codex (every run, once `DEFAULT_PROVIDER` is flipped to `"codex"`).
 
 ### 3. `AGENT_PAT`
 
