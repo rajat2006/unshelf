@@ -43,6 +43,10 @@ pinned Sandcastle version and Unshelf's provider set:
   (Codex `xhigh`). Effort types are derived from Sandcastle's own factory
   options, and `Capability` is a closed union over a `Record`, so adding a runner
   without a policy entry fails the typecheck rather than inheriting a default.
+  Also here: `IDLE_TIMEOUT_SECONDS`, the shared idle-watchdog value every runner
+  that sets one passes to `run` (1200s, raised for `claude-fable-5`'s longer
+  turns), and `logResolvedAgent`, the one resolved-model/effort log line every
+  runner emits.
 
   | Capability | Claude model | Claude effort | Codex model | Codex effort |
   |---|---|---|---|---|
