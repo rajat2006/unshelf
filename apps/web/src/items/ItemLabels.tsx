@@ -23,7 +23,7 @@ export function ItemLabels({
   onItemChanged,
   onLabelCreated,
 }: ItemLabelsProps) {
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState<LabelId | null>(null);
   const [newName, setNewName] = useState("");
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -33,11 +33,14 @@ export function ItemLabels({
   );
   const available = labels.filter((label) => !appliedIds.has(label.id));
 
-  async function change(operation: () => Promise<Item>) {
+  async function runLabelMutation<Result>(
+    operation: () => Promise<Result>,
+    onSuccess: (result: Result) => void,
+  ) {
     setPending(true);
     setFailed(false);
     try {
-      onItemChanged(await operation());
+      onSuccess(await operation());
     } catch {
       setFailed(true);
     } finally {
@@ -47,26 +50,28 @@ export function ItemLabels({
 
   async function applySelected() {
     if (!selectedId) return;
-    await change(() =>
-      applyLabelToItem(user, item.id, selectedId as LabelId),
+    await runLabelMutation(
+      () => applyLabelToItem(user, item.id, selectedId),
+      (changed) => {
+        onItemChanged(changed);
+        setSelectedId(null);
+      },
     );
-    setSelectedId("");
   }
 
   async function createAndApply() {
     if (newName.trim().length === 0) return;
-    setPending(true);
-    setFailed(false);
-    try {
-      const label = await createLabel(user, newName);
-      onLabelCreated(label);
-      onItemChanged(await applyLabelToItem(user, item.id, label.id));
-      setNewName("");
-    } catch {
-      setFailed(true);
-    } finally {
-      setPending(false);
-    }
+    await runLabelMutation(
+      async () => {
+        const label = await createLabel(user, newName);
+        onLabelCreated(label);
+        return applyLabelToItem(user, item.id, label.id);
+      },
+      (changed) => {
+        onItemChanged(changed);
+        setNewName("");
+      },
+    );
   }
 
   return (
@@ -87,7 +92,10 @@ export function ItemLabels({
             key={label.id}
             aria-label={`Remove ${label.name}`}
             onClick={() =>
-              void change(() => removeLabelFromItem(user, item.id, label.id))
+              void runLabelMutation(
+                () => removeLabelFromItem(user, item.id, label.id),
+                onItemChanged,
+              )
             }
           >
             {label.name} <span aria-hidden="true">×</span>
@@ -97,8 +105,14 @@ export function ItemLabels({
       <div className="item-labels__control">
         <select
           aria-label={`Add a Label to ${item.title}`}
-          value={selectedId}
-          onChange={(event) => setSelectedId(event.target.value)}
+          value={selectedId ?? ""}
+          onChange={(event) =>
+            setSelectedId(
+              event.target.value
+                ? (event.target.value as LabelId)
+                : null,
+            )
+          }
         >
           <option value="">Choose Label</option>
           {available.map((label) => (
