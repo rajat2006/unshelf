@@ -60,6 +60,12 @@ import, a changed signature). Never resolve a conflict by blindly discarding one
 side, and never leave conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) in a
 file.
 
+**Never hand-resolve a conflict under `drizzle/meta/`.** That directory is
+generated migration bookkeeping, and a keep-both-sides merge produces a
+plausible-looking file with duplicate ordinals — a broken migration history that
+reports no error. Discard this branch's migration and regenerate it on top of
+main instead, or report `blocked` if you cannot.
+
 If a conflict needs a product decision you cannot make safely, **stop** — abort
 the merge (`git merge --abort`) and report `blocked` (see REPORTING) with a clear
 reason. That is the correct "a human needs to look at this" signal; the workflow
