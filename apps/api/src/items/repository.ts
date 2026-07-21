@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   CreateItemRequest,
   Item,
@@ -10,8 +10,9 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { itemLabels, items, labels } from "../schema";
 
-export interface ItemRow extends Record<string, unknown> {
+export interface ItemRow {
   id: string;
   user_id: string;
   title: string;
@@ -20,7 +21,7 @@ export interface ItemRow extends Record<string, unknown> {
   status: Status;
   target_date: string | null;
   past_target: boolean;
-  completed_at: string | null;
+  completed_at: Date | null;
   labels: Label[];
 }
 
@@ -40,25 +41,33 @@ export interface ItemRow extends Record<string, unknown> {
  * Columns are qualified against `items`; Stop and Label membership stay in
  * subqueries so this projection still reads the same shared Item at every seam.
  */
-export const ITEM_PROJECTION = sql.raw(`items.id, items.user_id, items.title,
-                         items.source, items.type, items.status,
-                         items.target_date::text AS target_date,
-                         (COALESCE(items.target_date < CURRENT_DATE, false)
-                          AND items.status <> 'done') AS past_target,
-                         items.completed_at,
-                         COALESCE((
-                           SELECT jsonb_agg(
-                             jsonb_build_object(
-                               'id', labels.id,
-                               'userId', labels.user_id,
-                               'name', labels.name
-                             ) ORDER BY labels.name, labels.id
-                           )
-                           FROM item_labels
-                           JOIN labels ON labels.id = item_labels.label_id
-                           WHERE item_labels.item_id = items.id
-                             AND item_labels.user_id = items.user_id
-                         ), '[]'::jsonb) AS labels`);
+export const ITEM_PROJECTION = {
+  id: items.id,
+  user_id: items.userId,
+  title: items.title,
+  source: items.source,
+  type: items.type,
+  status: items.status,
+  target_date: sql<string | null>`${items.targetDate}::text`,
+  past_target: sql<boolean>`(
+    coalesce(${items.targetDate} < current_date, false)
+    and ${items.status} <> 'done'
+  )`,
+  completed_at: items.completedAt,
+  labels: sql<Label[]>`coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', labels.id,
+        'userId', labels.user_id,
+        'name', labels.name
+      ) order by labels.name, labels.id
+    )
+    from item_labels
+    join labels on labels.id = item_labels.label_id
+    where item_labels.item_id = items.id
+      and item_labels.user_id = items.user_id
+  ), '[]'::jsonb)`,
+} as const;
 
 export const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
@@ -89,21 +98,19 @@ export async function createItem(
   input: CreateItemRequest,
 ): Promise<Item> {
   const source = input.source ?? null;
-  const { rows } = await db.execute<ItemRow>(sql`
-    INSERT INTO items (user_id, title, source, type)
-    VALUES (${userId}, ${input.title}, ${source}, ${input.type})
-    RETURNING ${ITEM_PROJECTION}
-  `);
-  return toItem(rows[0]!);
+  const rows = await db
+    .insert(items)
+    .values({ userId, title: input.title, source, type: input.type })
+    .returning({ id: items.id });
+  return (await getItem(db, userId, rows[0]!.id as ItemId))!;
 }
 
 /** All for a User: every Item where `user_id = me`, and only that User's. */
 export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
-  const { rows } = await db.execute<ItemRow>(sql`
-    SELECT ${ITEM_PROJECTION}
-    FROM items
-    WHERE user_id = ${userId}
-  `);
+  const rows = await db
+    .select(ITEM_PROJECTION)
+    .from(items)
+    .where(eq(items.userId, userId));
   return rows.map(toItem);
 }
 
@@ -113,11 +120,11 @@ export async function getItem(
   userId: UserId,
   itemId: ItemId,
 ): Promise<Item | null> {
-  const { rows } = await db.execute<ItemRow>(sql`
-    SELECT ${ITEM_PROJECTION}
-    FROM items
-    WHERE id = ${itemId} AND user_id = ${userId}
-  `);
+  const rows = await db
+    .select(ITEM_PROJECTION)
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
   return rows[0] ? toItem(rows[0]) : null;
 }
 
@@ -133,18 +140,19 @@ export async function updateItemStatus(
   itemId: ItemId,
   status: Status,
 ): Promise<Item | null> {
-  const { rows } = await db.execute<ItemRow>(sql`
-    UPDATE items
-    SET completed_at = CASE
-          WHEN status <> 'done' AND ${status} = 'done' THEN now()
-          WHEN status = 'done' AND ${status} <> 'done' THEN NULL
-          ELSE completed_at
-        END,
-        status = ${status}
-    WHERE id = ${itemId} AND user_id = ${userId}
-    RETURNING ${ITEM_PROJECTION}
-  `);
-  return rows[0] ? toItem(rows[0]) : null;
+  const rows = await db
+    .update(items)
+    .set({
+      completedAt: sql<Date | null>`case
+        when ${items.status} <> 'done' and ${status} = 'done' then now()
+        when ${items.status} = 'done' and ${status} <> 'done' then null
+        else ${items.completedAt}
+      end`,
+      status,
+    })
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .returning({ id: items.id });
+  return rows[0] ? getItem(db, userId, itemId) : null;
 }
 
 /**
@@ -160,13 +168,12 @@ export async function updateItemTargetDate(
   itemId: ItemId,
   targetDate: string | null,
 ): Promise<Item | null> {
-  const { rows } = await db.execute<ItemRow>(sql`
-    UPDATE items
-    SET target_date = ${targetDate}::date
-    WHERE id = ${itemId} AND user_id = ${userId}
-    RETURNING ${ITEM_PROJECTION}
-  `);
-  return rows[0] ? toItem(rows[0]) : null;
+  const rows = await db
+    .update(items)
+    .set({ targetDate })
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .returning({ id: items.id });
+  return rows[0] ? getItem(db, userId, itemId) : null;
 }
 
 /** Apply one owned Label to one owned Item; repeating the request is a no-op. */
@@ -176,16 +183,22 @@ export async function applyLabelToItem(
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await db.execute(sql`
-    INSERT INTO item_labels (user_id, item_id, label_id)
-    SELECT ${userId}, items.id, labels.id
-    FROM items, labels
-    WHERE items.id = ${itemId} AND labels.id = ${labelId}
-      AND items.user_id = ${userId} AND labels.user_id = ${userId}
-    ON CONFLICT (item_id, label_id) DO UPDATE
-      SET user_id = EXCLUDED.user_id
-    RETURNING item_id
-  `);
+  const ownedMembership = db
+    .select({ userId: items.userId, itemId: items.id, labelId: labels.id })
+    .from(items)
+    .innerJoin(
+      labels,
+      and(eq(labels.id, labelId), eq(labels.userId, userId)),
+    )
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+  const rows = await db
+    .insert(itemLabels)
+    .select(ownedMembership)
+    .onConflictDoUpdate({
+      target: [itemLabels.itemId, itemLabels.labelId],
+      set: { userId },
+    })
+    .returning({ itemId: itemLabels.itemId });
   return rows.length > 0 ? getItem(db, userId, itemId) : null;
 }
 
@@ -196,18 +209,25 @@ export async function removeLabelFromItem(
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await db.execute<{ allowed: boolean }>(sql`
-    SELECT EXISTS (
-      SELECT 1 FROM items, labels
-      WHERE items.id = ${itemId} AND labels.id = ${labelId}
-        AND items.user_id = ${userId} AND labels.user_id = ${userId}
-    ) AS allowed
-  `);
-  if (!rows[0]?.allowed) return null;
+  const allowed = await db
+    .select({ itemId: items.id })
+    .from(items)
+    .innerJoin(
+      labels,
+      and(eq(labels.id, labelId), eq(labels.userId, userId)),
+    )
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
+  if (!allowed[0]) return null;
 
-  await db.execute(sql`
-    DELETE FROM item_labels
-    WHERE item_id = ${itemId} AND label_id = ${labelId} AND user_id = ${userId}
-  `);
+  await db
+    .delete(itemLabels)
+    .where(
+      and(
+        eq(itemLabels.itemId, itemId),
+        eq(itemLabels.labelId, labelId),
+        eq(itemLabels.userId, userId),
+      ),
+    );
   return getItem(db, userId, itemId);
 }

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type {
   CreateLabelRequest,
   Label,
@@ -6,8 +6,9 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { labels } from "../schema";
 
-interface LabelRow extends Record<string, unknown> {
+interface LabelRow {
   id: string;
   user_id: string;
   name: string;
@@ -24,23 +25,29 @@ export async function createLabel(
   userId: UserId,
   input: CreateLabelRequest,
 ): Promise<Label> {
-  const { rows } = await db.execute<LabelRow>(sql`
-    INSERT INTO labels (user_id, name)
-    VALUES (${userId}, ${input.name})
-    RETURNING id, user_id, name
-  `);
-  return toLabel(rows[0]!);
+  const [row] = await db
+    .insert(labels)
+    .values({ userId, name: input.name })
+    .returning({
+      id: labels.id,
+      user_id: labels.userId,
+      name: labels.name,
+    });
+  return toLabel(row!);
 }
 
 export async function listLabels(
   db: Database,
   userId: UserId,
 ): Promise<Label[]> {
-  const { rows } = await db.execute<LabelRow>(sql`
-    SELECT id, user_id, name
-    FROM labels
-    WHERE user_id = ${userId}
-    ORDER BY name, id
-  `);
+  const rows = await db
+    .select({
+      id: labels.id,
+      user_id: labels.userId,
+      name: labels.name,
+    })
+    .from(labels)
+    .where(eq(labels.userId, userId))
+    .orderBy(asc(labels.name), asc(labels.id));
   return rows.map(toLabel);
 }

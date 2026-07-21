@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   CreateStopRequest,
   Item,
@@ -11,6 +11,7 @@ import type {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
+import { items, stopItems, stops, trails } from "../schema";
 
 /**
  * Stop storage (ADR-0004). A Stop is a flat, unordered set of references to the
@@ -22,7 +23,7 @@ import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
  * foreign Stop or Item is indistinguishable from a missing one at the boundary.
  */
 
-interface StopRow extends Record<string, unknown> {
+interface StopRow {
   id: string;
   user_id: string;
   name: string;
@@ -36,13 +37,12 @@ const toStop = (row: StopRow): Stop => ({
 
 /**
  * Create an empty, named Stop on one of the User's Trails (ADR-0014). A Stop
- * belongs to exactly one Trail, so creation names it: the insert selects the
- * Trail id back through `trails` scoped to the same User, which is what makes a
- * Stop incapable of landing on a Trail that is not the caller's — there is no
- * pairing of a User and another User's Trail this statement can write. When the
- * Trail is not this User's the select finds nothing and no row is inserted, so
- * this returns null and the router answers 404, exactly as a missing Trail does.
- * The name is stored exactly as given.
+ * belongs to exactly one Trail, so creation first resolves that Trail under the
+ * authenticated User and only inserts after the ownership check succeeds. When
+ * the Trail is not this User's the lookup finds nothing, so this returns null and
+ * the router answers 404, exactly as a missing Trail does. The schema's composite
+ * owner foreign key remains the database backstop, and the name is stored exactly
+ * as given.
  */
 export async function createStop(
   db: Database,
@@ -50,13 +50,17 @@ export async function createStop(
   trailId: TrailId,
   input: CreateStopRequest,
 ): Promise<Stop | null> {
-  const { rows } = await db.execute<StopRow>(sql`
-    INSERT INTO stops (user_id, trail_id, name)
-    SELECT ${userId}, trails.id, ${input.name}
-    FROM trails
-    WHERE trails.id = ${trailId} AND trails.user_id = ${userId}
-    RETURNING id, user_id, name
-  `);
+  const ownedTrail = await db
+    .select({ id: trails.id })
+    .from(trails)
+    .where(and(eq(trails.id, trailId), eq(trails.userId, userId)))
+    .limit(1);
+  if (!ownedTrail[0]) return null;
+
+  const rows = await db
+    .insert(stops)
+    .values({ userId, trailId, name: input.name })
+    .returning({ id: stops.id, user_id: stops.userId, name: stops.name });
   const stop = rows[0];
   return stop ? toStop(stop) : null;
 }
@@ -69,12 +73,11 @@ export async function createStop(
  * itself under the User reads as change where nothing changed.
  */
 export async function listStops(db: Database, userId: UserId): Promise<Stop[]> {
-  const { rows } = await db.execute<StopRow>(sql`
-    SELECT id, user_id, name
-    FROM stops
-    WHERE user_id = ${userId}
-    ORDER BY name
-  `);
+  const rows = await db
+    .select({ id: stops.id, user_id: stops.userId, name: stops.name })
+    .from(stops)
+    .where(eq(stops.userId, userId))
+    .orderBy(asc(stops.name));
   return rows.map(toStop);
 }
 
@@ -104,12 +107,13 @@ async function getStopInScope(
   stopId: StopId,
   trailId: TrailId | null,
 ): Promise<StopDetail | null> {
-  const { rows } = await db.execute<StopRow>(sql`
-    SELECT id, user_id, name
-    FROM stops
-    WHERE id = ${stopId} AND user_id = ${userId}
-      AND (${trailId}::uuid IS NULL OR trail_id = ${trailId})
-  `);
+  const predicates = [eq(stops.id, stopId), eq(stops.userId, userId)];
+  if (trailId) predicates.push(eq(stops.trailId, trailId));
+  const rows = await db
+    .select({ id: stops.id, user_id: stops.userId, name: stops.name })
+    .from(stops)
+    .where(and(...predicates))
+    .limit(1);
   const stop = rows[0];
   if (!stop) return null;
 
@@ -135,16 +139,17 @@ async function listItemsIn(
   userId: UserId,
   stopId: StopId,
 ): Promise<Item[]> {
-  const { rows } = await db.execute<ItemRow>(sql`
-    SELECT ${ITEM_PROJECTION}
-    FROM items
-    WHERE user_id = ${userId}
-      AND id IN (
-        SELECT item_id FROM stop_items
-        WHERE stop_id = ${stopId} AND user_id = ${userId}
-      )
-    ORDER BY title
-  `);
+  const memberItemIds = db
+    .select({ itemId: stopItems.itemId })
+    .from(stopItems)
+    .where(
+      and(eq(stopItems.stopId, stopId), eq(stopItems.userId, userId)),
+    );
+  const rows: ItemRow[] = await db
+    .select(ITEM_PROJECTION)
+    .from(items)
+    .where(and(eq(items.userId, userId), inArray(items.id, memberItemIds)))
+    .orderBy(asc(items.title));
   return rows.map(toItem);
 }
 
@@ -170,15 +175,22 @@ export async function addItemToStop(
   stopId: StopId,
   itemId: ItemId,
 ): Promise<StopDetail | null> {
-  const { rows } = await db.execute(sql`
-    INSERT INTO stop_items (user_id, stop_id, item_id)
-    SELECT ${userId}, stops.id, items.id
-    FROM stops, items
-    WHERE stops.id = ${stopId} AND items.id = ${itemId}
-      AND stops.user_id = ${userId} AND items.user_id = ${userId}
-    ON CONFLICT (stop_id, item_id) DO UPDATE SET user_id = EXCLUDED.user_id
-    RETURNING stop_id
-  `);
+  const ownedMembership = db
+    .select({ userId: stops.userId, stopId: stops.id, itemId: items.id })
+    .from(stops)
+    .innerJoin(
+      items,
+      and(eq(items.id, itemId), eq(items.userId, userId)),
+    )
+    .where(and(eq(stops.id, stopId), eq(stops.userId, userId)));
+  const rows = await db
+    .insert(stopItems)
+    .select(ownedMembership)
+    .onConflictDoUpdate({
+      target: [stopItems.stopId, stopItems.itemId],
+      set: { userId },
+    })
+    .returning({ stopId: stopItems.stopId });
   if (rows.length === 0) return null;
   return getStop(db, userId, stopId);
 }
@@ -204,9 +216,14 @@ export async function removeItemFromStop(
   stopId: StopId,
   itemId: ItemId,
 ): Promise<StopDetail | null> {
-  await db.execute(sql`
-    DELETE FROM stop_items
-    WHERE stop_id = ${stopId} AND item_id = ${itemId} AND user_id = ${userId}
-  `);
+  await db
+    .delete(stopItems)
+    .where(
+      and(
+        eq(stopItems.stopId, stopId),
+        eq(stopItems.itemId, itemId),
+        eq(stopItems.userId, userId),
+      ),
+    );
   return getStop(db, userId, stopId);
 }

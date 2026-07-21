@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import type {
   StopId,
   TrailEdge,
@@ -8,6 +8,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { items, stopItems, stops, trailEdges, trails } from "../schema";
 
 /**
  * Trail topology storage (ADR-0010, scoped per Trail by ADR-0014). The Trail's
@@ -25,7 +26,7 @@ import type { Database } from "../db";
  * API-boundary tests exercise it.
  */
 
-interface EdgeRow extends Record<string, unknown> {
+interface EdgeRow {
   user_id: string;
   from_stop_id: string;
   to_stop_id: string;
@@ -37,7 +38,7 @@ const toEdge = (row: EdgeRow): TrailEdge => ({
   toStopId: row.to_stop_id as StopId,
 });
 
-interface NodeRow extends Record<string, unknown> {
+interface NodeRow {
   id: string;
   name: string;
   done: number;
@@ -57,10 +58,11 @@ async function trailBelongsToUser(
   userId: UserId,
   trailId: TrailId,
 ): Promise<boolean> {
-  const { rows } = await db.execute<{ exists: boolean }>(sql`
-    SELECT true AS exists FROM trails
-    WHERE id = ${trailId} AND user_id = ${userId}
-  `);
+  const rows = await db
+    .select({ id: trails.id })
+    .from(trails)
+    .where(and(eq(trails.id, trailId), eq(trails.userId, userId)))
+    .limit(1);
   return rows.length > 0;
 }
 
@@ -84,24 +86,45 @@ async function selectTrail(
   userId: UserId,
   trailId: TrailId,
 ): Promise<TrailView> {
-  const nodes = await db.execute<NodeRow>(sql`
-    SELECT s.id, s.name,
-           count(i.id)::int AS total,
-           count(i.id) FILTER (WHERE i.status = 'done')::int AS done
-    FROM stops s
-    LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = s.user_id
-    LEFT JOIN items i ON i.id = si.item_id AND i.user_id = s.user_id
-    WHERE s.user_id = ${userId} AND s.trail_id = ${trailId}
-    GROUP BY s.id, s.name
-    ORDER BY s.name
-  `);
-  const edges = await db.execute<EdgeRow>(sql`
-    SELECT user_id, from_stop_id, to_stop_id
-    FROM trail_edges
-    WHERE user_id = ${userId} AND trail_id = ${trailId}
-    ORDER BY from_stop_id, to_stop_id
-  `);
-  return { nodes: nodes.rows.map(toNode), edges: edges.rows.map(toEdge) };
+  const nodes: NodeRow[] = await db
+    .select({
+      id: stops.id,
+      name: stops.name,
+      total: count(items.id).mapWith(Number),
+      done: sql<number>`count(${items.id}) filter (
+        where ${items.status} = 'done'
+      )`.mapWith(Number),
+    })
+    .from(stops)
+    .leftJoin(
+      stopItems,
+      and(
+        eq(stopItems.stopId, stops.id),
+        eq(stopItems.userId, stops.userId),
+      ),
+    )
+    .leftJoin(
+      items,
+      and(eq(items.id, stopItems.itemId), eq(items.userId, stops.userId)),
+    )
+    .where(and(eq(stops.userId, userId), eq(stops.trailId, trailId)))
+    .groupBy(stops.id, stops.name)
+    .orderBy(asc(stops.name));
+  const edges: EdgeRow[] = await db
+    .select({
+      user_id: trailEdges.userId,
+      from_stop_id: trailEdges.fromStopId,
+      to_stop_id: trailEdges.toStopId,
+    })
+    .from(trailEdges)
+    .where(
+      and(
+        eq(trailEdges.userId, userId),
+        eq(trailEdges.trailId, trailId),
+      ),
+    )
+    .orderBy(asc(trailEdges.fromStopId), asc(trailEdges.toStopId));
+  return { nodes: nodes.map(toNode), edges: edges.map(toEdge) };
 }
 
 /**
@@ -174,11 +197,10 @@ export async function connectStops(
       return { kind: "cycle" };
     }
 
-    await tx.execute(sql`
-      INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
-      VALUES (${userId}, ${trailId}, ${fromStopId}, ${toStopId})
-      ON CONFLICT DO NOTHING
-    `);
+    await tx
+      .insert(trailEdges)
+      .values({ userId, trailId, fromStopId, toStopId })
+      .onConflictDoNothing();
 
     const trail = await selectTrail(tx, userId, trailId);
     return { kind: "ok", trail };
@@ -198,12 +220,16 @@ async function bothStopsOnTrail(
   fromStopId: StopId,
   toStopId: StopId,
 ): Promise<boolean> {
-  const { rows } = await db.execute<{ count: number }>(sql`
-    SELECT count(*)::int AS count
-    FROM stops
-    WHERE user_id = ${userId} AND trail_id = ${trailId}
-      AND id IN (${fromStopId}, ${toStopId})
-  `);
+  const rows = await db
+    .select({ count: count().mapWith(Number) })
+    .from(stops)
+    .where(
+      and(
+        eq(stops.userId, userId),
+        eq(stops.trailId, trailId),
+        inArray(stops.id, [fromStopId, toStopId]),
+      ),
+    );
   return Number(rows[0]?.count) === 2;
 }
 
@@ -250,10 +276,15 @@ export async function disconnectStops(
   toStopId: StopId,
 ): Promise<TrailView | null> {
   if (!(await trailBelongsToUser(db, userId, trailId))) return null;
-  await db.execute(sql`
-    DELETE FROM trail_edges
-    WHERE user_id = ${userId} AND trail_id = ${trailId}
-      AND from_stop_id = ${fromStopId} AND to_stop_id = ${toStopId}
-  `);
+  await db
+    .delete(trailEdges)
+    .where(
+      and(
+        eq(trailEdges.userId, userId),
+        eq(trailEdges.trailId, trailId),
+        eq(trailEdges.fromStopId, fromStopId),
+        eq(trailEdges.toStopId, toStopId),
+      ),
+    );
   return selectTrail(db, userId, trailId);
 }

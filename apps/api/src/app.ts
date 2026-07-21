@@ -2,6 +2,7 @@ import express, { type Express, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
 import type { Database } from "./db";
+import { healthCheck } from "./schema";
 import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
@@ -21,10 +22,10 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
 
   app.get("/api/health", async (_req, res) => {
     try {
-      const { rows } = await db.execute<{ message: string; time: string }>(sql`
-        SELECT message, now() AS time FROM health_check LIMIT 1
-      `);
-      const row = rows[0];
+      const [row] = await db
+        .select({ message: healthCheck.message, time: sql<string>`now()` })
+        .from(healthCheck)
+        .limit(1);
       const body: HealthResponse = {
         status: "ok",
         message: row?.message ?? "unknown",

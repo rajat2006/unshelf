@@ -1,17 +1,17 @@
-import { sql } from "drizzle-orm";
 import type { ClerkUserId, User, UserId } from "@unshelf/shared";
 import type { Database } from "./db";
+import { users } from "./schema";
 
-interface UserRow extends Record<string, unknown> {
+interface UserRow {
   id: string;
   clerk_user_id: string;
-  created_at: string;
+  created_at: Date;
 }
 
 const toUser = (row: UserRow): User => ({
   id: row.id as UserId,
   clerkUserId: row.clerk_user_id as ClerkUserId,
-  createdAt: new Date(row.created_at).toISOString(),
+  createdAt: row.created_at.toISOString(),
 });
 
 /**
@@ -27,11 +27,17 @@ export async function provisionUser(
   db: Database,
   clerkUserId: ClerkUserId,
 ): Promise<User> {
-  const { rows } = await db.execute<UserRow>(sql`
-    INSERT INTO users (clerk_user_id)
-    VALUES (${clerkUserId})
-    ON CONFLICT (clerk_user_id) DO UPDATE SET clerk_user_id = EXCLUDED.clerk_user_id
-    RETURNING id, clerk_user_id, created_at
-  `);
-  return toUser(rows[0]!);
+  const [row] = await db
+    .insert(users)
+    .values({ clerkUserId })
+    .onConflictDoUpdate({
+      target: users.clerkUserId,
+      set: { clerkUserId },
+    })
+    .returning({
+      id: users.id,
+      clerk_user_id: users.clerkUserId,
+      created_at: users.createdAt,
+    });
+  return toUser(row!);
 }
