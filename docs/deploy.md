@@ -128,12 +128,15 @@ CONCURRENTLY`, cannot be used in these migration files.
 ### One-time Drizzle cutover from the pre-migration schema
 
 This is a destructive **human VPS step**, performed once and only while the
-existing deployed data is confirmed disposable. Do it immediately before the
-first deploy containing the `migrate` service:
+existing deployed data is confirmed disposable. It must finish before Dokploy
+can deploy the commit containing the `migrate` service:
 
-1. In Dokploy, stop the Unshelf Compose application so the API cannot reconnect
+1. If merging to the tracked branch triggers a Dokploy deployment, pause
+   automatic deployments before merging this cutover. Do not let the new
+   `migrate` service start against the old schema.
+2. In Dokploy, stop the Unshelf Compose application so the API cannot reconnect
    while its database is removed.
-2. Open a VPS terminal in that Compose application's code directory (the one
+3. Open a VPS terminal in that Compose application's code directory (the one
    containing `docker-compose.yml` and Dokploy's generated `.env`) and run:
 
    ```sh
@@ -142,10 +145,11 @@ first deploy containing the `migrate` service:
 
    This removes the Compose stack and its project-scoped `unshelf-db` volume.
    It permanently deletes all deployed Unshelf database data.
-3. Deploy the commit that introduces the `migrate` service. Compose creates a
+4. Merge if necessary, then deploy the commit that introduces the `migrate`
+   service (and re-enable automatic deployments). Compose creates a
    fresh volume; Postgres creates an empty database; migration `0000` applies;
    only then does the API start.
-4. Verify `/api/health`, the SPA, and sign-in as described above.
+5. Verify `/api/health`, the SPA, and sign-in as described above.
 
 Do not deploy the migration service against the old pre-Drizzle schema first.
 Applying `0000` to that schema was tested with `drizzle-kit`: it failed with an
