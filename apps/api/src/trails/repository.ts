@@ -1,5 +1,6 @@
-import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import type { CreateTrailRequest, Trail, TrailId, UserId } from "@unshelf/shared";
+import type { Database } from "../db";
 
 /**
  * Trail storage (ADR-0014). The Trail is now a first-class record — one User owns
@@ -12,11 +13,11 @@ import type { CreateTrailRequest, Trail, TrailId, UserId } from "@unshelf/shared
  * of someone else's id returns null, never a confirmation that the id is real.
  */
 
-interface TrailRow {
+interface TrailRow extends Record<string, unknown> {
   id: string;
   user_id: string;
   name: string;
-  created_at: Date;
+  created_at: string;
   done: number;
   total: number;
 }
@@ -25,7 +26,7 @@ const toTrail = (row: TrailRow): Trail => ({
   id: row.id as TrailId,
   userId: row.user_id as UserId,
   name: row.name,
-  createdAt: row.created_at.toISOString(),
+  createdAt: new Date(row.created_at).toISOString(),
   done: row.done,
   total: row.total,
 });
@@ -41,38 +42,37 @@ const toTrail = (row: TrailRow): Trail => ({
  * stable across reads. Takes an id filter so `getTrail` reuses the same shape.
  */
 async function selectTrails(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId | null,
 ): Promise<Trail[]> {
-  const { rows } = await pool.query<TrailRow>(
-    `SELECT t.id, t.user_id, t.name, t.created_at,
-            count(DISTINCT i.id) FILTER (WHERE i.status = 'done')::int AS done,
-            count(DISTINCT i.id)::int AS total
-     FROM trails t
-     LEFT JOIN stops s ON s.trail_id = t.id AND s.user_id = t.user_id
-     LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = t.user_id
-     LEFT JOIN items i ON i.id = si.item_id AND i.user_id = t.user_id
-     WHERE t.user_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
-     GROUP BY t.id, t.user_id, t.name, t.created_at
-     ORDER BY t.created_at, t.id`,
-    [userId, trailId],
-  );
+  const { rows } = await db.execute<TrailRow>(sql`
+    SELECT t.id, t.user_id, t.name, t.created_at,
+           count(DISTINCT i.id) FILTER (WHERE i.status = 'done')::int AS done,
+           count(DISTINCT i.id)::int AS total
+    FROM trails t
+    LEFT JOIN stops s ON s.trail_id = t.id AND s.user_id = t.user_id
+    LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = t.user_id
+    LEFT JOIN items i ON i.id = si.item_id AND i.user_id = t.user_id
+    WHERE t.user_id = ${userId} AND (${trailId}::uuid IS NULL OR t.id = ${trailId})
+    GROUP BY t.id, t.user_id, t.name, t.created_at
+    ORDER BY t.created_at, t.id
+  `);
   return rows.map(toTrail);
 }
 
 /** Every Trail a User owns, with derived progress, oldest first — and only theirs. */
-export async function listTrails(pool: Pool, userId: UserId): Promise<Trail[]> {
-  return selectTrails(pool, userId, null);
+export async function listTrails(db: Database, userId: UserId): Promise<Trail[]> {
+  return selectTrails(db, userId, null);
 }
 
 /** One Trail with its derived progress, or null when it is not this User's. */
 export async function getTrail(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
 ): Promise<Trail | null> {
-  const [trail] = await selectTrails(pool, userId, trailId);
+  const [trail] = await selectTrails(db, userId, trailId);
   return trail ?? null;
 }
 
@@ -83,15 +83,14 @@ export async function getTrail(
  * hands back the new record without a second read.
  */
 export async function createTrail(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   input: CreateTrailRequest,
 ): Promise<Trail> {
-  const { rows } = await pool.query<TrailRow>(
-    `INSERT INTO trails (user_id, name)
-     VALUES ($1, $2)
-     RETURNING id, user_id, name, created_at, 0 AS done, 0 AS total`,
-    [userId, input.name],
-  );
+  const { rows } = await db.execute<TrailRow>(sql`
+    INSERT INTO trails (user_id, name)
+    VALUES (${userId}, ${input.name})
+    RETURNING id, user_id, name, created_at, 0 AS done, 0 AS total
+  `);
   return toTrail(rows[0]!);
 }

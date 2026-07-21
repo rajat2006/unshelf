@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from "pg";
+import { sql } from "drizzle-orm";
 import type {
   StopId,
   TrailEdge,
@@ -7,9 +7,7 @@ import type {
   TrailView,
   UserId,
 } from "@unshelf/shared";
-
-/** Either a pool or a live transaction client — both can run a query. */
-type Queryable = Pick<Pool, "query">;
+import type { Database } from "../db";
 
 /**
  * Trail topology storage (ADR-0010, scoped per Trail by ADR-0014). The Trail's
@@ -27,7 +25,7 @@ type Queryable = Pick<Pool, "query">;
  * API-boundary tests exercise it.
  */
 
-interface EdgeRow {
+interface EdgeRow extends Record<string, unknown> {
   user_id: string;
   from_stop_id: string;
   to_stop_id: string;
@@ -39,7 +37,7 @@ const toEdge = (row: EdgeRow): TrailEdge => ({
   toStopId: row.to_stop_id as StopId,
 });
 
-interface NodeRow {
+interface NodeRow extends Record<string, unknown> {
   id: string;
   name: string;
   done: number;
@@ -55,14 +53,14 @@ const toNode = (row: NodeRow): TrailNode => ({
 
 /** Whether this Trail is the User's — a foreign or unknown id reads as false. */
 async function trailBelongsToUser(
-  queryable: Queryable,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
 ): Promise<boolean> {
-  const { rows } = await queryable.query<{ exists: boolean }>(
-    `SELECT true AS exists FROM trails WHERE id = $1 AND user_id = $2`,
-    [trailId, userId],
-  );
+  const { rows } = await db.execute<{ exists: boolean }>(sql`
+    SELECT true AS exists FROM trails
+    WHERE id = ${trailId} AND user_id = ${userId}
+  `);
   return rows.length > 0;
 }
 
@@ -71,8 +69,9 @@ async function trailBelongsToUser(
  * view. Both are ordered stably (nodes by name like the Stops list, edges by
  * endpoint) for the same reason a Stop's Items are: an unordered read is free to
  * shuffle between refreshes, and a list that reorders itself reads as change where
- * nothing changed. Takes any `Queryable` so `connectStops` can re-read inside its
- * own transaction (seeing the just-inserted edge) without a second connection.
+ * nothing changed. The Drizzle transaction handle has the same database shape,
+ * so `connectStops` can re-read inside its own transaction (seeing the
+ * just-inserted edge) without a second connection or adapter type.
  *
  * The nodes are the *Trail's* Stops — those whose `trail_id` is this Trail — each
  * carrying *derived* progress read exactly the way All derives `pastTarget`
@@ -81,29 +80,27 @@ async function trailBelongsToUser(
  * include another Trail's waypoints or links.
  */
 async function selectTrail(
-  queryable: Queryable,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
 ): Promise<TrailView> {
-  const nodes = await queryable.query<NodeRow>(
-    `SELECT s.id, s.name,
-            count(i.id)::int AS total,
-            count(i.id) FILTER (WHERE i.status = 'done')::int AS done
-     FROM stops s
-     LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = s.user_id
-     LEFT JOIN items i ON i.id = si.item_id AND i.user_id = s.user_id
-     WHERE s.user_id = $1 AND s.trail_id = $2
-     GROUP BY s.id, s.name
-     ORDER BY s.name`,
-    [userId, trailId],
-  );
-  const edges = await queryable.query<EdgeRow>(
-    `SELECT user_id, from_stop_id, to_stop_id
-     FROM trail_edges
-     WHERE user_id = $1 AND trail_id = $2
-     ORDER BY from_stop_id, to_stop_id`,
-    [userId, trailId],
-  );
+  const nodes = await db.execute<NodeRow>(sql`
+    SELECT s.id, s.name,
+           count(i.id)::int AS total,
+           count(i.id) FILTER (WHERE i.status = 'done')::int AS done
+    FROM stops s
+    LEFT JOIN stop_items si ON si.stop_id = s.id AND si.user_id = s.user_id
+    LEFT JOIN items i ON i.id = si.item_id AND i.user_id = s.user_id
+    WHERE s.user_id = ${userId} AND s.trail_id = ${trailId}
+    GROUP BY s.id, s.name
+    ORDER BY s.name
+  `);
+  const edges = await db.execute<EdgeRow>(sql`
+    SELECT user_id, from_stop_id, to_stop_id
+    FROM trail_edges
+    WHERE user_id = ${userId} AND trail_id = ${trailId}
+    ORDER BY from_stop_id, to_stop_id
+  `);
   return { nodes: nodes.rows.map(toNode), edges: edges.rows.map(toEdge) };
 }
 
@@ -115,12 +112,12 @@ async function selectTrail(
  * position.
  */
 export async function getTrail(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
 ): Promise<TrailView | null> {
-  if (!(await trailBelongsToUser(pool, userId, trailId))) return null;
-  return selectTrail(pool, userId, trailId);
+  if (!(await trailBelongsToUser(db, userId, trailId))) return null;
+  return selectTrail(db, userId, trailId);
 }
 
 /**
@@ -152,51 +149,40 @@ export type ConnectResult =
  * is the backstop.
  */
 export async function connectStops(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   fromStopId: StopId,
   toStopId: StopId,
 ): Promise<ConnectResult> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  return db.transaction(async (tx) => {
     // Serialise this User's connects: the cycle check and the insert below must
     // see a consistent edge set, and this lock releases automatically on commit.
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
-      userId,
-    ]);
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))
+    `);
 
     if (
-      !(await bothStopsOnTrail(client, userId, trailId, fromStopId, toStopId))
+      !(await bothStopsOnTrail(tx, userId, trailId, fromStopId, toStopId))
     ) {
-      await client.query("ROLLBACK");
       return { kind: "not_found" };
     }
 
     if (
-      await targetReachesSource(client, userId, trailId, fromStopId, toStopId)
+      await targetReachesSource(tx, userId, trailId, fromStopId, toStopId)
     ) {
-      await client.query("ROLLBACK");
       return { kind: "cycle" };
     }
 
-    await client.query(
-      `INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [userId, trailId, fromStopId, toStopId],
-    );
+    await tx.execute(sql`
+      INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
+      VALUES (${userId}, ${trailId}, ${fromStopId}, ${toStopId})
+      ON CONFLICT DO NOTHING
+    `);
 
-    const trail = await selectTrail(client, userId, trailId);
-    await client.query("COMMIT");
+    const trail = await selectTrail(tx, userId, trailId);
     return { kind: "ok", trail };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 /**
@@ -206,18 +192,18 @@ export async function connectStops(
  * caller's to enforce.
  */
 async function bothStopsOnTrail(
-  client: PoolClient,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   fromStopId: StopId,
   toStopId: StopId,
 ): Promise<boolean> {
-  const { rows } = await client.query<{ count: string }>(
-    `SELECT count(*)::int AS count
-     FROM stops
-     WHERE user_id = $1 AND trail_id = $2 AND id IN ($3, $4)`,
-    [userId, trailId, fromStopId, toStopId],
-  );
+  const { rows } = await db.execute<{ count: number }>(sql`
+    SELECT count(*)::int AS count
+    FROM stops
+    WHERE user_id = ${userId} AND trail_id = ${trailId}
+      AND id IN (${fromStopId}, ${toStopId})
+  `);
   return Number(rows[0]?.count) === 2;
 }
 
@@ -227,24 +213,24 @@ async function bothStopsOnTrail(
  * within the one Trail; a hit on `from` is the back-edge that must be refused.
  */
 async function targetReachesSource(
-  client: PoolClient,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   fromStopId: StopId,
   toStopId: StopId,
 ): Promise<boolean> {
-  const { rows } = await client.query(
-    `WITH RECURSIVE reachable(node) AS (
-       SELECT to_stop_id FROM trail_edges
-       WHERE user_id = $1 AND trail_id = $2 AND from_stop_id = $3
-       UNION
-       SELECT e.to_stop_id FROM trail_edges e
-       JOIN reachable r ON e.from_stop_id = r.node
-       WHERE e.user_id = $1 AND e.trail_id = $2
-     )
-     SELECT 1 FROM reachable WHERE node = $4 LIMIT 1`,
-    [userId, trailId, toStopId, fromStopId],
-  );
+  const { rows } = await db.execute(sql`
+    WITH RECURSIVE reachable(node) AS (
+      SELECT to_stop_id FROM trail_edges
+      WHERE user_id = ${userId} AND trail_id = ${trailId}
+        AND from_stop_id = ${toStopId}
+      UNION
+      SELECT e.to_stop_id FROM trail_edges e
+      JOIN reachable r ON e.from_stop_id = r.node
+      WHERE e.user_id = ${userId} AND e.trail_id = ${trailId}
+    )
+    SELECT 1 FROM reachable WHERE node = ${fromStopId} LIMIT 1
+  `);
   return rows.length > 0;
 }
 
@@ -257,18 +243,17 @@ async function targetReachesSource(
  * both, so one User can neither read nor rewire another's Trail.
  */
 export async function disconnectStops(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   fromStopId: StopId,
   toStopId: StopId,
 ): Promise<TrailView | null> {
-  if (!(await trailBelongsToUser(pool, userId, trailId))) return null;
-  await pool.query(
-    `DELETE FROM trail_edges
-     WHERE user_id = $1 AND trail_id = $2
-       AND from_stop_id = $3 AND to_stop_id = $4`,
-    [userId, trailId, fromStopId, toStopId],
-  );
-  return selectTrail(pool, userId, trailId);
+  if (!(await trailBelongsToUser(db, userId, trailId))) return null;
+  await db.execute(sql`
+    DELETE FROM trail_edges
+    WHERE user_id = ${userId} AND trail_id = ${trailId}
+      AND from_stop_id = ${fromStopId} AND to_stop_id = ${toStopId}
+  `);
+  return selectTrail(db, userId, trailId);
 }

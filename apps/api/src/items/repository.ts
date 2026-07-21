@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import type {
   CreateItemRequest,
   Item,
@@ -9,8 +9,9 @@ import type {
   Type,
   UserId,
 } from "@unshelf/shared";
+import type { Database } from "../db";
 
-export interface ItemRow {
+export interface ItemRow extends Record<string, unknown> {
   id: string;
   user_id: string;
   title: string;
@@ -19,7 +20,7 @@ export interface ItemRow {
   status: Status;
   target_date: string | null;
   past_target: boolean;
-  completed_at: Date | null;
+  completed_at: string | null;
   labels: Label[];
 }
 
@@ -39,7 +40,7 @@ export interface ItemRow {
  * Columns are qualified against `items`; Stop and Label membership stay in
  * subqueries so this projection still reads the same shared Item at every seam.
  */
-export const ITEM_PROJECTION = `items.id, items.user_id, items.title,
+export const ITEM_PROJECTION = sql.raw(`items.id, items.user_id, items.title,
                          items.source, items.type, items.status,
                          items.target_date::text AS target_date,
                          (COALESCE(items.target_date < CURRENT_DATE, false)
@@ -57,7 +58,7 @@ export const ITEM_PROJECTION = `items.id, items.user_id, items.title,
                            JOIN labels ON labels.id = item_labels.label_id
                            WHERE item_labels.item_id = items.id
                              AND item_labels.user_id = items.user_id
-                         ), '[]'::jsonb) AS labels`;
+                         ), '[]'::jsonb) AS labels`);
 
 export const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
@@ -68,7 +69,9 @@ export const toItem = (row: ItemRow): Item => ({
   status: row.status,
   targetDate: row.target_date,
   pastTarget: row.past_target,
-  completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+  completedAt: row.completed_at
+    ? new Date(row.completed_at).toISOString()
+    : null,
   labels: row.labels,
 });
 
@@ -81,43 +84,40 @@ export const toItem = (row: ItemRow): Item => ({
  * client — the caller passes the authenticated User's anchor id.
  */
 export async function createItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   input: CreateItemRequest,
 ): Promise<Item> {
   const source = input.source ?? null;
-  const { rows } = await pool.query<ItemRow>(
-    `INSERT INTO items (user_id, title, source, type)
-     VALUES ($1, $2, $3, $4)
-     RETURNING ${ITEM_PROJECTION}`,
-    [userId, input.title, source, input.type],
-  );
+  const { rows } = await db.execute<ItemRow>(sql`
+    INSERT INTO items (user_id, title, source, type)
+    VALUES (${userId}, ${input.title}, ${source}, ${input.type})
+    RETURNING ${ITEM_PROJECTION}
+  `);
   return toItem(rows[0]!);
 }
 
 /** All for a User: every Item where `user_id = me`, and only that User's. */
-export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
-  const { rows } = await pool.query<ItemRow>(
-    `SELECT ${ITEM_PROJECTION}
-     FROM items
-     WHERE user_id = $1`,
-    [userId],
-  );
+export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
+  const { rows } = await db.execute<ItemRow>(sql`
+    SELECT ${ITEM_PROJECTION}
+    FROM items
+    WHERE user_id = ${userId}
+  `);
   return rows.map(toItem);
 }
 
 /** Read one Item through both its stable identity and authenticated owner. */
 export async function getItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `SELECT ${ITEM_PROJECTION}
-     FROM items
-     WHERE id = $1 AND user_id = $2`,
-    [itemId, userId],
-  );
+  const { rows } = await db.execute<ItemRow>(sql`
+    SELECT ${ITEM_PROJECTION}
+    FROM items
+    WHERE id = ${itemId} AND user_id = ${userId}
+  `);
   return rows[0] ? toItem(rows[0]) : null;
 }
 
@@ -128,23 +128,22 @@ export async function getItem(
  * indistinguishable from a missing one at the API boundary.
  */
 export async function updateItemStatus(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   status: Status,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `UPDATE items
-     SET completed_at = CASE
-           WHEN status <> 'done' AND $3 = 'done' THEN now()
-           WHEN status = 'done' AND $3 <> 'done' THEN NULL
-           ELSE completed_at
-         END,
-         status = $3
-     WHERE id = $1 AND user_id = $2
-     RETURNING ${ITEM_PROJECTION}`,
-    [itemId, userId, status],
-  );
+  const { rows } = await db.execute<ItemRow>(sql`
+    UPDATE items
+    SET completed_at = CASE
+          WHEN status <> 'done' AND ${status} = 'done' THEN now()
+          WHEN status = 'done' AND ${status} <> 'done' THEN NULL
+          ELSE completed_at
+        END,
+        status = ${status}
+    WHERE id = ${itemId} AND user_id = ${userId}
+    RETURNING ${ITEM_PROJECTION}
+  `);
   return rows[0] ? toItem(rows[0]) : null;
 }
 
@@ -156,63 +155,59 @@ export async function updateItemStatus(
  * makes a foreign Item indistinguishable from a missing one at the API boundary.
  */
 export async function updateItemTargetDate(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   targetDate: string | null,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `UPDATE items
-     SET target_date = $3::date
-     WHERE id = $1 AND user_id = $2
-     RETURNING ${ITEM_PROJECTION}`,
-    [itemId, userId, targetDate],
-  );
+  const { rows } = await db.execute<ItemRow>(sql`
+    UPDATE items
+    SET target_date = ${targetDate}::date
+    WHERE id = ${itemId} AND user_id = ${userId}
+    RETURNING ${ITEM_PROJECTION}
+  `);
   return rows[0] ? toItem(rows[0]) : null;
 }
 
 /** Apply one owned Label to one owned Item; repeating the request is a no-op. */
 export async function applyLabelToItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query(
-    `INSERT INTO item_labels (user_id, item_id, label_id)
-     SELECT $3, items.id, labels.id
-     FROM items, labels
-     WHERE items.id = $1 AND labels.id = $2
-       AND items.user_id = $3 AND labels.user_id = $3
-     ON CONFLICT (item_id, label_id) DO UPDATE
-       SET user_id = EXCLUDED.user_id
-     RETURNING item_id`,
-    [itemId, labelId, userId],
-  );
-  return rows.length > 0 ? getItem(pool, userId, itemId) : null;
+  const { rows } = await db.execute(sql`
+    INSERT INTO item_labels (user_id, item_id, label_id)
+    SELECT ${userId}, items.id, labels.id
+    FROM items, labels
+    WHERE items.id = ${itemId} AND labels.id = ${labelId}
+      AND items.user_id = ${userId} AND labels.user_id = ${userId}
+    ON CONFLICT (item_id, label_id) DO UPDATE
+      SET user_id = EXCLUDED.user_id
+    RETURNING item_id
+  `);
+  return rows.length > 0 ? getItem(db, userId, itemId) : null;
 }
 
 /** Remove only Label membership; repeating removal preserves the requested set. */
 export async function removeLabelFromItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<{ allowed: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM items, labels
-       WHERE items.id = $1 AND labels.id = $2
-         AND items.user_id = $3 AND labels.user_id = $3
-     ) AS allowed`,
-    [itemId, labelId, userId],
-  );
+  const { rows } = await db.execute<{ allowed: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM items, labels
+      WHERE items.id = ${itemId} AND labels.id = ${labelId}
+        AND items.user_id = ${userId} AND labels.user_id = ${userId}
+    ) AS allowed
+  `);
   if (!rows[0]?.allowed) return null;
 
-  await pool.query(
-    `DELETE FROM item_labels
-     WHERE item_id = $1 AND label_id = $2 AND user_id = $3`,
-    [itemId, labelId, userId],
-  );
-  return getItem(pool, userId, itemId);
+  await db.execute(sql`
+    DELETE FROM item_labels
+    WHERE item_id = ${itemId} AND label_id = ${labelId} AND user_id = ${userId}
+  `);
+  return getItem(db, userId, itemId);
 }

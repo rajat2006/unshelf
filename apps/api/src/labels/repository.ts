@@ -1,12 +1,13 @@
-import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import type {
   CreateLabelRequest,
   Label,
   LabelId,
   UserId,
 } from "@unshelf/shared";
+import type { Database } from "../db";
 
-interface LabelRow {
+interface LabelRow extends Record<string, unknown> {
   id: string;
   user_id: string;
   name: string;
@@ -19,29 +20,27 @@ const toLabel = (row: LabelRow): Label => ({
 });
 
 export async function createLabel(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   input: CreateLabelRequest,
 ): Promise<Label> {
-  const { rows } = await pool.query<LabelRow>(
-    `INSERT INTO labels (user_id, name)
-     VALUES ($1, $2)
-     RETURNING id, user_id, name`,
-    [userId, input.name],
-  );
+  const { rows } = await db.execute<LabelRow>(sql`
+    INSERT INTO labels (user_id, name)
+    VALUES (${userId}, ${input.name})
+    RETURNING id, user_id, name
+  `);
   return toLabel(rows[0]!);
 }
 
 export async function listLabels(
-  pool: Pool,
+  db: Database,
   userId: UserId,
 ): Promise<Label[]> {
-  const { rows } = await pool.query<LabelRow>(
-    `SELECT id, user_id, name
-     FROM labels
-     WHERE user_id = $1
-     ORDER BY name, id`,
-    [userId],
-  );
+  const { rows } = await db.execute<LabelRow>(sql`
+    SELECT id, user_id, name
+    FROM labels
+    WHERE user_id = ${userId}
+    ORDER BY name, id
+  `);
   return rows.map(toLabel);
 }

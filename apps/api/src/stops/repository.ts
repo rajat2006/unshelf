@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import type {
   CreateStopRequest,
   Item,
@@ -9,6 +9,7 @@ import type {
   TrailId,
   UserId,
 } from "@unshelf/shared";
+import type { Database } from "../db";
 import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
 
 /**
@@ -21,7 +22,7 @@ import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
  * foreign Stop or Item is indistinguishable from a missing one at the boundary.
  */
 
-interface StopRow {
+interface StopRow extends Record<string, unknown> {
   id: string;
   user_id: string;
   name: string;
@@ -44,19 +45,18 @@ const toStop = (row: StopRow): Stop => ({
  * The name is stored exactly as given.
  */
 export async function createStop(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   input: CreateStopRequest,
 ): Promise<Stop | null> {
-  const { rows } = await pool.query<StopRow>(
-    `INSERT INTO stops (user_id, trail_id, name)
-     SELECT $1, trails.id, $3
-     FROM trails
-     WHERE trails.id = $2 AND trails.user_id = $1
-     RETURNING id, user_id, name`,
-    [userId, trailId, input.name],
-  );
+  const { rows } = await db.execute<StopRow>(sql`
+    INSERT INTO stops (user_id, trail_id, name)
+    SELECT ${userId}, trails.id, ${input.name}
+    FROM trails
+    WHERE trails.id = ${trailId} AND trails.user_id = ${userId}
+    RETURNING id, user_id, name
+  `);
   const stop = rows[0];
   return stop ? toStop(stop) : null;
 }
@@ -68,14 +68,13 @@ export async function createStop(
  * unordered read is free to shuffle between refreshes, and a list that reorders
  * itself under the User reads as change where nothing changed.
  */
-export async function listStops(pool: Pool, userId: UserId): Promise<Stop[]> {
-  const { rows } = await pool.query<StopRow>(
-    `SELECT id, user_id, name
-     FROM stops
-     WHERE user_id = $1
-     ORDER BY name`,
-    [userId],
-  );
+export async function listStops(db: Database, userId: UserId): Promise<Stop[]> {
+  const { rows } = await db.execute<StopRow>(sql`
+    SELECT id, user_id, name
+    FROM stops
+    WHERE user_id = ${userId}
+    ORDER BY name
+  `);
   return rows.map(toStop);
 }
 
@@ -92,30 +91,29 @@ export async function listStops(pool: Pool, userId: UserId): Promise<Stop[]> {
  * codebase names its User.
  */
 export async function getStop(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   stopId: StopId,
 ): Promise<StopDetail | null> {
-  return getStopInScope(pool, userId, stopId, null);
+  return getStopInScope(db, userId, stopId, null);
 }
 
 async function getStopInScope(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   stopId: StopId,
   trailId: TrailId | null,
 ): Promise<StopDetail | null> {
-  const { rows } = await pool.query<StopRow>(
-    `SELECT id, user_id, name
-     FROM stops
-     WHERE id = $1 AND user_id = $2
-       AND ($3::uuid IS NULL OR trail_id = $3)`,
-    [stopId, userId, trailId],
-  );
+  const { rows } = await db.execute<StopRow>(sql`
+    SELECT id, user_id, name
+    FROM stops
+    WHERE id = ${stopId} AND user_id = ${userId}
+      AND (${trailId}::uuid IS NULL OR trail_id = ${trailId})
+  `);
   const stop = rows[0];
   if (!stop) return null;
 
-  return { ...toStop(stop), items: await listItemsIn(pool, userId, stopId) };
+  return { ...toStop(stop), items: await listItemsIn(db, userId, stopId) };
 }
 
 /**
@@ -124,29 +122,29 @@ async function getStopInScope(
  * missing id all collapse to the same null result.
  */
 export async function getStopOnTrail(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   trailId: TrailId,
   stopId: StopId,
 ): Promise<StopDetail | null> {
-  return getStopInScope(pool, userId, stopId, trailId);
+  return getStopInScope(db, userId, stopId, trailId);
 }
 
 async function listItemsIn(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   stopId: StopId,
 ): Promise<Item[]> {
-  const { rows } = await pool.query<ItemRow>(
-    `SELECT ${ITEM_PROJECTION}
-     FROM items
-     WHERE user_id = $1
-       AND id IN (
-         SELECT item_id FROM stop_items WHERE stop_id = $2 AND user_id = $1
-       )
-     ORDER BY title`,
-    [userId, stopId],
-  );
+  const { rows } = await db.execute<ItemRow>(sql`
+    SELECT ${ITEM_PROJECTION}
+    FROM items
+    WHERE user_id = ${userId}
+      AND id IN (
+        SELECT item_id FROM stop_items
+        WHERE stop_id = ${stopId} AND user_id = ${userId}
+      )
+    ORDER BY title
+  `);
   return rows.map(toItem);
 }
 
@@ -167,23 +165,22 @@ async function listItemsIn(
  * User does not have, which is the 404.
  */
 export async function addItemToStop(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   stopId: StopId,
   itemId: ItemId,
 ): Promise<StopDetail | null> {
-  const { rows } = await pool.query(
-    `INSERT INTO stop_items (user_id, stop_id, item_id)
-     SELECT $3, stops.id, items.id
-     FROM stops, items
-     WHERE stops.id = $1 AND items.id = $2
-       AND stops.user_id = $3 AND items.user_id = $3
-     ON CONFLICT (stop_id, item_id) DO UPDATE SET user_id = EXCLUDED.user_id
-     RETURNING stop_id`,
-    [stopId, itemId, userId],
-  );
+  const { rows } = await db.execute(sql`
+    INSERT INTO stop_items (user_id, stop_id, item_id)
+    SELECT ${userId}, stops.id, items.id
+    FROM stops, items
+    WHERE stops.id = ${stopId} AND items.id = ${itemId}
+      AND stops.user_id = ${userId} AND items.user_id = ${userId}
+    ON CONFLICT (stop_id, item_id) DO UPDATE SET user_id = EXCLUDED.user_id
+    RETURNING stop_id
+  `);
   if (rows.length === 0) return null;
-  return getStop(pool, userId, stopId);
+  return getStop(db, userId, stopId);
 }
 
 /**
@@ -202,15 +199,14 @@ export async function addItemToStop(
  * therefore neither read nor alter another's membership.
  */
 export async function removeItemFromStop(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   stopId: StopId,
   itemId: ItemId,
 ): Promise<StopDetail | null> {
-  await pool.query(
-    `DELETE FROM stop_items
-     WHERE stop_id = $1 AND item_id = $2 AND user_id = $3`,
-    [stopId, itemId, userId],
-  );
-  return getStop(pool, userId, stopId);
+  await db.execute(sql`
+    DELETE FROM stop_items
+    WHERE stop_id = ${stopId} AND item_id = ${itemId} AND user_id = ${userId}
+  `);
+  return getStop(db, userId, stopId);
 }

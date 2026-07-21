@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from "express";
-import type { Pool } from "pg";
 import type { AddStopItemRequest, ItemId, StopId } from "@unshelf/shared";
+import type { Database } from "../db";
 import {
   addItemToStop,
   getStop,
@@ -28,17 +28,17 @@ import {
  * — 404, never 403 — so the boundary never confirms that someone else's id is a
  * real id.
  */
-export function createStopsRouter(pool: Pool, auth: RequestHandler[]): Router {
+export function createStopsRouter(db: Database, auth: RequestHandler[]): Router {
   const router = Router();
   router.use(...auth);
 
   router.get("/", async (req, res) => {
-    res.json(await listStops(pool, req.user!.id));
+    res.json(await listStops(db, req.user!.id));
   });
 
   router.get("/:stopId", async (req, res) => {
     const stop = await getStop(
-      pool,
+      db,
       req.user!.id,
       req.params.stopId as StopId,
     );
@@ -56,7 +56,7 @@ export function createStopsRouter(pool: Pool, auth: RequestHandler[]): Router {
       return;
     }
     const stop = await addItemToStop(
-      pool,
+      db,
       req.user!.id,
       req.params.stopId as StopId,
       input.itemId,
@@ -70,7 +70,7 @@ export function createStopsRouter(pool: Pool, auth: RequestHandler[]): Router {
 
   router.delete("/:stopId/items/:itemId", async (req, res) => {
     const stop = await removeItemFromStop(
-      pool,
+      db,
       req.user!.id,
       req.params.stopId as StopId,
       req.params.itemId as ItemId,
