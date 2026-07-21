@@ -99,8 +99,16 @@ The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
    - `https://$DOMAIN/` → the SPA loads and Google sign-in works for any Google
      account (first sign-in creates the User).
 
-The API applies its schema on boot (`applySchema`, idempotent), so there is no
-separate migration step for v1.
+> **The API no longer applies its schema on boot.** `applySchema` is gone; the
+> schema is owned by the versioned migrations in `apps/api/drizzle/`, applied by
+> `pnpm --filter @unshelf/api db:migrate`.
+>
+> The gated `migrate` service that runs this automatically on every deploy is
+> **not wired yet** — that is
+> [#116](https://github.com/rajat2006/unshelf/issues/116), which also covers
+> recreating the deployed database at cutover and rewrites this section properly.
+> Until it lands, a deploy applies no migrations: run `db:migrate` against
+> `DATABASE_URL` yourself before the new image serves traffic.
 
 ## Local development and verification
 
