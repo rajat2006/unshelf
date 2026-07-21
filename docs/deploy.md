@@ -107,8 +107,20 @@ The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
 > **not wired yet** — that is
 > [#116](https://github.com/rajat2006/unshelf/issues/116), which also covers
 > recreating the deployed database at cutover and rewrites this section properly.
-> Until it lands, a deploy applies no migrations: run `db:migrate` against
-> `DATABASE_URL` yourself before the new image serves traffic.
+>
+> **Until it lands, a deploy applies no migrations, and there is no way to apply
+> them by hand on the VPS.** `db:migrate` is `drizzle-kit`, a devDependency, so
+> it is absent from the production image — and `apps/api/drizzle/` is not copied
+> into that image either. `db` publishes no port and sits only on the `internal`
+> network, so it cannot be reached from the host. Running `drizzle-kit migrate`
+> against a database that already carries the pre-Drizzle schema **fails with an
+> empty error message** and leaves an orphaned `drizzle.__drizzle_migrations`
+> table behind.
+>
+> This is safe to leave alone: the deployed schema already matches `0000`, so the
+> API boots and serves normally with no migration run. Do **not** try to
+> hand-apply anything. Cutover is a drop-and-recreate of the deployed database,
+> and it belongs to #116.
 
 ## Local development and verification
 
