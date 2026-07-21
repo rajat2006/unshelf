@@ -21,7 +21,7 @@ export const CODEX_LABEL = "agent:codex";
  * constant moves the whole platform; the `agent:*` labels above stay available
  * to pin an individual issue or PR to the other provider.
  */
-export const DEFAULT_PROVIDER: Provider = "claude";
+export const DEFAULT_PROVIDER: Provider = "codex";
 
 /**
  * Resolve the provider from a subject's full label set: an explicit provider

@@ -141,7 +141,7 @@ cat ~/.codex/auth.json # paste the whole file as the secret value
   the secret + serialising codex runs) is deferred to a follow-up. This lifecycle is
   Codex-only — Claude Code authenticates from `CLAUDE_CODE_OAUTH_TOKEN` and has none of
   it — so the re-paste cadence bites only to the extent that runs actually resolve to
-  Codex (every run, once `DEFAULT_PROVIDER` is flipped to `"codex"`).
+  Codex (every run — `DEFAULT_PROVIDER` is `"codex"`).
 
 ### 3. `AGENT_PAT`
 
