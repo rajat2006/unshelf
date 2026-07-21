@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
 /**
@@ -10,8 +11,8 @@ import { defineConfig } from "drizzle-kit";
  * `dbCredentials` is only read by commands that talk to a database (`migrate`,
  * `studio`); `generate` needs no connection. `drizzle-kit` does not load `.env`
  * on its own — the `--env-file-if-exists` flag in the `dev` script is a **tsx**
- * flag, not a Node-wide one — so `DATABASE_URL` must be present in the
- * environment for those commands.
+ * flag, not a Node-wide one — so this config loads it explicitly. Existing
+ * environment variables still take precedence.
  */
 export default defineConfig({
   dialect: "postgresql",
