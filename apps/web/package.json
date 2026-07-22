@@ -8,6 +8,7 @@
     "dev": "vite",
     "preview": "vite preview",
     "test": "vitest run --exclude 'test/browser/**' && playwright test",
+    "test:product": "vitest run --exclude 'test/browser/**'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

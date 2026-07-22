@@ -13,6 +13,9 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:product": {
+      "dependsOn": ["^build"]
+    },
     "typecheck": {
       "dependsOn": ["^build"]
     }
