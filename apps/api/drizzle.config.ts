@@ -1,5 +1,10 @@
-import "dotenv/config";
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "node:process";
 import { defineConfig } from "drizzle-kit";
+
+if (existsSync(".env")) {
+  loadEnvFile();
+}
 
 /**
  * `drizzle-kit` config. `generate` diffs `src/schema.ts` against the snapshot in
@@ -17,9 +22,8 @@ import { defineConfig } from "drizzle-kit";
  *
  * `dbCredentials` is only read by commands that talk to a database (`migrate`,
  * `studio`); `generate` needs no connection. `drizzle-kit` does not load `.env`
- * on its own — the `--env-file-if-exists` flag in the `dev` script is a **tsx**
- * flag, not a Node-wide one — so this config loads it explicitly. Existing
- * environment variables still take precedence.
+ * on its own, so this config uses Node's built-in loader when the file exists.
+ * Existing environment variables still take precedence.
  */
 export default defineConfig({
   dialect: "postgresql",
