@@ -68,7 +68,7 @@ export interface Label {
   name: string;
 }
 
-/** Create a flat Label. Its name is required and otherwise stored verbatim. */
+/** Create a flat Label. Its name is trimmed at the edges and must not be blank. */
 export interface CreateLabelRequest {
   name: string;
 }
@@ -86,7 +86,7 @@ export interface Item {
   id: ItemId;
   /** The owning User — the tenancy anchor this Item is scoped to. */
   userId: UserId;
-  /** The Item's identity — required, stored exactly as typed (ADR-0003). */
+  /** The Item's identity — required, edge-trimmed with internal space preserved. */
   title: string;
   /** Optional link to where the Item lives; verbatim, unvalidated (ADR-0007). */
   source: string | null;
@@ -119,7 +119,7 @@ export interface Item {
  * else on an `Item` is server-assigned, so it is absent here.
  */
 export interface CreateItemRequest {
-  /** Required — the Item's identity. */
+  /** Required — edge-trimmed while preserving intentional internal whitespace. */
   title: string;
   /** Chosen Type, no default. */
   type: Type;
@@ -153,7 +153,7 @@ export interface Stop {
   id: StopId;
   /** The owning User — the tenancy anchor this Stop is scoped to. */
   userId: UserId;
-  /** What the User calls this Stop — required, stored exactly as typed. */
+  /** What the User calls this Stop — required and trimmed only at the edges. */
   name: string;
 }
 
@@ -191,7 +191,7 @@ export interface StopDetail extends Stop {
   items: Item[];
 }
 
-/** Create a Stop. `name` is required; the Stop starts empty. */
+/** Create a Stop. `name` is edge-trimmed and required; the Stop starts empty. */
 export interface CreateStopRequest {
   name: string;
 }
@@ -224,7 +224,7 @@ export interface Trail {
   id: TrailId;
   /** The owning User — the tenancy anchor this Trail is scoped to. */
   userId: UserId;
-  /** What the User calls this Trail — required, stored exactly as typed. */
+  /** What the User calls this Trail — required and trimmed only at the edges. */
   name: string;
   /** When this Trail was created, ISO-8601 — the stable order the index lists in. */
   createdAt: string;
@@ -236,7 +236,7 @@ export interface Trail {
 
 /** Create a Trail. `name` is required; the new Trail starts with no Stops. */
 export interface CreateTrailRequest {
-  /** What to call the Trail — required, stored exactly as typed. */
+  /** What to call the Trail — edge-trimmed and required. */
   name: string;
 }
 
