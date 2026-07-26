@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/server.ts --format esm --clean",
+    "build": "tsup src/server.ts src/migrate.ts --format esm --clean",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
@@ -26,7 +26,6 @@
     "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
     "drizzle-kit": "0.31.10",
-    "dotenv": "^17.4.2",
     "supertest": "^7.0.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",

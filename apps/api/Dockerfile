@@ -42,15 +42,12 @@ USER node
 COPY --from=build --chown=node:node /app/deploy/package.json ./package.json
 COPY --from=build --chown=node:node /app/deploy/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/deploy/dist ./dist
+COPY --from=build --chown=node:node /app/apps/api/drizzle ./drizzle
 
 # The app reads PORT (default 3001); DATABASE_URL and the Clerk keys come from
-# the environment (Dokploy service env). This image does *not* touch the schema:
-# migrations are a separate gated step in the deploy path (ADR-0015, #104).
-#
-# TODO(#116): the migrate step runs from this same image, so it needs both a
-# `COPY --from=build /app/deploy/drizzle ./drizzle` above and a `dist/migrate.js`
-# entrypoint. `tsup` bundles JavaScript, not the `.sql` files, and
-# `pnpm deploy --prod` will not carry the folder on its own — if this is missed
-# the migrate container finds nothing to apply and exits 0 silently.
+# the environment (Dokploy service env). The same image also supplies the
+# one-shot migration service: dist/migrate.js applies the committed SQL copied
+# above before Compose starts the API. `tsup` bundles JavaScript, not SQL, and
+# `pnpm deploy --prod` does not carry drizzle/ into the deploy tree.
 EXPOSE 3001
 CMD ["node", "dist/server.js"]

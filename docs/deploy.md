@@ -92,41 +92,82 @@ The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
 3. **Create a Compose application** in Dokploy pointing at this repo, compose
    path `docker-compose.yml`.
 4. **Set the environment** variables from the table above.
-5. **Deploy.** Dokploy builds the three services and wires Traefik from the
-   labels. Postgres data persists in the `unshelf-db` named volume.
+5. **Deploy.** Dokploy builds the services and wires Traefik from the labels.
+   Postgres data persists in the `unshelf-db` Compose volume. Before `api`
+   starts, the one-shot `migrate` service waits for healthy Postgres and applies
+   every pending committed migration from `apps/api/drizzle/`.
 6. **Verify end to end**:
    - `https://$DOMAIN/api/health` → `{"status":"ok","db":"up",...}`
    - `https://$DOMAIN/` → the SPA loads and Google sign-in works for any Google
      account (first sign-in creates the User).
 
-> **The API no longer applies its schema on boot.** `applySchema` is gone; the
-> schema is owned by the versioned migrations in `apps/api/drizzle/`, applied by
-> `pnpm --filter @unshelf/api db:migrate`.
->
-> The gated `migrate` service that runs this automatically on every deploy is
-> **not wired yet** — that is
-> [#116](https://github.com/rajat2006/unshelf/issues/116), which also covers
-> recreating the deployed database at cutover and rewrites this section properly.
->
-> **Until it lands, a deploy applies no migrations, and there is no way to apply
-> them by hand on the VPS.** `db:migrate` is `drizzle-kit`, a devDependency, so
-> it is absent from the production image — and `apps/api/drizzle/` is not copied
-> into that image either. `db` publishes no port and sits only on the `internal`
-> network, so it cannot be reached from the host. Running `drizzle-kit migrate`
-> against a database that already carries the pre-Drizzle schema **fails with an
-> empty error message** and leaves an orphaned `drizzle.__drizzle_migrations`
-> table behind.
->
-> This is safe to leave alone: the deployed schema already matches `0000`, so the
-> API boots and serves normally with no migration run. Do **not** try to
-> hand-apply anything. Cutover is a drop-and-recreate of the deployed database,
-> and it belongs to #116.
+### Migration failure behaviour
+
+The API process never modifies the schema. A non-zero `migrate` exit prevents
+the replacement `api` container from starting and makes the Dokploy deployment
+fail. Read the `migrate` service logs, fix or replace the migration, and redeploy;
+do not bypass the gate or run `drizzle-kit` manually against production.
+
+Dokploy currently deploys Compose applications in place with `docker compose up
+-d --build --remove-orphans`. When the API definition or image changes, Compose
+may remove the old API container before the migration finishes. A failed
+migration can therefore cause an outage even though it correctly fails the
+deploy. The migration must be safe before deployment; the gate is not a
+zero-downtime rollout mechanism.
+
+Compose recreates the stopped one-shot service when its image or configuration
+changes. A deploy containing a new migration changes the API image, so `migrate`
+runs again. Restarting an unchanged API container does not re-run migrations.
+
+The installed Drizzle migrator creates its ledger schema/table first, then wraps
+all pending migration statements and ledger inserts in one transaction. Failed
+DDL rolls back, but the empty `drizzle.__drizzle_migrations` table can remain.
+Postgres operations forbidden inside a transaction, notably `CREATE INDEX
+CONCURRENTLY`, cannot be used in these migration files.
+
+### One-time Drizzle cutover from the pre-migration schema
+
+This is a destructive **human VPS step**, performed once and only while the
+existing deployed data is confirmed disposable. It must finish before Dokploy
+can deploy the commit containing the `migrate` service:
+
+1. If merging to the tracked branch triggers a Dokploy deployment, pause
+   automatic deployments before merging this cutover. Do not let the new
+   `migrate` service start against the old schema.
+2. In Dokploy, stop the Unshelf Compose application so the API cannot reconnect
+   while its database is removed.
+3. Open a VPS terminal in that Compose application's code directory (the one
+   containing `docker-compose.yml` and Dokploy's generated `.env`) and run:
+
+   ```sh
+   docker compose -f docker-compose.yml down --volumes
+   ```
+
+   This removes the Compose stack and its project-scoped `unshelf-db` volume.
+   It permanently deletes all deployed Unshelf database data.
+4. Merge if necessary, then deploy the commit that introduces the `migrate`
+   service (and re-enable automatic deployments). Compose creates a
+   fresh volume; Postgres creates an empty database; migration `0000` applies;
+   only then does the API start.
+5. Verify `/api/health`, the SPA, and sign-in as described above.
+
+Do not deploy the migration service against the old pre-Drizzle schema first.
+Applying `0000` to that schema was tested with `drizzle-kit`: it failed with an
+empty error and left an orphaned ledger table. The old schema is not a supported
+migration baseline. No separate cleanup of `drizzle.__drizzle_migrations` is
+needed after the volume is deleted. Never repeat this volume-deletion procedure
+after the cutover; subsequent schema changes use ordinary committed migrations.
 
 ## Local development and verification
 
 **Everyday local development is `pnpm dev`** (see the README) — Vite + `tsx watch`
 with hot reload, and Vite's dev proxy already gives the single-origin `/api`
 routing the browser sees in production.
+
+Applying local migrations is deliberately explicit: run `pnpm --filter
+@unshelf/api db:migrate` after pulling a migration. It is not chained into
+`pnpm dev`, so starting the development server never writes to whichever
+database `DATABASE_URL` names.
 
 There is intentionally **no local Docker harness** that simulates the Dokploy
 stack. A hand-rolled local Traefik can only ever *approximate* the platform's
