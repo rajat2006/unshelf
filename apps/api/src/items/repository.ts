@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   CreateItemRequest,
   Item,
@@ -9,6 +9,8 @@ import type {
   Type,
   UserId,
 } from "@unshelf/shared";
+import type { Database } from "../db";
+import { itemLabels, items, labels } from "../schema";
 
 export interface ItemRow {
   id: string;
@@ -39,25 +41,33 @@ export interface ItemRow {
  * Columns are qualified against `items`; Stop and Label membership stay in
  * subqueries so this projection still reads the same shared Item at every seam.
  */
-export const ITEM_PROJECTION = `items.id, items.user_id, items.title,
-                         items.source, items.type, items.status,
-                         items.target_date::text AS target_date,
-                         (COALESCE(items.target_date < CURRENT_DATE, false)
-                          AND items.status <> 'done') AS past_target,
-                         items.completed_at,
-                         COALESCE((
-                           SELECT jsonb_agg(
-                             jsonb_build_object(
-                               'id', labels.id,
-                               'userId', labels.user_id,
-                               'name', labels.name
-                             ) ORDER BY labels.name, labels.id
-                           )
-                           FROM item_labels
-                           JOIN labels ON labels.id = item_labels.label_id
-                           WHERE item_labels.item_id = items.id
-                             AND item_labels.user_id = items.user_id
-                         ), '[]'::jsonb) AS labels`;
+export const ITEM_PROJECTION = {
+  id: items.id,
+  user_id: items.userId,
+  title: items.title,
+  source: items.source,
+  type: items.type,
+  status: items.status,
+  target_date: sql<string | null>`${items.targetDate}::text`,
+  past_target: sql<boolean>`(
+    coalesce(${items.targetDate} < current_date, false)
+    and ${items.status} <> 'done'
+  )`,
+  completed_at: items.completedAt,
+  labels: sql<Label[]>`coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', labels.id,
+        'userId', labels.user_id,
+        'name', labels.name
+      ) order by labels.name, labels.id
+    )
+    from item_labels
+    join labels on labels.id = item_labels.label_id
+    where item_labels.item_id = items.id
+      and item_labels.user_id = items.user_id
+  ), '[]'::jsonb)`,
+} as const;
 
 export const toItem = (row: ItemRow): Item => ({
   id: row.id as ItemId,
@@ -68,7 +78,9 @@ export const toItem = (row: ItemRow): Item => ({
   status: row.status,
   targetDate: row.target_date,
   pastTarget: row.past_target,
-  completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+  completedAt: row.completed_at
+    ? new Date(row.completed_at).toISOString()
+    : null,
   labels: row.labels,
 });
 
@@ -81,43 +93,38 @@ export const toItem = (row: ItemRow): Item => ({
  * client — the caller passes the authenticated User's anchor id.
  */
 export async function createItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   input: CreateItemRequest,
 ): Promise<Item> {
   const source = input.source ?? null;
-  const { rows } = await pool.query<ItemRow>(
-    `INSERT INTO items (user_id, title, source, type)
-     VALUES ($1, $2, $3, $4)
-     RETURNING ${ITEM_PROJECTION}`,
-    [userId, input.title, source, input.type],
-  );
-  return toItem(rows[0]!);
+  const rows = await db
+    .insert(items)
+    .values({ userId, title: input.title, source, type: input.type })
+    .returning({ id: items.id });
+  return (await getItem(db, userId, rows[0]!.id as ItemId))!;
 }
 
 /** All for a User: every Item where `user_id = me`, and only that User's. */
-export async function listItems(pool: Pool, userId: UserId): Promise<Item[]> {
-  const { rows } = await pool.query<ItemRow>(
-    `SELECT ${ITEM_PROJECTION}
-     FROM items
-     WHERE user_id = $1`,
-    [userId],
-  );
+export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
+  const rows = await db
+    .select(ITEM_PROJECTION)
+    .from(items)
+    .where(eq(items.userId, userId));
   return rows.map(toItem);
 }
 
 /** Read one Item through both its stable identity and authenticated owner. */
 export async function getItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `SELECT ${ITEM_PROJECTION}
-     FROM items
-     WHERE id = $1 AND user_id = $2`,
-    [itemId, userId],
-  );
+  const rows = await db
+    .select(ITEM_PROJECTION)
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
   return rows[0] ? toItem(rows[0]) : null;
 }
 
@@ -128,24 +135,24 @@ export async function getItem(
  * indistinguishable from a missing one at the API boundary.
  */
 export async function updateItemStatus(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   status: Status,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `UPDATE items
-     SET completed_at = CASE
-           WHEN status <> 'done' AND $3 = 'done' THEN now()
-           WHEN status = 'done' AND $3 <> 'done' THEN NULL
-           ELSE completed_at
-         END,
-         status = $3
-     WHERE id = $1 AND user_id = $2
-     RETURNING ${ITEM_PROJECTION}`,
-    [itemId, userId, status],
-  );
-  return rows[0] ? toItem(rows[0]) : null;
+  const rows = await db
+    .update(items)
+    .set({
+      completedAt: sql<Date | null>`case
+        when ${items.status} <> 'done' and ${status} = 'done' then now()
+        when ${items.status} = 'done' and ${status} <> 'done' then null
+        else ${items.completedAt}
+      end`,
+      status,
+    })
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .returning({ id: items.id });
+  return rows[0] ? getItem(db, userId, itemId) : null;
 }
 
 /**
@@ -156,63 +163,71 @@ export async function updateItemStatus(
  * makes a foreign Item indistinguishable from a missing one at the API boundary.
  */
 export async function updateItemTargetDate(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   targetDate: string | null,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<ItemRow>(
-    `UPDATE items
-     SET target_date = $3::date
-     WHERE id = $1 AND user_id = $2
-     RETURNING ${ITEM_PROJECTION}`,
-    [itemId, userId, targetDate],
-  );
-  return rows[0] ? toItem(rows[0]) : null;
+  const rows = await db
+    .update(items)
+    .set({ targetDate })
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .returning({ id: items.id });
+  return rows[0] ? getItem(db, userId, itemId) : null;
 }
 
 /** Apply one owned Label to one owned Item; repeating the request is a no-op. */
 export async function applyLabelToItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query(
-    `INSERT INTO item_labels (user_id, item_id, label_id)
-     SELECT $3, items.id, labels.id
-     FROM items, labels
-     WHERE items.id = $1 AND labels.id = $2
-       AND items.user_id = $3 AND labels.user_id = $3
-     ON CONFLICT (item_id, label_id) DO UPDATE
-       SET user_id = EXCLUDED.user_id
-     RETURNING item_id`,
-    [itemId, labelId, userId],
-  );
-  return rows.length > 0 ? getItem(pool, userId, itemId) : null;
+  const ownedMembership = db
+    .select({ userId: items.userId, itemId: items.id, labelId: labels.id })
+    .from(items)
+    .innerJoin(
+      labels,
+      and(eq(labels.id, labelId), eq(labels.userId, userId)),
+    )
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+  const rows = await db
+    .insert(itemLabels)
+    .select(ownedMembership)
+    .onConflictDoUpdate({
+      target: [itemLabels.itemId, itemLabels.labelId],
+      set: { userId },
+    })
+    .returning({ itemId: itemLabels.itemId });
+  return rows.length > 0 ? getItem(db, userId, itemId) : null;
 }
 
 /** Remove only Label membership; repeating removal preserves the requested set. */
 export async function removeLabelFromItem(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   itemId: ItemId,
   labelId: LabelId,
 ): Promise<Item | null> {
-  const { rows } = await pool.query<{ allowed: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM items, labels
-       WHERE items.id = $1 AND labels.id = $2
-         AND items.user_id = $3 AND labels.user_id = $3
-     ) AS allowed`,
-    [itemId, labelId, userId],
-  );
-  if (!rows[0]?.allowed) return null;
+  const allowed = await db
+    .select({ itemId: items.id })
+    .from(items)
+    .innerJoin(
+      labels,
+      and(eq(labels.id, labelId), eq(labels.userId, userId)),
+    )
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
+  if (!allowed[0]) return null;
 
-  await pool.query(
-    `DELETE FROM item_labels
-     WHERE item_id = $1 AND label_id = $2 AND user_id = $3`,
-    [itemId, labelId, userId],
-  );
-  return getItem(pool, userId, itemId);
+  await db
+    .delete(itemLabels)
+    .where(
+      and(
+        eq(itemLabels.itemId, itemId),
+        eq(itemLabels.labelId, labelId),
+        eq(itemLabels.userId, userId),
+      ),
+    );
+  return getItem(db, userId, itemId);
 }

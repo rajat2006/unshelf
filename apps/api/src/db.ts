@@ -1,6 +1,11 @@
 import { Pool } from "pg";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "./schema";
 
-/** Create a Postgres connection pool from a connection string. */
-export function createPool(connectionString: string): Pool {
-  return new Pool({ connectionString });
+export type Database = NodePgDatabase<typeof schema>;
+export type DatabaseWithClient = Database & { $client: Pool };
+
+/** Create the schema-aware Drizzle handle used throughout the API. */
+export function createDatabase(connectionString: string): DatabaseWithClient {
+  return drizzle(new Pool({ connectionString }), { schema });
 }

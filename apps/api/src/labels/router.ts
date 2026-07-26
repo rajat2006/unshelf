@@ -1,17 +1,17 @@
 import { Router, type RequestHandler } from "express";
-import type { Pool } from "pg";
+import type { Database } from "../db";
 import { createLabel, listLabels } from "./repository";
 import { parseRequiredName } from "../validation";
 
 export function createLabelsRouter(
-  pool: Pool,
+  db: Database,
   auth: RequestHandler[],
 ): Router {
   const router = Router();
   router.use(...auth);
 
   router.get("/", async (req, res) => {
-    res.json(await listLabels(pool, req.user!.id));
+    res.json(await listLabels(db, req.user!.id));
   });
 
   router.post("/", async (req, res) => {
@@ -20,7 +20,7 @@ export function createLabelsRouter(
       res.status(400).json({ error: "a Label name is required" });
       return;
     }
-    res.status(201).json(await createLabel(pool, req.user!.id, input));
+    res.status(201).json(await createLabel(db, req.user!.id, input));
   });
 
   return router;

@@ -1,5 +1,6 @@
-import type { Pool } from "pg";
 import type { ClerkUserId, User, UserId } from "@unshelf/shared";
+import type { Database } from "./db";
+import { users } from "./schema";
 
 interface UserRow {
   id: string;
@@ -23,15 +24,20 @@ const toUser = (row: UserRow): User => ({
  * auth middleware is the sole place Clerk is imported on the api.
  */
 export async function provisionUser(
-  pool: Pool,
+  db: Database,
   clerkUserId: ClerkUserId,
 ): Promise<User> {
-  const { rows } = await pool.query<UserRow>(
-    `INSERT INTO users (clerk_user_id)
-     VALUES ($1)
-     ON CONFLICT (clerk_user_id) DO UPDATE SET clerk_user_id = EXCLUDED.clerk_user_id
-     RETURNING id, clerk_user_id, created_at`,
-    [clerkUserId],
-  );
-  return toUser(rows[0]!);
+  const [row] = await db
+    .insert(users)
+    .values({ clerkUserId })
+    .onConflictDoUpdate({
+      target: users.clerkUserId,
+      set: { clerkUserId },
+    })
+    .returning({
+      id: users.id,
+      clerk_user_id: users.clerkUserId,
+      created_at: users.createdAt,
+    });
+  return toUser(row!);
 }

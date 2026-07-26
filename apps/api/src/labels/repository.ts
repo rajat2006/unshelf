@@ -1,10 +1,12 @@
-import type { Pool } from "pg";
+import { asc, eq } from "drizzle-orm";
 import type {
   CreateLabelRequest,
   Label,
   LabelId,
   UserId,
 } from "@unshelf/shared";
+import type { Database } from "../db";
+import { labels } from "../schema";
 
 interface LabelRow {
   id: string;
@@ -19,29 +21,33 @@ const toLabel = (row: LabelRow): Label => ({
 });
 
 export async function createLabel(
-  pool: Pool,
+  db: Database,
   userId: UserId,
   input: CreateLabelRequest,
 ): Promise<Label> {
-  const { rows } = await pool.query<LabelRow>(
-    `INSERT INTO labels (user_id, name)
-     VALUES ($1, $2)
-     RETURNING id, user_id, name`,
-    [userId, input.name],
-  );
-  return toLabel(rows[0]!);
+  const [row] = await db
+    .insert(labels)
+    .values({ userId, name: input.name })
+    .returning({
+      id: labels.id,
+      user_id: labels.userId,
+      name: labels.name,
+    });
+  return toLabel(row!);
 }
 
 export async function listLabels(
-  pool: Pool,
+  db: Database,
   userId: UserId,
 ): Promise<Label[]> {
-  const { rows } = await pool.query<LabelRow>(
-    `SELECT id, user_id, name
-     FROM labels
-     WHERE user_id = $1
-     ORDER BY name, id`,
-    [userId],
-  );
+  const rows = await db
+    .select({
+      id: labels.id,
+      user_id: labels.userId,
+      name: labels.name,
+    })
+    .from(labels)
+    .where(eq(labels.userId, userId))
+    .orderBy(asc(labels.name), asc(labels.id));
   return rows.map(toLabel);
 }

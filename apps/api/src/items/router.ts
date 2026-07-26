@@ -1,5 +1,4 @@
 import { Router, type RequestHandler } from "express";
-import type { Pool } from "pg";
 import {
   ITEM_STATUSES,
   ITEM_TYPES,
@@ -11,6 +10,7 @@ import {
   type UpdateItemStatusRequest,
   type UpdateItemTargetDateRequest,
 } from "@unshelf/shared";
+import type { Database } from "../db";
 import {
   createItem,
   applyLabelToItem,
@@ -23,7 +23,7 @@ import {
 
 /** Mount the authenticated Item HTTP interface at `/api/items`. */
 export function createItemsRouter(
-  pool: Pool,
+  db: Database,
   auth: RequestHandler[],
 ): Router {
   const router = Router();
@@ -35,12 +35,12 @@ export function createItemsRouter(
       res.status(400).json({ error: "title and a valid type are required" });
       return;
     }
-    const item = await createItem(pool, req.user!.id, input);
+    const item = await createItem(db, req.user!.id, input);
     res.status(201).json(item);
   });
 
   router.get("/", async (req, res) => {
-    const items = await listItems(pool, req.user!.id);
+    const items = await listItems(db, req.user!.id);
     res.json(items);
   });
 
@@ -50,7 +50,7 @@ export function createItemsRouter(
       return;
     }
     const item = await getItem(
-      pool,
+      db,
       req.user!.id,
       req.params.itemId as ItemId,
     );
@@ -63,7 +63,7 @@ export function createItemsRouter(
 
   router.post("/:itemId/labels/:labelId", async (req, res) => {
     const item = await applyLabelToItem(
-      pool,
+      db,
       req.user!.id,
       req.params.itemId as ItemId,
       req.params.labelId as LabelId,
@@ -77,7 +77,7 @@ export function createItemsRouter(
 
   router.delete("/:itemId/labels/:labelId", async (req, res) => {
     const item = await removeLabelFromItem(
-      pool,
+      db,
       req.user!.id,
       req.params.itemId as ItemId,
       req.params.labelId as LabelId,
@@ -96,7 +96,7 @@ export function createItemsRouter(
       return;
     }
     const item = await updateItemStatus(
-      pool,
+      db,
       req.user!.id,
       req.params.itemId as ItemId,
       input.status,
@@ -117,7 +117,7 @@ export function createItemsRouter(
       return;
     }
     const item = await updateItemTargetDate(
-      pool,
+      db,
       req.user!.id,
       req.params.itemId as ItemId,
       input.targetDate,
