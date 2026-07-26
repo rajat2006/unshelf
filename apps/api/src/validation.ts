@@ -1,4 +1,4 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express";
+import type { Request, RequestHandler, Response } from "express";
 
 interface ValidationIssue {
   code: string;
@@ -41,7 +41,6 @@ type ValidatedHandler<Schemas extends RequestSchemas> = (
   input: ValidatedInput<Schemas>,
   req: Request,
   res: Response,
-  next: NextFunction,
 ) => unknown;
 
 interface PublicIssue {
@@ -76,9 +75,7 @@ export function validateRequest<const Schemas extends RequestSchemas>(
         const result = schema.safeParse(req.params[name]);
         if (result.success) params[name] = result.data;
         else {
-          issues.push(
-            ...normalizeIssues(`path.${name}`, result.error.issues, true),
-          );
+          issues.push(...normalizeIssues(`path.${name}`, result.error.issues));
         }
       }
       parsed.params = params;
@@ -96,7 +93,7 @@ export function validateRequest<const Schemas extends RequestSchemas>(
     }
 
     try {
-      await handler(parsed as ValidatedInput<Schemas>, req, res, next);
+      await handler(parsed as ValidatedInput<Schemas>, req, res);
     } catch (error) {
       next(error);
     }
@@ -106,19 +103,18 @@ export function validateRequest<const Schemas extends RequestSchemas>(
 function normalizeIssues(
   surface: string,
   validationIssues: ValidationIssue[],
-  surfaceNamesValue = false,
 ): PublicIssue[] {
   return validationIssues.flatMap((issue) => {
     if (issue.code === "unrecognized_keys" && issue.keys) {
       return issue.keys.map((key) => ({
-        path: issue.path.length ? [surface, ...issue.path].join(".") : surface,
-        message: `Unrecognized field: ${key}`,
+        path: [surface, ...issue.path, key].join("."),
+        message: "Unrecognized field",
       }));
     }
 
     return [
       {
-        path: surfaceNamesValue ? surface : [surface, ...issue.path].join("."),
+        path: [surface, ...issue.path].join("."),
         message: publicMessage(issue),
       },
     ];

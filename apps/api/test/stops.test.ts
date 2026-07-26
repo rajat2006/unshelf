@@ -261,7 +261,7 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body", message: "Unrecognized field: extra" }],
+      issues: [{ path: "body.extra", message: "Unrecognized field" }],
     });
     expect((await viewStop(clerkUserId, stop.id)).body.items).toEqual([]);
   });
@@ -369,6 +369,23 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
       "Anon remove",
     ]);
   });
+
+  it("rejects malformed identifiers without removing the membership", async () => {
+    const user = "clerk_stop_remove_invalid";
+    const { item, stop } = await givenItemAndStop(user, "Still here");
+    await addToStop(user, stop.id, { itemId: item.id });
+
+    const res = await removeFromStop(user, stop.id, "not-an-item-id");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.itemId", message: "Must be a valid UUID" }],
+    });
+    expect(titlesIn((await viewStop(user, stop.id)).body)).toEqual([
+      "Still here",
+    ]);
+  });
 });
 
 describe("GET /api/stops/:stopId — view a Stop's contents", () => {
@@ -418,6 +435,16 @@ describe("GET /api/stops/:stopId — view a Stop's contents", () => {
     expect(res.status).toBe(404);
   });
 
+  it("rejects a malformed Stop id before repository work", async () => {
+    const res = await viewStop("clerk_stop_read_invalid", "not-a-stop-id");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.stopId", message: "Must be a valid UUID" }],
+    });
+  });
+
   it("refuses an unauthenticated view", async () => {
     const { stop } = await givenItemAndStop("clerk_stop_view_anon");
 
@@ -463,6 +490,19 @@ describe("GET /api/trails/:trailId/stops/:stopId — view a Stop in its route co
         )
       ).status,
     ).toBe(404);
+  });
+
+  it("rejects a malformed parent Trail id before reading a Stop", async () => {
+    const user = "clerk_stop_route_invalid_parent";
+    const stop = (await createStop(user, { name: "Valid Stop" })).body as Stop;
+
+    const res = await viewTrailStop(user, "not-a-trail-id", stop.id);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.trailId", message: "Must be a valid UUID" }],
+    });
   });
 });
 

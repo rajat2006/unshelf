@@ -211,6 +211,21 @@ describe("a Stop belongs to exactly one Trail (#94)", () => {
     expect(ownerNodes).toEqual([]);
   });
 
+  it("rejects a malformed parent Trail id without creating a Stop", async () => {
+    const user = "trail-stop-invalid-parent";
+    const res = await createStopOn(user, "not-a-trail-id", "Nowhere");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.trailId", message: "Must be a valid UUID" }],
+    });
+    const listed = (
+      await request(app).get("/api/stops").set(TEST_USER_HEADER, user)
+    ).body as Stop[];
+    expect(listed).toEqual([]);
+  });
+
   it("rejects a Trail-less Stop at the database boundary", async () => {
     const user = "trail-stop-db-anchor";
     const trail = (await createTrail(user, { name: "Anchored" })).body as Trail;

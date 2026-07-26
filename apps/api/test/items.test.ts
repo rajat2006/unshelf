@@ -175,8 +175,8 @@ describe("POST /api/items — capture", () => {
       error: "invalid_request",
       issues: [
         {
-          path: "body",
-          message: "Unrecognized field: secret",
+          path: "body.secret",
+          message: "Unrecognized field",
         },
       ],
     });

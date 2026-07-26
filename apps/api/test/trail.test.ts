@@ -150,6 +150,18 @@ describe("GET /api/trails/:trailId/topology — read a Trail", () => {
 
     expect(res.status).toBe(404);
   });
+
+  it("rejects a malformed Trail id before reading topology", async () => {
+    const res = await request(app)
+      .get("/api/trails/not-a-trail-id/topology")
+      .set(TEST_USER_HEADER, "clerk_trail_read_invalid");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.trailId", message: "Must be a valid UUID" }],
+    });
+  });
 });
 
 describe("the Trail's nodes are the Trail's Stops, with derived progress", () => {
@@ -324,7 +336,7 @@ describe("POST /api/trails/:trailId/edges — draw an edge", () => {
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body", message: "Unrecognized field: extra" }],
+      issues: [{ path: "body.extra", message: "Unrecognized field" }],
     });
     expect(unknown.text).not.toContain("must stay private");
   });
@@ -536,6 +548,21 @@ describe("DELETE /api/trails/:trailId/edges — erase an edge and rewire", () =>
     expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([
       `${a}->${b}`,
     ]);
+  });
+
+  it("rejects malformed identifiers without erasing the edge", async () => {
+    const user = "clerk_trail_disconnect_invalid";
+    const [a, b] = await givenStops(user, 2);
+    await connect(user, { fromStopId: a, toStopId: b });
+
+    const res = await disconnect(user, "not-a-stop-id", b);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.fromStopId", message: "Must be a valid UUID" }],
+    });
+    expect(edgePairs((await getTrail(user)).body)).toEqual([`${a}->${b}`]);
   });
 });
 

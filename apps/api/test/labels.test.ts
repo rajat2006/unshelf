@@ -66,7 +66,7 @@ describe("private Labels", () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body", message: "Unrecognized field: colour" }],
+      issues: [{ path: "body.colour", message: "Unrecognized field" }],
     });
     expect(res.text).not.toContain("secret-red");
     expect((await listLabels(user)).body).toEqual([]);
@@ -154,6 +154,47 @@ describe("private Labels", () => {
         .set(TEST_USER_HEADER, owner)
     ).body as Item;
     expect(unchanged.labels).toEqual([]);
+  });
+
+  it("rejects malformed identifiers before applying a Label", async () => {
+    const user = "clerk_label_apply_invalid";
+    const item = (await capture(user, "Unchanged")).body as Item;
+    const label = (await createLabel(user, { name: "Valid" })).body as Label;
+
+    const res = await applyLabel(user, "not-an-item-id", label.id);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.itemId", message: "Must be a valid UUID" }],
+    });
+    const unchanged = (
+      await request(app)
+        .get(`/api/items/${item.id}`)
+        .set(TEST_USER_HEADER, user)
+    ).body as Item;
+    expect(unchanged.labels).toEqual([]);
+  });
+
+  it("rejects malformed identifiers before removing a Label", async () => {
+    const user = "clerk_label_remove_invalid";
+    const item = (await capture(user, "Still labelled")).body as Item;
+    const label = (await createLabel(user, { name: "Keep" })).body as Label;
+    await applyLabel(user, item.id, label.id);
+
+    const res = await removeLabel(user, item.id, "not-a-label-id");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.labelId", message: "Must be a valid UUID" }],
+    });
+    const unchanged = (
+      await request(app)
+        .get(`/api/items/${item.id}`)
+        .set(TEST_USER_HEADER, user)
+    ).body as Item;
+    expect(unchanged.labels).toEqual([label]);
   });
 
   it("changes only Label membership, leaving Item facts and Stop placement intact", async () => {
