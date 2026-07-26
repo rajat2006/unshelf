@@ -1,7 +1,6 @@
 import { createApp } from "./app";
 import { createClerkAuth } from "./auth";
 import { createPool } from "./db";
-import { applySchema } from "./schema";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -18,7 +17,9 @@ if (!process.env.CLERK_SECRET_KEY || !process.env.CLERK_PUBLISHABLE_KEY) {
 const port = Number(process.env.PORT ?? 3001);
 const pool = createPool(connectionString);
 
-await applySchema(pool);
+// The API process no longer touches the schema (#104, ADR-0015). Migrations run
+// as a one-shot step gated ahead of this service in the deploy path, so a failed
+// migration fails the *deploy* rather than restart-looping a live service.
 const app = createApp(pool, createClerkAuth(pool));
 
 app.listen(port, () => {
