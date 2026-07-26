@@ -61,15 +61,25 @@ export type LabelId = string & {
   readonly [identifierBrand]: "LabelId";
 };
 
+/**
+ * API request types are inferred from the canonical runtime schemas. This
+ * type-only facade keeps existing `@unshelf/shared` consumers runtime-free.
+ */
+export type {
+  AddStopItemRequest,
+  ConnectStopsRequest,
+  CreateItemRequest,
+  CreateLabelRequest,
+  CreateStopRequest,
+  CreateTrailRequest,
+  UpdateItemStatusRequest,
+  UpdateItemTargetDateRequest,
+} from "./validation";
+
 /** A private, free-text marker the User applies across Library Items. */
 export interface Label {
   id: LabelId;
   userId: UserId;
-  name: string;
-}
-
-/** Create a flat Label. Its name is trimmed at the edges and must not be blank. */
-export interface CreateLabelRequest {
   name: string;
 }
 
@@ -111,34 +121,6 @@ export interface Item {
   completedAt: string | null;
   /** The private Labels currently applied to this Item. */
   labels: Label[];
-}
-
-/**
- * The capture payload — the one uniform manual insert (ADR-0007). `title` and
- * `type` are required; `source` is optional (offline books have none). Everything
- * else on an `Item` is server-assigned, so it is absent here.
- */
-export interface CreateItemRequest {
-  /** Required — edge-trimmed while preserving intentional internal whitespace. */
-  title: string;
-  /** Chosen Type, no default. */
-  type: Type;
-  /** Optional link; when supplied, including blank, it is preserved verbatim. */
-  source?: string | null;
-}
-
-/** Change the one Status stored on an Item, wherever that Item is shown. */
-export interface UpdateItemStatusRequest {
-  status: Status;
-}
-
-/**
- * Set, change, or clear the one soft Target date stored on an Item (ADR-0005).
- * A calendar date (`YYYY-MM-DD`) sets or changes it; `null` clears it. Like
- * Status, the value is shared by every Stop the Item appears in.
- */
-export interface UpdateItemTargetDateRequest {
-  targetDate: string | null;
 }
 
 /**
@@ -191,20 +173,6 @@ export interface StopDetail extends Stop {
   items: Item[];
 }
 
-/** Create a Stop. `name` is edge-trimmed and required; the Stop starts empty. */
-export interface CreateStopRequest {
-  name: string;
-}
-
-/**
- * Pull one Item from All into a Stop. The Item is referenced, never copied — the
- * same Item can be added to any number of Stops (CONTEXT.md *Item*) — and adding
- * one that is already in the Stop changes nothing, because membership is a set.
- */
-export interface AddStopItemRequest {
-  itemId: ItemId;
-}
-
 /**
  * A first-class Trail — one User's learning journey, owning a canvas of Stops and
  * forks (ADR-0014, CONTEXT.md *Trail*). A User owns *many* Trails, each with an
@@ -232,12 +200,6 @@ export interface Trail {
   done: number;
   /** How many distinct Items the Trail's Stops hold in total. */
   total: number;
-}
-
-/** Create a Trail. `name` is required; the new Trail starts with no Stops. */
-export interface CreateTrailRequest {
-  /** What to call the Trail — edge-trimmed and required. */
-  name: string;
 }
 
 /**
@@ -293,20 +255,6 @@ export interface TrailView {
   nodes: TrailNode[];
   /** Every Stop-to-Stop edge belonging to the User. */
   edges: TrailEdge[];
-}
-
-/**
- * Draw one edge on the Trail: link `fromStopId` ahead of `toStopId`. Refused when
- * either Stop is not the User's, when the two are the same Stop, or when the link
- * would close a cycle (the target can already reach the source) — the Trail is a
- * DAG, and acyclicity is enforced at this write seam (ADR-0010). Adding an edge
- * that already exists changes nothing: the edge set is a set.
- */
-export interface ConnectStopsRequest {
-  /** The Stop the new edge leads out of. */
-  fromStopId: StopId;
-  /** The Stop the new edge leads into. */
-  toStopId: StopId;
 }
 
 /**

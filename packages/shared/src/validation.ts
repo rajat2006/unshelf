@@ -1,17 +1,9 @@
 import { z } from "zod";
 import type {
-  AddStopItemRequest,
-  ConnectStopsRequest,
-  CreateItemRequest,
-  CreateLabelRequest,
-  CreateStopRequest,
-  CreateTrailRequest,
   ItemId,
   LabelId,
   StopId,
   TrailId,
-  UpdateItemStatusRequest,
-  UpdateItemTargetDateRequest,
   UserId,
 } from "./index";
 import { Status, Type } from "./index";
@@ -35,11 +27,11 @@ export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
   type: z.enum(Type),
   source: z.string().nullable().optional(),
-}) satisfies z.ZodType<CreateItemRequest>;
+});
 
 export const updateItemStatusRequestSchema = z.strictObject({
   status: z.enum(Status),
-}) satisfies z.ZodType<UpdateItemStatusRequest>;
+});
 
 /** A real proleptic-Gregorian calendar date accepted by the API and Postgres. */
 export const targetDateSchema = z.iso
@@ -48,22 +40,32 @@ export const targetDateSchema = z.iso
 
 export const updateItemTargetDateRequestSchema = z.strictObject({
   targetDate: targetDateSchema.nullable(),
-}) satisfies z.ZodType<UpdateItemTargetDateRequest>;
+});
 
-export const createLabelRequestSchema =
-  z.strictObject({ name: nameSchema }) satisfies z.ZodType<CreateLabelRequest>;
+export const createLabelRequestSchema = z.strictObject({ name: nameSchema });
 
-export const createStopRequestSchema =
-  z.strictObject({ name: nameSchema }) satisfies z.ZodType<CreateStopRequest>;
+export const createStopRequestSchema = z.strictObject({ name: nameSchema });
 
-export const createTrailRequestSchema =
-  z.strictObject({ name: nameSchema }) satisfies z.ZodType<CreateTrailRequest>;
+export const createTrailRequestSchema = z.strictObject({ name: nameSchema });
 
 export const addStopItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
-}) satisfies z.ZodType<AddStopItemRequest>;
+});
 
 export const connectStopsRequestSchema = z.strictObject({
   fromStopId: stopIdSchema,
   toStopId: stopIdSchema,
-}) satisfies z.ZodType<ConnectStopsRequest>;
+});
+
+export type CreateItemRequest = z.infer<typeof createItemRequestSchema>;
+export type UpdateItemStatusRequest = z.infer<
+  typeof updateItemStatusRequestSchema
+>;
+export type UpdateItemTargetDateRequest = z.infer<
+  typeof updateItemTargetDateRequestSchema
+>;
+export type CreateLabelRequest = z.infer<typeof createLabelRequestSchema>;
+export type CreateStopRequest = z.infer<typeof createStopRequestSchema>;
+export type CreateTrailRequest = z.infer<typeof createTrailRequestSchema>;
+export type AddStopItemRequest = z.infer<typeof addStopItemRequestSchema>;
+export type ConnectStopsRequest = z.infer<typeof connectStopsRequestSchema>;
