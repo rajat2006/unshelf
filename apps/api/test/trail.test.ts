@@ -170,10 +170,13 @@ describe("the Trail's nodes are the Trail's Stops, with derived progress", () =>
     const a = (await capture(clerkUserId, "Hooks")).body as Item;
     const b = (await capture(clerkUserId, "Router")).body as Item;
     const c = (await capture(clerkUserId, "Suspense")).body as Item;
-    for (const item of [a, b, c]) await addToStop(clerkUserId, stop.id, item.id);
+    for (const item of [a, b, c])
+      await addToStop(clerkUserId, stop.id, item.id);
 
     // Freshly captured Items are not started: 0 of 3 done.
-    expect(nodeNamed((await getTrail(clerkUserId)).body, "React")).toMatchObject({
+    expect(
+      nodeNamed((await getTrail(clerkUserId)).body, "React"),
+    ).toMatchObject({
       done: 0,
       total: 3,
     });
@@ -181,7 +184,9 @@ describe("the Trail's nodes are the Trail's Stops, with derived progress", () =>
     await setStatus(clerkUserId, a.id, "done");
 
     // The same derived count the Stop itself would show — 1 of 3, no stored flag.
-    expect(nodeNamed((await getTrail(clerkUserId)).body, "React")).toMatchObject({
+    expect(
+      nodeNamed((await getTrail(clerkUserId)).body, "React"),
+    ).toMatchObject({
       done: 1,
       total: 3,
     });
@@ -193,12 +198,16 @@ describe("the Trail's nodes are the Trail's Stops, with derived progress", () =>
 
     expect(
       nodeNamed((await getTrail(clerkUserId)).body, "Untouched"),
-    ).toMatchObject({ done: 0, total: 0 });
+    ).toMatchObject({
+      done: 0,
+      total: 0,
+    });
   });
 
   it("shows a User only their own Trail's Stops as nodes", async () => {
     await createStop("clerk_trail_nodes_owner", "Owner's stop");
-    const view = (await getTrail("clerk_trail_nodes_intruder")).body as TrailView;
+    const view = (await getTrail("clerk_trail_nodes_intruder"))
+      .body as TrailView;
     expect(view.nodes).toEqual([]);
   });
 });
@@ -304,8 +313,20 @@ describe("POST /api/trails/:trailId/edges — draw an edge", () => {
 
     expect((await connect(clerkUserId, {})).status).toBe(400);
     expect((await connect(clerkUserId, { fromStopId: a })).status).toBe(400);
-    expect((await connect(clerkUserId, { fromStopId: a, toStopId: 42 })).status)
-      .toBe(400);
+    expect(
+      (await connect(clerkUserId, { fromStopId: a, toStopId: 42 })).status,
+    ).toBe(400);
+    const unknown = await connect(clerkUserId, {
+      fromStopId: a,
+      toStopId: a,
+      extra: "must stay private",
+    });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body", message: "Unrecognized field: extra" }],
+    });
+    expect(unknown.text).not.toContain("must stay private");
   });
 
   it("cannot link a Stop that does not exist", async () => {
@@ -344,7 +365,9 @@ describe("the Trail is a DAG — cycles are refused at the write seam", () => {
 
     expect(res.status).toBe(409);
     // The refused edge left no trace — only the original edge persists.
-    expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([`${a}->${b}`]);
+    expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([
+      `${a}->${b}`,
+    ]);
   });
 
   it("refuses a transitive back-edge (A→B→C then C→A)", async () => {
@@ -510,7 +533,9 @@ describe("DELETE /api/trails/:trailId/edges — erase an edge and rewire", () =>
     );
 
     expect(res.status).toBe(401);
-    expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([`${a}->${b}`]);
+    expect(edgePairs((await getTrail(clerkUserId)).body)).toEqual([
+      `${a}->${b}`,
+    ]);
   });
 });
 
@@ -547,7 +572,8 @@ describe("trail_edges — an adjacency list scoped to one Trail and nothing more
   it("forbids a self-loop at the database", async () => {
     // Set semantics and the DAG floor are the schema's guarantee, not just the
     // route's: even a write that bypasses the repository cannot loop a Stop.
-    const owner = (await createStop("clerk_trail_db_self", "Owned")).body as Stop;
+    const owner = (await createStop("clerk_trail_db_self", "Owned"))
+      .body as Stop;
 
     await expect(
       harness.pool.query(
@@ -575,7 +601,8 @@ describe("trail_edges — an adjacency list scoped to one Trail and nothing more
   it("rejects a cross-User edge at the database boundary", async () => {
     const aliceOwner = (await createStop("clerk_trail_db_alice", "Alice"))
       .body as Stop;
-    const bobStop = (await createStop("clerk_trail_db_bob", "Bob")).body as Stop;
+    const bobStop = (await createStop("clerk_trail_db_bob", "Bob"))
+      .body as Stop;
 
     await expect(
       harness.pool.query(
@@ -611,7 +638,9 @@ describe("per-User isolation", () => {
     });
 
     expect(res.status).toBe(404);
-    expect(edgePairs((await getTrail("clerk_trail_iso_owner")).body)).toEqual([]);
+    expect(edgePairs((await getTrail("clerk_trail_iso_owner")).body)).toEqual(
+      [],
+    );
   });
 
   it("cannot link your own Stop to another User's Stop", async () => {
@@ -624,8 +653,9 @@ describe("per-User isolation", () => {
     });
 
     expect(res.status).toBe(404);
-    expect(edgePairs((await getTrail("clerk_trail_iso_mix_intruder")).body))
-      .toEqual([]);
+    expect(
+      edgePairs((await getTrail("clerk_trail_iso_mix_intruder")).body),
+    ).toEqual([]);
   });
 
   it("cannot erase an edge on another User's Trail", async () => {
@@ -640,8 +670,8 @@ describe("per-User isolation", () => {
       .set(TEST_USER_HEADER, "clerk_trail_iso_del_intruder");
 
     expect(res.status).toBe(404);
-    expect(edgePairs((await getTrail("clerk_trail_iso_del_owner")).body)).toEqual(
-      [`${a}->${b}`],
-    );
+    expect(
+      edgePairs((await getTrail("clerk_trail_iso_del_owner")).body),
+    ).toEqual([`${a}->${b}`]);
   });
 });

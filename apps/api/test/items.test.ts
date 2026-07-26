@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import {
-  ITEM_STATUSES,
-  ITEM_TYPES,
-  type Item,
-} from "@unshelf/shared";
+import { ITEM_STATUSES, ITEM_TYPES, type Item } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -26,9 +22,7 @@ const listAll = (clerkUserId: string) =>
   request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId);
 
 const readItem = (clerkUserId: string, itemId: string) =>
-  request(app)
-    .get(`/api/items/${itemId}`)
-    .set(TEST_USER_HEADER, clerkUserId);
+  request(app).get(`/api/items/${itemId}`).set(TEST_USER_HEADER, clerkUserId);
 
 const setStatus = (clerkUserId: string, itemId: string, status: string) =>
   request(app)
@@ -107,10 +101,10 @@ describe("POST /api/items — capture", () => {
     expect((res.body as Item).source).toBeNull();
   });
 
-  it("stores source verbatim and unvalidated — never mutated, never rejected", async () => {
+  it("trims only the title boundary and stores source verbatim", async () => {
     const messy = "  not even a url — kept As-Is  ";
     const res = await capture("clerk_cap_verbatim", {
-      title: "  spaces around the title kept  ",
+      title: "  spaces   inside the title  ",
       type: "other",
       source: messy,
     });
@@ -118,7 +112,7 @@ describe("POST /api/items — capture", () => {
     expect(res.status).toBe(201);
     const item = res.body as Item;
     expect(item.source).toBe(messy);
-    expect(item.title).toBe("  spaces around the title kept  ");
+    expect(item.title).toBe("spaces   inside the title");
   });
 
   it("preserves an explicitly supplied blank source", async () => {
@@ -133,7 +127,11 @@ describe("POST /api/items — capture", () => {
   });
 
   it("does not dedupe — the same link captured twice yields two distinct Items", async () => {
-    const body = { title: "Twice", type: "video", source: "https://dup.example" };
+    const body = {
+      title: "Twice",
+      type: "video",
+      source: "https://dup.example",
+    };
     const first = (await capture("clerk_cap_dupe", body)).body as Item;
     const second = (await capture("clerk_cap_dupe", body)).body as Item;
 
@@ -145,18 +143,45 @@ describe("POST /api/items — capture", () => {
   });
 
   it("requires a title", async () => {
-    expect((await capture("clerk_cap_bad", { type: "article" })).status).toBe(400);
+    expect((await capture("clerk_cap_bad", { type: "article" })).status).toBe(
+      400,
+    );
     expect(
-      (await capture("clerk_cap_bad", { title: "   ", type: "article" })).status,
+      (await capture("clerk_cap_bad", { title: "   ", type: "article" }))
+        .status,
     ).toBe(400);
   });
 
   it("requires a valid, chosen type — no default", async () => {
-    expect((await capture("clerk_cap_bad", { title: "No type" })).status).toBe(400);
+    expect((await capture("clerk_cap_bad", { title: "No type" })).status).toBe(
+      400,
+    );
     expect(
       (await capture("clerk_cap_bad", { title: "Bad type", type: "podcast" }))
         .status,
     ).toBe(400);
+  });
+
+  it("rejects unknown fields with safe issues and leaves All unchanged", async () => {
+    const clerkUserId = "clerk_cap_unknown";
+    const res = await capture(clerkUserId, {
+      title: "Looks valid",
+      type: "article",
+      secret: "must not be reflected",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [
+        {
+          path: "body",
+          message: "Unrecognized field: secret",
+        },
+      ],
+    });
+    expect(JSON.stringify(res.body)).not.toContain("must not be reflected");
+    expect((await listAll(clerkUserId)).body).toEqual([]);
   });
 
   it.each(ITEM_TYPES)(
@@ -231,12 +256,18 @@ describe("GET /api/items/:itemId — canonical Item read", () => {
       "clerk_item_read_intruder",
       "00000000-0000-0000-0000-000000000000",
     );
-    const malformed = await readItem("clerk_item_read_intruder", "item-123");
-
     expect(foreign.status).toBe(404);
     expect(foreign.body).toEqual(missing.body);
-    expect(malformed.status).toBe(404);
-    expect(malformed.body).toEqual(missing.body);
+  });
+
+  it("rejects a malformed Item id before repository work", async () => {
+    const res = await readItem("clerk_item_bad_id", "item-123");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.itemId", message: "Must be a valid UUID" }],
+    });
   });
 });
 
@@ -316,6 +347,13 @@ describe("PATCH /api/items/:itemId/status — track Status", () => {
     const res = await setStatus(clerkUserId, item.id, "almost_done");
 
     expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body.status", message: "Invalid value" }],
+    });
+    expect(((await readItem(clerkUserId, item.id)).body as Item).status).toBe(
+      "not_started",
+    );
   });
 
   it("cannot change another User's Item", async () => {
@@ -411,20 +449,31 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
     }
 
     // The rejected writes left the Item's date alone.
-    expect(((await listAll(clerkUserId)).body as Item[])[0]!.targetDate).toBeNull();
+    expect(
+      ((await listAll(clerkUserId)).body as Item[])[0]!.targetDate,
+    ).toBeNull();
   });
 
   it("requires the targetDate field — an empty body is not a clear", async () => {
     const clerkUserId = "clerk_target_missing_field";
-    const item = (await capture(clerkUserId, { title: "Empty", type: "article" }))
-      .body as Item;
+    const item = (
+      await capture(clerkUserId, { title: "Empty", type: "article" })
+    ).body as Item;
 
-    expect((await setTargetDate(clerkUserId, item.id, {})).status).toBe(400);
+    const res = await setTargetDate(clerkUserId, item.id, {});
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body.targetDate", message: "Expected string" }],
+    });
   });
 
   it("cannot set a Target date on another User's Item", async () => {
     const item = (
-      await capture("clerk_target_owner", { title: "Owner only", type: "playlist" })
+      await capture("clerk_target_owner", {
+        title: "Owner only",
+        type: "playlist",
+      })
     ).body as Item;
 
     const res = await setTargetDate("clerk_target_intruder", item.id, {
@@ -432,13 +481,17 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
     });
 
     expect(res.status).toBe(404);
-    expect(((await listAll("clerk_target_owner")).body as Item[])[0]!.targetDate)
-      .toBeNull();
+    expect(
+      ((await listAll("clerk_target_owner")).body as Item[])[0]!.targetDate,
+    ).toBeNull();
   });
 
   it("refuses an unauthenticated Target date change", async () => {
     const item = (
-      await capture("clerk_target_anon_owner", { title: "Anon", type: "article" })
+      await capture("clerk_target_anon_owner", {
+        title: "Anon",
+        type: "article",
+      })
     ).body as Item;
 
     const res = await request(app)
@@ -446,6 +499,40 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
       .send({ targetDate: "2026-08-01" });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe("application error boundary", () => {
+  it("returns safe JSON for malformed request JSON", async () => {
+    const res = await request(app)
+      .post("/api/items")
+      .set(TEST_USER_HEADER, "clerk_malformed_json")
+      .set("Content-Type", "application/json")
+      .send('{"title":');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_json",
+      message: "Request body must be valid JSON",
+    });
+    expect(res.text).not.toContain("SyntaxError");
+  });
+
+  it("returns a generic JSON 500 without leaking database diagnostics", async () => {
+    await harness.pool.query("ALTER TABLE items RENAME TO unavailable_items");
+    try {
+      const res = await listAll("clerk_unexpected_failure");
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        error: "internal_server_error",
+        message: "An unexpected error occurred",
+      });
+      expect(res.text).not.toContain("unavailable_items");
+      expect(res.text).not.toContain("relation");
+    } finally {
+      await harness.pool.query("ALTER TABLE unavailable_items RENAME TO items");
+    }
   });
 });
 
@@ -483,7 +570,10 @@ describe("past target — derived, never stored, never nagging", () => {
     const clerkUserId = "clerk_past_target_done";
     const yesterday = await databaseDate(-1);
     const item = (
-      await capture(clerkUserId, { title: "Finished after target", type: "book" })
+      await capture(clerkUserId, {
+        title: "Finished after target",
+        type: "book",
+      })
     ).body as Item;
     expect(
       (
@@ -572,7 +662,10 @@ describe("GET /api/items — All", () => {
 
 describe("per-User isolation", () => {
   it("shows a User only their own Items — never another User's", async () => {
-    await capture("clerk_iso_alice", { title: "Alice's item", type: "article" });
+    await capture("clerk_iso_alice", {
+      title: "Alice's item",
+      type: "article",
+    });
     await capture("clerk_iso_bob", { title: "Bob's item", type: "book" });
 
     const aliceAll = (await listAll("clerk_iso_alice")).body as Item[];

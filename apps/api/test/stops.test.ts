@@ -105,9 +105,9 @@ describe("POST /api/stops — create a Stop", () => {
     expect(typeof stop.userId).toBe("string");
     expect(stop.userId).not.toBe("clerk_stop_create"); // our anchor id, not Clerk's
 
-    expect(titlesIn((await viewStop("clerk_stop_create", stop.id)).body)).toEqual(
-      [],
-    );
+    expect(
+      titlesIn((await viewStop("clerk_stop_create", stop.id)).body),
+    ).toEqual([]);
   });
 
   it("serves a topic to learn and a project to build with one uniform Stop", async () => {
@@ -123,17 +123,19 @@ describe("POST /api/stops — create a Stop", () => {
     expect(topic).not.toHaveProperty("type");
   });
 
-  it("stores the name verbatim", async () => {
+  it("trims the name boundary while preserving internal whitespace", async () => {
     const res = await createStop("clerk_stop_verbatim", {
-      name: "  Spaces kept  ",
+      name: "  Spaces   kept  ",
     });
 
-    expect((res.body as Stop).name).toBe("  Spaces kept  ");
+    expect((res.body as Stop).name).toBe("Spaces   kept");
   });
 
   it("requires a name", async () => {
     expect((await createStop("clerk_stop_bad", {})).status).toBe(400);
-    expect((await createStop("clerk_stop_bad", { name: "   " })).status).toBe(400);
+    expect((await createStop("clerk_stop_bad", { name: "   " })).status).toBe(
+      400,
+    );
     expect((await createStop("clerk_stop_bad", { name: 42 })).status).toBe(400);
   });
 
@@ -225,10 +227,12 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     const api = (await createStop(clerkUserId, { name: "Build the API" }))
       .body as Stop;
 
-    expect((await addToStop(clerkUserId, css.id, { itemId: item.id })).status)
-      .toBe(200);
-    expect((await addToStop(clerkUserId, api.id, { itemId: item.id })).status)
-      .toBe(200);
+    expect(
+      (await addToStop(clerkUserId, css.id, { itemId: item.id })).status,
+    ).toBe(200);
+    expect(
+      (await addToStop(clerkUserId, api.id, { itemId: item.id })).status,
+    ).toBe(200);
 
     // One Item, two memberships — both Stops point at the very same record.
     for (const stop of [css, api]) {
@@ -250,6 +254,16 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     expect((await addToStop(clerkUserId, stop.id, { itemId: 42 })).status).toBe(
       400,
     );
+    const unknown = await addToStop(clerkUserId, stop.id, {
+      itemId: "00000000-0000-0000-0000-000000000000",
+      extra: "not reflected",
+    });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body", message: "Unrecognized field: extra" }],
+    });
+    expect((await viewStop(clerkUserId, stop.id)).body.items).toEqual([]);
   });
 
   it("cannot add an Item that does not exist", async () => {
@@ -307,7 +321,8 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
     const clerkUserId = "clerk_stop_remove_one_membership";
     const item = (await capture(clerkUserId, { title: "In two", type: "book" }))
       .body as Item;
-    const first = (await createStop(clerkUserId, { name: "First" })).body as Stop;
+    const first = (await createStop(clerkUserId, { name: "First" }))
+      .body as Stop;
     const second = (await createStop(clerkUserId, { name: "Second" }))
       .body as Stop;
     await addToStop(clerkUserId, first.id, { itemId: item.id });
@@ -323,11 +338,13 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
 
   it("removes only the named Item, leaving the Stop's other Items", async () => {
     const clerkUserId = "clerk_stop_remove_only_named";
-    const stop = (await createStop(clerkUserId, { name: "Mixed" })).body as Stop;
+    const stop = (await createStop(clerkUserId, { name: "Mixed" }))
+      .body as Stop;
     const goes = (await capture(clerkUserId, { title: "Goes", type: "video" }))
       .body as Item;
-    const stays = (await capture(clerkUserId, { title: "Stays", type: "video" }))
-      .body as Item;
+    const stays = (
+      await capture(clerkUserId, { title: "Stays", type: "video" })
+    ).body as Item;
     await addToStop(clerkUserId, stop.id, { itemId: goes.id });
     await addToStop(clerkUserId, stop.id, { itemId: stays.id });
 
@@ -362,8 +379,9 @@ describe("GET /api/stops/:stopId — view a Stop's contents", () => {
     const started = (
       await capture(clerkUserId, { title: "Started", type: "article" })
     ).body as Item;
-    const fresh = (await capture(clerkUserId, { title: "Fresh", type: "article" }))
-      .body as Item;
+    const fresh = (
+      await capture(clerkUserId, { title: "Fresh", type: "article" })
+    ).body as Item;
     await addToStop(clerkUserId, stop.id, { itemId: started.id });
     await addToStop(clerkUserId, stop.id, { itemId: fresh.id });
     await setStatus(clerkUserId, started.id, "in_progress");
@@ -420,13 +438,30 @@ describe("GET /api/trails/:trailId/stops/:stopId — view a Stop in its route co
         .send({ name: "Other Trail" })
     ).body.id as string;
 
-    expect((await viewTrailStop(owner, owningTrailId, stop.id)).status).toBe(200);
-    expect((await viewTrailStop(owner, otherTrailId, stop.id)).status).toBe(404);
-    expect((await viewTrailStop(owner, owningTrailId, "not-a-stop-id")).status)
-      .toBe(404);
+    expect((await viewTrailStop(owner, owningTrailId, stop.id)).status).toBe(
+      200,
+    );
+    expect((await viewTrailStop(owner, otherTrailId, stop.id)).status).toBe(
+      404,
+    );
+    const malformed = await viewTrailStop(
+      owner,
+      owningTrailId,
+      "not-a-stop-id",
+    );
+    expect(malformed.status).toBe(400);
+    expect(malformed.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.stopId", message: "Must be a valid UUID" }],
+    });
     expect(
-      (await viewTrailStop("clerk_stop_route_context_intruder", owningTrailId, stop.id))
-        .status,
+      (
+        await viewTrailStop(
+          "clerk_stop_route_context_intruder",
+          owningTrailId,
+          stop.id,
+        )
+      ).status,
     ).toBe(404);
   });
 });
@@ -545,8 +580,9 @@ describe("per-User isolation", () => {
     });
 
     expect(res.status).toBe(404);
-    expect(titlesIn((await viewStop("clerk_stop_iso_add_owner", stop.id)).body))
-      .toEqual([]);
+    expect(
+      titlesIn((await viewStop("clerk_stop_iso_add_owner", stop.id)).body),
+    ).toEqual([]);
   });
 
   it("cannot add another User's Item to your own Stop", async () => {

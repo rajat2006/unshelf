@@ -1,4 +1,8 @@
-import express, { type Express, type RequestHandler } from "express";
+import express, {
+  type ErrorRequestHandler,
+  type Express,
+  type RequestHandler,
+} from "express";
 import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
 import type { Database } from "./db";
@@ -56,6 +60,33 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
   app.use("/api/labels", createLabelsRouter(db, auth));
   app.use("/api/stops", createStopsRouter(db, auth));
   app.use("/api/trails", createTrailsRouter(db, auth));
+  app.use(apiErrorHandler);
 
   return app;
+}
+
+const apiErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  if (isMalformedJsonError(error)) {
+    res.status(400).json({
+      error: "invalid_json",
+      message: "Request body must be valid JSON",
+    });
+    return;
+  }
+
+  res.status(500).json({
+    error: "internal_server_error",
+    message: "An unexpected error occurred",
+  });
+};
+
+function isMalformedJsonError(
+  error: unknown,
+): error is { type: "entity.parse.failed" } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    error.type === "entity.parse.failed"
+  );
 }

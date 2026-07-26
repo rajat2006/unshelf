@@ -49,21 +49,37 @@ describe("private Labels", () => {
     await createLabel("clerk_labels_bob", { name: "Bob only" });
 
     expect(alice.status).toBe(201);
-    expect((alice.body as Label).name).toBe("  Distributed systems  ");
+    expect((alice.body as Label).name).toBe("Distributed systems");
     expect(typeof (alice.body as Label).id).toBe("string");
 
     const listed = (await listLabels("clerk_labels_alice")).body as Label[];
-    expect(listed.map((label) => label.name)).toEqual([
-      "  Distributed systems  ",
-    ]);
+    expect(listed.map((label) => label.name)).toEqual(["Distributed systems"]);
+  });
+
+  it("rejects undeclared Label fields without creating a Label", async () => {
+    const user = "clerk_label_unknown";
+    const res = await createLabel(user, {
+      name: "Valid",
+      colour: "secret-red",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body", message: "Unrecognized field: colour" }],
+    });
+    expect(res.text).not.toContain("secret-red");
+    expect((await listLabels(user)).body).toEqual([]);
   });
 
   it("applies several Labels across Items with set semantics, then removes only that membership", async () => {
     const user = "clerk_label_membership";
     const firstItem = (await capture(user, "First Item")).body as Item;
     const secondItem = (await capture(user, "Second Item")).body as Item;
-    const systems = (await createLabel(user, { name: "Systems" })).body as Label;
-    const reading = (await createLabel(user, { name: "Reading" })).body as Label;
+    const systems = (await createLabel(user, { name: "Systems" }))
+      .body as Label;
+    const reading = (await createLabel(user, { name: "Reading" }))
+      .body as Label;
 
     await applyLabel(user, firstItem.id, systems.id);
     await applyLabel(user, firstItem.id, reading.id);
@@ -74,9 +90,10 @@ describe("private Labels", () => {
     expect((second.body as Item).labels).toEqual([systems]);
 
     const first = (
-      (await request(app).get(`/api/items/${firstItem.id}`).set(TEST_USER_HEADER, user))
-        .body as Item
-    );
+      await request(app)
+        .get(`/api/items/${firstItem.id}`)
+        .set(TEST_USER_HEADER, user)
+    ).body as Item;
     expect(first.labels.map((label) => label.name)).toEqual([
       "Reading",
       "Systems",
@@ -93,9 +110,8 @@ describe("private Labels", () => {
   });
 
   it("rejects cross-User Label membership at the database boundary", async () => {
-    const aliceItem = (
-      await capture("clerk_label_db_alice", "Alice Item")
-    ).body as Item;
+    const aliceItem = (await capture("clerk_label_db_alice", "Alice Item"))
+      .body as Item;
     const bobLabel = (
       await createLabel("clerk_label_db_bob", { name: "Bob Label" })
     ).body as Label;
@@ -115,7 +131,8 @@ describe("private Labels", () => {
     const item = (await capture(owner, "Private Item")).body as Item;
     const label = (await createLabel(owner, { name: "Private Label" }))
       .body as Label;
-    const intruderItem = (await capture(intruder, "Intruder Item")).body as Item;
+    const intruderItem = (await capture(intruder, "Intruder Item"))
+      .body as Item;
     const intruderLabel = (
       await createLabel(intruder, { name: "Intruder Label" })
     ).body as Label;
@@ -123,12 +140,18 @@ describe("private Labels", () => {
     expect((await applyLabel(intruder, item.id, intruderLabel.id)).status).toBe(
       404,
     );
-    expect((await applyLabel(owner, item.id, intruderLabel.id)).status).toBe(404);
-    expect((await applyLabel(owner, intruderItem.id, label.id)).status).toBe(404);
+    expect((await applyLabel(owner, item.id, intruderLabel.id)).status).toBe(
+      404,
+    );
+    expect((await applyLabel(owner, intruderItem.id, label.id)).status).toBe(
+      404,
+    );
     expect((await removeLabel(intruder, item.id, label.id)).status).toBe(404);
 
     const unchanged = (
-      await request(app).get(`/api/items/${item.id}`).set(TEST_USER_HEADER, owner)
+      await request(app)
+        .get(`/api/items/${item.id}`)
+        .set(TEST_USER_HEADER, owner)
     ).body as Item;
     expect(unchanged.labels).toEqual([]);
   });
@@ -159,7 +182,9 @@ describe("private Labels", () => {
     expect({ ...changed, labels: [] }).toEqual(item);
 
     const stopAfter = (
-      await request(app).get(`/api/stops/${stop.id}`).set(TEST_USER_HEADER, user)
+      await request(app)
+        .get(`/api/stops/${stop.id}`)
+        .set(TEST_USER_HEADER, user)
     ).body as { items: Item[] };
     expect(stopAfter.items.map((member) => member.id)).toEqual([item.id]);
     expect(stopAfter.items[0]?.labels).toEqual([label]);
