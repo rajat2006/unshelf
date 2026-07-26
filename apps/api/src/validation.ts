@@ -5,7 +5,6 @@ interface ValidationIssue {
   path: PropertyKey[];
   expected?: string;
   format?: string;
-  keys?: string[];
 }
 
 interface Schema<Output = unknown> {
@@ -105,11 +104,13 @@ function normalizeIssues(
   validationIssues: ValidationIssue[],
 ): PublicIssue[] {
   return validationIssues.flatMap((issue) => {
-    if (issue.code === "unrecognized_keys" && issue.keys) {
-      return issue.keys.map((key) => ({
-        path: [surface, ...issue.path, key].join("."),
-        message: "Unrecognized field",
-      }));
+    if (issue.code === "unrecognized_keys") {
+      return [
+        {
+          path: [surface, ...issue.path, "$unknown"].join("."),
+          message: "Contains unrecognized fields",
+        },
+      ];
     }
 
     return [

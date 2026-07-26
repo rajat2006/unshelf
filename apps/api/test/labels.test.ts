@@ -66,7 +66,12 @@ describe("private Labels", () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body.colour", message: "Unrecognized field" }],
+      issues: [
+        {
+          path: "body.$unknown",
+          message: "Contains unrecognized fields",
+        },
+      ],
     });
     expect(res.text).not.toContain("secret-red");
     expect((await listLabels(user)).body).toEqual([]);

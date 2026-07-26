@@ -19,14 +19,20 @@ describe("request validation boundary", () => {
     const app = queryTestApp();
     const rejected = await request(app).get("/search").query({
       name: "valid",
-      extra: "private value",
+      "password=private": "private value",
     });
     expect(rejected.status).toBe(400);
     expect(rejected.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "query.extra", message: "Unrecognized field" }],
+      issues: [
+        {
+          path: "query.$unknown",
+          message: "Contains unrecognized fields",
+        },
+      ],
     });
     expect(rejected.text).not.toContain("private value");
+    expect(rejected.text).not.toContain("password");
   });
 });
 

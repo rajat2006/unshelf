@@ -336,7 +336,12 @@ describe("POST /api/trails/:trailId/edges — draw an edge", () => {
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body.extra", message: "Unrecognized field" }],
+      issues: [
+        {
+          path: "body.$unknown",
+          message: "Contains unrecognized fields",
+        },
+      ],
     });
     expect(unknown.text).not.toContain("must stay private");
   });

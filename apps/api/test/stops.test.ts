@@ -261,7 +261,12 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body.extra", message: "Unrecognized field" }],
+      issues: [
+        {
+          path: "body.$unknown",
+          message: "Contains unrecognized fields",
+        },
+      ],
     });
     expect((await viewStop(clerkUserId, stop.id)).body.items).toEqual([]);
   });
