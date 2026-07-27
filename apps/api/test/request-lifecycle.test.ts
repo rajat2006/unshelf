@@ -48,16 +48,18 @@ describe("API request lifecycle", () => {
 
     await request(app).get("/api/items/not-a-uuid").expect(400);
 
-    expect(logger.records).toEqual([
-      expect.objectContaining({
-        level: "info",
-        method: "GET",
-        route: "/api/items/:itemId",
-        durationMs: 3,
-        termination: "completed",
-        status: 400,
-      }),
-    ]);
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
+      level: "info",
+      method: "GET",
+      route: "/api/items/:itemId",
+      durationMs: 3,
+      termination: "completed",
+      status: 400,
+    });
   });
 
   it("keeps the mount prefix when a matched route fails asynchronously", async () => {
@@ -199,7 +201,11 @@ describe("API request lifecycle", () => {
 
     await request(app).post("/api/items").send({}).expect(400);
 
-    expect(logger.records[0]).toMatchObject({
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
       route: "/api/items",
     });
   });
@@ -214,12 +220,18 @@ describe("API request lifecycle", () => {
 
     await request(app).get("/private/raw/path-value").expect(404);
 
-    expect(logger.records[0]).toMatchObject({
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
       route: "UNMATCHED",
       termination: "completed",
       status: 404,
+      request: {
+        path: "/private/raw/path-value",
+      },
     });
-    expect(JSON.stringify(logger.records)).not.toContain("private");
   });
 
   it("classifies termination before route resolution as unresolved", async () => {
@@ -236,7 +248,11 @@ describe("API request lifecycle", () => {
       .send('{"title":')
       .expect(400);
 
-    expect(logger.records[0]).toMatchObject({
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
       route: "UNRESOLVED",
       termination: "completed",
       status: 400,
@@ -431,7 +447,11 @@ describe("API request lifecycle", () => {
 
     await unusualRequest.expect(404);
 
-    expect(logger.records[0]).toMatchObject({
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
       method: "_OTHER",
       route: "UNMATCHED",
     });

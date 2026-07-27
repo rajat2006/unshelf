@@ -17,7 +17,10 @@ export function createLabelsRouter(
 
   router.post(
     "/",
-    validateRequest({ body: createLabelRequestSchema }),
+    validateRequest(
+      { body: createLabelRequestSchema },
+      "invalid_label_name",
+    ),
     async (req, res) => {
       const { body } = res.locals.validated;
       res.status(201).json(await createLabel(db, req.user!.id, body));

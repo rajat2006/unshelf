@@ -40,7 +40,10 @@ function queryTestApp() {
   const app = express();
   app.get(
     "/search",
-    validateRequest({ query: createLabelRequestSchema }),
+    validateRequest(
+      { query: createLabelRequestSchema },
+      "invalid_label_name",
+    ),
     (_req, res) => {
       res.json(res.locals.validated.query);
     },

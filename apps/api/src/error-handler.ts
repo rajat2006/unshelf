@@ -7,12 +7,14 @@ import {
   failureRequestSnapshot,
   registeredRoute,
 } from "./request-lifecycle";
+import { recordValidationFailure } from "./validation";
 
 export function createApiErrorHandler(
   options: DiagnosticOptions = {},
 ): ErrorRequestHandler {
   return (error, req, res, _next) => {
     if (isMalformedJsonError(error)) {
+      recordValidationFailure(req, "malformed_json");
       res.status(400).json({
         error: "invalid_json",
         message: "Request body must be valid JSON",

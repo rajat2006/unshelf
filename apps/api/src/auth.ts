@@ -42,6 +42,11 @@ export function createAuthMiddleware(
   return async (req, res, next) => {
     const clerkUserId = await identify(req);
     if (!clerkUserId) {
+      req.logger.warn({
+        event: "unshelf.api.authentication.failed",
+        msg: "Authentication failed",
+        reason: "unauthenticated",
+      });
       res.status(401).json({ error: "unauthenticated" });
       return;
     }

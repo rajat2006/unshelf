@@ -14,7 +14,10 @@ import {
   getTrail as getTrailTopology,
 } from "../trail/repository";
 import { createTrail, getTrail, listTrails } from "./repository";
-import { validateRequest } from "../validation";
+import {
+  recordValidationFailure,
+  validateRequest,
+} from "../validation";
 
 /**
  * Mount the authenticated Trail HTTP interface at `/api/trails`.
@@ -48,7 +51,10 @@ export function createTrailsRouter(
 
   router.post(
     "/",
-    validateRequest({ body: createTrailRequestSchema }),
+    validateRequest(
+      { body: createTrailRequestSchema },
+      "invalid_trail_name",
+    ),
     async (req, res) => {
       const { body } = res.locals.validated;
       res.status(201).json(await createTrail(db, req.user!.id, body));
@@ -59,7 +65,7 @@ export function createTrailsRouter(
     "/:trailId",
     validateRequest({
       params: { trailId: trailIdSchema },
-    }),
+    }, "invalid_trail_name"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const trail = await getTrail(db, req.user!.id, params.trailId);
@@ -76,7 +82,7 @@ export function createTrailsRouter(
     validateRequest({
       body: createStopRequestSchema,
       params: { trailId: trailIdSchema },
-    }),
+    }, "invalid_stop_name"),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const stop = await createStop(db, req.user!.id, params.trailId, body);
@@ -92,7 +98,7 @@ export function createTrailsRouter(
     "/:trailId/stops/:stopId",
     validateRequest({
       params: { trailId: trailIdSchema, stopId: stopIdSchema },
-    }),
+    }, "invalid_stop_name"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const stop = await getStopOnTrail(
@@ -113,7 +119,7 @@ export function createTrailsRouter(
     "/:trailId/topology",
     validateRequest({
       params: { trailId: trailIdSchema },
-    }),
+    }, "invalid_trail_name"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const topology = await getTrailTopology(
@@ -134,10 +140,11 @@ export function createTrailsRouter(
     validateRequest({
       body: connectStopsRequestSchema,
       params: { trailId: trailIdSchema },
-    }),
+    }, "invalid_edge_endpoints"),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       if (body.fromStopId === body.toStopId) {
+        recordValidationFailure(req, "self_edge");
         res.status(400).json({ error: "a stop cannot link to itself" });
         return;
       }
@@ -173,7 +180,7 @@ export function createTrailsRouter(
         fromStopId: stopIdSchema,
         toStopId: stopIdSchema,
       },
-    }),
+    }, "invalid_edge_endpoints"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const topology = await disconnectStops(

@@ -59,7 +59,7 @@ export function createRequestLifecycle({
       const failureRequest =
         req.failureRequest ??
         (termination === "aborted" ||
-        (status !== undefined && status >= 500)
+        (status !== undefined && status >= 400)
           ? failureRequestSnapshot(req, diagnosticSecrets)
           : undefined);
       req.logger[level]({
@@ -135,9 +135,13 @@ export function failureRequestSnapshot(
   return serializeDiagnosticValue(
     {
       method: req.method,
-      path: req.path,
+      path: rawRequestPath(req.originalUrl),
       headers: req.headers,
-      params: failureRouteParameters(req.path, route, req.params),
+      params: failureRouteParameters(
+        rawRequestPath(req.originalUrl),
+        route,
+        req.params,
+      ),
       query: serializeDiagnosticQuery(req.query, { secrets }),
       body: req.body,
     },
@@ -145,23 +149,31 @@ export function failureRequestSnapshot(
   ) as Readonly<Record<string, unknown>>;
 }
 
+function rawRequestPath(originalUrl: string): string {
+  const queryStart = originalUrl.indexOf("?");
+  return queryStart === -1
+    ? originalUrl
+    : originalUrl.slice(0, queryStart);
+}
+
 function failureRouteParameters(
   path: string,
   route: string,
-  current: Readonly<Record<string, string | string[]>>,
+  current: Readonly<Record<string, string | string[]>> | undefined,
 ): Readonly<Record<string, string | string[]>> {
+  const captured = current ?? {};
   if (
-    Object.keys(current).length > 0 ||
+    Object.keys(captured).length > 0 ||
     route === "UNRESOLVED" ||
     route === "UNMATCHED"
   ) {
-    return current;
+    return captured;
   }
 
   const pathSegments = path.split("/");
   const routeSegments = route.split("/");
   if (pathSegments.length !== routeSegments.length) {
-    return current;
+    return captured;
   }
 
   return Object.fromEntries(
