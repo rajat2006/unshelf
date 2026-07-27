@@ -19,7 +19,7 @@ describe("migration CLI", () => {
     const db = createDatabase(container.getConnectionUri());
 
     try {
-      await execFileAsync(
+      const { stdout } = await execFileAsync(
         process.execPath,
         ["--import", "tsx", "src/migrate.ts"],
         {
@@ -30,6 +30,24 @@ describe("migration CLI", () => {
           },
         },
       );
+      const records = stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          level: "info",
+          event: "unshelf.migration.started",
+          msg: "Migration started",
+        }),
+        expect.objectContaining({
+          level: "info",
+          event: "unshelf.migration.completed",
+          msg: "Migration completed",
+          durationMs: expect.any(Number),
+        }),
+      ]);
 
       const response = await request(
         createApp(db, [(_req, _res, next) => next()], {
