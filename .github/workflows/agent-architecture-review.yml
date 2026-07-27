@@ -2,7 +2,7 @@ name: Agent Architecture Review
 
 # The scheduled/on-demand architecture-review leg (spec #52 / #70). Unlike the
 # other agent workflows this has NO label trigger and NO originating issue/PR:
-# it runs on a weekday cron and via `workflow_dispatch`, surveys the tree on
+# it runs on a weekly cron and via `workflow_dispatch`, surveys the tree on
 # `main` for the single freshest deepening opportunity, and proposes it as a PRD
 # labelled `source:architecture-review` (a human later expands it with
 # `agent:to-issues`). Read-only: the agent produces only output files — this
@@ -13,9 +13,9 @@ name: Agent Architecture Review
 
 on:
   schedule:
-    # Every weekday at 09:00 UTC — CVM's cadence, so drift surfaces steadily
-    # without a human remembering to ask (spec user story 15).
-    - cron: "0 9 * * 1-5"
+    # Once a week, Monday at 09:00 UTC — drift surfaces steadily without a human
+    # remembering to ask (spec user story 15), at one PRD per week.
+    - cron: "0 9 * * 1"
   workflow_dispatch:
     inputs:
       provider:
