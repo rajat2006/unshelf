@@ -125,6 +125,117 @@ DDL rolls back, but the empty `drizzle.__drizzle_migrations` table can remain.
 Postgres operations forbidden inside a transaction, notably `CREATE INDEX
 CONCURRENTLY`, cannot be used in these migration files.
 
+## Container logs and incident evidence
+
+The production Compose file sends each service's stdout and stderr to Docker's
+`local` logging driver in blocking mode. The limits are deliberately unequal:
+
+| Service | Rotation limit | Nominal current-container budget |
+| --- | ---: | ---: |
+| `api` | `20m` × `5` files | 100 MB |
+| `db` | `10m` × `5` files | 50 MB |
+| `web` | `5m` × `3` files | 15 MB |
+| `migrate` | `5m` × `3` files | 15 MB |
+
+This is a nominal **180 MB** budget across one current container for each
+service. Replicas and additional retained containers multiply it, while the
+driver's compression and small implementation overheads affect actual disk use.
+Retention is **byte-bounded, not time-bounded**: traffic, message size, and error
+bursts determine whether the retained bytes cover hours, days, or longer.
+
+This local history is intentionally short-lived. **Rotation removes** the oldest
+entries; **container recreation removes** previous-container history; and **VPS
+loss removes** all local history. The stopped `migrate` container retains only
+the current deployment attempt until Compose recreates it. A restart of the same
+container preserves its history subject to rotation, but a replacement does
+not. These logs are **not an audit trail** and **not a cross-deployment archive**.
+If those properties or a guaranteed retention duration become necessary, use a
+remote log sink rather than increasing local limits.
+
+Failure diagnostics deliberately retain non-secret User-authored and business
+values. Treat both container logs and exported incident evidence as **sensitive
+User data** requiring restricted access. Do not paste them into public issues or
+leave exports in broadly readable locations.
+
+### Inspect current logs
+
+Dokploy's per-service **Logs** view is suitable for a quick bounded look at a
+running service, but it is only a viewer over the same container-local history,
+not an archive. For precise windows, open a terminal in the Dokploy Compose
+application's code directory (where `docker-compose.yml` and the generated
+`.env` live) and use the following copyable commands:
+
+```sh
+# Include stopped containers, especially the one-shot migration.
+docker compose -f docker-compose.yml ps --all
+
+# Recent API context.
+docker compose -f docker-compose.yml logs \
+  --since=30m --tail=200 --timestamps api
+
+# Correlate a recent incident across the long-running services.
+docker compose -f docker-compose.yml logs \
+  --since=2h --tail=500 --timestamps api db web
+
+# Read all still-retained output from the stopped current migration attempt.
+# Its Compose logging policy bounds this output to 5m × 3 files.
+docker compose -f docker-compose.yml logs --timestamps migrate
+
+# Follow new API output; Ctrl+C stops following, not the service.
+docker compose -f docker-compose.yml logs \
+  --follow --tail=100 --timestamps api
+```
+
+Prefer `--since` and `--tail` for routine investigation. Do not read or
+manipulate Docker's internal `local` driver files directly.
+
+### Verify the effective policy
+
+The logging policy applies when containers are created. After deploying this
+change, confirm all four services were recreated, then inspect the effective
+per-container configuration rather than relying on the daemon-wide default:
+
+```sh
+docker compose -f docker-compose.yml ps --all
+
+docker inspect \
+  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+  "$(docker compose -f docker-compose.yml ps --quiet api)"
+
+docker inspect \
+  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+  "$(docker compose -f docker-compose.yml ps --quiet db)"
+
+docker inspect \
+  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+  "$(docker compose -f docker-compose.yml ps --quiet web)"
+
+docker inspect \
+  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+  "$(docker compose -f docker-compose.yml ps --all --quiet migrate)"
+```
+
+Each result must show type `local`, mode `blocking`, and the service's
+`max-size` / `max-file` pair from the table. `docker info` only reports the
+daemon default and does not verify these per-container overrides.
+
+### Export before planned replacement
+
+If an incident overlaps a planned deploy or other container replacement, export
+a point-in-time copy first:
+
+```sh
+umask 077
+docker compose -f docker-compose.yml logs \
+  --since=24h --timestamps --no-color api db web migrate \
+  > unshelf-predeploy.log
+```
+
+The `umask` restricts the new file to its owner. Move the export off the VPS if
+it must survive host loss, grant access only to incident responders, and delete
+it when the investigation no longer needs it. Unlike the container policy, this
+manual file has no automatic rotation.
+
 ### One-time Drizzle cutover from the pre-migration schema
 
 This is a destructive **human VPS step**, performed once and only while the

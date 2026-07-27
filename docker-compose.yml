@@ -19,6 +19,12 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+        mode: blocking
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-unshelf}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -37,6 +43,12 @@ services:
     <<: *api-image
     command: ["node", "dist/migrate.js"]
     restart: "no"
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+        mode: blocking
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
     depends_on:
@@ -51,6 +63,12 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"
+        mode: blocking
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
       PORT: 3001
@@ -79,6 +97,12 @@ services:
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+        mode: blocking
     depends_on:
       - api
     networks:
