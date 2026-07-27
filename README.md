@@ -47,6 +47,25 @@ temporary worktrees; and tool-local configuration. Product CI remains unchanged,
 and pre-commit formatting is intentionally delegated to the separate hook
 exploration.
 
+### Formatting history
+
+The initial product-tree normalization is recorded in
+`.git-blame-ignore-revs`. Configure a local clone once so `git blame` looks
+through that mechanical commit to the earlier meaningful history:
+
+```sh
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+The formatter rollout must be merged with a merge commit, not squash-merged or
+rebase-merged, so the recorded commit identity remains reachable. If the rollout
+branch is rebased before merge, refresh the full commit identity in
+`.git-blame-ignore-revs` first.
+
+Older branches and worktrees should rebase onto the merged rollout, resolve
+substantive conflicts instead of retaining obsolete whitespace, and then run
+`pnpm format` before continuing.
+
 ## Deployment
 
 Production runs on a Hostinger VPS via Dokploy (ADR-0009). The Dockerfiles,
