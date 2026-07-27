@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { Request, RequestHandler } from "express";
+import {
+  serializeDiagnosticQuery,
+  serializeDiagnosticValue,
+} from "./diagnostics";
 import type { Logger, LogLevel } from "./logger";
 
 declare global {
@@ -14,6 +18,8 @@ declare global {
       routingResolved: boolean;
       /** Mounted template prefix captured before Express unwinds a router. */
       routeMount: string;
+      /** Redacted request context attached only to a failed terminal record. */
+      failureRequest?: Readonly<Record<string, unknown>>;
     }
   }
 }
@@ -22,12 +28,15 @@ export interface RequestLifecycleOptions {
   readonly logger: Logger;
   readonly generateRequestId?: () => string;
   readonly monotonicNow?: () => number;
+  /** Exact configured secrets removed from failure request snapshots. */
+  readonly diagnosticSecrets?: readonly string[];
 }
 
 export function createRequestLifecycle({
   logger,
   generateRequestId = randomUUID,
   monotonicNow = () => performance.now(),
+  diagnosticSecrets,
 }: RequestLifecycleOptions): RequestHandler {
   return (req, res, next) => {
     const requestId = generateRequestId();
@@ -47,6 +56,12 @@ export function createRequestLifecycle({
 
       const status = res.headersSent ? res.statusCode : undefined;
       const level = requestLevel(req, termination, status);
+      const failureRequest =
+        req.failureRequest ??
+        (termination === "aborted" ||
+        (status !== undefined && status >= 500)
+          ? failureRequestSnapshot(req, diagnosticSecrets)
+          : undefined);
       req.logger[level]({
         event: "unshelf.api.request.ended",
         msg: "API request ended",
@@ -55,6 +70,7 @@ export function createRequestLifecycle({
         durationMs: monotonicNow() - startedAt,
         termination,
         ...(status === undefined ? {} : { status }),
+        ...(failureRequest === undefined ? {} : { request: failureRequest }),
       });
     };
 
@@ -99,7 +115,7 @@ function normalizeMethod(method: string): string {
   return STANDARD_METHODS.has(normalized) ? normalized : "_OTHER";
 }
 
-function registeredRoute(req: Request): string {
+export function registeredRoute(req: Request): string {
   const path: unknown = req.route?.path;
   if (typeof path !== "string") {
     return req.routingResolved ? "UNMATCHED" : "UNRESOLVED";
@@ -109,6 +125,65 @@ function registeredRoute(req: Request): string {
     return mount;
   }
   return `${mount}${path}`;
+}
+
+export function failureRequestSnapshot(
+  req: Request,
+  secrets?: readonly string[],
+): Readonly<Record<string, unknown>> {
+  const route = registeredRoute(req);
+  return serializeDiagnosticValue(
+    {
+      method: req.method,
+      path: req.path,
+      headers: req.headers,
+      params: failureRouteParameters(req.path, route, req.params),
+      query: serializeDiagnosticQuery(req.query, { secrets }),
+      body: req.body,
+    },
+    { secrets },
+  ) as Readonly<Record<string, unknown>>;
+}
+
+function failureRouteParameters(
+  path: string,
+  route: string,
+  current: Readonly<Record<string, string | string[]>>,
+): Readonly<Record<string, string | string[]>> {
+  if (
+    Object.keys(current).length > 0 ||
+    route === "UNRESOLVED" ||
+    route === "UNMATCHED"
+  ) {
+    return current;
+  }
+
+  const pathSegments = path.split("/");
+  const routeSegments = route.split("/");
+  if (pathSegments.length !== routeSegments.length) {
+    return current;
+  }
+
+  return Object.fromEntries(
+    routeSegments.flatMap((segment, index) => {
+      if (!segment.startsWith(":")) {
+        return [];
+      }
+      const name = segment.slice(1);
+      const value = pathSegments[index];
+      return name.length === 0 || value === undefined
+        ? []
+        : [[name, safelyDecode(value)]];
+    }),
+  );
+}
+
+function safelyDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 const STANDARD_METHODS = new Set([

@@ -10,7 +10,7 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
-import { apiErrorHandler } from "./error-handler";
+import { createApiErrorHandler } from "./error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
   captureRouteMount,
@@ -19,10 +19,7 @@ import {
   type RequestLifecycleOptions,
 } from "./request-lifecycle";
 
-export interface AppOptions extends RequestLifecycleOptions {
-  /** Exact configured secrets removed from all failure diagnostics. */
-  readonly diagnosticSecrets?: readonly string[];
-}
+export type AppOptions = RequestLifecycleOptions;
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -86,7 +83,11 @@ export function createApp(
   app.use("/api/stops", captureRouteMount, createStopsRouter(db, auth));
   app.use("/api/trails", captureRouteMount, createTrailsRouter(db, auth));
   app.use(markRoutingResolved);
-  app.use(apiErrorHandler);
+  app.use(
+    createApiErrorHandler({
+      secrets: options.diagnosticSecrets,
+    }),
+  );
 
   return app;
 }

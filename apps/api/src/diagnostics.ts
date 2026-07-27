@@ -7,6 +7,32 @@ export interface DiagnosticOptions {
   readonly secrets?: readonly string[];
 }
 
+export function serializeDiagnosticValue(
+  value: unknown,
+  options: DiagnosticOptions = {},
+): unknown {
+  return redactValue(
+    value,
+    undefined,
+    configuredSecrets(options.secrets ?? []),
+    new WeakSet(),
+    isCredentialKey,
+  );
+}
+
+export function serializeDiagnosticQuery(
+  value: unknown,
+  options: DiagnosticOptions = {},
+): unknown {
+  return redactValue(
+    value,
+    undefined,
+    configuredSecrets(options.secrets ?? []),
+    new WeakSet(),
+    isSignatureParameter,
+  );
+}
+
 export function serializeFailure(
   error: unknown,
   options: DiagnosticOptions = {},
@@ -18,12 +44,7 @@ export function serializeFailure(
     error: serializeError(error, MAX_CAUSE_DEPTH),
     ...(database === undefined ? {} : { database }),
   };
-  return redactValue(
-    serialized,
-    undefined,
-    configuredSecrets(options.secrets ?? []),
-    new WeakSet(),
-  ) as FailureDiagnostics;
+  return serializeDiagnosticValue(serialized, options) as FailureDiagnostics;
 }
 
 function serializeError(
@@ -127,8 +148,9 @@ function redactValue(
   key: string | undefined,
   secrets: readonly string[],
   seen: WeakSet<object>,
+  isSensitiveKey: (key: string) => boolean,
 ): unknown {
-  if (key !== undefined && isCredentialKey(key)) {
+  if (key !== undefined && isSensitiveKey(key)) {
     return REDACTED;
   }
   if (value === undefined) {
@@ -161,12 +183,20 @@ function redactValue(
   seen.add(value);
 
   if (Array.isArray(value)) {
-    return value.map((entry) => redactValue(entry, undefined, secrets, seen));
+    return value.map((entry) =>
+      redactValue(entry, undefined, secrets, seen, isSensitiveKey),
+    );
   }
   return Object.fromEntries(
     Object.entries(value).map(([entryKey, entryValue]) => [
       entryKey,
-      redactValue(entryValue, entryKey, secrets, seen),
+      redactValue(
+        entryValue,
+        entryKey,
+        secrets,
+        seen,
+        isSensitiveKey,
+      ),
     ]),
   );
 }

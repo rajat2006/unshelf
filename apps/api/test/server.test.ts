@@ -1,8 +1,12 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import express from "express";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { startApiServer } from "../src/api-server";
+import {
+  superviseApiProcess,
+  type ProcessRuntime,
+} from "../src/process-failures";
 import {
   createCollectingLogger,
   createProductionLogger,
@@ -38,18 +42,39 @@ describe("API server startup", () => {
     }
   });
 
-  it("does not announce startup when the port cannot be bound", async () => {
+  it("reports a fatal startup failure when the port cannot be bound", async () => {
     const occupiedServer = express().listen(0);
     await once(occupiedServer, "listening");
 
     try {
       const occupiedPort = (occupiedServer.address() as AddressInfo).port;
       const logger = createCollectingLogger();
-      const failedServer = startApiServer(express(), occupiedPort, logger);
+      const exit = vi.fn();
+      const runtime: ProcessRuntime = {
+        once: () => undefined,
+        exit,
+      };
+      const failedServer = await superviseApiProcess({
+        logger,
+        runtime,
+        start: () => startApiServer(express(), occupiedPort, logger),
+      });
 
-      await once(failedServer, "error");
+      await once(failedServer!, "error");
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
 
-      expect(logger.records).toEqual([]);
+      expect(logger.records).toEqual([
+        {
+          level: "fatal",
+          event: "unshelf.api.error.unexpected",
+          msg: "Unexpected API process failure",
+          phase: "startup",
+          error: expect.objectContaining({
+            type: "Error",
+            code: "EADDRINUSE",
+          }),
+        },
+      ]);
     } finally {
       occupiedServer.close();
       await once(occupiedServer, "close");

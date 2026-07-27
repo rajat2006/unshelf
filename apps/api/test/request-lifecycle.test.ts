@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import type { RequestHandler } from "express";
+import { Type, type UserId } from "@unshelf/shared";
 import type { Database } from "../src/db";
 import { createApp } from "../src/app";
 import { createCollectingLogger } from "../src/logger";
@@ -71,11 +72,121 @@ describe("API request lifecycle", () => {
       .get("/api/items/098d8041-1b9b-47d9-b75f-dbd7f9d04c25")
       .expect(500);
 
-    expect(logger.records[0]).toMatchObject({
+    const terminalRecord = logger.records.find(
+      (record) => record.event === "unshelf.api.request.ended",
+    );
+    expect(terminalRecord).toMatchObject({
       level: "error",
       route: "/api/items/:itemId",
       status: 500,
+      request: {
+        params: {
+          itemId: "098d8041-1b9b-47d9-b75f-dbd7f9d04c25",
+        },
+      },
     });
+  });
+
+  it("correlates rich unexpected-error diagnostics with a redacted 5xx request snapshot", async () => {
+    const logger = createCollectingLogger();
+    const configuredSecret = "sk_live_unexpected-sentinel";
+    const failure = Object.assign(
+      new Error(
+        `insert failed for retained-business-value using ${configuredSecret}`,
+        {
+          cause: new Error("connection reset after retained-cause-value"),
+        },
+      ),
+      {
+        code: "57P01",
+        query: `insert into items (title) values ($1) /* ${configuredSecret} */`,
+        parameters: ["retained-item-title"],
+        severity: "FATAL",
+        detail: "retained database detail",
+      },
+    );
+    const app = createApp(failingItemDatabase(failure), [authenticatedUser], {
+      logger,
+      generateRequestId: () => "616e1c42-5fdd-4239-993f-e9b2df0e7076",
+      monotonicNow: elapsedClock(6),
+      diagnosticSecrets: [configuredSecret],
+    });
+
+    const response = await request(app)
+      .post(
+        "/api/items?trail=retained-trail&access_token=query-sentinel&x-amz-signature=signature-sentinel",
+      )
+      .set("Authorization", "Bearer header-sentinel")
+      .set("X-Business-Context", "retained-header-value")
+      .send({
+        title: "retained-item-title",
+        type: Type.Article,
+        source: "retained-source-value",
+      })
+      .expect(500);
+
+    expect(response.body).toEqual({
+      error: "internal_server_error",
+      message: "An unexpected error occurred",
+    });
+    expect(logger.records).toEqual([
+      {
+        level: "error",
+        event: "unshelf.api.error.unexpected",
+        msg: "Unexpected API error",
+        requestId: "616e1c42-5fdd-4239-993f-e9b2df0e7076",
+        phase: "request",
+        userId: "a156d86a-09d3-4935-9bf0-1820fa357f90",
+        route: "/api/items",
+        error: expect.objectContaining({
+          type: "Error",
+          code: "57P01",
+          message:
+            "insert failed for retained-business-value using [REDACTED]",
+          cause: expect.objectContaining({
+            type: "Error",
+            message: "connection reset after retained-cause-value",
+          }),
+        }),
+        database: {
+          query: "insert into items (title) values ($1) /* [REDACTED] */",
+          parameters: ["retained-item-title"],
+          severity: "FATAL",
+          detail: "retained database detail",
+        },
+      },
+      {
+        level: "error",
+        event: "unshelf.api.request.ended",
+        msg: "API request ended",
+        requestId: "616e1c42-5fdd-4239-993f-e9b2df0e7076",
+        method: "POST",
+        route: "/api/items",
+        durationMs: 6,
+        termination: "completed",
+        status: 500,
+        request: {
+          method: "POST",
+          path: "/api/items",
+          headers: expect.objectContaining({
+            authorization: "[REDACTED]",
+            "x-business-context": "retained-header-value",
+          }),
+          params: {},
+          query: {
+            trail: "retained-trail",
+            access_token: "[REDACTED]",
+            "x-amz-signature": "[REDACTED]",
+          },
+          body: {
+            title: "retained-item-title",
+            type: Type.Article,
+            source: "retained-source-value",
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(logger.records)).not.toContain("sentinel");
   });
 
   it("does not add a trailing slash to a mounted router root", async () => {
@@ -165,6 +276,12 @@ describe("API request lifecycle", () => {
         route: "/api/health",
         durationMs: 7,
         termination: "aborted",
+        request: expect.objectContaining({
+          method: "GET",
+          path: "/api/health",
+          params: {},
+          query: {},
+        }),
       },
     ]);
   });
@@ -210,7 +327,10 @@ describe("API request lifecycle", () => {
       diagnosticSecrets: [clerkSecret, databaseUrl],
     });
 
-    const response = await request(app).get("/api/health").expect(503);
+    const response = await request(app)
+      .get("/api/health?trail=retained-health&access_token=health-query-sentinel")
+      .set("Authorization", "Bearer health-header-sentinel")
+      .expect(503);
 
     expect(response.body).toMatchObject({
       status: "error",
@@ -258,6 +378,19 @@ describe("API request lifecycle", () => {
       route: "/api/health",
       termination: "completed",
       status: 503,
+      request: {
+        method: "GET",
+        path: "/api/health",
+        headers: expect.objectContaining({
+          authorization: "[REDACTED]",
+        }),
+        params: {},
+        query: {
+          trail: "retained-health",
+          access_token: "[REDACTED]",
+        },
+        body: "[undefined]",
+      },
     });
     expect(JSON.stringify(logger.records)).not.toContain("sentinel");
   });
@@ -335,6 +468,15 @@ describe("API request lifecycle", () => {
 
 const passThroughAuth: RequestHandler = (_req, _res, next) => next();
 
+const authenticatedUser: RequestHandler = (req, _res, next) => {
+  req.user = {
+    id: "a156d86a-09d3-4935-9bf0-1820fa357f90" as UserId,
+    clerkUserId: "not-logged" as never,
+    createdAt: "2026-07-27T00:00:00.000Z",
+  };
+  next();
+};
+
 function healthyDatabase(): Database {
   return {
     select: () => ({
@@ -353,6 +495,18 @@ function healthyDatabase(): Database {
 function elapsedClock(durationMs: number): () => number {
   const times = [0, durationMs];
   return () => times.shift()!;
+}
+
+function failingItemDatabase(failure: unknown): Database {
+  return {
+    insert: () => ({
+      values: () => ({
+        returning: async () => {
+          throw failure;
+        },
+      }),
+    }),
+  } as unknown as Database;
 }
 
 function pendingHealthDatabase(
