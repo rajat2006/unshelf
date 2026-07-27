@@ -1,10 +1,14 @@
 name: CI
 
 on:
+  # Unfiltered: every pull request is gated regardless of its base, so adding an
+  # integration branch never silently leaves its pull requests ungated.
   pull_request:
-    branches: [main]
   push:
-    branches: [main]
+    # Post-merge verification of the integration branches. Actions cannot read
+    # the default branch from a trigger, so this list is literal — keep it in
+    # sync with the repository rules that require this check.
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
