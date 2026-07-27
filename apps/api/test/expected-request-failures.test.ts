@@ -107,12 +107,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Item capture with the internal User", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "aa97b0a4-70a8-4127-a018-51d35c7a311f",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "aa97b0a4-70a8-4127-a018-51d35c7a311f",
+    );
 
     const response = await request(app)
       .post("/api/items")
@@ -155,12 +152,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Item Status update", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "bd03260e-31cd-4878-88bb-ae5f05884cf8",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "bd03260e-31cd-4878-88bb-ae5f05884cf8",
+    );
 
     await request(app)
       .patch("/api/items/00fc6af8-f79a-41fd-95eb-7bd00f2518ac/status")
@@ -171,12 +165,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Target date update", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "774194cf-b1df-4462-ae81-f1e87c841767",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "774194cf-b1df-4462-ae81-f1e87c841767",
+    );
 
     await request(app)
       .patch(
@@ -189,12 +180,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Label name", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "f904af7b-9c07-4534-96c6-18e221f89486",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "f904af7b-9c07-4534-96c6-18e221f89486",
+    );
 
     await request(app)
       .post("/api/labels")
@@ -205,12 +193,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies a missing Item id on a Stop membership request", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "c1e56006-2a38-4f60-8734-e39a005d9e1b",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "c1e56006-2a38-4f60-8734-e39a005d9e1b",
+    );
 
     await request(app)
       .post("/api/stops/b5a72490-1fba-4ca5-b78e-e7bb3bddb611/items")
@@ -221,12 +206,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Trail name", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "d04db2f7-2df1-4753-ac28-c27008e1fb60",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "d04db2f7-2df1-4753-ac28-c27008e1fb60",
+    );
 
     await request(app)
       .post("/api/trails")
@@ -237,12 +219,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies an invalid Stop name", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "2522c0bf-0883-42a1-ac9b-022b3fb92796",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "2522c0bf-0883-42a1-ac9b-022b3fb92796",
+    );
 
     await request(app)
       .post(
@@ -255,12 +234,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies invalid Trail edge endpoints", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "bbfbfa03-c721-49f3-bec8-d2d7fcc9fc83",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "bbfbfa03-c721-49f3-bec8-d2d7fcc9fc83",
+    );
 
     await request(app)
       .post(
@@ -275,12 +251,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies a self-link separately from malformed edge endpoints", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "eb2feab9-6c94-4db2-a813-456d9b4cb1b0",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "eb2feab9-6c94-4db2-a813-456d9b4cb1b0",
+    );
     const stopId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
 
     await request(app)
@@ -294,12 +267,9 @@ describe("expected API request failures", () => {
   });
 
   it("classifies malformed JSON before authentication", async () => {
-    const logger = createCollectingLogger();
-    const app = createApp(unusedDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "0b37bc37-03a5-4fa6-963e-f65b14392344",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "0b37bc37-03a5-4fa6-963e-f65b14392344",
+    );
 
     const response = await request(app)
       .post("/api/items")
@@ -325,13 +295,11 @@ describe("expected API request failures", () => {
   });
 
   it("preserves a missing Item 404 with its failure snapshot", async () => {
-    const logger = createCollectingLogger();
     const itemId = "8462764a-e0a3-4374-a200-aab09480f7b4";
-    const app = createApp(missingItemDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "fcd3bd92-a04c-43b4-91e9-6f7cd66d89b5",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "fcd3bd92-a04c-43b4-91e9-6f7cd66d89b5",
+      missingItemDatabase(),
+    );
 
     const response = await request(app)
       .get(`/api/items/${itemId}?context=retained-query`)
@@ -360,15 +328,13 @@ describe("expected API request failures", () => {
   });
 
   it("preserves a Trail-cycle 409 with its failure snapshot", async () => {
-    const logger = createCollectingLogger();
     const trailId = "37626b0f-6586-4670-9d8e-744d64467497";
     const fromStopId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
     const toStopId = "03c9a63d-0435-4f31-9682-e50a3890b102";
-    const app = createApp(cyclicTrailDatabase(), [authenticatedUser], {
-      logger,
-      generateRequestId: () => "86c12c02-2103-425f-9f04-6f917c298f54",
-      monotonicNow: () => 0,
-    });
+    const { app, logger } = expectedFailureApp(
+      "86c12c02-2103-425f-9f04-6f917c298f54",
+      cyclicTrailDatabase(),
+    );
 
     const response = await request(app)
       .post(`/api/trails/${trailId}/edges`)
@@ -401,6 +367,21 @@ describe("expected API request failures", () => {
 
 function unusedDatabase(): Database {
   return {} as Database;
+}
+
+function expectedFailureApp(
+  requestId: string,
+  db: Database = unusedDatabase(),
+) {
+  const logger = createCollectingLogger();
+  return {
+    app: createApp(db, [authenticatedUser], {
+      logger,
+      generateRequestId: () => requestId,
+      monotonicNow: () => 0,
+    }),
+    logger,
+  };
 }
 
 function missingItemDatabase(): Database {

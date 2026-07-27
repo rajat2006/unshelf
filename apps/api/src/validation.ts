@@ -66,7 +66,10 @@ interface PublicIssue {
  * Schemas own both runtime parsing and `res.locals.validated`, the request-scoped
  * input container consumed by the next handler. Path parameters are declared
  * individually so the API can consume the shared branded UUID schemas without
- * importing Zod or rebuilding identifier contracts locally.
+ * importing Zod or rebuilding identifier contracts locally. The validation code
+ * classifies the whole route operation from the fixed logging catalog; it is not
+ * inferred from an individual Zod issue when one boundary validates several
+ * fields or surfaces.
  */
 export function validateRequest<const Schemas extends RequestSchemas>(
   schemas: Schemas,
