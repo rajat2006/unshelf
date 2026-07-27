@@ -74,6 +74,7 @@ horizontal scaling — is [ADR-0011](adr/0011-traefik-owns-routing-caddy-serves-
 | `POSTGRES_PASSWORD` | db + api `DATABASE_URL` | Generate a strong value; Dokploy stores it. |
 | `POSTGRES_USER` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
 | `POSTGRES_DB` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
+| `LOG_LEVEL` | api + migrate (runtime) | Optional; defaults to `info`. Accepted values: `debug`, `info`, `warn`, `error`, or `fatal`; any other value fails process startup. |
 | `CLERK_SECRET_KEY` | api (runtime) | Server-side only. From the Clerk dashboard. |
 | `CLERK_PUBLISHABLE_KEY` | api (runtime) | Browser-public key. |
 | `VITE_CLERK_PUBLISHABLE_KEY` | web (**build arg**) | Same publishable key; Vite inlines it at build. |
