@@ -26,6 +26,9 @@ const db = createDatabase(connectionString);
 // The API process no longer touches the schema (#104, ADR-0015). Migrations run
 // as a one-shot step gated ahead of this service in the deploy path, so a failed
 // migration fails the *deploy* rather than restart-looping a live service.
-const app = createApp(db, createClerkAuth(db), { logger });
+const app = createApp(db, createClerkAuth(db), {
+  logger,
+  diagnosticSecrets: [connectionString, process.env.CLERK_SECRET_KEY],
+});
 
 startApiServer(app, port, logger);

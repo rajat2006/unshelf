@@ -171,20 +171,95 @@ describe("API request lifecycle", () => {
 
   it("records failed health responses at error severity", async () => {
     const logger = createCollectingLogger();
-    const app = createApp(failingDatabase(), [passThroughAuth], {
+    const clerkSecret = "sk_live_health-clerk-sentinel";
+    const databaseUrl =
+      "postgresql://unshelf:health-db-password-sentinel@database:5432/unshelf";
+    const failure = Object.assign(
+      new Error(
+        `connection terminated for trail-42: ${clerkSecret} ${databaseUrl}`,
+      ),
+      {
+        code: "57P01",
+        query: `select message, now() from health_check /* ${clerkSecret} */`,
+        parameters: [
+          "health-check",
+          { password: "parameter-password-sentinel", item: "trail-42" },
+        ],
+        severity: "FATAL",
+        detail: "PostgreSQL is shutting down",
+        hint: "retry later",
+        position: "17",
+        internalPosition: "9",
+        internalQuery: "select pg_sleep(1)",
+        where: "SQL statement in health probe",
+        schema: "public",
+        table: "health_check",
+        column: "message",
+        dataType: "text",
+        constraint: "health_check_pkey",
+        source: "postgresql-server",
+        file: "postgres.c",
+        line: "3210",
+        routine: "ProcessInterrupts",
+      },
+    );
+    const app = createApp(failingDatabase(failure), [passThroughAuth], {
       logger,
       generateRequestId: () => "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
       monotonicNow: elapsedClock(4),
+      diagnosticSecrets: [clerkSecret, databaseUrl],
     });
 
-    await request(app).get("/api/health").expect(503);
+    const response = await request(app).get("/api/health").expect(503);
 
-    expect(logger.records[0]).toMatchObject({
+    expect(response.body).toMatchObject({
+      status: "error",
+      message: "database unavailable",
+      db: "down",
+    });
+    expect(logger.records[0]).toEqual({
+      level: "error",
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      requestId: "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
+      dependency: "postgresql",
+      error: expect.objectContaining({
+        type: "Error",
+        code: "57P01",
+        message: "connection terminated for trail-42: [REDACTED] [REDACTED]",
+        stack: expect.any(String),
+      }),
+      database: {
+        query: "select message, now() from health_check /* [REDACTED] */",
+        parameters: [
+          "health-check",
+          { password: "[REDACTED]", item: "trail-42" },
+        ],
+        severity: "FATAL",
+        detail: "PostgreSQL is shutting down",
+        hint: "retry later",
+        position: "17",
+        internalPosition: "9",
+        internalQuery: "select pg_sleep(1)",
+        where: "SQL statement in health probe",
+        schema: "public",
+        table: "health_check",
+        column: "message",
+        dataType: "text",
+        constraint: "health_check_pkey",
+        source: "postgresql-server",
+        file: "postgres.c",
+        line: "3210",
+        routine: "ProcessInterrupts",
+      },
+    });
+    expect(logger.records[1]).toMatchObject({
       level: "error",
       route: "/api/health",
       termination: "completed",
       status: 503,
     });
+    expect(JSON.stringify(logger.records)).not.toContain("sentinel");
   });
 
   it("represents unusual HTTP methods with a stable low-cardinality value", async () => {
@@ -280,12 +355,14 @@ function pendingHealthDatabase(
   } as unknown as Database;
 }
 
-function failingDatabase(): Database {
+function failingDatabase(
+  error: unknown = new Error("database unavailable"),
+): Database {
   return {
     select: () => ({
       from: () => ({
         limit: async () => {
-          throw new Error("database unavailable");
+          throw error;
         },
       }),
     }),

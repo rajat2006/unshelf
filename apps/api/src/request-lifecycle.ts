@@ -22,6 +22,8 @@ export interface RequestLifecycleOptions {
   readonly logger: Logger;
   readonly generateRequestId?: () => string;
   readonly monotonicNow?: () => number;
+  /** Exact configured secrets removed from all failure diagnostics. */
+  readonly diagnosticSecrets?: readonly string[];
 }
 
 export function createRequestLifecycle({

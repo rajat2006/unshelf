@@ -11,6 +11,7 @@ import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
 import { apiErrorHandler } from "./error-handler";
+import { serializeFailure } from "./diagnostics";
 import {
   captureRouteMount,
   createRequestLifecycle,
@@ -35,7 +36,7 @@ export function createApp(
   app.use(createRequestLifecycle(requestLifecycle));
   app.use(express.json({ strict: false }));
 
-  app.get("/api/health", async (_req, res) => {
+  app.get("/api/health", async (req, res) => {
     try {
       const [row] = await db
         .select({ message: healthCheck.message, time: sql<string>`now()` })
@@ -48,7 +49,15 @@ export function createApp(
         time: row ? new Date(row.time).toISOString() : new Date().toISOString(),
       };
       res.json(body);
-    } catch {
+    } catch (error) {
+      req.logger.error({
+        event: "unshelf.api.health.failed",
+        msg: "PostgreSQL health check failed",
+        dependency: "postgresql",
+        ...serializeFailure(error, {
+          secrets: requestLifecycle.diagnosticSecrets,
+        }),
+      });
       const body: HealthResponse = {
         status: "error",
         message: "database unavailable",

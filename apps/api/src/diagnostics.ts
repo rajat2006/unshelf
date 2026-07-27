@@ -1,0 +1,236 @@
+export interface FailureDiagnostics {
+  readonly error: Readonly<Record<string, unknown>>;
+  readonly database?: Readonly<Record<string, unknown>>;
+}
+
+export interface DiagnosticOptions {
+  readonly secrets?: readonly string[];
+}
+
+export function serializeFailure(
+  error: unknown,
+  options: DiagnosticOptions = {},
+): FailureDiagnostics {
+  const database = isRecord(error)
+    ? pickDatabaseDiagnostics(error)
+    : undefined;
+  const serialized = {
+    error: serializeError(error, MAX_CAUSE_DEPTH),
+    ...(database === undefined ? {} : { database }),
+  };
+  return redactValue(
+    serialized,
+    undefined,
+    configuredSecrets(options.secrets ?? []),
+    new WeakSet(),
+  ) as FailureDiagnostics;
+}
+
+function serializeError(
+  error: unknown,
+  remainingCauseDepth: number,
+): Readonly<Record<string, unknown>> {
+  if (!(error instanceof Error)) {
+    return {
+      type: "NonErrorThrow",
+      value: error,
+    };
+  }
+
+  const errorRecord = error as Error & Readonly<Record<string, unknown>>;
+  return {
+    type: error.name,
+    ...(errorRecord.code === undefined ? {} : { code: errorRecord.code }),
+    message: error.message,
+    ...(error.stack === undefined ? {} : { stack: error.stack }),
+    ...(remainingCauseDepth > 0 && error.cause !== undefined
+      ? {
+          cause: serializeError(error.cause, remainingCauseDepth - 1),
+        }
+      : {}),
+  };
+}
+
+function pickDatabaseDiagnostics(
+  error: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> | undefined {
+  const diagnostics = Object.fromEntries(
+    DATABASE_DIAGNOSTIC_FIELDS.flatMap((field) =>
+      error[field] === undefined ? [] : [[field, error[field]]],
+    ),
+  );
+  return Object.keys(diagnostics).length === 0 ? undefined : diagnostics;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null;
+}
+
+const DATABASE_DIAGNOSTIC_FIELDS = [
+  "query",
+  "parameters",
+  "severity",
+  "detail",
+  "hint",
+  "position",
+  "internalPosition",
+  "internalQuery",
+  "where",
+  "schema",
+  "table",
+  "column",
+  "dataType",
+  "constraint",
+  "source",
+  "file",
+  "line",
+  "routine",
+] as const;
+
+const MAX_CAUSE_DEPTH = 5;
+const REDACTED = "[REDACTED]";
+
+function configuredSecrets(values: readonly string[]): readonly string[] {
+  const secrets = new Set(values.filter((value) => value.length > 0));
+  for (const value of values) {
+    try {
+      const url = new URL(value);
+      if (url.password.length > 0) {
+        secrets.add(url.password);
+        secrets.add(decodeURIComponent(url.password));
+      }
+    } catch {
+      // Configured secrets are commonly opaque strings rather than URLs.
+    }
+  }
+  return [...secrets].sort((left, right) => right.length - left.length);
+}
+
+function redactValue(
+  value: unknown,
+  key: string | undefined,
+  secrets: readonly string[],
+  seen: WeakSet<object>,
+): unknown {
+  if (key !== undefined && isCredentialKey(key)) {
+    return REDACTED;
+  }
+  if (typeof value === "string") {
+    return redactString(value, secrets);
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (value instanceof URL) {
+    return redactString(value.toString(), secrets);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactValue(entry, undefined, secrets, seen));
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([entryKey, entryValue]) => [
+      entryKey,
+      redactValue(entryValue, entryKey, secrets, seen),
+    ]),
+  );
+}
+
+function redactString(value: string, secrets: readonly string[]): string {
+  let redacted = value;
+  for (const secret of secrets) {
+    redacted = redacted.replaceAll(secret, REDACTED);
+  }
+
+  redacted = redacted.replace(URL_PATTERN, (candidate) =>
+    sanitizeUrl(candidate),
+  );
+  redacted = redacted.replace(
+    /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
+    `$1 ${REDACTED}`,
+  );
+  redacted = redacted.replace(
+    /\b(Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi,
+    `$1: ${REDACTED}`,
+  );
+  return redacted.replace(
+    /\b(password|passphrase|access_token|refresh_token|session_token|api_key|secret_key|client_secret)\s*([=:])\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
+    `$1$2${REDACTED}`,
+  );
+}
+
+function sanitizeUrl(candidate: string): string {
+  try {
+    const url = new URL(candidate);
+    if (url.username.length > 0) {
+      url.username = REDACTED;
+    }
+    if (url.password.length > 0) {
+      url.password = REDACTED;
+    }
+    for (const key of url.searchParams.keys()) {
+      if (isSignatureParameter(key)) {
+        url.searchParams.set(key, REDACTED);
+      }
+    }
+    return url.toString().replaceAll("%5BREDACTED%5D", REDACTED);
+  } catch {
+    return candidate;
+  }
+}
+
+function isCredentialKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return (
+    normalized === "authorization" ||
+    normalized === "proxyauthorization" ||
+    normalized === "cookie" ||
+    normalized === "cookies" ||
+    normalized === "setcookie" ||
+    normalized === "authentication" ||
+    normalized === "auth" ||
+    normalized.includes("credential") ||
+    normalized.includes("password") ||
+    normalized.includes("passphrase") ||
+    normalized.includes("token") ||
+    normalized.includes("secret") ||
+    normalized.endsWith("apikey") ||
+    normalized.includes("secretkey") ||
+    normalized === "accesskey" ||
+    normalized === "accesskeyid" ||
+    normalized === "privatekey" ||
+    normalized === "signingkey" ||
+    normalized === "encryptionkey" ||
+    normalized === "databaseurl" ||
+    normalized === "databaseuri" ||
+    normalized === "connectionstring" ||
+    normalized === "connectionurl" ||
+    normalized === "connectionuri"
+  );
+}
+
+function isSignatureParameter(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return (
+    isCredentialKey(key) ||
+    normalized === "key" ||
+    normalized === "signature" ||
+    normalized === "sig" ||
+    normalized === "xamzsignature" ||
+    normalized === "xgoogsignature"
+  );
+}
+
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+}
+
+const URL_PATTERN =
+  /\b(?:https?|postgres(?:ql)?):\/\/[^\s<>"'`]+/gi;

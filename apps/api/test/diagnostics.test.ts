@@ -1,0 +1,123 @@
+import { describe, expect, it } from "vitest";
+import { serializeFailure } from "../src/diagnostics";
+
+describe("failure diagnostics", () => {
+  it("retains five nested Error causes and safely represents non-Error throws", () => {
+    const deepest = new Error("level six");
+    const levelFive = new Error("level five", { cause: deepest });
+    const levelFour = new Error("level four", { cause: levelFive });
+    const levelThree = new Error("level three", { cause: levelFour });
+    const levelTwo = new Error("level two", { cause: levelThree });
+    const levelOne = new Error("level one", { cause: levelTwo });
+    const root = Object.assign(new Error("root", { cause: levelOne }), {
+      code: "XX000",
+    });
+
+    expect(serializeFailure(root).error).toMatchObject({
+      type: "Error",
+      code: "XX000",
+      message: "root",
+      cause: {
+        message: "level one",
+        cause: {
+          message: "level two",
+          cause: {
+            message: "level three",
+            cause: {
+              message: "level four",
+              cause: {
+                message: "level five",
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(serializeFailure(root))).not.toContain("level six");
+
+    expect(
+      serializeFailure(
+        {
+          reason: "connection refused",
+          accessToken: "non-error-token-sentinel",
+        },
+        { secrets: ["configured-non-error-sentinel"] },
+      ).error,
+    ).toEqual({
+      type: "NonErrorThrow",
+      value: {
+        reason: "connection refused",
+        accessToken: "[REDACTED]",
+      },
+    });
+  });
+
+  it("removes credentials recursively without hiding useful business diagnostics", () => {
+    const clerkSecret = "sk_live_clerk-sentinel";
+    const databaseUrl =
+      "postgresql://unshelf:db-password-sentinel@database:5432/unshelf";
+    const failure = Object.assign(
+      new Error(
+        `Item trail-42 failed with ${clerkSecret} at postgresql://reader:url-password-sentinel@database:5432/unshelf password=inline-password-sentinel`,
+        {
+          cause: new Error(
+            `safe-cause contained client_secret=nested-secret-sentinel`,
+          ),
+        },
+      ),
+      {
+        query: `select * from items where title = 'TypeScript' /* ${clerkSecret} */`,
+        parameters: [
+          "trail-42",
+          {
+            apiKey: "api-key-sentinel",
+            note: "keep this note",
+            headers: {
+              authorization: "Bearer bearer-sentinel",
+              cookie: "session=session-sentinel",
+              "x-request-note": "keep this header",
+            },
+            nested: {
+              refreshToken: "refresh-token-sentinel",
+              password: "password-sentinel",
+              connectionString: databaseUrl,
+              businessValue: "keep this value",
+            },
+          },
+        ],
+        detail:
+          "See https://example.test/failure?topic=typescript&X-Amz-Signature=signature-sentinel",
+      },
+    );
+
+    const diagnostics = serializeFailure(failure, {
+      secrets: [clerkSecret, databaseUrl],
+    });
+    const rendered = JSON.stringify(diagnostics);
+
+    for (const sentinel of [
+      clerkSecret,
+      databaseUrl,
+      "db-password-sentinel",
+      "url-password-sentinel",
+      "api-key-sentinel",
+      "signature-sentinel",
+      "bearer-sentinel",
+      "session-sentinel",
+      "refresh-token-sentinel",
+      "password-sentinel",
+      "inline-password-sentinel",
+      "nested-secret-sentinel",
+    ]) {
+      expect(rendered).not.toContain(sentinel);
+    }
+    expect(rendered).toContain("trail-42");
+    expect(rendered).toContain("TypeScript");
+    expect(rendered).toContain("keep this note");
+    expect(rendered).toContain("keep this header");
+    expect(rendered).toContain("keep this value");
+    expect(rendered).toContain("safe-cause");
+    expect(rendered).toContain("typescript");
+    expect(rendered).toContain("[REDACTED]");
+  });
+});

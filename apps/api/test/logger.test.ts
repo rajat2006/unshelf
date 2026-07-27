@@ -4,6 +4,7 @@ import {
   createProductionLogger,
   parseLogLevel,
 } from "../src/logger";
+import { serializeFailure } from "../src/diagnostics";
 import { StringDestination } from "./string-destination";
 
 describe("production logger", () => {
@@ -62,6 +63,91 @@ describe("production logger", () => {
       event: "unshelf.test.at_threshold",
       msg: "At threshold",
     });
+  });
+
+  it("bounds rendered events while preserving the envelope and error identity", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+    const stack = `Error: query failed\n${"s".repeat(40_000)}`;
+
+    logger
+      .child({ requestId: "bounded-request", route: "/api/health" })
+      .error({
+        event: "unshelf.api.health.failed",
+        msg: "PostgreSQL health check failed",
+        dependency: "postgresql",
+        error: {
+          type: "DatabaseError",
+          code: "XX000",
+          message: "query failed",
+          stack,
+        },
+        database: {
+          query: "select * from health_check",
+          parameters: ["p".repeat(40_000)],
+        },
+      });
+
+    expect(Buffer.byteLength(destination.output, "utf8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+    const record = JSON.parse(destination.output) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      level: "error",
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      requestId: "bounded-request",
+      route: "/api/health",
+      diagnosticTruncated: true,
+      error: {
+        type: "DatabaseError",
+        code: "XX000",
+        message: "query failed",
+        stack,
+      },
+      database: {
+        query: "select * from health_check",
+        parameters: "[TRUNCATED]",
+      },
+    });
+  });
+
+  it("does not reintroduce configured credentials when rendering diagnostics", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+    const clerkSecret = "sk_live_renderer-clerk-sentinel";
+    const databaseUrl =
+      "postgresql://unshelf:renderer-db-password-sentinel@database:5432/unshelf";
+    const failure = Object.assign(
+      new Error(`Item trail-42 failed: ${clerkSecret} ${databaseUrl}`),
+      {
+        query: `select 'TypeScript' /* ${clerkSecret} */`,
+        parameters: [
+          "trail-42",
+          { password: "renderer-parameter-sentinel" },
+        ],
+      },
+    );
+
+    logger.error({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      dependency: "postgresql",
+      ...serializeFailure(failure, {
+        secrets: [clerkSecret, databaseUrl],
+      }),
+    });
+
+    expect(destination.output).not.toContain("sentinel");
+    expect(destination.output).toContain("trail-42");
+    expect(destination.output).toContain("TypeScript");
+    expect(destination.output).toContain("[REDACTED]");
   });
 });
 
