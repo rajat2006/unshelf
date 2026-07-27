@@ -12,28 +12,31 @@ declare global {
       logger: Logger;
       /** Whether the request traversed the complete registered routing stack. */
       routingResolved: boolean;
+      /** Mounted template prefix captured before Express unwinds a router. */
+      routeMount: string;
     }
   }
 }
 
 export interface RequestLifecycleOptions {
   readonly logger: Logger;
-  readonly requestId?: () => string;
+  readonly generateRequestId?: () => string;
   readonly monotonicNow?: () => number;
 }
 
 export function createRequestLifecycle({
   logger,
-  requestId = randomUUID,
+  generateRequestId = randomUUID,
   monotonicNow = () => performance.now(),
 }: RequestLifecycleOptions): RequestHandler {
   return (req, res, next) => {
-    const id = requestId();
+    const requestId = generateRequestId();
     const startedAt = monotonicNow();
-    req.requestId = id;
-    req.logger = logger.child({ requestId: id });
+    req.requestId = requestId;
+    req.logger = logger.child({ requestId });
     req.routingResolved = false;
-    res.setHeader("X-Request-Id", id);
+    req.routeMount = "";
+    res.setHeader("X-Request-Id", requestId);
 
     let recorded = false;
     const recordTermination = (termination: "completed" | "aborted"): void => {
@@ -68,6 +71,11 @@ export const markRoutingResolved: RequestHandler = (req, _res, next) => {
   next();
 };
 
+export const captureRouteMount: RequestHandler = (req, _res, next) => {
+  req.routeMount = req.baseUrl;
+  next();
+};
+
 function requestLevel(
   req: Request,
   termination: "completed" | "aborted",
@@ -76,7 +84,11 @@ function requestLevel(
   if (termination === "aborted" || (status !== undefined && status >= 500)) {
     return "error";
   }
-  if (registeredRoute(req) === "/api/health" && status !== undefined && status < 400) {
+  if (
+    registeredRoute(req) === "/api/health" &&
+    status !== undefined &&
+    status < 400
+  ) {
     return "debug";
   }
   return "info";
@@ -92,10 +104,11 @@ function registeredRoute(req: Request): string {
   if (typeof path !== "string") {
     return req.routingResolved ? "UNMATCHED" : "UNRESOLVED";
   }
-  if (path === "/" && req.baseUrl.length > 0) {
-    return req.baseUrl;
+  const mount = req.baseUrl.length > 0 ? req.baseUrl : req.routeMount;
+  if (path === "/" && mount.length > 0) {
+    return mount;
   }
-  return `${req.baseUrl}${path}`;
+  return `${mount}${path}`;
 }
 
 const STANDARD_METHODS = new Set([

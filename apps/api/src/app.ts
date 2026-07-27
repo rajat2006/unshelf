@@ -12,6 +12,7 @@ import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
 import { apiErrorHandler } from "./error-handler";
 import {
+  captureRouteMount,
   createRequestLifecycle,
   markRoutingResolved,
   type RequestLifecycleOptions,
@@ -66,10 +67,10 @@ export function createApp(
     res.json(req.user);
   });
 
-  app.use("/api/items", createItemsRouter(db, auth));
-  app.use("/api/labels", createLabelsRouter(db, auth));
-  app.use("/api/stops", createStopsRouter(db, auth));
-  app.use("/api/trails", createTrailsRouter(db, auth));
+  app.use("/api/items", captureRouteMount, createItemsRouter(db, auth));
+  app.use("/api/labels", captureRouteMount, createLabelsRouter(db, auth));
+  app.use("/api/stops", captureRouteMount, createStopsRouter(db, auth));
+  app.use("/api/trails", captureRouteMount, createTrailsRouter(db, auth));
   app.use(markRoutingResolved);
   app.use(apiErrorHandler);
 

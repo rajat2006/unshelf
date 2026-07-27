@@ -11,7 +11,7 @@ describe("API request lifecycle", () => {
     const times = [100, 112.5];
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "d40b6b4d-73c8-4b6b-81a4-d35f7c6bce61",
+      generateRequestId: () => "d40b6b4d-73c8-4b6b-81a4-d35f7c6bce61",
       monotonicNow: () => times.shift()!,
     });
 
@@ -41,7 +41,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "07dd3444-e2af-4a4d-988b-cce3fe3f06b4",
+      generateRequestId: () => "07dd3444-e2af-4a4d-988b-cce3fe3f06b4",
       monotonicNow: elapsedClock(3),
     });
 
@@ -59,11 +59,30 @@ describe("API request lifecycle", () => {
     ]);
   });
 
+  it("keeps the mount prefix when a matched route fails asynchronously", async () => {
+    const logger = createCollectingLogger();
+    const app = createApp(healthyDatabase(), [passThroughAuth], {
+      logger,
+      generateRequestId: () => "652223ea-3cd5-4251-8fd4-677e7b09f69e",
+      monotonicNow: elapsedClock(3),
+    });
+
+    await request(app)
+      .get("/api/items/098d8041-1b9b-47d9-b75f-dbd7f9d04c25")
+      .expect(500);
+
+    expect(logger.records[0]).toMatchObject({
+      level: "error",
+      route: "/api/items/:itemId",
+      status: 500,
+    });
+  });
+
   it("does not add a trailing slash to a mounted router root", async () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "eecf532a-436d-4e9e-b916-98e4dbac9c94",
+      generateRequestId: () => "eecf532a-436d-4e9e-b916-98e4dbac9c94",
       monotonicNow: elapsedClock(1),
     });
 
@@ -78,7 +97,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "0e9b80b3-18f8-48ac-a632-f203ab76e539",
+      generateRequestId: () => "0e9b80b3-18f8-48ac-a632-f203ab76e539",
       monotonicNow: elapsedClock(1),
     });
 
@@ -96,7 +115,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "ef470dac-c474-4ad0-b29a-b21b55d59d09",
+      generateRequestId: () => "ef470dac-c474-4ad0-b29a-b21b55d59d09",
       monotonicNow: elapsedClock(2),
     });
 
@@ -125,7 +144,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(db, [passThroughAuth], {
       logger,
-      requestId: () => "bcde6905-b89e-4726-bb88-dd0821f25764",
+      generateRequestId: () => "bcde6905-b89e-4726-bb88-dd0821f25764",
       monotonicNow: elapsedClock(7),
     });
 
@@ -154,7 +173,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(failingDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
+      generateRequestId: () => "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
       monotonicNow: elapsedClock(4),
     });
 
@@ -172,7 +191,7 @@ describe("API request lifecycle", () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
-      requestId: () => "683dc222-a4c1-470e-8496-6a06b1c66c71",
+      generateRequestId: () => "683dc222-a4c1-470e-8496-6a06b1c66c71",
       monotonicNow: elapsedClock(1),
     });
     const unusualRequest = request(app).get("/unmatched");
@@ -184,6 +203,34 @@ describe("API request lifecycle", () => {
       method: "_OTHER",
       route: "UNMATCHED",
     });
+  });
+
+  it("generates a fresh correlation ID for every request", async () => {
+    const logger = createCollectingLogger();
+    const requestIds = [
+      "6da7c45c-7745-4620-b33d-f00f4bd3ca1b",
+      "495f2bbd-08d0-4428-a7cc-cee462dd70fe",
+    ];
+    const app = createApp(healthyDatabase(), [passThroughAuth], {
+      logger,
+      generateRequestId: () => requestIds.shift()!,
+      monotonicNow: () => 0,
+    });
+
+    const first = await request(app).get("/api/health");
+    const second = await request(app).get("/api/health");
+
+    expect([
+      first.headers["x-request-id"],
+      second.headers["x-request-id"],
+    ]).toEqual([
+      "6da7c45c-7745-4620-b33d-f00f4bd3ca1b",
+      "495f2bbd-08d0-4428-a7cc-cee462dd70fe",
+    ]);
+    expect(logger.records.map((record) => record.requestId)).toEqual([
+      "6da7c45c-7745-4620-b33d-f00f4bd3ca1b",
+      "495f2bbd-08d0-4428-a7cc-cee462dd70fe",
+    ]);
   });
 });
 
