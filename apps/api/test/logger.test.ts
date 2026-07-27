@@ -214,6 +214,38 @@ describe("production logger", () => {
       },
     });
   });
+
+  it("keeps complete error identity after dropping enough lower-priority data", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+    const message = `query failed: ${"context".repeat(140)}`;
+
+    logger.error({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      dependency: "postgresql",
+      error: {
+        type: "DatabaseError",
+        code: "XX000",
+        message,
+      },
+      database: {
+        detail: Array.from({ length: 12_000 }, () => "row detail"),
+      },
+    });
+
+    expect(JSON.parse(destination.output)).toMatchObject({
+      diagnosticTruncated: true,
+      error: {
+        type: "DatabaseError",
+        code: "XX000",
+        message,
+      },
+    });
+  });
 });
 
 describe("collecting logger", () => {

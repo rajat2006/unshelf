@@ -175,7 +175,7 @@ function boundLogRecord(
     return record as LogEvent & LogBindings;
   }
 
-  return priorityRecord(record);
+  return priorityRecord(level, record);
 }
 
 function cloneRecord(
@@ -245,6 +245,7 @@ function compactLowerPriorityStrings(
 }
 
 function priorityRecord(
+  level: LogLevel,
   record: Readonly<Record<string, unknown>>,
 ): LogEvent & LogBindings {
   const priority: Record<string, unknown> = {
@@ -254,6 +255,9 @@ function priorityRecord(
       : {}),
     diagnosticTruncated: true,
   };
+  if (serializedBytes(level, priority) <= MAX_SERIALIZED_EVENT_BYTES) {
+    return priority as LogEvent & LogBindings;
+  }
   return forceCompactPriorityRecord(priority) as LogEvent & LogBindings;
 }
 
