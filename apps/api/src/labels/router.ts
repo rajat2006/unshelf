@@ -17,12 +17,11 @@ export function createLabelsRouter(
 
   router.post(
     "/",
-    validateRequest(
-      { body: createLabelRequestSchema },
-      async ({ body }, req, res) => {
-        res.status(201).json(await createLabel(db, req.user!.id, body));
-      },
-    ),
+    validateRequest({ body: createLabelRequestSchema }),
+    async (req, res) => {
+      const { body } = res.locals.validated;
+      res.status(201).json(await createLabel(db, req.user!.id, body));
+    },
   );
 
   return router;

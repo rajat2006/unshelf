@@ -1,4 +1,4 @@
-import type { Request, RequestHandler, Response } from "express";
+import type { RequestHandler } from "express";
 
 interface ValidationIssue {
   code: string;
@@ -36,11 +36,9 @@ type ValidatedInput<Schemas extends RequestSchemas> = {
       : never;
 };
 
-type ValidatedHandler<Schemas extends RequestSchemas> = (
-  input: ValidatedInput<Schemas>,
-  req: Request,
-  res: Response,
-) => unknown;
+interface ValidatedLocals<Schemas extends RequestSchemas> {
+  validated: ValidatedInput<Schemas>;
+}
 
 interface PublicIssue {
   path: string;
@@ -48,17 +46,23 @@ interface PublicIssue {
 }
 
 /**
- * Validate every declared HTTP input before invoking a route handler.
+ * Validate every declared HTTP input before continuing to a route handler.
  *
- * Schemas own both runtime parsing and the handler's input type. Path parameters
- * are declared individually so the API can consume the shared branded UUID
- * schemas without importing Zod or rebuilding identifier contracts locally.
+ * Schemas own both runtime parsing and `res.locals.validated`, the request-scoped
+ * input container consumed by the next handler. Path parameters are declared
+ * individually so the API can consume the shared branded UUID schemas without
+ * importing Zod or rebuilding identifier contracts locally.
  */
 export function validateRequest<const Schemas extends RequestSchemas>(
   schemas: Schemas,
-  handler: ValidatedHandler<Schemas>,
-): RequestHandler {
-  return async (req, res, next) => {
+): RequestHandler<
+  Record<string, string>,
+  unknown,
+  unknown,
+  unknown,
+  ValidatedLocals<Schemas>
+> {
+  return (req, res, next) => {
     const parsed: Record<string, unknown> = {};
     const issues: PublicIssue[] = [];
 
@@ -91,11 +95,8 @@ export function validateRequest<const Schemas extends RequestSchemas>(
       return;
     }
 
-    try {
-      await handler(parsed as ValidatedInput<Schemas>, req, res);
-    } catch (error) {
-      next(error);
-    }
+    res.locals.validated = parsed as ValidatedInput<Schemas>;
+    next();
   };
 }
 

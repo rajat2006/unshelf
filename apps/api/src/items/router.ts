@@ -28,13 +28,12 @@ export function createItemsRouter(
 
   router.post(
     "/",
-    validateRequest(
-      { body: createItemRequestSchema },
-      async ({ body }, req, res) => {
-        const item = await createItem(db, req.user!.id, body);
-        res.status(201).json(item);
-      },
-    ),
+    validateRequest({ body: createItemRequestSchema }),
+    async (req, res) => {
+      const { body } = res.locals.validated;
+      const item = await createItem(db, req.user!.id, body);
+      res.status(201).json(item);
+    },
   );
 
   router.get("/", async (req, res) => {
@@ -44,107 +43,102 @@ export function createItemsRouter(
 
   router.get(
     "/:itemId",
-    validateRequest(
-      { params: { itemId: itemIdSchema } },
-      async ({ params }, req, res) => {
-        const item = await getItem(db, req.user!.id, params.itemId);
-        if (!item) {
-          res.status(404).json({ error: "item not found" });
-          return;
-        }
-        res.json(item);
-      },
-    ),
+    validateRequest({ params: { itemId: itemIdSchema } }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const item = await getItem(db, req.user!.id, params.itemId);
+      if (!item) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.json(item);
+    },
   );
 
   router.post(
     "/:itemId/labels/:labelId",
-    validateRequest(
-      {
-        params: { itemId: itemIdSchema, labelId: labelIdSchema },
-      },
-      async ({ params }, req, res) => {
-        const item = await applyLabelToItem(
-          db,
-          req.user!.id,
-          params.itemId,
-          params.labelId,
-        );
-        if (!item) {
-          res.status(404).json({ error: "item or label not found" });
-          return;
-        }
-        res.json(item);
-      },
-    ),
+    validateRequest({
+      params: { itemId: itemIdSchema, labelId: labelIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const item = await applyLabelToItem(
+        db,
+        req.user!.id,
+        params.itemId,
+        params.labelId,
+      );
+      if (!item) {
+        res.status(404).json({ error: "item or label not found" });
+        return;
+      }
+      res.json(item);
+    },
   );
 
   router.delete(
     "/:itemId/labels/:labelId",
-    validateRequest(
-      {
-        params: { itemId: itemIdSchema, labelId: labelIdSchema },
-      },
-      async ({ params }, req, res) => {
-        const item = await removeLabelFromItem(
-          db,
-          req.user!.id,
-          params.itemId,
-          params.labelId,
-        );
-        if (!item) {
-          res.status(404).json({ error: "item or label not found" });
-          return;
-        }
-        res.json(item);
-      },
-    ),
+    validateRequest({
+      params: { itemId: itemIdSchema, labelId: labelIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const item = await removeLabelFromItem(
+        db,
+        req.user!.id,
+        params.itemId,
+        params.labelId,
+      );
+      if (!item) {
+        res.status(404).json({ error: "item or label not found" });
+        return;
+      }
+      res.json(item);
+    },
   );
 
   router.patch(
     "/:itemId/status",
-    validateRequest(
-      {
-        body: updateItemStatusRequestSchema,
-        params: { itemId: itemIdSchema },
-      },
-      async ({ body, params }, req, res) => {
-        const item = await updateItemStatus(
-          db,
-          req.user!.id,
-          params.itemId,
-          body.status,
-        );
-        if (!item) {
-          res.status(404).json({ error: "item not found" });
-          return;
-        }
-        res.json(item);
-      },
-    ),
+    validateRequest({
+      body: updateItemStatusRequestSchema,
+      params: { itemId: itemIdSchema },
+    }),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const item = await updateItemStatus(
+        db,
+        req.user!.id,
+        params.itemId,
+        body.status,
+      );
+      if (!item) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.json(item);
+    },
   );
 
   router.patch(
     "/:itemId/target-date",
-    validateRequest(
-      {
-        body: updateItemTargetDateRequestSchema,
-        params: { itemId: itemIdSchema },
-      },
-      async ({ body, params }, req, res) => {
-        const item = await updateItemTargetDate(
-          db,
-          req.user!.id,
-          params.itemId,
-          body.targetDate,
-        );
-        if (!item) {
-          res.status(404).json({ error: "item not found" });
-          return;
-        }
-        res.json(item);
-      },
-    ),
+    validateRequest({
+      body: updateItemTargetDateRequestSchema,
+      params: { itemId: itemIdSchema },
+    }),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const item = await updateItemTargetDate(
+        db,
+        req.user!.id,
+        params.itemId,
+        body.targetDate,
+      );
+      if (!item) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.json(item);
+    },
   );
 
   return router;
