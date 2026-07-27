@@ -65,6 +65,7 @@ export function createRequestLifecycle({
       req.logger[level]({
         event: "unshelf.api.request.ended",
         msg: "API request ended",
+        ...(req.user === undefined ? {} : { userId: req.user.id }),
         method: normalizeMethod(req.method),
         route: registeredRoute(req),
         durationMs: monotonicNow() - startedAt,

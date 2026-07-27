@@ -11,25 +11,27 @@ export function serializeDiagnosticValue(
   value: unknown,
   options: DiagnosticOptions = {},
 ): unknown {
-  return redactValue(
-    value,
-    undefined,
-    configuredSecrets(options.secrets ?? []),
-    new WeakSet(),
-    isCredentialKey,
-  );
+  return serializeWithCredentialRedaction(value, options, isCredentialKey);
 }
 
 export function serializeDiagnosticQuery(
   value: unknown,
   options: DiagnosticOptions = {},
 ): unknown {
+  return serializeWithCredentialRedaction(value, options, isSignatureParameter);
+}
+
+function serializeWithCredentialRedaction(
+  value: unknown,
+  options: DiagnosticOptions,
+  isSensitiveKey: (key: string) => boolean,
+): unknown {
   return redactValue(
     value,
     undefined,
     configuredSecrets(options.secrets ?? []),
     new WeakSet(),
-    isSignatureParameter,
+    isSensitiveKey,
   );
 }
 
@@ -118,7 +120,6 @@ const DATABASE_DIAGNOSTIC_FIELDS = [
   ["column", ["column"]],
   ["dataType", ["dataType"]],
   ["constraint", ["constraint"]],
-  ["source", ["source"]],
   ["file", ["file"]],
   ["line", ["line"]],
   ["routine", ["routine"]],

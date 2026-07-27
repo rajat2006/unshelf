@@ -51,6 +51,7 @@ export function createAuthMiddleware(
       return;
     }
     req.user = await provisionUser(db, clerkUserId);
+    req.logger = req.logger.child({ userId: req.user.id });
     next();
   };
 }
