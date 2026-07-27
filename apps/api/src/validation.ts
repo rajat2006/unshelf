@@ -3,7 +3,6 @@ import type { RequestHandler } from "express";
 interface ValidationIssue {
   code: string;
   path: PropertyKey[];
-  expected?: string;
   format?: string;
 }
 
@@ -131,8 +130,6 @@ function publicMessage(issue: ValidationIssue): string {
     return "Must be a valid YYYY-MM-DD date";
   }
   if (issue.code === "too_small") return "Must not be blank";
-  if (issue.code === "invalid_type" && issue.expected) {
-    return `Expected ${issue.expected}`;
-  }
+  if (issue.code === "invalid_type") return "Has an invalid type";
   return "Invalid value";
 }

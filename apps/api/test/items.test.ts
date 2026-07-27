@@ -464,7 +464,7 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
       error: "invalid_request",
-      issues: [{ path: "body.targetDate", message: "Expected string" }],
+      issues: [{ path: "body.targetDate", message: "Has an invalid type" }],
     });
   });
 
@@ -516,6 +516,20 @@ describe("application error boundary", () => {
       message: "Request body must be valid JSON",
     });
     expect(res.text).not.toContain("SyntaxError");
+  });
+
+  it("returns field issues when valid JSON does not match the body schema", async () => {
+    const res = await request(app)
+      .post("/api/items")
+      .set(TEST_USER_HEADER, "clerk_primitive_json")
+      .set("Content-Type", "application/json")
+      .send("42");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "body", message: "Has an invalid type" }],
+    });
   });
 
   it("returns a generic JSON 500 without leaking database diagnostics", async () => {

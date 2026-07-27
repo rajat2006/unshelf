@@ -22,7 +22,7 @@ import { apiErrorHandler } from "./error-handler";
  */
 export function createApp(db: Database, auth: RequestHandler[]): Express {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (_req, res) => {
     try {
