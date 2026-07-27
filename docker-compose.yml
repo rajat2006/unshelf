@@ -12,6 +12,9 @@
 # CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, VITE_CLERK_PUBLISHABLE_KEY.
 # See docs/deploy.md.
 
+x-api-image: &api-image
+  image: ${COMPOSE_PROJECT_NAME:-unshelf}-api
+
 services:
   db:
     image: postgres:16-alpine
@@ -30,7 +33,20 @@ services:
     networks:
       - internal
 
+  migrate:
+    <<: *api-image
+    command: ["node", "dist/migrate.js"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
   api:
+    <<: *api-image
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -43,6 +59,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - internal
       - dokploy-network

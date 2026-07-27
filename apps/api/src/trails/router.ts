@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from "express";
-import type { Pool } from "pg";
 import type { ConnectStopsRequest, StopId, TrailId } from "@unshelf/shared";
+import type { Database } from "../db";
 import { createStop, getStopOnTrail } from "../stops/repository";
 import {
   connectStops,
@@ -29,7 +29,7 @@ import { parseRequiredName } from "../validation";
  * well-formed and authorised but conflicts with the Trail-is-a-DAG invariant
  * (ADR-0010).
  */
-export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
+export function createTrailsRouter(db: Database, auth: RequestHandler[]): Router {
   const router = Router();
   router.use(...auth);
   const uuidPattern =
@@ -56,7 +56,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
   });
 
   router.get("/", async (req, res) => {
-    res.json(await listTrails(pool, req.user!.id));
+    res.json(await listTrails(db, req.user!.id));
   });
 
   router.post("/", async (req, res) => {
@@ -65,12 +65,12 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
       res.status(400).json({ error: "a name is required" });
       return;
     }
-    res.status(201).json(await createTrail(pool, req.user!.id, input));
+    res.status(201).json(await createTrail(db, req.user!.id, input));
   });
 
   router.get("/:trailId", async (req, res) => {
     const trail = await getTrail(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
     );
@@ -88,7 +88,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
       return;
     }
     const stop = await createStop(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
       input,
@@ -102,7 +102,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
 
   router.get("/:trailId/stops/:stopId", async (req, res) => {
     const stop = await getStopOnTrail(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
       req.params.stopId as StopId,
@@ -116,7 +116,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
 
   router.get("/:trailId/topology", async (req, res) => {
     const topology = await getTrailTopology(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
     );
@@ -139,7 +139,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
     }
 
     const result = await connectStops(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
       input.fromStopId,
@@ -162,7 +162,7 @@ export function createTrailsRouter(pool: Pool, auth: RequestHandler[]): Router {
 
   router.delete("/:trailId/edges/:fromStopId/:toStopId", async (req, res) => {
     const topology = await disconnectStops(
-      pool,
+      db,
       req.user!.id,
       req.params.trailId as TrailId,
       req.params.fromStopId as StopId,

@@ -1,34 +1,36 @@
 import express, { type Express, type RequestHandler } from "express";
-import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
+import type { Database } from "./db";
+import { healthCheck } from "./schema";
 import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
 
 /**
- * Build the Express app around an injected Postgres pool and auth chain. Both are
+ * Build the Express app around an injected Drizzle handle and auth chain. Both are
  * arguments (rather than globals) so the test harness can drive the real routes:
- * tests pass a pool pointed at a throwaway database and an auth chain that injects
- * a current User without Clerk; production passes the real pool and the
+ * tests pass a handle pointed at a throwaway database and an auth chain that injects
+ * a current User without Clerk; production passes the real handle and the
  * Clerk-backed chain. Every later ticket's routes hang off this same factory and
  * scope their data to `req.user`.
  */
-export function createApp(pool: Pool, auth: RequestHandler[]): Express {
+export function createApp(db: Database, auth: RequestHandler[]): Express {
   const app = express();
   app.use(express.json());
 
   app.get("/api/health", async (_req, res) => {
     try {
-      const { rows } = await pool.query<{ message: string; time: Date }>(
-        "SELECT message, now() AS time FROM health_check LIMIT 1",
-      );
-      const row = rows[0];
+      const [row] = await db
+        .select({ message: healthCheck.message, time: sql<string>`now()` })
+        .from(healthCheck)
+        .limit(1);
       const body: HealthResponse = {
         status: "ok",
         message: row?.message ?? "unknown",
         db: "up",
-        time: (row?.time ?? new Date()).toISOString(),
+        time: row ? new Date(row.time).toISOString() : new Date().toISOString(),
       };
       res.json(body);
     } catch {
@@ -50,10 +52,10 @@ export function createApp(pool: Pool, auth: RequestHandler[]): Express {
     res.json(req.user);
   });
 
-  app.use("/api/items", createItemsRouter(pool, auth));
-  app.use("/api/labels", createLabelsRouter(pool, auth));
-  app.use("/api/stops", createStopsRouter(pool, auth));
-  app.use("/api/trails", createTrailsRouter(pool, auth));
+  app.use("/api/items", createItemsRouter(db, auth));
+  app.use("/api/labels", createLabelsRouter(db, auth));
+  app.use("/api/stops", createStopsRouter(db, auth));
+  app.use("/api/trails", createTrailsRouter(db, auth));
 
   return app;
 }

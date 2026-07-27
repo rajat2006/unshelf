@@ -1,15 +1,32 @@
+import { fileURLToPath } from "node:url";
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Express } from "express";
 import type { Pool } from "pg";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/auth";
 import type { Identify } from "../src/auth";
-import { createPool } from "../src/db";
-import { applySchema } from "../src/schema";
+import { createDatabase, type Database } from "../src/db";
+
+/**
+ * The committed migration folder, resolved from this file rather than the
+ * process cwd so the suite runs the same way from the package or the repo root.
+ */
+const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
+
+/**
+ * Bring a fresh database up to the current schema by replaying the **real
+ * committed migrations** (#104). The test schema is therefore provably the
+ * deployed schema, and a migration that fails to apply fails `pnpm test` rather
+ * than a deploy.
+ */
+export async function migrateTestDatabase(db: Database): Promise<void> {
+  await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+}
 
 /**
  * The api test harness (extends T1's): an ephemeral Postgres, the schema applied,
@@ -34,17 +51,17 @@ export async function startTestApp(
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
-  const pool = createPool(container.getConnectionUri());
-  await applySchema(pool);
+  const db = createDatabase(container.getConnectionUri());
+  await migrateTestDatabase(db);
 
-  const auth = createAuthMiddleware(pool, identify);
-  const app = createApp(pool, [auth]);
+  const auth = createAuthMiddleware(db, identify);
+  const app = createApp(db, [auth]);
 
   return {
     app,
-    pool,
+    pool: db.$client,
     stop: async () => {
-      await pool.end();
+      await db.$client.end();
       await container.stop();
     },
   };

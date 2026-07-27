@@ -1,7 +1,7 @@
 import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, RequestHandler } from "express";
-import type { Pool } from "pg";
 import type { ClerkUserId, User } from "@unshelf/shared";
+import type { Database } from "./db";
 import { provisionUser } from "./users";
 
 /**
@@ -35,7 +35,7 @@ export type Identify = (
  * sign-up is sign-in, and there is no allowlist to consult.
  */
 export function createAuthMiddleware(
-  pool: Pool,
+  db: Database,
   identify: Identify,
 ): RequestHandler {
   // Express 5 routes a rejected promise from an async handler to `next` itself.
@@ -45,7 +45,7 @@ export function createAuthMiddleware(
       res.status(401).json({ error: "unauthenticated" });
       return;
     }
-    req.user = await provisionUser(pool, clerkUserId);
+    req.user = await provisionUser(db, clerkUserId);
     next();
   };
 }
@@ -57,8 +57,8 @@ const clerkIdentify: Identify = (req) =>
 /**
  * Production auth chain: Clerk parses the session/token, then our middleware
  * maps it to a current User. `apps/api`'s server mounts these on protected
- * routes; tests substitute a single `createAuthMiddleware(pool, testIdentify)`.
+ * routes; tests substitute a single `createAuthMiddleware(db, testIdentify)`.
  */
-export function createClerkAuth(pool: Pool): RequestHandler[] {
-  return [clerkMiddleware(), createAuthMiddleware(pool, clerkIdentify)];
+export function createClerkAuth(db: Database): RequestHandler[] {
+  return [clerkMiddleware(), createAuthMiddleware(db, clerkIdentify)];
 }
