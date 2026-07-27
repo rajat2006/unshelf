@@ -1,6 +1,12 @@
 import { createApp } from "./app";
+import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./auth";
 import { createDatabase } from "./db";
+import { createProductionLogger, parseLogLevel } from "./logger";
+
+const logger = createProductionLogger({
+  level: parseLogLevel(process.env.LOG_LEVEL),
+});
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -22,6 +28,4 @@ const db = createDatabase(connectionString);
 // migration fails the *deploy* rather than restart-looping a live service.
 const app = createApp(db, createClerkAuth(db));
 
-app.listen(port, () => {
-  console.log(`unshelf api listening on :${port}`);
-});
+startApiServer(app, port, logger);
