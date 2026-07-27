@@ -185,6 +185,9 @@ function cloneRecord(
 }
 
 function cloneValue(value: unknown, seen: WeakSet<object>): unknown {
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
   if (value === null || typeof value !== "object") {
     return value;
   }
@@ -254,7 +257,16 @@ function priorityRecord(
   };
 
   for (const path of [
+    ["error", "type"],
+    ["error", "code"],
     ["error", "message"],
+    ["dependency"],
+    ["phase"],
+    ["method"],
+    ["termination"],
+    ["userId"],
+    ["status"],
+    ["durationMs"],
     ["msg"],
     ["route"],
     ["requestId"],
@@ -263,11 +275,7 @@ function priorityRecord(
     shrinkStringAtPath(level, priority, path);
   }
   if (serializedBytes(level, priority) > MAX_SERIALIZED_EVENT_BYTES) {
-    return {
-      event: TRUNCATED,
-      msg: TRUNCATED,
-      diagnosticTruncated: true,
-    };
+    return forceCompactPriorityRecord(priority) as LogEvent & LogBindings;
   }
   return priority as LogEvent & LogBindings;
 }
@@ -290,7 +298,13 @@ function shrinkStringAtPath(
       record,
     );
   const key = path.at(-1);
-  if (!parent || key === undefined || typeof parent[key] !== "string") {
+  if (!parent || key === undefined) {
+    return;
+  }
+  if (typeof parent[key] !== "string") {
+    if (parent[key] !== null && typeof parent[key] === "object") {
+      parent[key] = TRUNCATED;
+    }
     return;
   }
   const original = parent[key] as string;
@@ -306,6 +320,30 @@ function shrinkStringAtPath(
     }
   }
   parent[key] = `${original.slice(0, low)}${TRUNCATED}`;
+}
+
+function forceCompactPriorityRecord(
+  value: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (typeof entry === "string") {
+        return [
+          key,
+          entry.length <= FORCED_PRIORITY_STRING_LENGTH
+            ? entry
+            : `${entry.slice(0, FORCED_PRIORITY_STRING_LENGTH)}${TRUNCATED}`,
+        ];
+      }
+      if (isRecord(entry)) {
+        return [key, forceCompactPriorityRecord(entry)];
+      }
+      if (entry !== null && typeof entry === "object") {
+        return [key, TRUNCATED];
+      }
+      return [key, entry];
+    }),
+  );
 }
 
 function pickFields(
@@ -352,6 +390,7 @@ function isPriorityString(path: readonly string[]): boolean {
 export const MAX_SERIALIZED_EVENT_BYTES = 64 * 1024;
 const TRUNCATED = "[TRUNCATED]";
 const COMPACT_STRING_LENGTH = 1_024;
+const FORCED_PRIORITY_STRING_LENGTH = 256;
 const LOW_PRIORITY_DIAGNOSTIC_KEYS = new Set([
   "body",
   "parameters",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { serializeFailure } from "../src/diagnostics";
 
 describe("failure diagnostics", () => {
@@ -119,5 +120,52 @@ describe("failure diagnostics", () => {
     expect(rendered).toContain("safe-cause");
     expect(rendered).toContain("typescript");
     expect(rendered).toContain("[REDACTED]");
+  });
+
+  it("combines Drizzle query context with its nested PostgreSQL diagnostics", () => {
+    const postgresFailure = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      severity: "ERROR",
+      detail: "Key (title)=(TypeScript) already exists",
+      hint: "Choose another title",
+      position: "42",
+      schema: "public",
+      table: "items",
+      column: "title",
+      constraint: "items_title_key",
+      file: "nbtinsert.c",
+      line: "666",
+      routine: "_bt_check_unique",
+    });
+    const failure = new DrizzleQueryError(
+      "insert into items (title) values ($1)",
+      ["TypeScript"],
+      postgresFailure,
+    );
+
+    expect(serializeFailure(failure)).toMatchObject({
+      error: {
+        cause: {
+          type: "Error",
+          code: "23505",
+          message: "duplicate key",
+        },
+      },
+      database: {
+        query: "insert into items (title) values ($1)",
+        parameters: ["TypeScript"],
+        severity: "ERROR",
+        detail: "Key (title)=(TypeScript) already exists",
+        hint: "Choose another title",
+        position: "42",
+        schema: "public",
+        table: "items",
+        column: "title",
+        constraint: "items_title_key",
+        file: "nbtinsert.c",
+        line: "666",
+        routine: "_bt_check_unique",
+      },
+    });
   });
 });

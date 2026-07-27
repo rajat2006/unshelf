@@ -149,6 +149,41 @@ describe("production logger", () => {
     expect(destination.output).toContain("TypeScript");
     expect(destination.output).toContain("[REDACTED]");
   });
+
+  it("keeps correlation and error identity when priority fields exceed the budget", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+
+    logger.child({ requestId: "priority-request" }).error({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      dependency: "postgresql",
+      error: {
+        type: `DatabaseError-${"t".repeat(70_000)}`,
+        code: "XX000",
+        message: "query failed",
+      },
+    });
+
+    expect(Buffer.byteLength(destination.output, "utf8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+    expect(JSON.parse(destination.output)).toMatchObject({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      requestId: "priority-request",
+      dependency: "postgresql",
+      diagnosticTruncated: true,
+      error: {
+        type: expect.stringMatching(/^DatabaseError-.*\[TRUNCATED\]$/),
+        code: "XX000",
+        message: "query failed",
+      },
+    });
+  });
 });
 
 describe("collecting logger", () => {

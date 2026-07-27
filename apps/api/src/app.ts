@@ -19,6 +19,11 @@ import {
   type RequestLifecycleOptions,
 } from "./request-lifecycle";
 
+export interface AppOptions extends RequestLifecycleOptions {
+  /** Exact configured secrets removed from all failure diagnostics. */
+  readonly diagnosticSecrets?: readonly string[];
+}
+
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
  * arguments (rather than globals) so the test harness can drive the real routes:
@@ -30,10 +35,10 @@ import {
 export function createApp(
   db: Database,
   auth: RequestHandler[],
-  requestLifecycle: RequestLifecycleOptions,
+  options: AppOptions,
 ): Express {
   const app = express();
-  app.use(createRequestLifecycle(requestLifecycle));
+  app.use(createRequestLifecycle(options));
   app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (req, res) => {
@@ -55,7 +60,7 @@ export function createApp(
         msg: "PostgreSQL health check failed",
         dependency: "postgresql",
         ...serializeFailure(error, {
-          secrets: requestLifecycle.diagnosticSecrets,
+          secrets: options.diagnosticSecrets,
         }),
       });
       const body: HealthResponse = {

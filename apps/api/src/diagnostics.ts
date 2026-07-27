@@ -12,7 +12,7 @@ export function serializeFailure(
   options: DiagnosticOptions = {},
 ): FailureDiagnostics {
   const database = isRecord(error)
-    ? pickDatabaseDiagnostics(error)
+    ? collectDatabaseDiagnostics(error)
     : undefined;
   const serialized = {
     error: serializeError(error, MAX_CAUSE_DEPTH),
@@ -39,7 +39,7 @@ function serializeError(
 
   const errorRecord = error as Error & Readonly<Record<string, unknown>>;
   return {
-    type: error.name,
+    type: error.constructor.name || error.name,
     ...(errorRecord.code === undefined ? {} : { code: errorRecord.code }),
     message: error.message,
     ...(error.stack === undefined ? {} : { stack: error.stack }),
@@ -51,14 +51,30 @@ function serializeError(
   };
 }
 
-function pickDatabaseDiagnostics(
+function collectDatabaseDiagnostics(
   error: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> | undefined {
-  const diagnostics = Object.fromEntries(
-    DATABASE_DIAGNOSTIC_FIELDS.flatMap((field) =>
-      error[field] === undefined ? [] : [[field, error[field]]],
-    ),
-  );
+  const diagnostics: Record<string, unknown> = {};
+  const seen = new Set<Readonly<Record<string, unknown>>>();
+  let current: Readonly<Record<string, unknown>> | undefined = error;
+  let remainingDepth = MAX_CAUSE_DEPTH;
+
+  while (current !== undefined && !seen.has(current) && remainingDepth >= 0) {
+    seen.add(current);
+    for (const [outputField, inputFields] of DATABASE_DIAGNOSTIC_FIELDS) {
+      if (diagnostics[outputField] !== undefined) {
+        continue;
+      }
+      const inputField = inputFields.find(
+        (field) => current?.[field] !== undefined,
+      );
+      if (inputField !== undefined) {
+        diagnostics[outputField] = current[inputField];
+      }
+    }
+    current = isRecord(current.cause) ? current.cause : undefined;
+    remainingDepth -= 1;
+  }
   return Object.keys(diagnostics).length === 0 ? undefined : diagnostics;
 }
 
@@ -67,24 +83,24 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 const DATABASE_DIAGNOSTIC_FIELDS = [
-  "query",
-  "parameters",
-  "severity",
-  "detail",
-  "hint",
-  "position",
-  "internalPosition",
-  "internalQuery",
-  "where",
-  "schema",
-  "table",
-  "column",
-  "dataType",
-  "constraint",
-  "source",
-  "file",
-  "line",
-  "routine",
+  ["query", ["query"]],
+  ["parameters", ["parameters", "params"]],
+  ["severity", ["severity"]],
+  ["detail", ["detail"]],
+  ["hint", ["hint"]],
+  ["position", ["position"]],
+  ["internalPosition", ["internalPosition"]],
+  ["internalQuery", ["internalQuery"]],
+  ["where", ["where"]],
+  ["schema", ["schema"]],
+  ["table", ["table"]],
+  ["column", ["column"]],
+  ["dataType", ["dataType"]],
+  ["constraint", ["constraint"]],
+  ["source", ["source"]],
+  ["file", ["file"]],
+  ["line", ["line"]],
+  ["routine", ["routine"]],
 ] as const;
 
 const MAX_CAUSE_DEPTH = 5;
@@ -114,6 +130,9 @@ function redactValue(
 ): unknown {
   if (key !== undefined && isCredentialKey(key)) {
     return REDACTED;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
   }
   if (typeof value === "string") {
     return redactString(value, secrets);

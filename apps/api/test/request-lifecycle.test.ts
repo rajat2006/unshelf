@@ -262,6 +262,30 @@ describe("API request lifecycle", () => {
     expect(JSON.stringify(logger.records)).not.toContain("sentinel");
   });
 
+  it("preserves the health response when a non-Error bigint is thrown", async () => {
+    const logger = createCollectingLogger();
+    const app = createApp(failingDatabase(1n), [passThroughAuth], {
+      logger,
+      generateRequestId: () => "595e2c53-a9a8-459e-8752-8e4c6e09c5b6",
+      monotonicNow: elapsedClock(2),
+    });
+
+    const response = await request(app).get("/api/health").expect(503);
+
+    expect(response.body).toMatchObject({
+      status: "error",
+      message: "database unavailable",
+      db: "down",
+    });
+    expect(logger.records[0]).toMatchObject({
+      event: "unshelf.api.health.failed",
+      error: {
+        type: "NonErrorThrow",
+        value: "1",
+      },
+    });
+  });
+
   it("represents unusual HTTP methods with a stable low-cardinality value", async () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
