@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  # Unfiltered: every pull request is gated regardless of its base, so adding an
+  # integration branch never silently leaves its pull requests ungated.
+  pull_request:
+  push:
+    # Post-merge verification of the integration branches. Actions cannot read
+    # the default branch from a trigger, so this list is literal — keep it in
+    # sync with the repository rules that require this check.
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  product:
+    name: Product
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run ci:product:build
+
+      - name: Type-check
+        run: pnpm run ci:product:typecheck
+
+      - name: Test
+        run: pnpm run ci:product:test

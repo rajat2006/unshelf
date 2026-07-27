@@ -13,6 +13,9 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:product": {
+      "dependsOn": ["^build"]
+    },
     "db:generate": {
       "cache": false,
       "dependsOn": ["^build"]
