@@ -25,6 +25,11 @@ try {
   logConfigurationFailure = failure;
 }
 
+const diagnosticSecrets = [
+  process.env.DATABASE_URL,
+  process.env.CLERK_SECRET_KEY,
+].filter((value): value is string => value !== undefined);
+
 const runtime: ProcessRuntime = {
   once: (signal, listener) => process.once(signal, listener),
   exit: (code) => process.exit(code),
@@ -33,10 +38,7 @@ const runtime: ProcessRuntime = {
 await superviseApiProcess({
   logger,
   runtime,
-  diagnosticSecrets: [
-    process.env.DATABASE_URL,
-    process.env.CLERK_SECRET_KEY,
-  ].filter((value): value is string => value !== undefined),
+  diagnosticSecrets,
   start: () => {
     if (logConfigurationFailure !== undefined) {
       throw logConfigurationFailure;
@@ -63,7 +65,7 @@ await superviseApiProcess({
     // run as a one-shot step gated ahead of this service in the deploy path.
     const app = createApp(db, createClerkAuth(db), {
       logger,
-      diagnosticSecrets: [connectionString, process.env.CLERK_SECRET_KEY],
+      diagnosticSecrets,
     });
 
     return startApiServer(app, port, logger);
