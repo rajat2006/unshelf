@@ -184,6 +184,36 @@ describe("production logger", () => {
       },
     });
   });
+
+  it("does not truncate error identity for a different oversized priority field", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+
+    logger.child({ requestId: "priority-request" }).error({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      dependency: `postgresql-${"d".repeat(70_000)}`,
+      error: {
+        type: "DatabaseError",
+        code: "XX000",
+        message: "query failed",
+      },
+    });
+
+    const record = JSON.parse(destination.output);
+    expect(record).toMatchObject({
+      requestId: "priority-request",
+      dependency: expect.stringMatching(/^postgresql-.*\[TRUNCATED\]$/),
+      error: {
+        type: "DatabaseError",
+        code: "XX000",
+        message: "query failed",
+      },
+    });
+  });
 });
 
 describe("collecting logger", () => {

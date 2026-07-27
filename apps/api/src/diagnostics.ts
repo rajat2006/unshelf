@@ -131,8 +131,17 @@ function redactValue(
   if (key !== undefined && isCredentialKey(key)) {
     return REDACTED;
   }
+  if (value === undefined) {
+    return "[undefined]";
+  }
   if (typeof value === "bigint") {
     return value.toString();
+  }
+  if (typeof value === "symbol") {
+    return redactString(value.toString(), secrets);
+  }
+  if (typeof value === "function") {
+    return "[Function]";
   }
   if (typeof value === "string") {
     return redactString(value, secrets);

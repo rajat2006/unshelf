@@ -51,6 +51,22 @@ describe("failure diagnostics", () => {
         accessToken: "[REDACTED]",
       },
     });
+    expect(serializeFailure(undefined).error).toEqual({
+      type: "NonErrorThrow",
+      value: "[undefined]",
+    });
+    expect(
+      serializeFailure(Symbol("configured-symbol-sentinel"), {
+        secrets: ["configured-symbol-sentinel"],
+      }).error,
+    ).toEqual({
+      type: "NonErrorThrow",
+      value: "Symbol([REDACTED])",
+    });
+    expect(serializeFailure(() => undefined).error).toEqual({
+      type: "NonErrorThrow",
+      value: "[Function]",
+    });
   });
 
   it("removes credentials recursively without hiding useful business diagnostics", () => {

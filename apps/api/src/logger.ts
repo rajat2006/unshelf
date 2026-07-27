@@ -175,7 +175,7 @@ function boundLogRecord(
     return record as LogEvent & LogBindings;
   }
 
-  return priorityRecord(level, record);
+  return priorityRecord(record);
 }
 
 function cloneRecord(
@@ -245,7 +245,6 @@ function compactLowerPriorityStrings(
 }
 
 function priorityRecord(
-  level: LogLevel,
   record: Readonly<Record<string, unknown>>,
 ): LogEvent & LogBindings {
   const priority: Record<string, unknown> = {
@@ -255,71 +254,7 @@ function priorityRecord(
       : {}),
     diagnosticTruncated: true,
   };
-
-  for (const path of [
-    ["error", "type"],
-    ["error", "code"],
-    ["error", "message"],
-    ["dependency"],
-    ["phase"],
-    ["method"],
-    ["termination"],
-    ["userId"],
-    ["status"],
-    ["durationMs"],
-    ["msg"],
-    ["route"],
-    ["requestId"],
-    ["event"],
-  ] as const) {
-    shrinkStringAtPath(level, priority, path);
-  }
-  if (serializedBytes(level, priority) > MAX_SERIALIZED_EVENT_BYTES) {
-    return forceCompactPriorityRecord(priority) as LogEvent & LogBindings;
-  }
-  return priority as LogEvent & LogBindings;
-}
-
-function shrinkStringAtPath(
-  level: LogLevel,
-  record: Record<string, unknown>,
-  path: readonly string[],
-): void {
-  if (serializedBytes(level, record) <= MAX_SERIALIZED_EVENT_BYTES) {
-    return;
-  }
-  const parent = path
-    .slice(0, -1)
-    .reduce<Record<string, unknown> | undefined>(
-      (current, key) =>
-        current && isRecord(current[key])
-          ? (current[key] as Record<string, unknown>)
-          : undefined,
-      record,
-    );
-  const key = path.at(-1);
-  if (!parent || key === undefined) {
-    return;
-  }
-  if (typeof parent[key] !== "string") {
-    if (parent[key] !== null && typeof parent[key] === "object") {
-      parent[key] = TRUNCATED;
-    }
-    return;
-  }
-  const original = parent[key] as string;
-  let low = 0;
-  let high = original.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    parent[key] = `${original.slice(0, middle)}${TRUNCATED}`;
-    if (serializedBytes(level, record) <= MAX_SERIALIZED_EVENT_BYTES) {
-      low = middle;
-    } else {
-      high = middle - 1;
-    }
-  }
-  parent[key] = `${original.slice(0, low)}${TRUNCATED}`;
+  return forceCompactPriorityRecord(priority) as LogEvent & LogBindings;
 }
 
 function forceCompactPriorityRecord(
