@@ -1,5 +1,4 @@
 import express, {
-  type ErrorRequestHandler,
   type Express,
   type RequestHandler,
 } from "express";
@@ -11,6 +10,7 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
+import { apiErrorHandler } from "./error-handler";
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -63,30 +63,4 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
   app.use(apiErrorHandler);
 
   return app;
-}
-
-const apiErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
-  if (isMalformedJsonError(error)) {
-    res.status(400).json({
-      error: "invalid_json",
-      message: "Request body must be valid JSON",
-    });
-    return;
-  }
-
-  res.status(500).json({
-    error: "internal_server_error",
-    message: "An unexpected error occurred",
-  });
-};
-
-function isMalformedJsonError(
-  error: unknown,
-): error is { type: "entity.parse.failed" } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "type" in error &&
-    error.type === "entity.parse.failed"
-  );
 }
