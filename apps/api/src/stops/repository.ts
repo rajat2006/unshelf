@@ -142,9 +142,7 @@ async function listItemsIn(
   const memberItemIds = db
     .select({ itemId: stopItems.itemId })
     .from(stopItems)
-    .where(
-      and(eq(stopItems.stopId, stopId), eq(stopItems.userId, userId)),
-    );
+    .where(and(eq(stopItems.stopId, stopId), eq(stopItems.userId, userId)));
   const rows: ItemRow[] = await db
     .select(ITEM_PROJECTION)
     .from(items)
@@ -178,10 +176,7 @@ export async function addItemToStop(
   const ownedMembership = db
     .select({ userId: stops.userId, stopId: stops.id, itemId: items.id })
     .from(stops)
-    .innerJoin(
-      items,
-      and(eq(items.id, itemId), eq(items.userId, userId)),
-    )
+    .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
     .where(and(eq(stops.id, stopId), eq(stops.userId, userId)));
   const rows = await db
     .insert(stopItems)

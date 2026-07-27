@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import { captureItem } from "../api";
 import { useCurrentUser } from "../application-auth";
@@ -55,9 +50,7 @@ export function CaptureOverlay({
       }}
       className="capture-dialog"
     >
-      {isOpen && (
-        <CaptureComposer onCaptured={onCaptured} onClose={onClose} />
-      )}
+      {isOpen && <CaptureComposer onCaptured={onCaptured} onClose={onClose} />}
     </dialog>
   );
 }
@@ -97,9 +90,7 @@ function CaptureComposer({
   return (
     <form onSubmit={submit} className="capture-form">
       <div className="capture-form__heading">
-        <h2 id="capture-heading">
-          Capture
-        </h2>
+        <h2 id="capture-heading">Capture</h2>
         <button
           type="button"
           onClick={onClose}
@@ -150,7 +141,11 @@ function CaptureComposer({
           className="capture-form__input"
         />
       </label>
-      <button type="submit" disabled={!canSubmit} className="capture-form__submit">
+      <button
+        type="submit"
+        disabled={!canSubmit}
+        className="capture-form__submit"
+      >
         {saving ? "Adding…" : "Add to Library"}
       </button>
       {error && (

@@ -120,7 +120,9 @@ test("opening an Item preserves its filtered Library beneath the sidebar", async
   await expect(
     page.getByRole("button", { name: "Filter by Selected" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Outside the filter", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Outside the filter", { exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("complementary", { name: `${item.title} details` }),
   ).toBeVisible();
@@ -140,9 +142,7 @@ test("opening an Item from a Stop preserves its Trail and follows browser histor
   });
   await stopSidebar.getByRole("link", { name: item.title }).click();
 
-  await expect(page).toHaveURL(
-    new RegExp(`/test/browser/items/${item.id}$`),
-  );
+  await expect(page).toHaveURL(new RegExp(`/test/browser/items/${item.id}$`));
   await expect(
     page.getByRole("heading", { level: 1, name: "Trail" }),
   ).toBeVisible();

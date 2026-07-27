@@ -6,7 +6,12 @@ import { TrailsIndex, type TrailsIndexState } from "./TrailsIndex";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 
-const trail = (id: string, name: string, done: number, total: number): Trail => ({
+const trail = (
+  id: string,
+  name: string,
+  done: number,
+  total: number,
+): Trail => ({
   id: id as TrailId,
   userId,
   name,

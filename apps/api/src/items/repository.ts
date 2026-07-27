@@ -186,10 +186,7 @@ export async function applyLabelToItem(
   const ownedMembership = db
     .select({ userId: items.userId, itemId: items.id, labelId: labels.id })
     .from(items)
-    .innerJoin(
-      labels,
-      and(eq(labels.id, labelId), eq(labels.userId, userId)),
-    )
+    .innerJoin(labels, and(eq(labels.id, labelId), eq(labels.userId, userId)))
     .where(and(eq(items.id, itemId), eq(items.userId, userId)));
   const rows = await db
     .insert(itemLabels)
@@ -212,10 +209,7 @@ export async function removeLabelFromItem(
   const allowed = await db
     .select({ itemId: items.id })
     .from(items)
-    .innerJoin(
-      labels,
-      and(eq(labels.id, labelId), eq(labels.userId, userId)),
-    )
+    .innerJoin(labels, and(eq(labels.id, labelId), eq(labels.userId, userId)))
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .limit(1);
   if (!allowed[0]) return null;

@@ -37,18 +37,16 @@ function ClerkAuthAdapter({ children }: { children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const auth = useMemo<ApplicationAuth>(
     () => ({
-      status: !isLoaded
-        ? "loading"
-        : isSignedIn
-          ? "signed-in"
-          : "signed-out",
+      status: !isLoaded ? "loading" : isSignedIn ? "signed-in" : "signed-out",
       user: isSignedIn ? { getToken } : null,
       SignInButton: ClerkSignInTrigger,
       UserButton: ClerkUserControl,
     }),
     [getToken, isLoaded, isSignedIn],
   );
-  return <ApplicationAuthProvider auth={auth}>{children}</ApplicationAuthProvider>;
+  return (
+    <ApplicationAuthProvider auth={auth}>{children}</ApplicationAuthProvider>
+  );
 }
 
 function ClerkSignInTrigger({ children }: { children: ReactNode }) {

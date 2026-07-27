@@ -44,11 +44,7 @@ export function TopBar() {
         </Link>
       </nav>
       <div className="top-bar__actions">
-        <button
-          type="button"
-          onClick={open}
-          className="top-bar__capture"
-        >
+        <button type="button" onClick={open} className="top-bar__capture">
           Capture
         </button>
         <UserButton />

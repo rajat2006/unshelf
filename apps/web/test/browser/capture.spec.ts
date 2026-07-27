@@ -45,7 +45,9 @@ for (const surface of [
     expect(page.url()).toBe(urlBefore);
 
     // The composer names its destination: intake lands in the Library, not a Trail.
-    await expect(composer(page).getByText(/land in your Library/)).toBeVisible();
+    await expect(
+      composer(page).getByText(/land in your Library/),
+    ).toBeVisible();
 
     // Dismissing it also leaves the route untouched.
     await page.keyboard.press("Escape");

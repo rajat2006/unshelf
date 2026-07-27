@@ -1,5 +1,10 @@
 import { and, asc, countDistinct, eq, sql } from "drizzle-orm";
-import type { CreateTrailRequest, Trail, TrailId, UserId } from "@unshelf/shared";
+import type {
+  CreateTrailRequest,
+  Trail,
+  TrailId,
+  UserId,
+} from "@unshelf/shared";
 import type { Database } from "../db";
 import { items, stopItems, stops, trails } from "../schema";
 
@@ -53,7 +58,9 @@ async function selectTrails(
       user_id: trails.userId,
       name: trails.name,
       created_at: trails.createdAt,
-      done: sql<number>`count(distinct ${items.id}) filter (where ${items.status} = 'done')::int`.mapWith(Number),
+      done: sql<number>`count(distinct ${items.id}) filter (where ${items.status} = 'done')::int`.mapWith(
+        Number,
+      ),
       total: countDistinct(items.id).mapWith(Number),
     })
     .from(trails)
@@ -63,10 +70,7 @@ async function selectTrails(
     )
     .leftJoin(
       stopItems,
-      and(
-        eq(stopItems.stopId, stops.id),
-        eq(stopItems.userId, trails.userId),
-      ),
+      and(eq(stopItems.stopId, stops.id), eq(stopItems.userId, trails.userId)),
     )
     .leftJoin(
       items,
@@ -83,7 +87,10 @@ async function selectTrails(
 }
 
 /** Every Trail a User owns, with derived progress, oldest first — and only theirs. */
-export async function listTrails(db: Database, userId: UserId): Promise<Trail[]> {
+export async function listTrails(
+  db: Database,
+  userId: UserId,
+): Promise<Trail[]> {
   return selectTrails(db, userId, null);
 }
 

@@ -98,10 +98,7 @@ async function selectTrail(
     .from(stops)
     .leftJoin(
       stopItems,
-      and(
-        eq(stopItems.stopId, stops.id),
-        eq(stopItems.userId, stops.userId),
-      ),
+      and(eq(stopItems.stopId, stops.id), eq(stopItems.userId, stops.userId)),
     )
     .leftJoin(
       items,
@@ -117,12 +114,7 @@ async function selectTrail(
       to_stop_id: trailEdges.toStopId,
     })
     .from(trailEdges)
-    .where(
-      and(
-        eq(trailEdges.userId, userId),
-        eq(trailEdges.trailId, trailId),
-      ),
-    )
+    .where(and(eq(trailEdges.userId, userId), eq(trailEdges.trailId, trailId)))
     .orderBy(asc(trailEdges.fromStopId), asc(trailEdges.toStopId));
   return { nodes: nodes.map(toNode), edges: edges.map(toEdge) };
 }
@@ -150,9 +142,7 @@ export async function getTrail(
  * 409, and success hands back the new Trail.
  */
 export type ConnectResult =
-  | { kind: "ok"; trail: TrailView }
-  | { kind: "not_found" }
-  | { kind: "cycle" };
+  { kind: "ok"; trail: TrailView } | { kind: "not_found" } | { kind: "cycle" };
 
 /**
  * Draw an edge `from → to` on one Trail, enforcing the DAG. A `connect` is refused
@@ -185,15 +175,11 @@ export async function connectStops(
       SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))
     `);
 
-    if (
-      !(await bothStopsOnTrail(tx, userId, trailId, fromStopId, toStopId))
-    ) {
+    if (!(await bothStopsOnTrail(tx, userId, trailId, fromStopId, toStopId))) {
       return { kind: "not_found" };
     }
 
-    if (
-      await targetReachesSource(tx, userId, trailId, fromStopId, toStopId)
-    ) {
+    if (await targetReachesSource(tx, userId, trailId, fromStopId, toStopId)) {
       return { kind: "cycle" };
     }
 

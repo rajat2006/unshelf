@@ -51,7 +51,9 @@ test("a created Trail appears with derived progress, persists, and opens at its 
 
   // It survives a reload — the Trail is a persisted record, not view state.
   await page.reload();
-  await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: new RegExp(name) }),
+  ).toBeVisible();
   await expect(page.getByText("No Trails yet")).toHaveCount(0);
 
   // Opening the card navigates to the Trail at its own opaque, stable URL.

@@ -7,7 +7,11 @@ import { Wordmark } from "./Wordmark";
  */
 export function AuthPlaceholder() {
   return (
-    <div role="status" aria-label="Loading Unshelf" className="auth-placeholder">
+    <div
+      role="status"
+      aria-label="Loading Unshelf"
+      className="auth-placeholder"
+    >
       <Wordmark />
     </div>
   );
