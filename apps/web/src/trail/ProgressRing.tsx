@@ -26,7 +26,12 @@ export function ProgressRing({
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, progress));
   return (
-    <svg width={size} height={size} className="progress-ring" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      className="progress-ring"
+      aria-hidden="true"
+    >
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -50,9 +55,7 @@ export function ProgressRing({
       />
       {center !== undefined && (
         <foreignObject x={0} y={0} width={size} height={size}>
-          <div className="progress-ring__center">
-            {center}
-          </div>
+          <div className="progress-ring__center">{center}</div>
         </foreignObject>
       )}
     </svg>

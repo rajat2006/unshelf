@@ -1,9 +1,5 @@
 import { useCallback, useState } from "react";
-import {
-  useLocation,
-  useNavigate,
-  useParams,
-} from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import type { Item, ItemId, TrailId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth";
 import { ItemSidebar } from "../items/ItemSidebar";

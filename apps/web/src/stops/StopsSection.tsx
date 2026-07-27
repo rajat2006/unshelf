@@ -85,10 +85,7 @@ export function StopsSection({
                   >
                     {stop.name}
                     {opening === stop.id && (
-                      <span className="quiet-copy">
-                        {" "}
-                        — opening…
-                      </span>
+                      <span className="quiet-copy"> — opening…</span>
                     )}
                   </button>
                 </li>

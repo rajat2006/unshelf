@@ -72,28 +72,38 @@ test("a desktop User adds the first Stop, extends the sequence, and it persists"
   const next = page.getByPlaceholder("Name the new stop");
   await next.fill("Build something");
   await next.press("Enter");
-  await expect(page.getByText("Build something", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Build something", { exact: true }),
+  ).toBeVisible();
 
   // Both waypoints are the Trail's own topology — they survive a fresh load.
   await page.goto(deepLink);
-  await expect(page.getByText("Learn the basics", { exact: true })).toBeVisible();
-  await expect(page.getByText("Build something", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Learn the basics", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Build something", { exact: true }),
+  ).toBeVisible();
 
   // Removing the link between them leaves both Stops in place, and the removal
   // itself persists.
   await page.getByRole("button", { name: "Remove this link" }).click();
-  await expect(page.getByText("Learn the basics", { exact: true })).toBeVisible();
-  await expect(page.getByText("Build something", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Learn the basics", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Build something", { exact: true }),
+  ).toBeVisible();
   await page.goto(deepLink);
-  await expect(page.getByText("Learn the basics", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Learn the basics", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Remove this link" }),
   ).toHaveCount(0);
 });
 
-test("a Trail's Stops are private to its owner", async ({
-  page,
-}, testInfo) => {
+test("a Trail's Stops are private to its owner", async ({ page }, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
     "authoring is a desktop gesture (US 40)",
@@ -137,12 +147,16 @@ test("a desktop User forks and rejoins the Trail through its authoring controls"
   await page.getByPlaceholder("Name the new stop").fill("Main branch");
   await page.getByPlaceholder("Name the new stop").press("Enter");
 
-  await foundation.getByRole("button", { name: "Fork a parallel branch" }).click();
+  await foundation
+    .getByRole("button", { name: "Fork a parallel branch" })
+    .click();
   await page.getByPlaceholder("Name the new stop").fill("Parallel branch");
   await page.getByPlaceholder("Name the new stop").press("Enter");
 
   const parallel = page.getByRole("group", { name: /^Parallel branch:/ });
-  await parallel.getByRole("button", { name: "Link to an existing Stop" }).click();
+  await parallel
+    .getByRole("button", { name: "Link to an existing Stop" })
+    .click();
   const rejoin = page
     .getByRole("group", { name: /^Main branch:/ })
     .getByRole("button", { name: "⇢ link here" });
@@ -150,7 +164,9 @@ test("a desktop User forks and rejoins the Trail through its authoring controls"
   await rejoin.press("Enter");
 
   await page.goto(deepLink);
-  await expect(page.getByRole("button", { name: "Remove this link" })).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "Remove this link" }),
+  ).toHaveCount(3);
 });
 
 test("at phone width the Trail is viewed, not authored", async ({

@@ -37,14 +37,8 @@ export function StopView({
   return (
     <div>
       <div className="stop-view__heading">
-        <Heading>
-          {stop.name}
-        </Heading>
-        <button
-          type="button"
-          onClick={onClose}
-          className="quiet-button"
-        >
+        <Heading>{stop.name}</Heading>
+        <button type="button" onClick={onClose} className="quiet-button">
           {closeLabel}
         </button>
       </div>

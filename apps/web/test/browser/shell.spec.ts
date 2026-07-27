@@ -98,7 +98,9 @@ test("auth resolution shows only the wordmark placeholder, never signed-out cont
   page,
 }, testInfo) => {
   await page.goto(appUrl(testInfo, "/", { authState: "loading" }));
-  await expect(page.getByRole("status", { name: "Loading Unshelf" })).toBeVisible();
+  await expect(
+    page.getByRole("status", { name: "Loading Unshelf" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Sign in with Google" }),
   ).toHaveCount(0);
@@ -128,9 +130,9 @@ test("a valid intended private route survives sign-in", async ({
 
   await page.getByRole("button", { name: "Sign in with Google" }).click();
 
-  await expect.poll(() => new URL(page.url()).pathname).toBe(
-    "/test/browser/library",
-  );
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toBe("/test/browser/library");
   expect(new URL(page.url()).searchParams.get("label")).toBe(labelId);
   await expect(
     page.getByRole("heading", { level: 1, name: "Library" }),

@@ -25,12 +25,7 @@ async function seedLabelledItem(
   const label = (await (
     await testApi(page, user, "/api/labels", "POST", { name: labelName })
   ).json()) as { id: string };
-  await testApi(
-    page,
-    user,
-    `/api/items/${item.id}/labels/${label.id}`,
-    "POST",
-  );
+  await testApi(page, user, `/api/items/${item.id}/labels/${label.id}`, "POST");
   return { item, label };
 }
 
@@ -71,9 +66,9 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
     status.getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByLabel("Target date for Shared TypeScript handbook").fill(
-    "2000-01-01",
-  );
+  await page
+    .getByLabel("Target date for Shared TypeScript handbook")
+    .fill("2000-01-01");
   const pastTarget = page.getByText("Past target", { exact: true });
   await expect(pastTarget).toBeVisible();
   await expect(pastTarget).toHaveCSS("color", "rgb(118, 124, 136)");
@@ -83,11 +78,17 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
   });
   await expect(placement.getByText("Not in a Stop")).toBeVisible();
 
-  const stopPicker = page.getByLabel("Add Shared TypeScript handbook to a Stop");
+  const stopPicker = page.getByLabel(
+    "Add Shared TypeScript handbook to a Stop",
+  );
   await stopPicker.selectOption(firstStop.id);
-  await expect(placement.getByText(firstStop.name, { exact: true })).toBeVisible();
+  await expect(
+    placement.getByText(firstStop.name, { exact: true }),
+  ).toBeVisible();
   await stopPicker.selectOption(secondStop.id);
-  await expect(placement.getByText(secondStop.name, { exact: true })).toBeVisible();
+  await expect(
+    placement.getByText(secondStop.name, { exact: true }),
+  ).toBeVisible();
 
   await testApi(page, user, `/api/stops/${firstStop.id}/items`, "POST", {
     itemId: item.id,
@@ -102,7 +103,9 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
     page.getByLabel("Target date for Shared TypeScript handbook"),
   ).toHaveValue("2000-01-01");
 
-  const stored = (await (await testApi(page, user, "/api/items")).json()) as Array<{
+  const stored = (await (
+    await testApi(page, user, "/api/items")
+  ).json()) as Array<{
     id: string;
     status: string;
     targetDate: string | null;
@@ -131,10 +134,7 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
 
   await page.goto(
-    testAppUrl(
-      `/trails/${firstStop.trailId}/stops/${firstStop.id}`,
-      user,
-    ),
+    testAppUrl(`/trails/${firstStop.trailId}/stops/${firstStop.id}`, user),
   );
   const stopSidebar = page.getByRole("complementary", {
     name: `${firstStop.name} details`,
@@ -166,13 +166,9 @@ test("a Library Item applies and removes provisioned private Labels by keyboard"
   const reading = (await (
     await testApi(page, user, "/api/labels", "POST", { name: "Reading" })
   ).json()) as { id: string };
-  await testApi(
-    page,
-    foreignUser,
-    "/api/labels",
-    "POST",
-    { name: "Someone else's Label" },
-  );
+  await testApi(page, foreignUser, "/api/labels", "POST", {
+    name: "Someone else's Label",
+  });
   await testApi(
     page,
     user,
@@ -185,24 +181,34 @@ test("a Library Item applies and removes provisioned private Labels by keyboard"
   const labels = page.getByRole("group", {
     name: "Labels for Labelled handbook",
   });
-  await expect(labels.getByRole("button", { name: "Remove Systems" })).toBeVisible();
+  await expect(
+    labels.getByRole("button", { name: "Remove Systems" }),
+  ).toBeVisible();
   await expect(labels.getByText("Someone else's Label")).toHaveCount(0);
 
-  await labels.getByLabel("Add a Label to Labelled handbook").selectOption(reading.id);
+  await labels
+    .getByLabel("Add a Label to Labelled handbook")
+    .selectOption(reading.id);
   await labels
     .getByRole("button", { name: "Apply Label", exact: true })
     .focus();
   await page.keyboard.press("Enter");
-  await expect(labels.getByRole("button", { name: "Remove Reading" })).toBeVisible();
+  await expect(
+    labels.getByRole("button", { name: "Remove Reading" }),
+  ).toBeVisible();
 
-  await expect(labels.getByLabel("New Label for Labelled handbook")).toHaveCount(0);
+  await expect(
+    labels.getByLabel("New Label for Labelled handbook"),
+  ).toHaveCount(0);
   await expect(
     labels.getByRole("button", { name: "Create and apply Label" }),
   ).toHaveCount(0);
 
   await labels.getByRole("button", { name: "Remove Systems" }).focus();
   await page.keyboard.press("Enter");
-  await expect(labels.getByRole("button", { name: "Remove Systems" })).toHaveCount(0);
+  await expect(
+    labels.getByRole("button", { name: "Remove Systems" }),
+  ).toHaveCount(0);
 
   const stored = (await (
     await testApi(page, user, `/api/items/${item.id}`)
@@ -230,14 +236,22 @@ test("selecting and clearing a Label filter updates the URL and visible Library 
   await page.getByRole("button", { name: "Filter by Systems" }).click();
 
   await expect(page).toHaveURL(new RegExp(`[?&]label=${systems.id}(?:&|$)`));
-  await expect(page.getByText("Distributed systems notes", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unlabelled reading", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Distributed systems notes", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Unlabelled reading", { exact: true }),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: "Show all Items" }).click();
 
   await expect(page).not.toHaveURL(/[?&]label=/);
-  await expect(page.getByText("Distributed systems notes", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unlabelled reading", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Distributed systems notes", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Unlabelled reading", { exact: true }),
+  ).toBeVisible();
   const stored = (await (
     await testApi(page, user, `/api/items/${labelled.id}`)
   ).json()) as { labels: Array<{ id: string }> };
@@ -260,21 +274,14 @@ test("a bookmarked Label filter survives refresh and follows browser history", a
     Type.Article,
     "Systems",
   );
-  await seedLabelledItem(
-    page,
-    user,
-    "Design Item",
-    Type.Video,
-    "Design",
-  );
+  await seedLabelledItem(page, user, "Design Item", Type.Video, "Design");
 
   await page.goto(testAppUrl("/library", user, { label: systems.id }));
   await expect(page.getByText("Systems Item", { exact: true })).toBeVisible();
   await expect(page.getByText("Design Item", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Filter by Systems" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(
+    page.getByRole("button", { name: "Filter by Systems" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await page.reload();
   await expect(page.getByText("Systems Item", { exact: true })).toBeVisible();
@@ -306,12 +313,18 @@ test("an empty Label result names the filter and clears back to the complete Lib
 
   await page.goto(testAppUrl("/library", user, { label: systems.id }));
 
-  await expect(page.getByText('No Items match "Systems"', { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Capture your first Item" })).toHaveCount(0);
+  await expect(
+    page.getByText('No Items match "Systems"', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Capture your first Item" }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Clear Label filter" }).click();
 
   await expect(page).not.toHaveURL(/[?&]label=/);
-  await expect(page.getByText("An unlabelled Item", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("An unlabelled Item", { exact: true }),
+  ).toBeVisible();
 });
 
 test("foreign and invalid Label filters share one private recoverable state", async ({
@@ -332,13 +345,21 @@ test("foreign and invalid Label filters share one private recoverable state", as
   for (const labelId of [foreignLabel.id, "not-a-label-id"]) {
     await page.goto(testAppUrl("/library", user, { label: labelId }));
 
-    await expect(page.getByText("Label unavailable", { exact: true })).toBeVisible();
-    await expect(page.getByText("Secret foreign Label", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("Owner's visible Item", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText("Label unavailable", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Secret foreign Label", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Owner's visible Item", { exact: true }),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Clear Label filter" }).click();
 
     await expect(page).not.toHaveURL(/[?&]label=/);
-    await expect(page.getByText("Owner's visible Item", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Owner's visible Item", { exact: true }),
+    ).toBeVisible();
   }
 });
 
@@ -373,7 +394,9 @@ test("a truly empty Library still offers Capture with an invalid Label filter", 
 
   await page.goto(testAppUrl("/library", user, { label: "not-a-label-id" }));
 
-  await expect(page.getByText("Nothing captured yet", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Nothing captured yet", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Capture your first Item" }),
   ).toBeVisible();
@@ -398,7 +421,9 @@ test("the Library keeps its shell while row-shaped loading resolves", async ({
     await route.continue();
   });
 
-  await page.goto(testAppUrl("/library", user), { waitUntil: "domcontentloaded" });
+  await page.goto(testAppUrl("/library", user), {
+    waitUntil: "domcontentloaded",
+  });
   await expect(
     page.getByRole("status", { name: "Loading Library" }),
   ).toBeVisible();
@@ -446,11 +471,15 @@ test("a Library failure retries in place without replacing the shell", async ({
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("a truly empty Library opens global Capture", async ({ page }, testInfo) => {
+test("a truly empty Library opens global Capture", async ({
+  page,
+}, testInfo) => {
   const user = `${testInfo.project.name}-library-empty`;
   await page.goto(testAppUrl("/library", user));
 
-  await expect(page.getByText("Nothing captured yet", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Nothing captured yet", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Capture your first Item" }).click();
   await expect(page.getByRole("dialog", { name: "Capture" })).toBeVisible();
   await expect(page).toHaveURL(/\/test\/browser\/library(\?|$)/);
@@ -462,7 +491,9 @@ test("an older Library refresh cannot hide an Item captured by a newer refresh",
 }, testInfo) => {
   const user = `${testInfo.project.name}-library-refresh-order`;
   await page.goto(testAppUrl("/library", user));
-  await expect(page.getByText("Nothing captured yet", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Nothing captured yet", { exact: true }),
+  ).toBeVisible();
 
   let delayNextList = true;
   let releaseOlder!: () => void;
@@ -502,7 +533,9 @@ test("an older Library refresh cannot hide an Item captured by a newer refresh",
   await capture("Captured first");
   await olderSeen;
   await capture("Captured second");
-  await expect(page.getByText("Captured second", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Captured second", { exact: true }),
+  ).toBeVisible();
 
   releaseOlder();
   await olderCommitted;
@@ -513,5 +546,7 @@ test("an older Library refresh cannot hide an Item captured by a newer refresh",
       ),
   );
   await expect(page.getByText("Captured first", { exact: true })).toBeVisible();
-  await expect(page.getByText("Captured second", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Captured second", { exact: true }),
+  ).toBeVisible();
 });

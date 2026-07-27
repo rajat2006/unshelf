@@ -22,14 +22,11 @@ describe("named record request schemas", () => {
     ["Label", createLabelRequestSchema],
     ["Stop", createStopRequestSchema],
     ["Trail", createTrailRequestSchema],
-  ])(
-    "normalizes a %s name at the contract boundary",
-    (_record, schema) => {
-      expect(schema.parse({ name: "  Learn   CSS  " })).toEqual({
-        name: "Learn   CSS",
-      });
-    },
-  );
+  ])("normalizes a %s name at the contract boundary", (_record, schema) => {
+    expect(schema.parse({ name: "  Learn   CSS  " })).toEqual({
+      name: "Learn   CSS",
+    });
+  });
 
   it.each([
     ["Label", createLabelRequestSchema],

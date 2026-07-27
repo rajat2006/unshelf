@@ -65,9 +65,7 @@ function progressLabel(trail: Trail): string {
 function TrailCard({ trail }: { trail: Trail }) {
   return (
     <Link to={`/trails/${trail.id}`} className="trail-card">
-      <span className="trail-card__name">
-        {trail.name}
-      </span>
+      <span className="trail-card__name">{trail.name}</span>
       <span className="trail-card__progress">{progressLabel(trail)}</span>
     </Link>
   );
@@ -76,9 +74,7 @@ function TrailCard({ trail }: { trail: Trail }) {
 /** The empty index: a quiet prompt whose only action starts the first Trail. */
 function EmptyTrails() {
   return (
-    <p className="trails-empty">
-      No Trails yet — name one above to start.
-    </p>
+    <p className="trails-empty">No Trails yet — name one above to start.</p>
   );
 }
 
@@ -106,9 +102,7 @@ function NewTrailForm({
 
   return (
     <form onSubmit={submit} className="new-trail-form">
-      <label htmlFor="new-trail-name">
-        Trail name
-      </label>
+      <label htmlFor="new-trail-name">Trail name</label>
       <div className="new-trail-form__controls">
         <input
           id="new-trail-name"
@@ -145,7 +139,11 @@ function TrailsError({ onRetry }: { onRetry: () => void }) {
   return (
     <div role="alert" className="surface-error-panel">
       <p>Couldn't load this</p>
-      <button type="button" onClick={onRetry} className="quiet-button quiet-button--primary">
+      <button
+        type="button"
+        onClick={onRetry}
+        className="quiet-button quiet-button--primary"
+      >
         Retry
       </button>
     </div>

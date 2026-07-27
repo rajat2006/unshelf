@@ -7,10 +7,8 @@ type TestBearerToken = string & { readonly [testBearerTokenBrand]: true };
 export const BROWSER_HARNESS_HOST = "127.0.0.1";
 export const BROWSER_HARNESS_WEB_PORT = 4173;
 export const BROWSER_HARNESS_API_PORT = 3101;
-export const BROWSER_HARNESS_WEB_ORIGIN =
-  `http://${BROWSER_HARNESS_HOST}:${BROWSER_HARNESS_WEB_PORT}`;
-export const BROWSER_HARNESS_API_ORIGIN =
-  `http://${BROWSER_HARNESS_HOST}:${BROWSER_HARNESS_API_PORT}`;
+export const BROWSER_HARNESS_WEB_ORIGIN = `http://${BROWSER_HARNESS_HOST}:${BROWSER_HARNESS_WEB_PORT}`;
+export const BROWSER_HARNESS_API_ORIGIN = `http://${BROWSER_HARNESS_HOST}:${BROWSER_HARNESS_API_PORT}`;
 
 const testBearerPrefix = "unshelf-browser-test:";
 

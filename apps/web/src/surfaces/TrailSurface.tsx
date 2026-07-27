@@ -59,9 +59,7 @@ export function TrailSurface({
         <h1 id="trail-heading">Trail</h1>
         {error && (
           <div role="alert">
-            <p className="quiet-copy">
-              Could not load this Trail: {error}
-            </p>
+            <p className="quiet-copy">Could not load this Trail: {error}</p>
             <button
               type="button"
               onClick={() => void refresh()}
@@ -72,7 +70,11 @@ export function TrailSurface({
           </div>
         )}
         {!trail && !error && (
-          <div className="trail-skeleton" role="status" aria-label="Loading Trail canvas">
+          <div
+            className="trail-skeleton"
+            role="status"
+            aria-label="Loading Trail canvas"
+          >
             <span aria-hidden="true" />
             <span aria-hidden="true" />
             <span aria-hidden="true" />

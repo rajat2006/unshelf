@@ -46,9 +46,13 @@ test("an authenticated User can capture an Item that remains private and persist
   await secondPage.goto(
     `/test/browser/library?testUser=${encodeURIComponent(secondUser)}`,
   );
-  await expect(secondPage.getByText(firstTitle, { exact: true })).toHaveCount(0);
+  await expect(secondPage.getByText(firstTitle, { exact: true })).toHaveCount(
+    0,
+  );
   await capture(secondPage, { title: secondTitle, type: "book" });
-  await expect(secondPage.getByText(secondTitle, { exact: true })).toBeVisible();
+  await expect(
+    secondPage.getByText(secondTitle, { exact: true }),
+  ).toBeVisible();
   await secondPage.close();
 
   await page.reload();

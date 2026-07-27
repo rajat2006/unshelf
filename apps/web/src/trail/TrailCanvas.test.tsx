@@ -69,7 +69,9 @@ describe("Trail canvas — Quiet Focus", () => {
   });
 
   it("invites the first Stop when the trail is empty (desktop only)", () => {
-    expect(render(false, { nodes: [], edges: [] })).toContain("Start your trail");
+    expect(render(false, { nodes: [], edges: [] })).toContain(
+      "Start your trail",
+    );
     expect(render(true, { nodes: [], edges: [] })).not.toContain(
       "Start your trail",
     );

@@ -1,4 +1,9 @@
-import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 
 /** The current signed-in User as the app sees it: a token getter for the api. */
 export interface CurrentUser {
