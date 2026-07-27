@@ -11,6 +11,11 @@ import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
 import { apiErrorHandler } from "./error-handler";
+import {
+  createRequestLifecycle,
+  markRoutingResolved,
+  type RequestLifecycleOptions,
+} from "./request-lifecycle";
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -20,8 +25,13 @@ import { apiErrorHandler } from "./error-handler";
  * Clerk-backed chain. Every later ticket's routes hang off this same factory and
  * scope their data to `req.user`.
  */
-export function createApp(db: Database, auth: RequestHandler[]): Express {
+export function createApp(
+  db: Database,
+  auth: RequestHandler[],
+  requestLifecycle: RequestLifecycleOptions,
+): Express {
   const app = express();
+  app.use(createRequestLifecycle(requestLifecycle));
   app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (_req, res) => {
@@ -60,6 +70,7 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
   app.use("/api/labels", createLabelsRouter(db, auth));
   app.use("/api/stops", createStopsRouter(db, auth));
   app.use("/api/trails", createTrailsRouter(db, auth));
+  app.use(markRoutingResolved);
   app.use(apiErrorHandler);
 
   return app;

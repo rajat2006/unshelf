@@ -5,6 +5,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
+import { createCollectingLogger } from "../src/logger";
 import { createDatabase } from "../src/db";
 
 const execFileAsync = promisify(execFile);
@@ -31,7 +32,9 @@ describe("migration CLI", () => {
       );
 
       const response = await request(
-        createApp(db, [(_req, _res, next) => next()]),
+        createApp(db, [(_req, _res, next) => next()], {
+          logger: createCollectingLogger(),
+        }),
       ).get("/api/health");
 
       expect(response.status).toBe(200);
