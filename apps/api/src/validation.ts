@@ -1,11 +1,135 @@
+import type { RequestHandler } from "express";
+
+interface ValidationIssue {
+  code: string;
+  path: PropertyKey[];
+  format?: string;
+}
+
+interface Schema<Output = unknown> {
+  safeParse(
+    input: unknown,
+  ):
+    | { success: true; data: Output }
+    | { success: false; error: { issues: ValidationIssue[] } };
+}
+
+type SchemaOutput<T> = T extends Schema<infer Output> ? Output : never;
+type ParameterSchemas = Record<string, Schema>;
+
+interface RequestSchemas {
+  body?: Schema;
+  params?: ParameterSchemas;
+  query?: Schema;
+}
+
+type ValidatedInput<Schemas extends RequestSchemas> = {
+  [Surface in keyof Schemas]: Surface extends "params"
+    ? Schemas[Surface] extends ParameterSchemas
+      ? {
+          [Key in keyof Schemas[Surface]]: SchemaOutput<Schemas[Surface][Key]>;
+        }
+      : never
+    : Schemas[Surface] extends Schema
+      ? SchemaOutput<Schemas[Surface]>
+      : never;
+};
+
+interface ValidatedLocals<Schemas extends RequestSchemas> {
+  validated: ValidatedInput<Schemas>;
+}
+
+interface PublicIssue {
+  path: string;
+  message: string;
+}
+
 /**
- * Read a required, non-blank `name` from an HTTP request body without changing
- * what the User supplied. Named domain records keep surrounding whitespace, but
- * whitespace alone is not a name.
+ * Validate every declared HTTP input before continuing to a route handler.
+ *
+ * Schemas own both runtime parsing and `res.locals.validated`, the request-scoped
+ * input container consumed by the next handler. Path parameters are declared
+ * individually so the API can consume the shared branded UUID schemas without
+ * importing Zod or rebuilding identifier contracts locally.
  */
-export function parseRequiredName(body: unknown): { name: string } | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || name.trim().length === 0) return null;
-  return { name };
+export function validateRequest<const Schemas extends RequestSchemas>(
+  schemas: Schemas,
+): RequestHandler<
+  Record<string, string>,
+  unknown,
+  unknown,
+  unknown,
+  ValidatedLocals<Schemas>
+> {
+  return (req, res, next) => {
+    const parsed: Record<string, unknown> = {};
+    const issues: PublicIssue[] = [];
+
+    if (schemas.body) {
+      const result = schemas.body.safeParse(req.body);
+      if (result.success) parsed.body = result.data;
+      else issues.push(...normalizeIssues("body", result.error.issues));
+    }
+
+    if (schemas.params) {
+      const params: Record<string, unknown> = {};
+      for (const [name, schema] of Object.entries(schemas.params)) {
+        const result = schema.safeParse(req.params[name]);
+        if (result.success) params[name] = result.data;
+        else {
+          issues.push(...normalizeIssues(`path.${name}`, result.error.issues));
+        }
+      }
+      parsed.params = params;
+    }
+
+    if (schemas.query) {
+      const result = schemas.query.safeParse(req.query);
+      if (result.success) parsed.query = result.data;
+      else issues.push(...normalizeIssues("query", result.error.issues));
+    }
+
+    if (issues.length > 0) {
+      res.status(400).json({ error: "invalid_request", issues });
+      return;
+    }
+
+    res.locals.validated = parsed as ValidatedInput<Schemas>;
+    next();
+  };
+}
+
+function normalizeIssues(
+  surface: string,
+  validationIssues: ValidationIssue[],
+): PublicIssue[] {
+  return validationIssues.flatMap((issue) => {
+    if (issue.code === "unrecognized_keys") {
+      return [
+        {
+          path: [surface, ...issue.path, "$unknown"].join("."),
+          message: "Contains unrecognized fields",
+        },
+      ];
+    }
+
+    return [
+      {
+        path: [surface, ...issue.path].join("."),
+        message: publicMessage(issue),
+      },
+    ];
+  });
+}
+
+function publicMessage(issue: ValidationIssue): string {
+  if (issue.code === "invalid_format" && issue.format === "uuid") {
+    return "Must be a valid UUID";
+  }
+  if (issue.code === "invalid_format" && issue.format === "date") {
+    return "Must be a valid YYYY-MM-DD date";
+  }
+  if (issue.code === "too_small") return "Must not be blank";
+  if (issue.code === "invalid_type") return "Has an invalid type";
+  return "Invalid value";
 }

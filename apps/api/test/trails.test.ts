@@ -55,6 +55,15 @@ describe("Trails at the HTTP boundary", () => {
     expect((read.body as Trail).name).toBe("Learn Rust");
   });
 
+  it("trims only the Trail name boundary", async () => {
+    const created = await createTrail("trails-trim-user", {
+      name: "  Learn   Rust  ",
+    });
+
+    expect(created.status).toBe(201);
+    expect((created.body as Trail).name).toBe("Learn   Rust");
+  });
+
   it("rejects a Trail with no name", async () => {
     const user = "trails-invalid-user";
     expect((await createTrail(user, {})).status).toBe(400);
@@ -94,6 +103,16 @@ describe("Trails at the HTTP boundary", () => {
       (await getTrail(owner, "00000000-0000-0000-0000-000000000000")).status,
     ).toBe(404);
     expect((await listTrails(intruder)).body).toEqual([]);
+  });
+
+  it("rejects malformed Trail ids with the shared request contract", async () => {
+    const res = await getTrail("trails-malformed-user", "not-a-trail-id");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.trailId", message: "Must be a valid UUID" }],
+    });
   });
 
   it("derives Trail progress from its Stops' Items, counting each Item once", async () => {
@@ -167,7 +186,8 @@ describe("a Stop belongs to exactly one Trail (#94)", () => {
     const stop = created.body as Stop;
 
     // It is a node on its own Trail…
-    const hereNodes = ((await topologyOf(user, here.id)).body as TrailView).nodes;
+    const hereNodes = ((await topologyOf(user, here.id)).body as TrailView)
+      .nodes;
     expect(hereNodes.map((n) => n.id)).toEqual([stop.id]);
     // …and nowhere on another Trail of the same User.
     const elsewhereNodes = (
@@ -191,16 +211,31 @@ describe("a Stop belongs to exactly one Trail (#94)", () => {
     expect(ownerNodes).toEqual([]);
   });
 
+  it("rejects a malformed parent Trail id without creating a Stop", async () => {
+    const user = "trail-stop-invalid-parent";
+    const res = await createStopOn(user, "not-a-trail-id", "Nowhere");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "invalid_request",
+      issues: [{ path: "path.trailId", message: "Must be a valid UUID" }],
+    });
+    const listed = (
+      await request(app).get("/api/stops").set(TEST_USER_HEADER, user)
+    ).body as Stop[];
+    expect(listed).toEqual([]);
+  });
+
   it("rejects a Trail-less Stop at the database boundary", async () => {
     const user = "trail-stop-db-anchor";
     const trail = (await createTrail(user, { name: "Anchored" })).body as Trail;
-    const stop = (await createStopOn(user, trail.id, "On the Trail")).body as Stop;
+    const stop = (await createStopOn(user, trail.id, "On the Trail"))
+      .body as Stop;
 
     await expect(
-      harness.pool.query(
-        `UPDATE stops SET trail_id = NULL WHERE id = $1`,
-        [stop.id],
-      ),
+      harness.pool.query(`UPDATE stops SET trail_id = NULL WHERE id = $1`, [
+        stop.id,
+      ]),
     ).rejects.toThrow();
   });
 
@@ -210,6 +245,16 @@ describe("a Stop belongs to exactly one Trail (#94)", () => {
 
     expect((await createStopOn(user, trail.id, "")).status).toBe(400);
     expect((await createStopOn(user, trail.id, "   ")).status).toBe(400);
+  });
+
+  it("trims only the Stop name boundary", async () => {
+    const user = "trail-stop-trim-user";
+    const trail = (await createTrail(user, { name: "Named" })).body as Trail;
+
+    const res = await createStopOn(user, trail.id, "  A   waypoint  ");
+
+    expect(res.status).toBe(201);
+    expect((res.body as Stop).name).toBe("A   waypoint");
   });
 });
 

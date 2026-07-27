@@ -1,5 +1,11 @@
 import { Router, type RequestHandler } from "express";
-import type { ConnectStopsRequest, StopId, TrailId } from "@unshelf/shared";
+import {
+  connectStopsRequestSchema,
+  createStopRequestSchema,
+  createTrailRequestSchema,
+  stopIdSchema,
+  trailIdSchema,
+} from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { createStop, getStopOnTrail } from "../stops/repository";
 import {
@@ -8,7 +14,7 @@ import {
   getTrail as getTrailTopology,
 } from "../trail/repository";
 import { createTrail, getTrail, listTrails } from "./repository";
-import { parseRequiredName } from "../validation";
+import { validateRequest } from "../validation";
 
 /**
  * Mount the authenticated Trail HTTP interface at `/api/trails`.
@@ -29,160 +35,161 @@ import { parseRequiredName } from "../validation";
  * well-formed and authorised but conflicts with the Trail-is-a-DAG invariant
  * (ADR-0010).
  */
-export function createTrailsRouter(db: Database, auth: RequestHandler[]): Router {
+export function createTrailsRouter(
+  db: Database,
+  auth: RequestHandler[],
+): Router {
   const router = Router();
   router.use(...auth);
-  const uuidPattern =
-    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-
-  // A `:trailId` that is not even shaped like our opaque id names no Trail, so it
-  // answers as a missing one — a 404 — rather than reaching a uuid column that
-  // would error on the malformed value. Runs after auth, so an unauthenticated
-  // request is still a 401 first.
-  router.param("trailId", (_req, res, next, value) => {
-    if (!uuidPattern.test(value)) {
-      res.status(404).json({ error: "trail not found" });
-      return;
-    }
-    next();
-  });
-
-  router.param("stopId", (_req, res, next, value) => {
-    if (!uuidPattern.test(value)) {
-      res.status(404).json({ error: "stop not found" });
-      return;
-    }
-    next();
-  });
 
   router.get("/", async (req, res) => {
     res.json(await listTrails(db, req.user!.id));
   });
 
-  router.post("/", async (req, res) => {
-    const input = parseRequiredName(req.body);
-    if (!input) {
-      res.status(400).json({ error: "a name is required" });
-      return;
-    }
-    res.status(201).json(await createTrail(db, req.user!.id, input));
-  });
+  router.post(
+    "/",
+    validateRequest({ body: createTrailRequestSchema }),
+    async (req, res) => {
+      const { body } = res.locals.validated;
+      res.status(201).json(await createTrail(db, req.user!.id, body));
+    },
+  );
 
-  router.get("/:trailId", async (req, res) => {
-    const trail = await getTrail(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-    );
-    if (!trail) {
-      res.status(404).json({ error: "trail not found" });
-      return;
-    }
-    res.json(trail);
-  });
+  router.get(
+    "/:trailId",
+    validateRequest({
+      params: { trailId: trailIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const trail = await getTrail(db, req.user!.id, params.trailId);
+      if (!trail) {
+        res.status(404).json({ error: "trail not found" });
+        return;
+      }
+      res.json(trail);
+    },
+  );
 
-  router.post("/:trailId/stops", async (req, res) => {
-    const input = parseRequiredName(req.body);
-    if (!input) {
-      res.status(400).json({ error: "a name is required" });
-      return;
-    }
-    const stop = await createStop(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-      input,
-    );
-    if (!stop) {
-      res.status(404).json({ error: "trail not found" });
-      return;
-    }
-    res.status(201).json(stop);
-  });
+  router.post(
+    "/:trailId/stops",
+    validateRequest({
+      body: createStopRequestSchema,
+      params: { trailId: trailIdSchema },
+    }),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const stop = await createStop(db, req.user!.id, params.trailId, body);
+      if (!stop) {
+        res.status(404).json({ error: "trail not found" });
+        return;
+      }
+      res.status(201).json(stop);
+    },
+  );
 
-  router.get("/:trailId/stops/:stopId", async (req, res) => {
-    const stop = await getStopOnTrail(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-      req.params.stopId as StopId,
-    );
-    if (!stop) {
-      res.status(404).json({ error: "stop not found" });
-      return;
-    }
-    res.json(stop);
-  });
-
-  router.get("/:trailId/topology", async (req, res) => {
-    const topology = await getTrailTopology(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-    );
-    if (!topology) {
-      res.status(404).json({ error: "trail not found" });
-      return;
-    }
-    res.json(topology);
-  });
-
-  router.post("/:trailId/edges", async (req, res) => {
-    const input = parseConnectStops(req.body);
-    if (!input) {
-      res.status(400).json({ error: "fromStopId and toStopId are required" });
-      return;
-    }
-    if (input.fromStopId === input.toStopId) {
-      res.status(400).json({ error: "a stop cannot link to itself" });
-      return;
-    }
-
-    const result = await connectStops(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-      input.fromStopId,
-      input.toStopId,
-    );
-    switch (result.kind) {
-      case "not_found":
+  router.get(
+    "/:trailId/stops/:stopId",
+    validateRequest({
+      params: { trailId: trailIdSchema, stopId: stopIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const stop = await getStopOnTrail(
+        db,
+        req.user!.id,
+        params.trailId,
+        params.stopId,
+      );
+      if (!stop) {
         res.status(404).json({ error: "stop not found" });
         return;
-      case "cycle":
-        res
-          .status(409)
-          .json({ error: "that link would create a cycle in the trail" });
-        return;
-      case "ok":
-        res.status(201).json(result.trail);
-        return;
-    }
-  });
+      }
+      res.json(stop);
+    },
+  );
 
-  router.delete("/:trailId/edges/:fromStopId/:toStopId", async (req, res) => {
-    const topology = await disconnectStops(
-      db,
-      req.user!.id,
-      req.params.trailId as TrailId,
-      req.params.fromStopId as StopId,
-      req.params.toStopId as StopId,
-    );
-    if (!topology) {
-      res.status(404).json({ error: "trail not found" });
-      return;
-    }
-    res.json(topology);
-  });
+  router.get(
+    "/:trailId/topology",
+    validateRequest({
+      params: { trailId: trailIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const topology = await getTrailTopology(
+        db,
+        req.user!.id,
+        params.trailId,
+      );
+      if (!topology) {
+        res.status(404).json({ error: "trail not found" });
+        return;
+      }
+      res.json(topology);
+    },
+  );
+
+  router.post(
+    "/:trailId/edges",
+    validateRequest({
+      body: connectStopsRequestSchema,
+      params: { trailId: trailIdSchema },
+    }),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      if (body.fromStopId === body.toStopId) {
+        res.status(400).json({ error: "a stop cannot link to itself" });
+        return;
+      }
+
+      const result = await connectStops(
+        db,
+        req.user!.id,
+        params.trailId,
+        body.fromStopId,
+        body.toStopId,
+      );
+      switch (result.kind) {
+        case "not_found":
+          res.status(404).json({ error: "stop not found" });
+          return;
+        case "cycle":
+          res
+            .status(409)
+            .json({ error: "that link would create a cycle in the trail" });
+          return;
+        case "ok":
+          res.status(201).json(result.trail);
+          return;
+      }
+    },
+  );
+
+  router.delete(
+    "/:trailId/edges/:fromStopId/:toStopId",
+    validateRequest({
+      params: {
+        trailId: trailIdSchema,
+        fromStopId: stopIdSchema,
+        toStopId: stopIdSchema,
+      },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const topology = await disconnectStops(
+        db,
+        req.user!.id,
+        params.trailId,
+        params.fromStopId,
+        params.toStopId,
+      );
+      if (!topology) {
+        res.status(404).json({ error: "trail not found" });
+        return;
+      }
+      res.json(topology);
+    },
+  );
 
   return router;
-}
-
-/** Validate a connect payload at the HTTP seam: two Stop ids, and nothing else. */
-function parseConnectStops(body: unknown): ConnectStopsRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { fromStopId, toStopId } = body as Record<string, unknown>;
-  if (typeof fromStopId !== "string" || fromStopId.length === 0) return null;
-  if (typeof toStopId !== "string" || toStopId.length === 0) return null;
-  return { fromStopId: fromStopId as StopId, toStopId: toStopId as StopId };
 }

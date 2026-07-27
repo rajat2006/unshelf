@@ -1,6 +1,11 @@
 import { Router, type RequestHandler } from "express";
-import type { AddStopItemRequest, ItemId, StopId } from "@unshelf/shared";
+import {
+  addStopItemRequestSchema,
+  itemIdSchema,
+  stopIdSchema,
+} from "@unshelf/shared/validation";
 import type { Database } from "../db";
+import { validateRequest } from "../validation";
 import {
   addItemToStop,
   getStop,
@@ -28,7 +33,10 @@ import {
  * — 404, never 403 — so the boundary never confirms that someone else's id is a
  * real id.
  */
-export function createStopsRouter(db: Database, auth: RequestHandler[]): Router {
+export function createStopsRouter(
+  db: Database,
+  auth: RequestHandler[],
+): Router {
   const router = Router();
   router.use(...auth);
 
@@ -36,59 +44,64 @@ export function createStopsRouter(db: Database, auth: RequestHandler[]): Router 
     res.json(await listStops(db, req.user!.id));
   });
 
-  router.get("/:stopId", async (req, res) => {
-    const stop = await getStop(
-      db,
-      req.user!.id,
-      req.params.stopId as StopId,
-    );
-    if (!stop) {
-      res.status(404).json({ error: "stop not found" });
-      return;
-    }
-    res.json(stop);
-  });
+  router.get(
+    "/:stopId",
+    validateRequest({
+      params: { stopId: stopIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const stop = await getStop(db, req.user!.id, params.stopId);
+      if (!stop) {
+        res.status(404).json({ error: "stop not found" });
+        return;
+      }
+      res.json(stop);
+    },
+  );
 
-  router.post("/:stopId/items", async (req, res) => {
-    const input = parseAddStopItem(req.body);
-    if (!input) {
-      res.status(400).json({ error: "an itemId is required" });
-      return;
-    }
-    const stop = await addItemToStop(
-      db,
-      req.user!.id,
-      req.params.stopId as StopId,
-      input.itemId,
-    );
-    if (!stop) {
-      res.status(404).json({ error: "stop or item not found" });
-      return;
-    }
-    res.json(stop);
-  });
+  router.post(
+    "/:stopId/items",
+    validateRequest({
+      body: addStopItemRequestSchema,
+      params: { stopId: stopIdSchema },
+    }),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const stop = await addItemToStop(
+        db,
+        req.user!.id,
+        params.stopId,
+        body.itemId,
+      );
+      if (!stop) {
+        res.status(404).json({ error: "stop or item not found" });
+        return;
+      }
+      res.json(stop);
+    },
+  );
 
-  router.delete("/:stopId/items/:itemId", async (req, res) => {
-    const stop = await removeItemFromStop(
-      db,
-      req.user!.id,
-      req.params.stopId as StopId,
-      req.params.itemId as ItemId,
-    );
-    if (!stop) {
-      res.status(404).json({ error: "stop not found" });
-      return;
-    }
-    res.json(stop);
-  });
+  router.delete(
+    "/:stopId/items/:itemId",
+    validateRequest({
+      params: { stopId: stopIdSchema, itemId: itemIdSchema },
+    }),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const stop = await removeItemFromStop(
+        db,
+        req.user!.id,
+        params.stopId,
+        params.itemId,
+      );
+      if (!stop) {
+        res.status(404).json({ error: "stop not found" });
+        return;
+      }
+      res.json(stop);
+    },
+  );
 
   return router;
-}
-
-/** Validate an add-to-Stop payload: one Item id, and nothing else to carry. */
-function parseAddStopItem(body: unknown): AddStopItemRequest | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { itemId } = body as Record<string, unknown>;
-  if (typeof itemId !== "string" || itemId.length === 0) return null;
-  return { itemId: itemId as ItemId };
 }

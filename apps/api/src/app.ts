@@ -1,4 +1,7 @@
-import express, { type Express, type RequestHandler } from "express";
+import express, {
+  type Express,
+  type RequestHandler,
+} from "express";
 import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
 import type { Database } from "./db";
@@ -7,6 +10,7 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
+import { apiErrorHandler } from "./error-handler";
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -18,7 +22,7 @@ import { createTrailsRouter } from "./trails/router";
  */
 export function createApp(db: Database, auth: RequestHandler[]): Express {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (_req, res) => {
     try {
@@ -56,6 +60,7 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
   app.use("/api/labels", createLabelsRouter(db, auth));
   app.use("/api/stops", createStopsRouter(db, auth));
   app.use("/api/trails", createTrailsRouter(db, auth));
+  app.use(apiErrorHandler);
 
   return app;
 }

@@ -10,16 +10,27 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js",
+      "default": "./dist/validation.js"
     }
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "build": "tsup src/index.ts src/validation.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/validation.ts --format esm --dts --watch",
+    "test": "pnpm run build && vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
   }
 }

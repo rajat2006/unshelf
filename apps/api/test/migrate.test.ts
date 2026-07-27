@@ -12,7 +12,9 @@ const API_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 describe("migration CLI", () => {
   it("prepares a fresh database for the API", async () => {
-    const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+    const container = await new PostgreSqlContainer(
+      "postgres:16-alpine",
+    ).start();
     const db = createDatabase(container.getConnectionUri());
 
     try {
