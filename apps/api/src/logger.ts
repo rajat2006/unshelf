@@ -263,6 +263,7 @@ function priorityRecord(
 
 function forceCompactPriorityRecord(
   value: Readonly<Record<string, unknown>>,
+  preserveErrorContainer = true,
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {
@@ -275,7 +276,12 @@ function forceCompactPriorityRecord(
         ];
       }
       if (isRecord(entry)) {
-        return [key, forceCompactPriorityRecord(entry)];
+        return [
+          key,
+          preserveErrorContainer && key === "error"
+            ? forceCompactPriorityRecord(entry, false)
+            : TRUNCATED,
+        ];
       }
       if (entry !== null && typeof entry === "object") {
         return [key, TRUNCATED];

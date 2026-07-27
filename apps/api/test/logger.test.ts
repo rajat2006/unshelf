@@ -246,6 +246,42 @@ describe("production logger", () => {
       },
     });
   });
+
+  it("bounds object-valued priority fields", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+    const oversizedCode = Object.fromEntries(
+      Array.from({ length: 12_000 }, (_, index) => [
+        `field-${index}`,
+        `value-${index}`,
+      ]),
+    );
+
+    logger.error({
+      event: "unshelf.api.health.failed",
+      msg: "PostgreSQL health check failed",
+      error: {
+        type: "DatabaseError",
+        code: oversizedCode,
+        message: "query failed",
+      },
+    });
+
+    expect(Buffer.byteLength(destination.output, "utf8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+    expect(JSON.parse(destination.output)).toMatchObject({
+      diagnosticTruncated: true,
+      error: {
+        type: "DatabaseError",
+        code: "[TRUNCATED]",
+        message: "query failed",
+      },
+    });
+  });
 });
 
 describe("collecting logger", () => {
