@@ -8,6 +8,10 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "ci:product": "pnpm run ci:product:build && pnpm run ci:product:typecheck && pnpm run ci:product:test",
+    "ci:product:build": "turbo run build --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "ci:product:test": "turbo run test:product --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "ci:product:typecheck": "turbo run typecheck --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "db:generate": "turbo run db:generate",
     "dev": "turbo run dev",
     "test": "turbo run test",
