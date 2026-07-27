@@ -93,6 +93,30 @@ describe("API process failure policy", () => {
       );
     },
   );
+
+  it("classifies a server error after listening as a runtime failure", async () => {
+    const logger = trackedLogger();
+    const runtime = fakeRuntime();
+    const server = fakeServer();
+    await superviseApiProcess({
+      logger,
+      runtime,
+      start: () => server,
+    });
+
+    await server.emit("listening");
+    await server.emit("error", new Error("listener failed"));
+
+    expect(logger.records).toEqual([
+      expect.objectContaining({
+        level: "fatal",
+        event: "unshelf.api.error.unexpected",
+        phase: "runtime",
+      }),
+    ]);
+    expect(logger.flush).toHaveBeenCalledOnce();
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+  });
 });
 
 function trackedLogger(): CollectingLogger & {
@@ -126,10 +150,25 @@ function fakeRuntime(): ProcessRuntime & {
   };
 }
 
+type ServerSignal = "error" | "listening";
+
 function fakeServer(): {
-  once(signal: "error", listener: (failure: unknown) => void): void;
+  once(
+    signal: ServerSignal,
+    listener: (failure?: unknown) => void | Promise<void>,
+  ): void;
+  emit(signal: ServerSignal, failure?: unknown): Promise<void>;
 } {
+  const listeners = new Map<
+    ServerSignal,
+    (failure?: unknown) => void | Promise<void>
+  >();
   return {
-    once: () => undefined,
+    once: (signal, listener) => {
+      listeners.set(signal, listener);
+    },
+    async emit(signal, failure) {
+      await listeners.get(signal)?.(failure);
+    },
   };
 }

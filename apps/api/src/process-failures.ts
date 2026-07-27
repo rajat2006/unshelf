@@ -13,8 +13,10 @@ export interface ProcessRuntime {
 
 export interface StartupTarget {
   once(
-    signal: "error",
-    listener: (failure: unknown) => void | Promise<void>,
+    signal: "error" | "listening",
+    listener:
+      | ((failure: unknown) => void | Promise<void>)
+      | (() => void),
   ): unknown;
 }
 
@@ -66,7 +68,13 @@ export async function superviseApiProcess<T extends StartupTarget>({
 
   try {
     const server = start();
-    server.once("error", (failure) => terminate("startup", failure));
+    let listening = false;
+    server.once("listening", () => {
+      listening = true;
+    });
+    server.once("error", (failure) =>
+      terminate(listening ? "runtime" : "startup", failure),
+    );
     return server;
   } catch (failure) {
     await terminate("startup", failure);
