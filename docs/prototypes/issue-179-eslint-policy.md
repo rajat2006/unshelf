@@ -93,7 +93,26 @@ The candidate reports 106 errors and one warning:
 
 `@typescript-eslint/await-thenable` reports no violations.
 
-## Proposed clean-baseline disposition for review
+## Live-review outcome
+
+The human review accepted a conservative initial-rollout posture:
+
+- Defer `react-hooks/set-state-in-effect`. It is an official React
+  recommended-preset rule, but its five findings require deliberate changes to
+  existing loading/reset effects and should not become incidental lint-baseline
+  cleanup.
+- Carry the remaining candidate rules and narrow relaxations into the dedicated
+  final-rule-selection decision. In particular, React Refresh remains a
+  candidate to evaluate there rather than being silently accepted or discarded
+  by this prototype.
+- Require the eventual implementation PR description to include a short
+  plain-language explanation of every enabled rule or preset.
+
+This preserves the prototype's full candidate configuration and measurements as
+primary evidence; the config is not rewritten to pretend the measured rule was
+never exercised.
+
+## Proposed clean-baseline disposition for the rule-selection decision
 
 1. Keep all three Promise-safety rules at error and fix the nine findings.
 2. Add a narrow API-test override for
@@ -104,17 +123,17 @@ The candidate reports 106 errors and one warning:
 4. Keep `no-unnecessary-type-assertion` and clean up its 26 findings.
 5. Configure `no-namespace` to allow declaration merging, and ignore
    underscore-prefixed callback parameters for `no-unused-vars`.
-6. Keep React Hooks stable recommended, including `set-state-in-effect`, and
-   refactor the five effects plus the one dependency warning.
+6. Keep the established React Hooks checks, but initially disable
+   `set-state-in-effect`; address its five effects as deliberate follow-up work.
 7. Keep the React Refresh Vite rule and split the two mixed component/hook
    modules, unless live review decides preserving their current public seams is
    worth a four-site exception.
 8. Remove the stale `jsx-a11y/no-autofocus` suppression; accessibility linting
    remains outside this policy.
 
-Items 6 and 7 are the meaningful human-review points. The rest are narrow,
-mechanical ways to reach the map's required zero-warning/error baseline without
-weakening production source checks.
+React Refresh remains the meaningful open choice for the rule-selection
+decision. The rest are narrow, mechanical ways to reach the map's required
+zero-warning/error baseline without weakening production source checks.
 
 ## Compatibility observation
 
