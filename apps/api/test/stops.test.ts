@@ -202,7 +202,7 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
 
     expect(all.map((listed) => listed.id)).toEqual([item.id]);
     const inStop = ((await viewStop(clerkUserId, stop.id)).body as StopDetail)
-      .items[0]!;
+      .items[0];
     expect(inStop.id).toBe(item.id); // the same record, not a copy
   });
 
@@ -238,7 +238,7 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     for (const stop of [css, api]) {
       const detail = (await viewStop(clerkUserId, stop.id)).body as StopDetail;
       expect(detail.items).toHaveLength(1);
-      expect(detail.items[0]!.id).toBe(item.id);
+      expect(detail.items[0].id).toBe(item.id);
     }
     const all = (
       await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
@@ -318,8 +318,8 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
       await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
     ).body as Item[];
     expect(all).toHaveLength(1);
-    expect(all[0]!.id).toBe(item.id);
-    expect(all[0]!.status).toBe("in_progress"); // and its progress is untouched
+    expect(all[0].id).toBe(item.id);
+    expect(all[0].status).toBe("in_progress"); // and its progress is untouched
   });
 
   it("leaves the Item's other Stop memberships alone", async () => {
@@ -427,8 +427,8 @@ describe("GET /api/stops/:stopId — view a Stop's contents", () => {
 
     const detail = (await viewStop(clerkUserId, stop.id)).body as StopDetail;
 
-    expect(detail.items[0]!.targetDate).toBe("2000-01-01");
-    expect(detail.items[0]!.pastTarget).toBe(true);
+    expect(detail.items[0].targetDate).toBe("2000-01-01");
+    expect(detail.items[0].pastTarget).toBe(true);
   });
 
   it("404s on a Stop that does not exist", async () => {
@@ -530,12 +530,12 @@ describe("one Status, read through every Stop that holds the Item", () => {
 
     for (const stop of stops) {
       const detail = (await viewStop(clerkUserId, stop.id)).body as StopDetail;
-      expect(detail.items[0]!.status, `Status in ${stop.name}`).toBe("done");
+      expect(detail.items[0].status, `Status in ${stop.name}`).toBe("done");
     }
     const all = (
       await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
     ).body as Item[];
-    expect(all[0]!.status).toBe("done");
+    expect(all[0].status).toBe("done");
   });
 });
 
@@ -600,7 +600,7 @@ describe("per-User isolation", () => {
 
     expect(aliceStops.map((stop) => stop.name)).toEqual(["Alice's stop"]);
     expect(bobStops.map((stop) => stop.name)).toEqual(["Bob's stop"]);
-    expect(aliceStops[0]!.userId).not.toBe(bobStops[0]!.userId);
+    expect(aliceStops[0].userId).not.toBe(bobStops[0].userId);
   });
 
   it("cannot view another User's Stop", async () => {

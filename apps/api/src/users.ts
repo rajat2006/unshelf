@@ -39,5 +39,5 @@ export async function provisionUser(
       clerk_user_id: users.clerkUserId,
       created_at: users.createdAt,
     });
-  return toUser(row!);
+  return toUser(row);
 }
