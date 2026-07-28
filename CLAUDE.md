@@ -2,6 +2,12 @@
 
 ## Agent skills
 
+### Coding standards
+
+All coding standards for this project live in the `coding-standards` skill at `.agents/skills/coding-standards/`.
+
+**Load that skill** before writing code, reviewing changes, or answering questions about conventions.
+
 ### Issue tracker
 
 Issues and PRDs are tracked in **GitHub Issues** (`rajat2006/unshelf`), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
