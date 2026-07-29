@@ -4,7 +4,7 @@ import type { RequestHandler } from "express";
 import type { UserId } from "@unshelf/shared";
 import type { Database } from "../src/db";
 import { createApp } from "../src/app";
-import { createAuthMiddleware } from "../src/auth";
+import { createAuthMiddleware } from "../src/middleware/auth";
 import { createCollectingLogger } from "../src/logger";
 
 describe("expected API request failures", () => {

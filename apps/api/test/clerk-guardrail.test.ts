@@ -11,7 +11,10 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../.."); // test → apps/api → apps → repo root
 
-const ALLOWED = new Set(["apps/web/src/auth.tsx", "apps/api/src/auth.ts"]);
+const ALLOWED = new Set([
+  "apps/web/src/auth.tsx",
+  "apps/api/src/middleware/auth.ts",
+]);
 const CLERK_IMPORT = /["']@clerk\//;
 
 /**

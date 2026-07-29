@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { createLabelRequestSchema } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { createLabel, listLabels } from "./repository";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 
 export function createLabelsRouter(
   db: Database,

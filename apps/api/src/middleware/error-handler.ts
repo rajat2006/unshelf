@@ -2,7 +2,7 @@ import type { ErrorRequestHandler } from "express";
 import {
   serializeFailure,
   type DiagnosticOptions,
-} from "./diagnostics";
+} from "../diagnostics";
 import {
   failureRequestSnapshot,
   registeredRoute,

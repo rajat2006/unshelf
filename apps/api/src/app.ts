@@ -7,14 +7,14 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
-import { createApiErrorHandler } from "./error-handler";
+import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
   captureRouteMount,
   createRequestLifecycle,
   markRoutingResolved,
   type RequestLifecycleOptions,
-} from "./request-lifecycle";
+} from "./middleware/request-lifecycle";
 
 export type AppOptions = RequestLifecycleOptions;
 

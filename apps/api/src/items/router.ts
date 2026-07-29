@@ -7,7 +7,7 @@ import {
   updateItemTargetDateRequestSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 import {
   createItem,
   applyLabelToItem,

@@ -4,8 +4,8 @@ import type { Request, RequestHandler } from "express";
 import {
   serializeDiagnosticQuery,
   serializeDiagnosticValue,
-} from "./diagnostics";
-import type { Logger, LogLevel } from "./logger";
+} from "../diagnostics";
+import type { Logger, LogLevel } from "../logger";
 
 declare global {
   namespace Express {

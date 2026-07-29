@@ -8,8 +8,8 @@ import type { Express } from "express";
 import type { Pool } from "pg";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
-import { createAuthMiddleware } from "../src/auth";
-import type { Identify } from "../src/auth";
+import { createAuthMiddleware } from "../src/middleware/auth";
+import type { Identify } from "../src/middleware/auth";
 import { createDatabase, type Database } from "../src/db";
 import {
   createCollectingLogger,

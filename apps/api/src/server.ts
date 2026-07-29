@@ -1,6 +1,6 @@
 import { createApp } from "./app";
 import { startApiServer } from "./api-server";
-import { createClerkAuth } from "./auth";
+import { createClerkAuth } from "./middleware/auth";
 import { createDatabase } from "./db";
 import {
   createProductionLogger,

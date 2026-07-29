@@ -17,7 +17,7 @@ import { createTrail, getTrail, listTrails } from "./repository";
 import {
   recordValidationFailure,
   validateRequest,
-} from "../validation";
+} from "../middleware/validation";
 
 /**
  * Mount the authenticated Trail HTTP interface at `/api/trails`.

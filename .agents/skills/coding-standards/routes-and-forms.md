@@ -1,5 +1,10 @@
 # Routes and forms
 
+## Middleware placement
+
+Create application-wide Express middleware and middleware factories inside
+`apps/api/src/middleware/`. Keep feature routers inside their feature folders.
+
 ## Service boundary
 
 Do not put business logic directly in Express router handlers; call into the feature's service module.

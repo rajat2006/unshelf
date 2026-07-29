@@ -1,8 +1,8 @@
 import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, RequestHandler } from "express";
 import type { ClerkUserId, User } from "@unshelf/shared";
-import type { Database } from "./db";
-import { provisionUser } from "./users";
+import type { Database } from "../db";
+import { provisionUser } from "../users";
 
 /**
  * The one place Clerk is imported on the api (ADR-0009 guardrail). It is also the

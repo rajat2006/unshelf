@@ -5,7 +5,7 @@ import {
   stopIdSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 import {
   addItemToStop,
   getStop,
