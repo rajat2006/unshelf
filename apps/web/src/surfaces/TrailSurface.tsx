@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { StopId, TrailId, TrailView } from "@unshelf/shared";
 import { fetchTrail } from "../api";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { TrailCanvas } from "../trail/TrailCanvas";
 import { usePhoneViewport } from "../trail/usePhoneViewport";
 import { StopSidebar } from "../stops/StopSidebar";

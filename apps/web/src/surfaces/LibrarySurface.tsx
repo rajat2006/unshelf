@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Item, Label, LabelId, Stop, StopDetail } from "@unshelf/shared";
 import { useSearchParams } from "react-router";
 import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
-import { useCapture, useCaptureListener } from "../shell/CaptureController";
+import { useCapture } from "../shell/useCapture";
+import { useCaptureListener } from "../shell/useCaptureListener";
 
 type LibraryState =
   | { status: "loading" }

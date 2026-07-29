@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item } from "@unshelf/shared";
 import { updateItemTargetDate } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 
 interface ItemTargetDateProps {
   item: Item;

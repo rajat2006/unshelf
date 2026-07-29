@@ -2,10 +2,8 @@ import { StrictMode, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App } from "../../src/App";
-import {
-  ApplicationAuthProvider,
-  type ApplicationAuth,
-} from "../../src/application-auth";
+import { ApplicationAuthProvider } from "../../src/application-auth/ApplicationAuthProvider";
+import type { ApplicationAuth } from "../../src/application-auth/types";
 import "../../src/theme.css";
 import { selectedTestUser, testBearerToken } from "./harness";
 

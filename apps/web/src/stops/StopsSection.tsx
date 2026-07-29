@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, Stop, StopDetail, StopId } from "@unshelf/shared";
 import { fetchStop } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { StopView } from "./StopView";
 
 interface StopsSectionProps {

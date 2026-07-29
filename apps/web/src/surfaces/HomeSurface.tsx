@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createTrail, fetchTrails } from "../api";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { TrailsIndex, type TrailsIndexState } from "../trails/TrailsIndex";
 
 /**

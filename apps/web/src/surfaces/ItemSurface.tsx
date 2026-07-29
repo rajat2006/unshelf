@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type { Item, ItemId, TrailId } from "@unshelf/shared";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSidebar } from "../items/ItemSidebar";
 import { readItemBackgroundLocation } from "../items/item-route-state";
 import { LibrarySurface } from "./LibrarySurface";
