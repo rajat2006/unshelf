@@ -1,4 +1,4 @@
-import { SignInButton } from "../application-auth";
+import { SignInButton } from "../application-auth/SignInButton";
 import { Wordmark } from "./Wordmark";
 
 /**

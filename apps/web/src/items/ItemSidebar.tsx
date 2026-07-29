@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Item, ItemId } from "@unshelf/shared";
 import { fetchItem } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { ItemSource } from "./ItemSource";

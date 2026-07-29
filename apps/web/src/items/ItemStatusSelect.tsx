@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ITEM_STATUSES, Status, type Item } from "@unshelf/shared";
 import { updateItemStatus } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { STATUS_LABELS } from "./presentation";
 
 interface ItemStatusSelectProps {

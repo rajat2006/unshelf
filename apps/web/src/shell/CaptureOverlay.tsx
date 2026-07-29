@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import { captureItem } from "../api";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { TYPE_LABELS } from "../items/presentation";
 
 interface CaptureOverlayProps {

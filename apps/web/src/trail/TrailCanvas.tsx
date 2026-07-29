@@ -6,7 +6,7 @@ import {
 } from "react";
 import type { StopId, TrailId, TrailNode, TrailView } from "@unshelf/shared";
 import { connectStops, createStop, disconnectStops } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { canConnect, layout, type Placed } from "./geometry";
 import { ProgressRing } from "./ProgressRing";
 

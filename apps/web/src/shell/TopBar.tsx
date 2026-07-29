@@ -1,6 +1,6 @@
 import { Link, NavLink, useLocation } from "react-router";
-import { UserButton } from "../application-auth";
-import { useCapture } from "./CaptureController";
+import { UserButton } from "../application-auth/UserButton";
+import { useCapture } from "./useCapture";
 import { Wordmark } from "./Wordmark";
 
 /**
