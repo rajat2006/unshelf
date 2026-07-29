@@ -1,0 +1,450 @@
+/* PROTOTYPE — throwaway styling. Loaded only by prototype.html. */
+
+.proto-page {
+  max-width: 76rem;
+  padding: var(--space-5);
+  margin: 0 auto 6rem;
+}
+
+.proto-page__head h1 {
+  margin-bottom: var(--space-2);
+}
+
+.proto-variant-note {
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-2);
+  color: var(--accent);
+}
+
+.proto-frame {
+  margin-top: var(--space-6, 3rem);
+}
+
+.proto-frame__caption {
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* A stand-in canvas that holds the width the real one holds. */
+.proto-canvas {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  min-height: 22rem;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--surface),
+    var(--surface) 10px,
+    var(--bg) 10px,
+    var(--bg) 20px
+  );
+}
+
+.proto-canvas span {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.proto-canvas__open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Rows: a leading gutter the real ItemRow does not have — under test. */
+.proto-item-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.proto-item-row__lead {
+  padding-top: 0.2rem;
+}
+
+.proto-item-row__lead input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.proto-item-row__body {
+  min-width: 0;
+}
+
+.proto-item-row--selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.proto-plus {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.proto-plus[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Shared picker bits. */
+.proto-search {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2);
+  margin-top: var(--space-2);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.proto-search--wide {
+  max-width: 28rem;
+}
+
+.proto-hint,
+.proto-future {
+  margin: var(--space-2) 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.proto-future {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.proto-primary {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-2);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.proto-primary:disabled {
+  border-color: var(--line);
+  background: var(--field-bg);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.proto-undo {
+  padding: var(--space-2);
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  font-size: 0.85rem;
+}
+
+.proto-line {
+  display: block;
+  min-width: 0;
+}
+
+.proto-line__title {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.proto-line__meta {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.proto-already {
+  opacity: 0.6;
+}
+
+.proto-empty {
+  padding: var(--space-3);
+  text-align: center;
+}
+
+/* Stop panel: the Stop's own Items. */
+.proto-stop-items,
+.proto-addlist {
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  list-style: none;
+}
+
+.proto-stop-items li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.proto-stop-items--fresh {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: var(--space-2);
+}
+
+.proto-addlist {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.proto-addlist button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.proto-addlist button:hover {
+  background: var(--field-bg);
+}
+
+.proto-rule {
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Variant A — inline drawer. */
+.proto-drawer__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.proto-drawer__head h3 {
+  margin: 0;
+}
+
+.proto-drawer__list {
+  max-height: 22rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.proto-drawer__list ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.proto-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.proto-check input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.15rem;
+}
+
+.proto-drawer__foot {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.proto-actionbar {
+  position: sticky;
+  bottom: 5rem; /* clears the throwaway variant switcher */
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: 0 6px 20px var(--shadow);
+}
+
+/* Variant B — command overlay. */
+.proto-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding-top: 8vh;
+  background: rgb(0 0 0 / 45%);
+}
+
+.proto-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(34rem, 92vw);
+  max-height: 70vh;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: 0 20px 60px var(--shadow);
+}
+
+.proto-overlay__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.proto-overlay__list {
+  flex: 1;
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.proto-overlay__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+
+.proto-overlay__row--cursor {
+  background: var(--field-bg);
+}
+
+.proto-overlay__row--picked {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.proto-overlay__foot {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-3);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.proto-tray,
+.proto-dock ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  margin: 0;
+  list-style: none;
+}
+
+.proto-chip,
+.proto-dock li button {
+  max-width: 14rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+/* Variant C — durable tray. */
+.proto-librarybar {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.proto-dock {
+  position: fixed;
+  right: var(--space-4);
+  bottom: 5rem;
+  z-index: 50;
+  width: min(20rem, 90vw);
+  max-height: 55vh;
+  padding: var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--shadow);
+}
+
+.proto-dock header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.proto-dock select {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* The switcher — deliberately not part of any design under evaluation. */
+.proto-switcher {
+  position: fixed;
+  bottom: var(--space-3);
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.85rem;
+  transform: translateX(-50%);
+}
+
+.proto-switcher button {
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
