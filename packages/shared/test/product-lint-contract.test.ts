@@ -14,22 +14,32 @@ const productFilters = [
   "--filter=@unshelf/shared",
 ].join(" ");
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const ciWorkflow = readFileSync(
+  new URL("../../../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
 const fixFixture = fileURLToPath(
   new URL("product-lint-fix-fixture.ts", import.meta.url),
+);
+const ciViolationFixture = fileURLToPath(
+  new URL("product-ci-lint-violation.ts", import.meta.url),
 );
 const fixableSource = `export function productLintFixFixture(): string {
   let value = "representative autofix";
   return value;
 }
 `;
+const lintViolationSource = `Promise.resolve("representative lint violation");
+`;
 
-function runRootScript(script: "lint" | "lint:fix") {
+function runRootScript(script: "ci:product" | "lint" | "lint:fix") {
   return new Promise<{ output: string; status: number | null }>(
     (resolve, reject) => {
       const child = spawn("pnpm", [script], {
         cwd: repositoryRoot,
         env: {
           ...process.env,
+          UNSHELF_PRODUCT_CI_CHILD: "1",
           TURBO_TELEMETRY_DISABLED: "1",
         },
         timeout: 300_000,
@@ -53,6 +63,7 @@ function runRootScript(script: "lint" | "lint:fix") {
 }
 
 afterEach(() => {
+  rmSync(ciViolationFixture, { force: true });
   rmSync(fixFixture, { force: true });
 });
 
@@ -137,5 +148,51 @@ describe("product lint behavior", () => {
     expect(cached.output).toMatch(
       /@unshelf\/shared:lint[\s\S]*cache hit, replaying logs/,
     );
+  }, 300_000);
+});
+
+describe("product CI behavior", () => {
+  it("keeps the Product workflow aligned with the read-only root phase order", () => {
+    expect(rootPackage.scripts["ci:product:lint"]).toBe("pnpm run lint");
+    expect(rootPackage.scripts["ci:product"]).toBe(
+      [
+        "pnpm run ci:product:build",
+        "pnpm run ci:product:typecheck",
+        "pnpm run ci:product:lint",
+        "pnpm run ci:product:test",
+      ].join(" && "),
+    );
+
+    const buildPosition = ciWorkflow.indexOf(
+      "run: pnpm run ci:product:build",
+    );
+    const typecheckPosition = ciWorkflow.indexOf(
+      "run: pnpm run ci:product:typecheck",
+    );
+    const lintPosition = ciWorkflow.indexOf("run: pnpm run ci:product:lint");
+    const testPosition = ciWorkflow.indexOf("run: pnpm run ci:product:test");
+
+    expect(ciWorkflow).toContain("name: Product");
+    expect(ciWorkflow).toContain("- name: Lint");
+    expect(buildPosition).toBeGreaterThan(-1);
+    expect(typecheckPosition).toBeGreaterThan(buildPosition);
+    expect(lintPosition).toBeGreaterThan(typecheckPosition);
+    expect(testPosition).toBeGreaterThan(lintPosition);
+    expect(ciWorkflow).not.toContain("lint:fix");
+  });
+
+  it("stops after a lint violation without running product tests", async () => {
+    if (process.env.UNSHELF_PRODUCT_CI_CHILD === "1") {
+      return;
+    }
+
+    writeFileSync(ciViolationFixture, lintViolationSource);
+
+    const result = await runRootScript("ci:product");
+
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("product-ci-lint-violation.ts");
+    expect(result.output).toContain("@typescript-eslint/no-floating-promises");
+    expect(result.output).not.toContain("turbo run test:product");
   }, 300_000);
 });
