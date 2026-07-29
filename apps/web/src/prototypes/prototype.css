@@ -419,6 +419,150 @@
   margin-top: var(--space-2);
 }
 
+/* ── Round 2: Library flows ─────────────────────────────────────────────── */
+
+.proto-libraryhead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* D — the compact shape the list collapses to while gathering. */
+.proto-compact {
+  padding: 0;
+  margin: var(--space-4) 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  list-style: none;
+  overflow: hidden;
+}
+
+.proto-compact button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.proto-compact button:hover {
+  background: var(--field-bg);
+}
+
+.proto-compact--on button {
+  background: var(--field-bg);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* E — per-row placement chips and the grouped destination list. */
+.proto-placement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.proto-place-chip {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-3);
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.proto-place-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.proto-destinations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  margin-top: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+}
+
+.proto-destinations ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.proto-destinations li button {
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.proto-destinations li button:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.proto-destinations li button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.proto-newstop {
+  color: var(--accent) !important;
+}
+
+/* F — the pinned filing-session header. */
+.proto-session {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+
+.proto-session[data-on="true"] {
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.proto-plus--done {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 /* The switcher — deliberately not part of any design under evaluation. */
 .proto-switcher {
   position: fixed;
