@@ -109,8 +109,15 @@ describe("product lint behavior", () => {
       "Packages in scope: @unshelf/api, @unshelf/shared, @unshelf/web",
     );
     expect(readOnly.output).not.toContain("@unshelf/sandcastle");
-    expect(readOnly.output.indexOf("@unshelf/shared:build")).toBeLessThan(
-      readOnly.output.indexOf("@unshelf/shared:lint"),
+    const sharedBuildPosition = readOnly.output.indexOf(
+      "@unshelf/shared:build",
+    );
+    expect(sharedBuildPosition).toBeGreaterThan(-1);
+    expect(readOnly.output.indexOf("@unshelf/api:lint")).toBeGreaterThan(
+      sharedBuildPosition,
+    );
+    expect(readOnly.output.indexOf("@unshelf/web:lint")).toBeGreaterThan(
+      sharedBuildPosition,
     );
 
     const fixed = await runRootScript("lint:fix");
