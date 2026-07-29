@@ -33,7 +33,7 @@ export function StopView({
   closeLabel = "← All stops",
   headingLevel = 3,
 }: StopViewProps) {
-  const Heading = `h${headingLevel}` as "h2" | "h3";
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   return (
     <div>
       <div className="stop-view__heading">

@@ -68,7 +68,7 @@ describe("Stops smoke coverage", () => {
   });
 
   it("renders a Stop detail with the Item facts shared by All", () => {
-    const markup = renderStops({ ...stops[0]!, items: [item] });
+    const markup = renderStops({ ...stops[0], items: [item] });
 
     expect(markup).toContain("Responsive layouts");
     expect(markup).toContain("In progress");

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Item, Label, LabelId, Stop, StopDetail } from "@unshelf/shared";
 import { useSearchParams } from "react-router";
 import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
@@ -44,10 +44,13 @@ export function LibrarySurface({
   const user = useCurrentUser();
   const capture = useCapture();
   const [routeSearchParams, setRouteSearchParams] = useSearchParams();
-  const searchParams =
-    labelFilterSearch === undefined
-      ? routeSearchParams
-      : new URLSearchParams(labelFilterSearch);
+  const searchParams = useMemo(
+    () =>
+      labelFilterSearch === undefined
+        ? routeSearchParams
+        : new URLSearchParams(labelFilterSearch),
+    [labelFilterSearch, routeSearchParams],
+  );
   const [state, setState] = useState<LibraryState>({ status: "loading" });
   const loadGeneration = useRef(0);
 

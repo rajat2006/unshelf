@@ -35,7 +35,7 @@ async function startAndOpenTrail(
   await expect(card).toBeVisible();
   await card.click();
   await expect(page).toHaveURL(/\/trails\/[0-9a-f-]{36}$/);
-  const trailId = /trails\/([0-9a-f-]{36})/.exec(page.url())![1]!;
+  const trailId = /trails\/([0-9a-f-]{36})/.exec(page.url())![1];
   return { trailId, deepLink: testAppUrl(`/trails/${trailId}`, user) };
 }
 

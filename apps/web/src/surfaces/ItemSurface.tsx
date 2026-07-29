@@ -48,12 +48,12 @@ export function ItemSurface() {
             onItemChanged={recordItemChange}
             labelFilterEnabled={backgroundIsLibrary}
             labelFilterSearch={backgroundLibrarySearch}
-            onLabelFilterChange={(next) =>
-              navigate({
+            onLabelFilterChange={(next) => {
+              void navigate({
                 pathname: "/library",
                 search: next.size > 0 ? `?${next.toString()}` : "",
-              })
-            }
+              });
+            }}
           />
         )
       ) : (
@@ -68,9 +68,9 @@ export function ItemSurface() {
           user={user}
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
-          onClose={() =>
-            backgroundLocation ? navigate(-1) : navigate("/library")
-          }
+          onClose={() => {
+            void (backgroundLocation ? navigate(-1) : navigate("/library"));
+          }}
         />
       )}
     </div>

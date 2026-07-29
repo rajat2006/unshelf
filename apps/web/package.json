@@ -6,6 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "lint": "eslint src test playwright.config.ts vite.config.ts",
+    "lint:fix": "eslint src test playwright.config.ts vite.config.ts --fix",
     "preview": "vite preview",
     "test": "vitest run --exclude 'test/browser/**' && playwright test",
     "test:product": "vitest run --exclude 'test/browser/**'",
