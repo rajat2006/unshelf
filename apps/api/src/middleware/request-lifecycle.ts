@@ -138,11 +138,11 @@ export function failureRequestSnapshot(
       method: req.method,
       path: rawRequestPath(req.originalUrl),
       headers: req.headers,
-      params: failureRouteParameters(
-        rawRequestPath(req.originalUrl),
+      params: failureRouteParameters({
+        path: rawRequestPath(req.originalUrl),
         route,
-        req.params,
-      ),
+        current: req.params,
+      }),
       query: serializeDiagnosticQuery(req.query, { secrets }),
       body: req.body,
     },
@@ -157,11 +157,15 @@ function rawRequestPath(originalUrl: string): string {
     : originalUrl.slice(0, queryStart);
 }
 
-function failureRouteParameters(
-  path: string,
-  route: string,
-  current: Readonly<Record<string, string | string[]>> | undefined,
-): Readonly<Record<string, string | string[]>> {
+function failureRouteParameters({
+  path,
+  route,
+  current,
+}: {
+  path: string;
+  route: string;
+  current: Readonly<Record<string, string | string[]>> | undefined;
+}): Readonly<Record<string, string | string[]>> {
   const captured = current ?? {};
   if (
     Object.keys(captured).length > 0 ||
