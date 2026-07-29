@@ -16,6 +16,8 @@
     "dev": "turbo run dev",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
+    "lint": "turbo run lint --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "lint:fix": "turbo run lint:fix --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
