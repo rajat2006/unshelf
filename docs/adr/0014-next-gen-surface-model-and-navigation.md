@@ -98,3 +98,24 @@ ADRs do not describe. Building that model is a **separate downstream effort — 
   User-owned, many-to-many marker over Items in the Library, with *Tag* moved to
   _Avoid_); its **model realisation — schema + enforcement — lands with #74**, not
   here.
+
+## Update — one placement per Item per Trail (2026-07-29)
+
+An Item may appear in many Stops across different Trails, but it belongs to **at
+most one Stop on any one Trail**. A Trail sequences each Item once. Repeating the
+same shared Item in two Stops on one Trail would make its one shared Status appear
+at two points in the plan and make "what comes next" misleading. Cross-cutting
+relevance belongs on Labels; reuse in a genuinely different plan belongs on
+another Trail.
+
+This deliberately rejects same-Trail reuse even when one Item supports two Stops:
+the User chooses the single Stop that owns its place in that Trail. Every placement
+door must respect the invariant. Once an Item is placed on a Trail, that Trail may
+show the existing `Trail · Stop` placement but must not offer another Stop or a new
+Stop for it.
+
+The built `stop_items` join currently prevents only a duplicate pair of one Stop
+and one Item; the API explicitly permits the same Item in two Stops without
+considering their Trail. The downstream model build must therefore enforce the
+stronger per-Trail invariant at the write boundary and database boundary. This
+wayfinding effort records the decision and hands off its implementation.

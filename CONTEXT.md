@@ -18,8 +18,9 @@ _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 **Item**:
 A single piece of learning material captured into Unshelf — an article, video,
 course, YouTube playlist, or (offline) book — added by hand: paste a link or type
-a title. Referenced, not copied: one Item can appear in many Stops, but they all
-point at the single stored record. "Only one of it" is about model identity —
+a title. Referenced, not copied: one Item can appear in many Stops across
+different Trails, but in at most one Stop on any one Trail; every placement
+points at the single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capture the same link twice and you
 have two Items (v1 does not dedupe).
 _Avoid_: Bookmark, Link, Resource, Content
