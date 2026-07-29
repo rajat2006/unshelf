@@ -33,7 +33,7 @@ describe("API process failure policy", () => {
       {
         level: "fatal",
         event: "unshelf.api.error.unexpected",
-        msg: "Unexpected API process failure",
+        msg: "Unexpected API error",
         phase: "startup",
         error: expect.objectContaining({
           type: "Error",
@@ -70,7 +70,7 @@ describe("API process failure policy", () => {
         {
           level: "fatal",
           event: "unshelf.api.error.unexpected",
-          msg: "Unexpected API process failure",
+          msg: "Unexpected API error",
           phase: "runtime",
           error:
             failure instanceof Error

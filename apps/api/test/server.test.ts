@@ -67,7 +67,7 @@ describe("API server startup", () => {
         {
           level: "fatal",
           event: "unshelf.api.error.unexpected",
-          msg: "Unexpected API process failure",
+          msg: "Unexpected API error",
           phase: "startup",
           error: expect.objectContaining({
             type: "Error",

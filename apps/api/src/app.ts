@@ -51,8 +51,8 @@ export function createApp(
     } catch (error) {
       req.logger.error({
         event: "unshelf.api.health.failed",
-        msg: "PostgreSQL health check failed",
-        dependency: "postgresql",
+        msg: "API health check failed",
+        dependency: "postgres",
         ...serializeFailure(error, {
           secrets: options.diagnosticSecrets,
         }),

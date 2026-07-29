@@ -103,8 +103,8 @@ describe("production logger", () => {
       .child({ requestId: "bounded-request", route: "/api/health" })
       .error({
         event: "unshelf.api.health.failed",
-        msg: "PostgreSQL health check failed",
-        dependency: "postgresql",
+        msg: "API health check failed",
+        dependency: "postgres",
         error: {
           type: "DatabaseError",
           code: "XX000",
@@ -124,7 +124,7 @@ describe("production logger", () => {
     expect(record).toMatchObject({
       level: "error",
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
+      msg: "API health check failed",
       requestId: "bounded-request",
       route: "/api/health",
       diagnosticTruncated: true,
@@ -163,8 +163,8 @@ describe("production logger", () => {
 
     logger.error({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
-      dependency: "postgresql",
+      msg: "API health check failed",
+      dependency: "postgres",
       ...serializeFailure(failure, {
         secrets: [clerkSecret, databaseUrl],
       }),
@@ -185,8 +185,8 @@ describe("production logger", () => {
 
     logger.child({ requestId: "priority-request" }).error({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
-      dependency: "postgresql",
+      msg: "API health check failed",
+      dependency: "postgres",
       error: {
         type: `DatabaseError-${"t".repeat(70_000)}`,
         code: "XX000",
@@ -199,9 +199,9 @@ describe("production logger", () => {
     );
     expect(JSON.parse(destination.output)).toMatchObject({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
+      msg: "API health check failed",
       requestId: "priority-request",
-      dependency: "postgresql",
+      dependency: "postgres",
       diagnosticTruncated: true,
       error: {
         type: expect.stringMatching(/^DatabaseError-.*\[TRUNCATED\]$/),
@@ -220,7 +220,7 @@ describe("production logger", () => {
 
     logger.child({ requestId: "priority-request" }).error({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
+      msg: "API health check failed",
       dependency: `postgresql-${"d".repeat(70_000)}`,
       error: {
         type: "DatabaseError",
@@ -251,8 +251,8 @@ describe("production logger", () => {
 
     logger.error({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
-      dependency: "postgresql",
+      msg: "API health check failed",
+      dependency: "postgres",
       error: {
         type: "DatabaseError",
         code: "XX000",
@@ -288,7 +288,7 @@ describe("production logger", () => {
 
     logger.error({
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
+      msg: "API health check failed",
       error: {
         type: "DatabaseError",
         code: oversizedCode,

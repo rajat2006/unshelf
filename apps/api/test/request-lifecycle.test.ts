@@ -89,6 +89,34 @@ describe("API request lifecycle", () => {
     });
   });
 
+  it("redacts a configured secret from matched route parameters and raw paths", async () => {
+    const logger = createCollectingLogger();
+    const secretItemId = "098d8041-1b9b-47d9-b75f-dbd7f9d04c25";
+    const app = createApp(healthyDatabase(), [passThroughAuth], {
+      logger,
+      generateRequestId: () => "f9fa9d80-7d91-42b7-8f23-f591bbd5da2e",
+      monotonicNow: elapsedClock(3),
+      diagnosticSecrets: [secretItemId],
+    });
+
+    await request(app).get(`/api/items/${secretItemId}`).expect(500);
+
+    expect(
+      logger.records.find(
+        (record) => record.event === "unshelf.api.request.ended",
+      ),
+    ).toMatchObject({
+      route: "/api/items/:itemId",
+      request: {
+        path: "/api/items/[REDACTED]",
+        params: {
+          itemId: "[REDACTED]",
+        },
+      },
+    });
+    expect(JSON.stringify(logger.records)).not.toContain(secretItemId);
+  });
+
   it("correlates rich unexpected-error diagnostics with a redacted 5xx request snapshot", async () => {
     const logger = createCollectingLogger();
     const configuredSecret = "sk_live_unexpected-sentinel";
@@ -211,15 +239,17 @@ describe("API request lifecycle", () => {
     });
   });
 
-  it("classifies a completed routing miss without recording its raw URL", async () => {
+  it("classifies a routing miss and redacts its raw failure path", async () => {
     const logger = createCollectingLogger();
+    const pathSecret = "raw-path-sentinel";
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,
       generateRequestId: () => "0e9b80b3-18f8-48ac-a632-f203ab76e539",
       monotonicNow: elapsedClock(1),
+      diagnosticSecrets: [pathSecret],
     });
 
-    await request(app).get("/private/raw/path-value").expect(404);
+    await request(app).get(`/private/raw/${pathSecret}`).expect(404);
 
     expect(
       logger.records.find(
@@ -230,9 +260,10 @@ describe("API request lifecycle", () => {
       termination: "completed",
       status: 404,
       request: {
-        path: "/private/raw/path-value",
+        path: "/private/raw/[REDACTED]",
       },
     });
+    expect(JSON.stringify(logger.records)).not.toContain(pathSecret);
   });
 
   it("classifies termination before route resolution as unresolved", async () => {
@@ -357,9 +388,9 @@ describe("API request lifecycle", () => {
     expect(logger.records[0]).toEqual({
       level: "error",
       event: "unshelf.api.health.failed",
-      msg: "PostgreSQL health check failed",
+      msg: "API health check failed",
       requestId: "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
-      dependency: "postgresql",
+      dependency: "postgres",
       error: expect.objectContaining({
         type: "Error",
         code: "57P01",

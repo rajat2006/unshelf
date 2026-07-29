@@ -42,7 +42,7 @@ export async function superviseApiProcess<T extends StartupTarget>({
       try {
         logger.fatal({
           event: "unshelf.api.error.unexpected",
-          msg: "Unexpected API process failure",
+          msg: "Unexpected API error",
           phase,
           ...serializeFailure(failure, {
             secrets: diagnosticSecrets,
