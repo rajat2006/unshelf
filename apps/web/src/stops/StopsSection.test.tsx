@@ -11,7 +11,7 @@ import {
   type StopId,
   type UserId,
 } from "@unshelf/shared";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { StopsSection } from "./StopsSection";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;

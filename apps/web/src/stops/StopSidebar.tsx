@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Item, StopDetail, StopId, TrailId } from "@unshelf/shared";
 import { fetchTrailStop } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { StopView } from "./StopView";
 
 interface StopSidebarProps {

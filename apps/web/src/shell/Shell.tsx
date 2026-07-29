@@ -1,5 +1,5 @@
 import { Outlet } from "react-router";
-import { CaptureProvider } from "./CaptureController";
+import { CaptureProvider } from "./CaptureProvider";
 import { TopBar } from "./TopBar";
 
 /**

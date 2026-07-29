@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Item, Label, LabelId } from "@unshelf/shared";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { applyLabelToItem, removeLabelFromItem } from "../api";
 
 interface ItemLabelsProps {
