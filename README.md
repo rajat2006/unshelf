@@ -11,6 +11,9 @@ pnpm dev
 
 The api expects Postgres at `DATABASE_URL`. Tests need no `.env` at all —
 `pnpm test` spins up a throwaway Postgres via testcontainers (Docker required).
+API logs remain structured NDJSON by default. For human-friendly local output,
+run `pnpm --filter @unshelf/api dev:pretty`; that local-only command pipes the
+same NDJSON events through `pino-pretty` without changing the production bundle.
 
 **Run the migrations before the first `pnpm dev`, and again after any pull that
 adds one:**

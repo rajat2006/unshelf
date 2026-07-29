@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import pretty from "pino-pretty";
 import {
   createCollectingLogger,
   createProductionLogger,
@@ -35,6 +36,31 @@ describe("production logger", () => {
     expect(new Date(record.time as string).toISOString()).toBe(record.time);
     expect(record).not.toHaveProperty("pid");
     expect(record).not.toHaveProperty("hostname");
+  });
+
+  it("optionally renders human-friendly local output", () => {
+    const destination = new StringDestination();
+    const logger = createProductionLogger({
+      level: "info",
+      destination,
+    });
+
+    logger.info({
+      event: "unshelf.test.rendered",
+      msg: "Test event rendered",
+      usefulValue: 42,
+    });
+
+    const rendered = pretty.prettyFactory({
+      colorize: false,
+      singleLine: true,
+      translateTime: "SYS:standard",
+    })(destination.output);
+
+    expect(rendered).toContain("INFO");
+    expect(rendered).toContain("Test event rendered");
+    expect(rendered).toContain("unshelf.test.rendered");
+    expect(() => JSON.parse(rendered)).toThrow();
   });
 
   it("omits events below the configured threshold", () => {
