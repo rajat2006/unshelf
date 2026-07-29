@@ -6,7 +6,12 @@ import { TrailsIndex, type TrailsIndexState } from "./TrailsIndex";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 
-const trail = (id: string, name: string, done: number, total: number): Trail => ({
+const trail = (
+  id: string,
+  name: string,
+  done: number,
+  total: number,
+): Trail => ({
   id: id as TrailId,
   userId,
   name,
@@ -43,9 +48,9 @@ describe("Trails index surface states", () => {
     expect(markup).toContain(
       'href="/trails/11111111-1111-1111-1111-111111111111"',
     );
-    // A Trail with no Items reads as unstarted, not 0/0 noise.
+    // A Trail with no Items names what is missing, not progress that cannot exist.
     expect(markup).toContain("Empty journey");
-    expect(markup).toContain("No progress yet");
+    expect(markup).toContain("No items added yet");
   });
 
   it("offers start-a-Trail when the index is empty", () => {

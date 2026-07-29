@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StopId, TrailId, TrailView, UserId } from "@unshelf/shared";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { TrailCanvas } from "./TrailCanvas";
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -69,7 +69,9 @@ describe("Trail canvas — Quiet Focus", () => {
   });
 
   it("invites the first Stop when the trail is empty (desktop only)", () => {
-    expect(render(false, { nodes: [], edges: [] })).toContain("Start your trail");
+    expect(render(false, { nodes: [], edges: [] })).toContain(
+      "Start your trail",
+    );
     expect(render(true, { nodes: [], edges: [] })).not.toContain(
       "Start your trail",
     );

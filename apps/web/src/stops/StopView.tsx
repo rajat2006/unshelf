@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, ItemId, StopDetail, StopId } from "@unshelf/shared";
 import { removeItemFromStop } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { ItemRow } from "../items/ItemRow";
 
 interface StopViewProps {
@@ -37,14 +37,8 @@ export function StopView({
   return (
     <div>
       <div className="stop-view__heading">
-        <Heading>
-          {stop.name}
-        </Heading>
-        <button
-          type="button"
-          onClick={onClose}
-          className="quiet-button"
-        >
+        <Heading>{stop.name}</Heading>
+        <button type="button" onClick={onClose} className="quiet-button">
           {closeLabel}
         </button>
       </div>

@@ -1,11 +1,5 @@
 import { z } from "zod";
-import type {
-  ItemId,
-  LabelId,
-  StopId,
-  TrailId,
-  UserId,
-} from "./index";
+import type { ItemId, LabelId, StopId, TrailId, UserId } from "./index";
 import { Status, Type } from "./index";
 
 /** A User-chosen record name, normalized only at its outer boundaries. */

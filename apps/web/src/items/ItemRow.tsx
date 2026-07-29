@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
 import { Link, useLocation } from "react-router";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { readItemBackgroundLocation } from "./item-route-state";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";

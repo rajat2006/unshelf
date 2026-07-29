@@ -85,7 +85,8 @@ export function canConnect(
   to: StopId,
 ): boolean {
   if (from === to) return false;
-  if (edges.some((e) => e.fromStopId === from && e.toStopId === to)) return false;
+  if (edges.some((e) => e.fromStopId === from && e.toStopId === to))
+    return false;
   return !reaches(edges, to, from);
 }
 

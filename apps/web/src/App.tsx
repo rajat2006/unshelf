@@ -8,7 +8,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router";
-import { useApplicationAuth } from "./application-auth";
+import { useApplicationAuth } from "./application-auth/useApplicationAuth";
 import { AuthPlaceholder } from "./shell/AuthPlaceholder";
 import { NotFound } from "./shell/NotFound";
 import { Shell } from "./shell/Shell";

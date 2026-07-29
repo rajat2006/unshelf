@@ -6,7 +6,7 @@ import {
 } from "react";
 import type { StopId, TrailId, TrailNode, TrailView } from "@unshelf/shared";
 import { connectStops, createStop, disconnectStops } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { canConnect, layout, type Placed } from "./geometry";
 import { ProgressRing } from "./ProgressRing";
 
@@ -81,9 +81,9 @@ export function TrailCanvas({
   } | null>(null);
   // Per-Stop manual nudge for rearranging — VIEW-ONLY, never written to the model
   // (ADR-0010's "no stored layout" still holds; it resets on reload).
-  const [offsets, setOffsets] = useState<Record<string, { dx: number; dy: number }>>(
-    {},
-  );
+  const [offsets, setOffsets] = useState<
+    Record<string, { dx: number; dy: number }>
+  >({});
   const dragNode = useRef<{
     id: string;
     sx: number;
@@ -123,7 +123,8 @@ export function TrailCanvas({
   }
 
   const link = (to: StopId) => {
-    if (linkingFrom) void run(() => connectStops(user, trailId, linkingFrom, to));
+    if (linkingFrom)
+      void run(() => connectStops(user, trailId, linkingFrom, to));
   };
   const unlink = (from: StopId, to: StopId) =>
     void run(() => disconnectStops(user, trailId, from, to));
@@ -145,7 +146,9 @@ export function TrailCanvas({
 
   const frontier = nodes.find((n) => {
     if (isDone(n)) return false;
-    const preds = edges.filter((e) => e.toStopId === n.id).map((e) => e.fromStopId);
+    const preds = edges
+      .filter((e) => e.toStopId === n.id)
+      .map((e) => e.fromStopId);
     return preds.every((p) => isDone(nodeById.get(p)!));
   });
 
@@ -180,7 +183,10 @@ export function TrailCanvas({
       const ddx = e.clientX - d.sx;
       const ddy = e.clientY - d.sy;
       if (Math.abs(ddx) > 3 || Math.abs(ddy) > 3) moved.current = true;
-      setOffsets((prev) => ({ ...prev, [d.id]: { dx: d.odx + ddx, dy: d.ody + ddy } }));
+      setOffsets((prev) => ({
+        ...prev,
+        [d.id]: { dx: d.odx + ddx, dy: d.ody + ddy },
+      }));
       return;
     }
     const f = panFrom.current;
@@ -219,7 +225,8 @@ export function TrailCanvas({
         )}
         {readOnly && (
           <p className="quiet-copy">
-            No stops on your trail yet. Add some on a wider screen to arrange them.
+            No stops on your trail yet. Add some on a wider screen to arrange
+            them.
           </p>
         )}
         {error && <ErrorLine error={error} />}
@@ -362,7 +369,9 @@ export function TrailCanvas({
       </div>
 
       <p className="trail-legend">
-        <strong><span aria-hidden="true">✓</span> Completed stop</strong>
+        <strong>
+          <span aria-hidden="true">✓</span> Completed stop
+        </strong>
         <span>Solid path: walked</span>
         <span>Dotted path: ahead</span>
         <span>Ring + “You are here”: current frontier</span>.{" "}
@@ -446,16 +455,19 @@ function Waypoint({
       }
     >
       {isFrontier && (
-        <div className="trail-waypoint__frontier">
-          You are here
-        </div>
+        <div className="trail-waypoint__frontier">You are here</div>
       )}
 
-      <div title={`${node.done} of ${node.total} items done`} className="trail-medallion">
+      <div
+        title={`${node.done} of ${node.total} items done`}
+        className="trail-medallion"
+      >
         {done ? (
           <Seal />
         ) : (
-          <div className={`trail-medallion__ring${isFrontier ? " is-frontier" : ""}`}>
+          <div
+            className={`trail-medallion__ring${isFrontier ? " is-frontier" : ""}`}
+          >
             <ProgressRing
               size={R * 2 - 8}
               stroke={5}
@@ -686,7 +698,13 @@ function ErrorLine({ error }: { error: string }) {
   );
 }
 
-function Tip({ label, children }: { label: string; children: React.ReactNode }) {
+function Tip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <span className="tw-tip">
       {children}

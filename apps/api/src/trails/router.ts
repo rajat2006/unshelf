@@ -122,11 +122,7 @@ export function createTrailsRouter(
     }, "invalid_trail_name"),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const topology = await getTrailTopology(
-        db,
-        req.user!.id,
-        params.trailId,
-      );
+      const topology = await getTrailTopology(db, req.user!.id, params.trailId);
       if (!topology) {
         res.status(404).json({ error: "trail not found" });
         return;

@@ -1,7 +1,4 @@
-import express, {
-  type Express,
-  type RequestHandler,
-} from "express";
+import express, { type Express, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
 import type { Database } from "./db";

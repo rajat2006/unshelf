@@ -5,7 +5,7 @@ packages:
   # `turbo run test` / `turbo run typecheck` include it.
   - ".sandcastle"
 allowBuilds:
-  '@clerk/shared': false
+  "@clerk/shared": false
   cpu-features: false
   esbuild: true
   protobufjs: false

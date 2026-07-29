@@ -14,10 +14,13 @@
     "ci:product:typecheck": "turbo run typecheck --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "db:generate": "turbo run db:generate",
     "dev": "turbo run dev",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
+    "prettier": "3.9.6",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   }

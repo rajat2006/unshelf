@@ -62,7 +62,9 @@ test("a Stop route opens beside its interactive Trail and follows browser histor
   await expect(
     page.getByRole("heading", { level: 1, name: "Trail" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add next Stop" })).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Add next Stop" }),
+  ).toBeEnabled();
 
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/trails/${trailId}$`));
@@ -158,7 +160,9 @@ test("removing an Item from the sidebar preserves the Item and its other Stop", 
       name: `${stop.name}: 0 of 0 items done`,
     }),
   ).toBeVisible();
-  const library = (await (await testApi(page, user, "/api/items")).json()) as Array<{
+  const library = (await (
+    await testApi(page, user, "/api/items")
+  ).json()) as Array<{
     id: string;
   }>;
   expect(library.map((listed) => listed.id)).toContain(item.id);
@@ -186,7 +190,10 @@ test("a Stop detail failure retries inside the sidebar without replacing the Tra
     `**/api/trails/${trail.id}/stops/${stop.id}`,
     async (route) => {
       if (failing) {
-        await route.fulfill({ status: 503, json: { error: "temporarily down" } });
+        await route.fulfill({
+          status: 503,
+          json: { error: "temporarily down" },
+        });
       } else {
         await route.continue();
       }
@@ -216,12 +223,15 @@ test("Stop detail loading stays shaped inside the sidebar", async ({
   const user = `${testInfo.project.name}-stop-sidebar-loading`;
   const { trail, stop } = await seedStopWithItem(page, user);
   let releaseStop!: () => void;
-  await page.route(`**/api/trails/${trail.id}/stops/${stop.id}`, async (route) => {
-    await new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    await route.continue();
-  });
+  await page.route(
+    `**/api/trails/${trail.id}/stops/${stop.id}`,
+    async (route) => {
+      await new Promise<void>((resolve) => {
+        releaseStop = resolve;
+      });
+      await route.continue();
+    },
+  );
 
   await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user), {
     waitUntil: "domcontentloaded",

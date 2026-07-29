@@ -5,10 +5,8 @@ import {
   useAuth,
 } from "@clerk/react";
 import { useMemo, type ReactNode } from "react";
-import {
-  ApplicationAuthProvider,
-  type ApplicationAuth,
-} from "./application-auth";
+import { type ApplicationAuth } from "./application-auth/types";
+import { ApplicationAuthProvider } from "./application-auth/ApplicationAuthProvider";
 
 /**
  * The one place Clerk is imported on the web (ADR-0009 guardrail). This adapter
@@ -37,18 +35,16 @@ function ClerkAuthAdapter({ children }: { children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const auth = useMemo<ApplicationAuth>(
     () => ({
-      status: !isLoaded
-        ? "loading"
-        : isSignedIn
-          ? "signed-in"
-          : "signed-out",
+      status: !isLoaded ? "loading" : isSignedIn ? "signed-in" : "signed-out",
       user: isSignedIn ? { getToken } : null,
       SignInButton: ClerkSignInTrigger,
       UserButton: ClerkUserControl,
     }),
     [getToken, isLoaded, isSignedIn],
   );
-  return <ApplicationAuthProvider auth={auth}>{children}</ApplicationAuthProvider>;
+  return (
+    <ApplicationAuthProvider auth={auth}>{children}</ApplicationAuthProvider>
+  );
 }
 
 function ClerkSignInTrigger({ children }: { children: ReactNode }) {

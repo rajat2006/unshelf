@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Item, Label, LabelId, Stop, StopDetail } from "@unshelf/shared";
 import { useSearchParams } from "react-router";
 import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
-import { useCurrentUser } from "../application-auth";
+import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
-import { useCapture, useCaptureListener } from "../shell/CaptureController";
+import { useCapture } from "../shell/useCapture";
+import { useCaptureListener } from "../shell/useCaptureListener";
 
 type LibraryState =
   | { status: "loading" }
@@ -43,9 +44,10 @@ export function LibrarySurface({
   const user = useCurrentUser();
   const capture = useCapture();
   const [routeSearchParams, setRouteSearchParams] = useSearchParams();
-  const searchParams = labelFilterSearch === undefined
-    ? routeSearchParams
-    : new URLSearchParams(labelFilterSearch);
+  const searchParams =
+    labelFilterSearch === undefined
+      ? routeSearchParams
+      : new URLSearchParams(labelFilterSearch);
   const [state, setState] = useState<LibraryState>({ status: "loading" });
   const loadGeneration = useRef(0);
 
@@ -74,10 +76,13 @@ export function LibrarySurface({
   }, [load]);
   useCaptureListener(load);
 
-  const replaceItem = useCallback((changed: Item) => {
-    setState((current) => replaceItemInLibraryState(current, changed));
-    onItemChanged?.(changed);
-  }, [onItemChanged]);
+  const replaceItem = useCallback(
+    (changed: Item) => {
+      setState((current) => replaceItemInLibraryState(current, changed));
+      onItemChanged?.(changed);
+    },
+    [onItemChanged],
+  );
 
   const replaceStop = useCallback((changed: StopDetail) => {
     setState((current) =>
@@ -92,26 +97,22 @@ export function LibrarySurface({
     );
   }, []);
 
-  const displayedState = itemOverrides.reduce(
-    replaceItemInLibraryState,
-    state,
-  );
+  const displayedState = itemOverrides.reduce(replaceItemInLibraryState, state);
   const activeLabelId = labelFilterEnabled ? searchParams.get("label") : null;
   const activeLabel =
     displayedState.status === "ready"
       ? displayedState.labels.find((label) => label.id === activeLabelId)
       : undefined;
   const hasUnknownLabel =
-    displayedState.status === "ready" &&
-    activeLabelId !== null &&
-    !activeLabel;
-  const visibleItems = displayedState.status !== "ready" || hasUnknownLabel
-    ? []
-    : activeLabel
-      ? displayedState.items.filter((item) =>
-          item.labels.some((label) => label.id === activeLabel.id),
-        )
-      : displayedState.items;
+    displayedState.status === "ready" && activeLabelId !== null && !activeLabel;
+  const visibleItems =
+    displayedState.status !== "ready" || hasUnknownLabel
+      ? []
+      : activeLabel
+        ? displayedState.items.filter((item) =>
+            item.labels.some((label) => label.id === activeLabel.id),
+          )
+        : displayedState.items;
   const filteredEmptyMessage =
     displayedState.status === "ready" && displayedState.items.length > 0
       ? hasUnknownLabel

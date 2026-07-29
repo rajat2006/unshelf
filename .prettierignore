@@ -1,0 +1,36 @@
+# Prose is outside the product formatter contract.
+**/*.md
+**/*.mdx
+
+# Sandcastle and autonomous-agent operations are a separate domain.
+.sandcastle/
+.agents/
+.claude/
+.github/workflows/agent-*.yml
+.github/workflows/agent-*.yaml
+skills-lock.json
+
+# Generated Drizzle migrations and metadata must remain byte-for-byte stable.
+apps/api/drizzle/
+
+# Dependency resolution and installations are package-manager-owned.
+pnpm-lock.yaml
+**/node_modules/
+
+# Generated output is never formatter-owned source.
+**/dist/
+**/build/
+**/out/
+**/.output/
+**/.turbo/
+**/coverage/
+**/playwright-report/
+**/test-results/
+
+# Temporary worktrees and tool-local configuration stay local to their tools.
+.worktrees/
+.claude/worktrees/
+.codex/
+.cursor/
+.idea/
+.vscode/

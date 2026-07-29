@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Item, Stop, StopDetail, StopId } from "@unshelf/shared";
 import { fetchStop } from "../api";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { StopView } from "./StopView";
 
 interface StopsSectionProps {
@@ -85,10 +85,7 @@ export function StopsSection({
                   >
                     {stop.name}
                     {opening === stop.id && (
-                      <span className="quiet-copy">
-                        {" "}
-                        — opening…
-                      </span>
+                      <span className="quiet-copy"> — opening…</span>
                     )}
                   </button>
                 </li>

@@ -1,6 +1,6 @@
 import { Link, NavLink, useLocation } from "react-router";
-import { UserButton } from "../application-auth";
-import { useCapture } from "./CaptureController";
+import { UserButton } from "../application-auth/UserButton";
+import { useCapture } from "./useCapture";
 import { Wordmark } from "./Wordmark";
 
 /**
@@ -44,11 +44,7 @@ export function TopBar() {
         </Link>
       </nav>
       <div className="top-bar__actions">
-        <button
-          type="button"
-          onClick={open}
-          className="top-bar__capture"
-        >
+        <button type="button" onClick={open} className="top-bar__capture">
           Capture
         </button>
         <UserButton />

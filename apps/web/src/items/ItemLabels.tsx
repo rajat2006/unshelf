@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Item, Label, LabelId } from "@unshelf/shared";
-import type { CurrentUser } from "../application-auth";
+import type { CurrentUser } from "../application-auth/types";
 import { applyLabelToItem, removeLabelFromItem } from "../api";
 
 interface ItemLabelsProps {
@@ -86,9 +86,7 @@ export function ItemLabels({
           value={selectedId ?? ""}
           onChange={(event) =>
             setSelectedId(
-              event.target.value
-                ? (event.target.value as LabelId)
-                : null,
+              event.target.value ? (event.target.value as LabelId) : null,
             )
           }
         >
@@ -99,7 +97,11 @@ export function ItemLabels({
             </option>
           ))}
         </select>
-        <button type="button" disabled={!selectedId} onClick={() => void applySelected()}>
+        <button
+          type="button"
+          disabled={!selectedId}
+          onClick={() => void applySelected()}
+        >
           Apply Label
         </button>
       </div>

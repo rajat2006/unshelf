@@ -25,7 +25,9 @@ async function addStop(page: Page, name: string, first = false): Promise<void> {
   );
   await input.fill(name);
   await input.press("Enter");
-  await expect(page.getByRole("button", { name: `Open ${name}` })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: `Open ${name}` }),
+  ).toBeVisible();
 }
 
 test("the Trail uses Quiet Focus in both color schemes and exposes non-color state cues", async ({
@@ -41,8 +43,12 @@ test("the Trail uses Quiet Focus in both color schemes and exposes non-color sta
   const canvas = page.getByRole("region", { name: "Trail canvas" });
   await expect(canvas).toHaveCSS("background-color", "rgb(244, 245, 247)");
   await expect(page.getByText("You are here", { exact: true })).toBeVisible();
-  await expect(page.getByText("Dotted path: ahead", { exact: true })).toBeVisible();
-  await expect(page.getByText("Solid path: walked", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Dotted path: ahead", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Solid path: walked", { exact: true }),
+  ).toBeVisible();
 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(canvas).toHaveCSS("background-color", "rgb(18, 19, 25)");
@@ -68,7 +74,9 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
   );
   const user = `${testInfo.project.name}-quiet-focus-complete`;
   const trail = (await (
-    await testApi(page, user, "/api/trails", "POST", { name: "Accessible Trail" })
+    await testApi(page, user, "/api/trails", "POST", {
+      name: "Accessible Trail",
+    })
   ).json()) as { id: string };
   const stop = (await (
     await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
@@ -96,7 +104,9 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
   await expectNoAccessibilityViolations(page);
 
   await page.goto(testAppUrl("/library", user));
-  await expect(page.getByRole("link", { name: "Accessible Item" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Accessible Item" }),
+  ).toBeVisible();
   await expectNoAccessibilityViolations(page);
   await page.getByRole("button", { name: "Capture", exact: true }).click();
   await expectNoAccessibilityViolations(page);
@@ -115,7 +125,9 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
   await expectNoAccessibilityViolations(page);
 });
 
-test("reduced motion removes Trail progress transitions", async ({ page }, testInfo) => {
+test("reduced motion removes Trail progress transitions", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name === "phone", "covered once at desktop width");
   const user = `${testInfo.project.name}-quiet-focus-motion`;
 
@@ -124,9 +136,11 @@ test("reduced motion removes Trail progress transitions", async ({ page }, testI
   await addStop(page, "Motionless stop", true);
 
   expect(
-    await page.locator(".progress-ring__value").evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).transitionDuration),
-    ),
+    await page
+      .locator(".progress-ring__value")
+      .evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
   ).toBeLessThanOrEqual(0.00001);
 });
 
@@ -150,13 +164,21 @@ test("a phone pans only inside its view-only Trail canvas", async ({
   const canvas = page.getByRole("region", { name: "Trail canvas" });
   await expect(canvas).toHaveCSS("overflow-x", "auto");
   expect(
-    await canvas.evaluate((element) => element.scrollWidth > element.clientWidth),
+    await canvas.evaluate(
+      (element) => element.scrollWidth > element.clientWidth,
+    ),
   ).toBe(true);
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
     ),
   ).toBe(true);
-  await expect(page.getByRole("button", { name: "Add next Stop" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Remove this link" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add next Stop" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Remove this link" }),
+  ).toHaveCount(0);
 });

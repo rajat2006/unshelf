@@ -38,8 +38,8 @@
   --radius-3: 10px;
 
   /* One modern grotesque for everything — the native stack, zero webfont cost. */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  --font:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Dark is a peer, not an add-on: the same ten roles, redefined. */
@@ -390,9 +390,18 @@ body {
   border-radius: 50%;
 }
 
-.trail-skeleton span:nth-child(1) { left: 10%; top: 35%; }
-.trail-skeleton span:nth-child(2) { left: 42%; top: 48%; }
-.trail-skeleton span:nth-child(3) { left: 75%; top: 30%; }
+.trail-skeleton span:nth-child(1) {
+  left: 10%;
+  top: 35%;
+}
+.trail-skeleton span:nth-child(2) {
+  left: 42%;
+  top: 48%;
+}
+.trail-skeleton span:nth-child(3) {
+  left: 75%;
+  top: 30%;
+}
 
 .stop-view__heading {
   display: flex;

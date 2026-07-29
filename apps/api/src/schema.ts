@@ -94,10 +94,7 @@ export const items = pgTable(
     // User. id remains the model identity; this exists only for
     // tenant-consistency foreign keys on cross-domain joins.
     unique("items_id_user_id_idx").on(table.id, table.userId),
-    check(
-      "items_type_check",
-      sql`${table.type} in ${enumList(ITEM_TYPES)}`,
-    ),
+    check("items_type_check", sql`${table.type} in ${enumList(ITEM_TYPES)}`),
     check(
       "items_status_check",
       sql`${table.status} in ${enumList(ITEM_STATUSES)}`,

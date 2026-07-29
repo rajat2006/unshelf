@@ -32,7 +32,11 @@ services:
     volumes:
       - unshelf-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unshelf} -d ${POSTGRES_DB:-unshelf}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-unshelf} -d ${POSTGRES_DB:-unshelf}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
