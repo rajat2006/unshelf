@@ -1,5 +1,5 @@
 import { serializeFailure } from "./diagnostics";
-import type { Logger } from "./logger";
+import type { Logger } from "./logging/logger";
 
 type RuntimeSignal = "uncaughtException" | "unhandledRejection";
 

@@ -1,155 +1,6 @@
-import pino, { type Logger as PinoLogger } from "pino";
+import type { LogBindings, LogEvent, LogLevel } from "./logger";
 
-export const LOG_LEVELS = [
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "fatal",
-] as const;
-
-export type LogLevel = (typeof LOG_LEVELS)[number];
-export type LogBindings = Readonly<Record<string, unknown>>;
-
-export interface LogEvent extends Readonly<Record<string, unknown>> {
-  readonly event: string;
-  readonly msg: string;
-}
-
-export interface Logger {
-  debug(event: LogEvent): void;
-  info(event: LogEvent): void;
-  warn(event: LogEvent): void;
-  error(event: LogEvent): void;
-  fatal(event: LogEvent): void;
-  child(bindings: LogBindings): Logger;
-  flush(): Promise<void>;
-}
-
-export type CollectedLogRecord = LogEvent &
-  LogBindings & {
-    readonly level: LogLevel;
-  };
-
-export interface CollectingLogger extends Logger {
-  readonly records: readonly CollectedLogRecord[];
-}
-
-export interface LogDestination {
-  write(line: string): void;
-}
-
-export interface ProductionLoggerOptions {
-  level: LogLevel;
-  destination?: LogDestination;
-}
-
-export function parseLogLevel(value: string | undefined): LogLevel {
-  if (value === undefined) {
-    return "info";
-  }
-  if (isLogLevel(value)) {
-    return value;
-  }
-
-  throw new Error(`Invalid LOG_LEVEL: ${value}`);
-}
-
-export function createProductionLogger({
-  level,
-  destination,
-}: ProductionLoggerOptions): Logger {
-  const options: pino.LoggerOptions = {
-    base: null,
-    level,
-    timestamp: pino.stdTimeFunctions.isoTime,
-    formatters: {
-      level(label) {
-        return { level: label };
-      },
-    },
-  };
-  const renderer = destination
-    ? pino(options, destination)
-    : pino(options);
-
-  return adaptPinoLogger(renderer);
-}
-
-export function createCollectingLogger(): CollectingLogger {
-  const records: CollectedLogRecord[] = [];
-  return {
-    ...createCollectingChild(records, {}),
-    records,
-  };
-}
-
-function adaptPinoLogger(renderer: PinoLogger): Logger {
-  return adaptPinoChild(renderer, {});
-}
-
-function adaptPinoChild(
-  renderer: PinoLogger,
-  bindings: LogBindings,
-): Logger {
-  const render = (level: LogLevel, event: LogEvent): void => {
-    const bounded = boundLogRecord(level, bindings, event);
-    write(renderer[level].bind(renderer), bounded);
-  };
-
-  return {
-    debug: (event) => render("debug", event),
-    info: (event) => render("info", event),
-    warn: (event) => render("warn", event),
-    error: (event) => render("error", event),
-    fatal: (event) => render("fatal", event),
-    child: (childBindings) =>
-      adaptPinoChild(renderer, { ...bindings, ...childBindings }),
-    flush: () =>
-      new Promise((resolve, reject) => {
-        renderer.flush((error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      }),
-  };
-}
-
-function createCollectingChild(
-  records: CollectedLogRecord[],
-  bindings: LogBindings,
-): Logger {
-  const collect = (level: LogLevel, event: LogEvent): void => {
-    records.push({ ...boundLogRecord(level, bindings, event), level });
-  };
-
-  return {
-    debug: (event) => collect("debug", event),
-    info: (event) => collect("info", event),
-    warn: (event) => collect("warn", event),
-    error: (event) => collect("error", event),
-    fatal: (event) => collect("fatal", event),
-    child: (childBindings) =>
-      createCollectingChild(records, { ...bindings, ...childBindings }),
-    flush: () => Promise.resolve(),
-  };
-}
-
-function write(
-  render: (attributes: Record<string, unknown>, message: string) => void,
-  { msg, ...attributes }: LogEvent,
-): void {
-  render(attributes, msg);
-}
-
-function isLogLevel(value: string): value is LogLevel {
-  return LOG_LEVELS.some((level) => level === value);
-}
-
-function boundLogRecord(
+export function boundLogRecord(
   level: LogLevel,
   bindings: LogBindings,
   event: LogEvent,
@@ -202,10 +53,7 @@ function cloneValue(value: unknown, seen: WeakSet<object>): unknown {
     return value.map((entry) => cloneValue(entry, seen));
   }
   return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      cloneValue(entry, seen),
-    ]),
+    Object.entries(value).map(([key, entry]) => [key, cloneValue(entry, seen)]),
   );
 }
 
@@ -236,10 +84,7 @@ function compactLowerPriorityStrings(
       value[key as keyof typeof value] =
         `${entry.slice(0, COMPACT_STRING_LENGTH)}${TRUNCATED}` as never;
     } else if (entry !== null && typeof entry === "object") {
-      compactLowerPriorityStrings(
-        entry as Record<string, unknown>,
-        nextPath,
-      );
+      compactLowerPriorityStrings(entry as Record<string, unknown>, nextPath);
     }
   }
 }
@@ -318,9 +163,7 @@ function serializedBytes(
   );
 }
 
-function isRecord(
-  value: unknown,
-): value is Readonly<Record<string, unknown>> {
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -336,11 +179,7 @@ export const MAX_SERIALIZED_EVENT_BYTES = 64 * 1024;
 const TRUNCATED = "[TRUNCATED]";
 const COMPACT_STRING_LENGTH = 1_024;
 const FORCED_PRIORITY_STRING_LENGTH = 256;
-const LOW_PRIORITY_DIAGNOSTIC_KEYS = new Set([
-  "body",
-  "parameters",
-  "params",
-]);
+const LOW_PRIORITY_DIAGNOSTIC_KEYS = new Set(["body", "parameters", "params"]);
 const PRIORITY_ENVELOPE_FIELDS = [
   "event",
   "msg",

@@ -1,10 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDatabase } from "./db";
-import {
-  createProductionLogger,
-  parseLogLevel,
-} from "./logger";
+import { createProductionLogger, parseLogLevel } from "./logging/pino-logger";
 import { runMigration } from "./migration-runner";
 
 const connectionString = process.env.DATABASE_URL;

@@ -2,15 +2,9 @@ import { createApp } from "./app";
 import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./middleware/auth";
 import { createDatabase } from "./db";
-import {
-  createProductionLogger,
-  parseLogLevel,
-  type Logger,
-} from "./logger";
-import {
-  superviseApiProcess,
-  type ProcessRuntime,
-} from "./process-failures";
+import { createProductionLogger, parseLogLevel } from "./logging/pino-logger";
+import type { Logger } from "./logging/logger";
+import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;

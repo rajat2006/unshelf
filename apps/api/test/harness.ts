@@ -14,7 +14,7 @@ import { createDatabase, type Database } from "../src/db";
 import {
   createCollectingLogger,
   type CollectingLogger,
-} from "../src/logger";
+} from "../src/logging/collecting-logger";
 
 /**
  * The committed migration folder, resolved from this file rather than the

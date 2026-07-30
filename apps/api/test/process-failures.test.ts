@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCollectingLogger,
   type CollectingLogger,
-  type Logger,
-} from "../src/logger";
+} from "../src/logging/collecting-logger";
+import type { Logger } from "../src/logging/logger";
 import {
   superviseApiProcess,
   type ProcessRuntime,
