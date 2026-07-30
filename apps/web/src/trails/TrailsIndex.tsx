@@ -57,7 +57,7 @@ export function TrailsIndex({
 
 /** How a Trail's derived progress reads on its card — never a bare 0/0. */
 function progressLabel(trail: Trail): string {
-  if (trail.total === 0) return "No progress yet";
+  if (trail.total === 0) return "No items added yet";
   return `${trail.done} of ${trail.total} done`;
 }
 

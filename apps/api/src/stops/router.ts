@@ -5,7 +5,7 @@ import {
   stopIdSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 import {
   addItemToStop,
   getStop,
@@ -48,7 +48,7 @@ export function createStopsRouter(
     "/:stopId",
     validateRequest({
       params: { stopId: stopIdSchema },
-    }),
+    }, "invalid_stop_name"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const stop = await getStop(db, req.user!.id, params.stopId);
@@ -65,7 +65,7 @@ export function createStopsRouter(
     validateRequest({
       body: addStopItemRequestSchema,
       params: { stopId: stopIdSchema },
-    }),
+    }, "missing_item_id"),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const stop = await addItemToStop(
@@ -86,7 +86,7 @@ export function createStopsRouter(
     "/:stopId/items/:itemId",
     validateRequest({
       params: { stopId: stopIdSchema, itemId: itemIdSchema },
-    }),
+    }, "missing_item_id"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const stop = await removeItemFromStop(

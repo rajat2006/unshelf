@@ -7,7 +7,7 @@ import {
   updateItemTargetDateRequestSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 import {
   createItem,
   applyLabelToItem,
@@ -28,7 +28,10 @@ export function createItemsRouter(
 
   router.post(
     "/",
-    validateRequest({ body: createItemRequestSchema }),
+    validateRequest(
+      { body: createItemRequestSchema },
+      "invalid_item_create",
+    ),
     async (req, res) => {
       const { body } = res.locals.validated;
       const item = await createItem(db, req.user!.id, body);
@@ -43,7 +46,10 @@ export function createItemsRouter(
 
   router.get(
     "/:itemId",
-    validateRequest({ params: { itemId: itemIdSchema } }),
+    validateRequest(
+      { params: { itemId: itemIdSchema } },
+      "missing_item_id",
+    ),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await getItem(db, req.user!.id, params.itemId);
@@ -59,7 +65,7 @@ export function createItemsRouter(
     "/:itemId/labels/:labelId",
     validateRequest({
       params: { itemId: itemIdSchema, labelId: labelIdSchema },
-    }),
+    }, "missing_item_id"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await applyLabelToItem(
@@ -80,7 +86,7 @@ export function createItemsRouter(
     "/:itemId/labels/:labelId",
     validateRequest({
       params: { itemId: itemIdSchema, labelId: labelIdSchema },
-    }),
+    }, "missing_item_id"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await removeLabelFromItem(
@@ -102,7 +108,7 @@ export function createItemsRouter(
     validateRequest({
       body: updateItemStatusRequestSchema,
       params: { itemId: itemIdSchema },
-    }),
+    }, "invalid_item_status"),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const item = await updateItemStatus(
@@ -124,7 +130,7 @@ export function createItemsRouter(
     validateRequest({
       body: updateItemTargetDateRequestSchema,
       params: { itemId: itemIdSchema },
-    }),
+    }, "invalid_target_date"),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const item = await updateItemTargetDate(

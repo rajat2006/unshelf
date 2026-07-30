@@ -5,7 +5,13 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
+import { createCollectingLogger } from "../src/logging/testing";
 import { createDatabase } from "../src/db";
+import {
+  anyValue,
+  objectContaining,
+  parseJsonRecord,
+} from "./assertion-boundaries";
 
 const execFileAsync = promisify(execFile);
 const API_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -18,7 +24,7 @@ describe("migration CLI", () => {
     const db = createDatabase(container.getConnectionUri());
 
     try {
-      await execFileAsync(
+      const { stdout } = await execFileAsync(
         process.execPath,
         ["--import", "tsx", "src/migrate.ts"],
         {
@@ -29,9 +35,26 @@ describe("migration CLI", () => {
           },
         },
       );
+      const records = stdout.trim().split("\n").map(parseJsonRecord);
+
+      expect(records).toEqual([
+        objectContaining({
+          level: "info",
+          event: "unshelf.migration.started",
+          msg: "Migration started",
+        }),
+        objectContaining({
+          level: "info",
+          event: "unshelf.migration.completed",
+          msg: "Migration completed",
+          durationMs: anyValue(Number),
+        }),
+      ]);
 
       const response = await request(
-        createApp(db, [(_req, _res, next) => next()]),
+        createApp(db, [(_req, _res, next) => next()], {
+          logger: createCollectingLogger(),
+        }),
       ).get("/api/health");
 
       expect(response.status).toBe(200);
