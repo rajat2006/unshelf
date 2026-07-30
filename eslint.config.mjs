@@ -14,6 +14,31 @@ const webTypeScript = [
   "apps/web/{src,test}/**/*.{ts,tsx}",
   "apps/web/{playwright,vite}.config.ts",
 ];
+const webSource = ["apps/web/src/**/*.{ts,tsx}"];
+const webBrowserHarness = ["apps/web/test/browser/main.tsx"];
+const webPlaywrightSpecs = ["apps/web/test/browser/**/*.spec.ts"];
+const webNodeScopes = [
+  "apps/web/{playwright,vite}.config.ts",
+  "apps/web/test/browser/{harness,server,test-helpers}.ts",
+];
+const typeCheckedTypeScript = {
+  extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
+  languageOptions: {
+    parserOptions: {
+      projectService: true,
+      tsconfigRootDir: import.meta.dirname,
+    },
+  },
+};
+const productTypeScriptRules = {
+  "@typescript-eslint/await-thenable": "error",
+  "@typescript-eslint/no-floating-promises": "error",
+  "@typescript-eslint/no-misused-promises": "error",
+  "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
+  "@typescript-eslint/no-unnecessary-type-assertion": "error",
+  "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+  "@typescript-eslint/require-await": "error",
+};
 
 export default defineConfig(
   globalIgnores([
@@ -36,36 +61,16 @@ export default defineConfig(
   },
   {
     files: sharedTypeScript,
-    extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
+    ...typeCheckedTypeScript,
   },
   {
     files: apiTypeScript,
-    extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
+    ...typeCheckedTypeScript,
     languageOptions: {
+      ...typeCheckedTypeScript.languageOptions,
       globals: globals.nodeBuiltin,
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
     },
-    rules: {
-      "@typescript-eslint/await-thenable": "error",
-      "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/no-misused-promises": "error",
-      "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
-      "@typescript-eslint/no-unnecessary-type-assertion": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_" },
-      ],
-      "@typescript-eslint/require-await": "error",
-    },
+    rules: productTypeScriptRules,
   },
   {
     files: ["apps/api/test/**/*.test.ts"],
@@ -83,38 +88,18 @@ export default defineConfig(
   },
   {
     files: webTypeScript,
-    extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    rules: {
-      "@typescript-eslint/await-thenable": "error",
-      "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/no-misused-promises": "error",
-      "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
-      "@typescript-eslint/no-unnecessary-type-assertion": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_" },
-      ],
-      "@typescript-eslint/require-await": "error",
-    },
+    ...typeCheckedTypeScript,
+    rules: productTypeScriptRules,
   },
   {
-    files: ["apps/web/src/**/*.{ts,tsx}"],
+    files: webSource,
     ...reactRefresh.configs.vite,
     languageOptions: {
       globals: globals.browser,
     },
   },
   {
-    files: [
-      "apps/web/src/**/*.{ts,tsx}",
-      "apps/web/test/browser/**/*.{ts,tsx}",
-    ],
+    files: [...webSource, ...webBrowserHarness],
     ...reactHooks.configs.flat.recommended,
     rules: {
       ...reactHooks.configs.flat.recommended.rules,
@@ -125,19 +110,34 @@ export default defineConfig(
     },
   },
   {
-    files: ["apps/web/{playwright,vite}.config.ts"],
+    files: webNodeScopes,
     languageOptions: {
       globals: globals.nodeBuiltin,
     },
   },
   {
-    files: ["apps/web/test/browser/**/*.{ts,tsx}"],
+    files: webBrowserHarness,
+    languageOptions: {
+      globals: globals.browser,
+    },
+    rules: {
+      "@typescript-eslint/require-await": "off",
+    },
+  },
+  {
+    files: webPlaywrightSpecs,
     languageOptions: {
       globals: {
         ...globals.browser,
         ...globals.nodeBuiltin,
       },
     },
+    rules: {
+      "@typescript-eslint/require-await": "off",
+    },
+  },
+  {
+    files: ["packages/shared/test/**/*.ts"],
     rules: {
       "@typescript-eslint/require-await": "off",
     },

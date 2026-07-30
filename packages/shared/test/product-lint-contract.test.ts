@@ -24,6 +24,53 @@ const fixFixture = fileURLToPath(
 const ciViolationFixture = fileURLToPath(
   new URL("product-ci-lint-violation.ts", import.meta.url),
 );
+const webRuleFixture = fileURLToPath(
+  new URL(
+    "../../../apps/web/src/product-lint-rule-fixture.tsx",
+    import.meta.url,
+  ),
+);
+const apiTestBoundaryFixture = fileURLToPath(
+  new URL(
+    "../../../apps/api/test/product-lint-boundary-fixture.test.ts",
+    import.meta.url,
+  ),
+);
+const apiSourceBoundaryFixture = fileURLToPath(
+  new URL(
+    "../../../apps/api/src/product-lint-boundary-fixture.ts",
+    import.meta.url,
+  ),
+);
+const sharedTestDoubleFixture = fileURLToPath(
+  new URL("product-lint-async-double-fixture.test.ts", import.meta.url),
+);
+const sharedSourceDoubleFixture = fileURLToPath(
+  new URL("../src/product-lint-async-double-fixture.ts", import.meta.url),
+);
+const sandcastleIgnoredFixture = fileURLToPath(
+  new URL(
+    "../../../.sandcastle/product-lint-ignored-fixture.ts",
+    import.meta.url,
+  ),
+);
+const generatedIgnoredFixture = fileURLToPath(
+  new URL(
+    "../../../apps/api/drizzle/product-lint-ignored-fixture.ts",
+    import.meta.url,
+  ),
+);
+const disposableFixtures = [
+  fixFixture,
+  ciViolationFixture,
+  webRuleFixture,
+  apiTestBoundaryFixture,
+  apiSourceBoundaryFixture,
+  sharedTestDoubleFixture,
+  sharedSourceDoubleFixture,
+  sandcastleIgnoredFixture,
+  generatedIgnoredFixture,
+];
 const fixableSource = `export function productLintFixFixture(): string {
   let value = "representative autofix";
   return value;
@@ -31,11 +78,34 @@ const fixableSource = `export function productLintFixFixture(): string {
 `;
 const lintViolationSource = `Promise.resolve("representative lint violation");
 `;
+const webRuleViolationSource = `import { useEffect } from "react";
 
-function runRootScript(script: "ci:product" | "lint" | "lint:fix") {
+export function productLintHelper(): string {
+  return "not a component";
+}
+
+export function ProductLintRuleFixture({ value }: { value: string }) {
+  useEffect(() => {
+    document.title = value;
+  }, []);
+  return null;
+}
+`;
+const unsafeSupertestBoundarySource = `import type { Response } from "supertest";
+
+export function productLintResponseMessage(response: Response) {
+  return response.body.message;
+}
+`;
+const asyncDoubleSource = `export async function productLintAsyncDouble(): Promise<string> {
+  return "representative async double";
+}
+`;
+
+function runPnpm(args: string[]) {
   return new Promise<{ output: string; status: number | null }>(
     (resolve, reject) => {
-      const child = spawn("pnpm", [script], {
+      const child = spawn("pnpm", args, {
         cwd: repositoryRoot,
         env: {
           ...process.env,
@@ -62,9 +132,18 @@ function runRootScript(script: "ci:product" | "lint" | "lint:fix") {
   );
 }
 
+function runRootScript(script: "ci:product" | "lint" | "lint:fix") {
+  return runPnpm([script]);
+}
+
+function runEslint(files: string[]) {
+  return runPnpm(["exec", "eslint", ...files]);
+}
+
 afterEach(() => {
-  rmSync(ciViolationFixture, { force: true });
-  rmSync(fixFixture, { force: true });
+  for (const fixture of disposableFixtures) {
+    rmSync(fixture, { force: true });
+  }
 });
 
 describe("product lint commands", () => {
@@ -109,6 +188,56 @@ describe("product lint task graph", () => {
 });
 
 describe("product lint behavior", () => {
+  it("enforces the React Hooks and Fast Refresh rule boundaries", async () => {
+    writeFileSync(webRuleFixture, webRuleViolationSource);
+
+    const result = await runEslint([webRuleFixture]);
+
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("react-hooks/exhaustive-deps");
+    expect(result.output).toContain("react-refresh/only-export-components");
+  }, 60_000);
+
+  it("accepts Supertest response bodies only at the API test boundary", async () => {
+    writeFileSync(apiTestBoundaryFixture, unsafeSupertestBoundarySource);
+    writeFileSync(apiSourceBoundaryFixture, unsafeSupertestBoundarySource);
+
+    const accepted = await runEslint([apiTestBoundaryFixture]);
+    const rejected = await runEslint([apiSourceBoundaryFixture]);
+
+    expect(accepted.status).toBe(0);
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.output).toContain(
+      "@typescript-eslint/no-unsafe-member-access",
+    );
+    expect(rejected.output).toContain("@typescript-eslint/no-unsafe-return");
+  }, 60_000);
+
+  it("accepts intentional async doubles only in test scopes", async () => {
+    writeFileSync(sharedTestDoubleFixture, asyncDoubleSource);
+    writeFileSync(sharedSourceDoubleFixture, asyncDoubleSource);
+
+    const accepted = await runEslint([sharedTestDoubleFixture]);
+    const rejected = await runEslint([sharedSourceDoubleFixture]);
+
+    expect(accepted.status).toBe(0);
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.output).toContain("@typescript-eslint/require-await");
+  }, 60_000);
+
+  it("explicitly ignores Sandcastle and generated migrations", async () => {
+    writeFileSync(sandcastleIgnoredFixture, lintViolationSource);
+    writeFileSync(generatedIgnoredFixture, lintViolationSource);
+
+    const result = await runEslint([
+      sandcastleIgnoredFixture,
+      generatedIgnoredFixture,
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.output.match(/matching ignore pattern/g)).toHaveLength(2);
+  }, 60_000);
+
   it("keeps validation read-only and cached while fixes mutate without caching", async () => {
     writeFileSync(fixFixture, fixableSource);
 
@@ -163,9 +292,7 @@ describe("product CI behavior", () => {
       ].join(" && "),
     );
 
-    const buildPosition = ciWorkflow.indexOf(
-      "run: pnpm run ci:product:build",
-    );
+    const buildPosition = ciWorkflow.indexOf("run: pnpm run ci:product:build");
     const typecheckPosition = ciWorkflow.indexOf(
       "run: pnpm run ci:product:typecheck",
     );
