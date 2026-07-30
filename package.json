@@ -19,6 +19,8 @@
     "format:check": "prettier . --check",
     "lint": "turbo run lint --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "lint:fix": "turbo run lint:fix --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "prepare": "node .husky/install.mjs",
+    "prototype:pre-commit": "lint-staged --concurrent false && git diff --cached --check",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
@@ -26,6 +28,8 @@
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "9.1.7",
+    "lint-staged": "16.4.0",
     "prettier": "3.9.6",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",

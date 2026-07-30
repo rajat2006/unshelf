@@ -1,0 +1,11 @@
+# PROTOTYPE for issue #141:
+# Can staged-only linting and formatting give useful feedback without making
+# uninstalled worktrees or autonomous CI agents unable to commit?
+
+if command -v lint-staged >/dev/null 2>&1; then
+  lint-staged --concurrent false
+else
+  echo "pre-commit: lint-staged unavailable; run pnpm install to enable staged linting and formatting" >&2
+fi
+
+git diff --cached --check
