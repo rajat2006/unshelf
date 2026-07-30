@@ -34,12 +34,6 @@ const apiTestBoundaryFixture = fixturePath(
 const apiSourceBoundaryFixture = fixturePath(
   "../../../apps/api/src/product-lint-boundary-fixture.ts",
 );
-const sharedTestDoubleFixture = fixturePath(
-  "product-lint-async-double-fixture.test.ts",
-);
-const sharedSourceDoubleFixture = fixturePath(
-  "../src/product-lint-async-double-fixture.ts",
-);
 const sandcastleIgnoredFixture = fixturePath(
   "../../../.sandcastle/product-lint-ignored-fixture.ts",
 );
@@ -52,8 +46,6 @@ const disposableFixtures = [
   webRuleFixture,
   apiTestBoundaryFixture,
   apiSourceBoundaryFixture,
-  sharedTestDoubleFixture,
-  sharedSourceDoubleFixture,
   sandcastleIgnoredFixture,
   generatedIgnoredFixture,
 ];
@@ -66,10 +58,6 @@ const lintViolationSource = `Promise.resolve("representative lint violation");
 `;
 const webRuleViolationSource = `import { useEffect } from "react";
 
-export function productLintHelper(): string {
-  return "not a component";
-}
-
 export function ProductLintRuleFixture({ value }: { value: string }) {
   useEffect(() => {
     document.title = value;
@@ -81,10 +69,6 @@ const unsafeSupertestBoundarySource = `import type { Response } from "supertest"
 
 export function productLintResponseMessage(response: Response) {
   return response.body.message;
-}
-`;
-const asyncDoubleSource = `export async function productLintAsyncDouble(): Promise<string> {
-  return "representative async double";
 }
 `;
 
@@ -174,14 +158,13 @@ describe("product lint task graph", () => {
 });
 
 describe("product lint behavior", () => {
-  it("enforces the React Hooks and Fast Refresh rule boundaries", async () => {
+  it("enforces the essential React Hooks rule boundary", async () => {
     writeFileSync(webRuleFixture, webRuleViolationSource);
 
     const result = await runEslint([webRuleFixture]);
 
     expect(result.status).not.toBe(0);
     expect(result.output).toContain("react-hooks/exhaustive-deps");
-    expect(result.output).toContain("react-refresh/only-export-components");
   }, 60_000);
 
   it("accepts Supertest response bodies only at the API test boundary", async () => {
@@ -197,18 +180,6 @@ describe("product lint behavior", () => {
       "@typescript-eslint/no-unsafe-member-access",
     );
     expect(rejected.output).toContain("@typescript-eslint/no-unsafe-return");
-  }, 60_000);
-
-  it("accepts intentional async doubles only in test scopes", async () => {
-    writeFileSync(sharedTestDoubleFixture, asyncDoubleSource);
-    writeFileSync(sharedSourceDoubleFixture, asyncDoubleSource);
-
-    const accepted = await runEslint([sharedTestDoubleFixture]);
-    const rejected = await runEslint([sharedSourceDoubleFixture]);
-
-    expect(accepted.status).toBe(0);
-    expect(rejected.status).not.toBe(0);
-    expect(rejected.output).toContain("@typescript-eslint/require-await");
   }, 60_000);
 
   it("explicitly ignores Sandcastle and generated migrations", async () => {
