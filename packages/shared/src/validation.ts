@@ -1,3 +1,4 @@
+// PROTOTYPE: multi-workspace staged-hook timing probe.
 import { z } from "zod";
 import type { ItemId, LabelId, StopId, TrailId, UserId } from "./index";
 import { Status, Type } from "./index";

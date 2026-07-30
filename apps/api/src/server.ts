@@ -1,3 +1,4 @@
+// PROTOTYPE: multi-workspace staged-hook timing probe.
 import { createApp } from "./app";
 import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./middleware/auth";
