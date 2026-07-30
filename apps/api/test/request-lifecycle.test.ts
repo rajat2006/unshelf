@@ -5,6 +5,7 @@ import { Type, type UserId } from "@unshelf/shared";
 import type { Database } from "../src/db";
 import { createApp } from "../src/app";
 import { createCollectingLogger } from "../src/logging/testing";
+import { anyValue, objectContaining } from "./assertion-boundaries";
 
 describe("API request lifecycle", () => {
   it("returns a server-owned request ID and records a completed matched request", async () => {
@@ -168,12 +169,11 @@ describe("API request lifecycle", () => {
         phase: "request",
         userId: "a156d86a-09d3-4935-9bf0-1820fa357f90",
         route: "/api/items",
-        error: expect.objectContaining({
+        error: objectContaining({
           type: "Error",
           code: "57P01",
-          message:
-            "insert failed for retained-business-value using [REDACTED]",
-          cause: expect.objectContaining({
+          message: "insert failed for retained-business-value using [REDACTED]",
+          cause: objectContaining({
             type: "Error",
             message: "connection reset after retained-cause-value",
           }),
@@ -199,7 +199,7 @@ describe("API request lifecycle", () => {
         request: {
           method: "POST",
           path: "/api/items",
-          headers: expect.objectContaining({
+          headers: objectContaining({
             authorization: "[REDACTED]",
             "x-business-context": "retained-header-value",
           }),
@@ -324,7 +324,7 @@ describe("API request lifecycle", () => {
         route: "/api/health",
         durationMs: 7,
         termination: "aborted",
-        request: expect.objectContaining({
+        request: objectContaining({
           method: "GET",
           path: "/api/health",
           params: {},
@@ -376,7 +376,9 @@ describe("API request lifecycle", () => {
     });
 
     const response = await request(app)
-      .get("/api/health?trail=retained-health&access_token=health-query-sentinel")
+      .get(
+        "/api/health?trail=retained-health&access_token=health-query-sentinel",
+      )
       .set("Authorization", "Bearer health-header-sentinel")
       .expect(503);
 
@@ -391,11 +393,11 @@ describe("API request lifecycle", () => {
       msg: "API health check failed",
       requestId: "9334cf7e-3646-4db8-a6b9-55dc3c0d7863",
       dependency: "postgres",
-      error: expect.objectContaining({
+      error: objectContaining({
         type: "Error",
         code: "57P01",
         message: "connection terminated for trail-42: [REDACTED] [REDACTED]",
-        stack: expect.any(String),
+        stack: anyValue(String),
       }),
       database: {
         query: "select message, now() from health_check /* [REDACTED] */",
@@ -428,7 +430,7 @@ describe("API request lifecycle", () => {
       request: {
         method: "GET",
         path: "/api/health",
-        headers: expect.objectContaining({
+        headers: objectContaining({
           authorization: "[REDACTED]",
         }),
         params: {},

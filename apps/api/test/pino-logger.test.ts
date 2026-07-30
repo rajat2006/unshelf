@@ -3,6 +3,7 @@ import pretty from "pino-pretty";
 import { createProductionLogger, parseLogLevel } from "../src/logging";
 import { serializeFailure } from "../src/diagnostics";
 import { StringDestination } from "./string-destination";
+import { parseJsonRecord } from "./assertion-boundaries";
 
 describe("production logger", () => {
   it("renders one structured JSON event per line", () => {
@@ -21,7 +22,7 @@ describe("production logger", () => {
     const lines = destination.output.trimEnd().split("\n");
     expect(lines).toHaveLength(1);
 
-    const record = JSON.parse(lines[0]!) as Record<string, unknown>;
+    const record = parseJsonRecord(lines[0]);
     expect(record).toMatchObject({
       level: "info",
       event: "unshelf.test.rendered",
@@ -78,7 +79,7 @@ describe("production logger", () => {
     const records = destination.output
       .trimEnd()
       .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+      .map(parseJsonRecord);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
       level: "warn",

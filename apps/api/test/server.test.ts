@@ -10,6 +10,7 @@ import {
 import { createProductionLogger } from "../src/logging";
 import { createCollectingLogger } from "../src/logging/testing";
 import { StringDestination } from "./string-destination";
+import { objectContaining, parseJsonRecord } from "./assertion-boundaries";
 
 describe("API server startup", () => {
   it("announces the listening port only after the server is ready", async () => {
@@ -28,7 +29,7 @@ describe("API server startup", () => {
       const address = server.address() as AddressInfo;
       const lines = destination.output.trimEnd().split("\n");
       expect(lines).toHaveLength(1);
-      expect(JSON.parse(lines[0]!)).toMatchObject({
+      expect(parseJsonRecord(lines[0])).toMatchObject({
         level: "info",
         event: "unshelf.api.started",
         msg: "API started",
@@ -67,7 +68,7 @@ describe("API server startup", () => {
           event: "unshelf.api.error.unexpected",
           msg: "Unexpected API error",
           phase: "startup",
-          error: expect.objectContaining({
+          error: objectContaining({
             type: "Error",
             code: "EADDRINUSE",
           }),

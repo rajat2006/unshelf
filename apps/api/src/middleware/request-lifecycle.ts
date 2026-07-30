@@ -58,8 +58,7 @@ export function createRequestLifecycle({
       const level = requestLevel(req, termination, status);
       const failureRequest =
         req.failureRequest ??
-        (termination === "aborted" ||
-        (status !== undefined && status >= 400)
+        (termination === "aborted" || (status !== undefined && status >= 400)
           ? failureRequestSnapshot(req, diagnosticSecrets)
           : undefined);
       req.logger[level]({
@@ -117,7 +116,11 @@ function normalizeMethod(method: string): string {
 }
 
 export function registeredRoute(req: Request): string {
-  const path: unknown = req.route?.path;
+  const route: unknown = req.route;
+  const path =
+    typeof route === "object" && route !== null && "path" in route
+      ? route.path
+      : undefined;
   if (typeof path !== "string") {
     return req.routingResolved ? "UNMATCHED" : "UNRESOLVED";
   }
@@ -144,7 +147,7 @@ export function failureRequestSnapshot(
         current: req.params,
       }),
       query: serializeDiagnosticQuery(req.query, { secrets }),
-      body: req.body,
+      body: req.body as unknown,
     },
     { secrets },
   ) as Readonly<Record<string, unknown>>;
@@ -152,9 +155,7 @@ export function failureRequestSnapshot(
 
 function rawRequestPath(originalUrl: string): string {
   const queryStart = originalUrl.indexOf("?");
-  return queryStart === -1
-    ? originalUrl
-    : originalUrl.slice(0, queryStart);
+  return queryStart === -1 ? originalUrl : originalUrl.slice(0, queryStart);
 }
 
 function failureRouteParameters({

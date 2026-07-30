@@ -33,9 +33,7 @@ describe("migration runner", () => {
     const databaseUrl =
       "postgresql://unshelf:database-password-sentinel@db:5432/unshelf";
     const configuredSecret = "configured-secret-sentinel";
-    const cause = new Error(
-      `connection rejected for ${databaseUrl}`,
-    );
+    const cause = new Error(`connection rejected for ${databaseUrl}`);
     const failure = Object.assign(
       new Error(`migration failed for ${configuredSecret}`, {
         cause,
@@ -51,10 +49,12 @@ describe("migration runner", () => {
       },
     );
     const logger = createCollectingLogger();
+    const flush = vi.fn(async () => undefined);
     let recordsAtFlush: typeof logger.records = [];
-    logger.flush = vi.fn(async () => {
+    flush.mockImplementation(async () => {
       recordsAtFlush = [...logger.records];
     });
+    logger.flush = flush;
 
     await expect(
       runMigration({
@@ -68,7 +68,7 @@ describe("migration runner", () => {
     ).rejects.toBe(failure);
 
     expect(recordsAtFlush).toEqual(logger.records);
-    expect(logger.flush).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledOnce();
     expect(logger.records).toHaveLength(2);
     expect(logger.records[0]).toEqual({
       level: "info",

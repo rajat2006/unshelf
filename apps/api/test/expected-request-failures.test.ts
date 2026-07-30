@@ -6,6 +6,7 @@ import type { Database } from "../src/db";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
 import { createCollectingLogger } from "../src/logging/testing";
+import { objectContaining } from "./assertion-boundaries";
 
 describe("expected API request failures", () => {
   it("records one correlated warning when authentication is absent", async () => {
@@ -30,8 +31,7 @@ describe("expected API request failures", () => {
     expect(response.body).toEqual({ error: "unauthenticated" });
     expect(
       logger.records.filter(
-        (record) =>
-          record.event === "unshelf.api.authentication.failed",
+        (record) => record.event === "unshelf.api.authentication.failed",
       ),
     ).toEqual([
       {
@@ -52,7 +52,7 @@ describe("expected API request failures", () => {
       request: {
         method: "GET",
         path: "/api/me",
-        headers: expect.objectContaining({
+        headers: objectContaining({
           authorization: "[REDACTED]",
           cookie: "[REDACTED]",
           "x-business-context": "retained-header",
@@ -170,9 +170,7 @@ describe("expected API request failures", () => {
     );
 
     await request(app)
-      .patch(
-        "/api/items/00fc6af8-f79a-41fd-95eb-7bd00f2518ac/target-date",
-      )
+      .patch("/api/items/00fc6af8-f79a-41fd-95eb-7bd00f2518ac/target-date")
       .send({ targetDate: "2026-02-30" })
       .expect(400);
 
@@ -184,10 +182,7 @@ describe("expected API request failures", () => {
       "f904af7b-9c07-4534-96c6-18e221f89486",
     );
 
-    await request(app)
-      .post("/api/labels")
-      .send({ name: "   " })
-      .expect(400);
+    await request(app).post("/api/labels").send({ name: "   " }).expect(400);
 
     expect(validationCode(logger.records)).toBe("invalid_label_name");
   });
@@ -210,10 +205,7 @@ describe("expected API request failures", () => {
       "d04db2f7-2df1-4753-ac28-c27008e1fb60",
     );
 
-    await request(app)
-      .post("/api/trails")
-      .send({ name: "   " })
-      .expect(400);
+    await request(app).post("/api/trails").send({ name: "   " }).expect(400);
 
     expect(validationCode(logger.records)).toBe("invalid_trail_name");
   });
@@ -224,9 +216,7 @@ describe("expected API request failures", () => {
     );
 
     await request(app)
-      .post(
-        "/api/trails/37626b0f-6586-4670-9d8e-744d64467497/stops",
-      )
+      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/stops")
       .send({ name: "   " })
       .expect(400);
 
@@ -239,15 +229,11 @@ describe("expected API request failures", () => {
     );
 
     await request(app)
-      .post(
-        "/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges",
-      )
+      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges")
       .send({ fromStopId: "not-a-stop-id" })
       .expect(400);
 
-    expect(validationCode(logger.records)).toBe(
-      "invalid_edge_endpoints",
-    );
+    expect(validationCode(logger.records)).toBe("invalid_edge_endpoints");
   });
 
   it("classifies a self-link separately from malformed edge endpoints", async () => {
@@ -257,9 +243,7 @@ describe("expected API request failures", () => {
     const stopId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
 
     await request(app)
-      .post(
-        "/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges",
-      )
+      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges")
       .send({ fromStopId: stopId, toStopId: stopId })
       .expect(400);
 
@@ -317,7 +301,7 @@ describe("expected API request failures", () => {
       request: {
         method: "GET",
         path: `/api/items/${itemId}`,
-        headers: expect.objectContaining({
+        headers: objectContaining({
           "x-business-context": "retained-header",
         }),
         params: { itemId },

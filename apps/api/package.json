@@ -9,6 +9,8 @@
     "db:migrate": "drizzle-kit migrate",
     "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "dev:pretty": "tsx watch --env-file-if-exists=.env src/server.ts | pino-pretty --colorize --singleLine --translateTime SYS:standard",
+    "lint": "eslint src test drizzle.config.ts vitest.config.ts",
+    "lint:fix": "eslint src test drizzle.config.ts vitest.config.ts --fix",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:product": "vitest run",

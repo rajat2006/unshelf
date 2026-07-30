@@ -24,7 +24,10 @@ const diagnosticSecrets = [
 ].filter((value): value is string => value !== undefined);
 
 const runtime: ProcessRuntime = {
-  once: (signal, listener) => process.once(signal, listener),
+  once: (signal, listener) =>
+    process.once(signal, (failure) => {
+      void listener(failure);
+    }),
   exit: (code) => process.exit(code),
 };
 
@@ -34,7 +37,11 @@ await superviseApiProcess({
   diagnosticSecrets,
   start: () => {
     if (logConfigurationFailure !== undefined) {
-      throw logConfigurationFailure;
+      throw logConfigurationFailure instanceof Error
+        ? logConfigurationFailure
+        : new Error("Invalid log configuration", {
+            cause: logConfigurationFailure,
+          });
     }
 
     const connectionString = process.env.DATABASE_URL;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stringMatching } from "./assertion-boundaries";
 import {
   boundLogRecord,
   MAX_SERIALIZED_EVENT_BYTES,
@@ -76,7 +77,7 @@ describe("bounded log record", () => {
       dependency: "postgres",
       diagnosticTruncated: true,
       error: {
-        type: expect.stringMatching(/^DatabaseError-.*\[TRUNCATED\]$/),
+        type: stringMatching(/^DatabaseError-.*\[TRUNCATED\]$/),
         code: "XX000",
         message: "query failed",
       },
@@ -101,7 +102,7 @@ describe("bounded log record", () => {
 
     expect(record).toMatchObject({
       requestId: "priority-request",
-      dependency: expect.stringMatching(/^postgresql-.*\[TRUNCATED\]$/),
+      dependency: stringMatching(/^postgresql-.*\[TRUNCATED\]$/),
       error: {
         type: "DatabaseError",
         code: "XX000",

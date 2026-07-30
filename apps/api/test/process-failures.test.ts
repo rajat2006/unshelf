@@ -8,6 +8,7 @@ import {
   superviseApiProcess,
   type ProcessRuntime,
 } from "../src/process-failures";
+import { objectContaining } from "./assertion-boundaries";
 
 describe("API process failure policy", () => {
   it("flushes a fatal startup failure before preserving a non-zero outcome", async () => {
@@ -35,18 +36,17 @@ describe("API process failure policy", () => {
         event: "unshelf.api.error.unexpected",
         msg: "Unexpected API error",
         phase: "startup",
-        error: expect.objectContaining({
+        error: objectContaining({
           type: "Error",
           code: "EADDRINUSE",
-          message:
-            "could not bind retained-startup-context using [REDACTED]",
+          message: "could not bind retained-startup-context using [REDACTED]",
         }),
       },
     ]);
-    expect(logger.flush).toHaveBeenCalledOnce();
-    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(logger.flush.mock.calls).toHaveLength(1);
+    expect(runtime.exit.mock.calls).toEqual([[1]]);
     expect(logger.flush.mock.invocationCallOrder[0]).toBeLessThan(
-      runtime.exit.mock.invocationCallOrder[0]!,
+      runtime.exit.mock.invocationCallOrder[0],
     );
   });
 
@@ -74,7 +74,7 @@ describe("API process failure policy", () => {
           phase: "runtime",
           error:
             failure instanceof Error
-              ? expect.objectContaining({
+              ? objectContaining({
                   type: "Error",
                   message: "retained uncaught context",
                 })
@@ -86,10 +86,10 @@ describe("API process failure policy", () => {
                 },
         },
       ]);
-      expect(logger.flush).toHaveBeenCalledOnce();
-      expect(runtime.exit).toHaveBeenCalledWith(1);
+      expect(logger.flush.mock.calls).toHaveLength(1);
+      expect(runtime.exit.mock.calls).toEqual([[1]]);
       expect(logger.flush.mock.invocationCallOrder[0]).toBeLessThan(
-        runtime.exit.mock.invocationCallOrder[0]!,
+        runtime.exit.mock.invocationCallOrder[0],
       );
     },
   );
@@ -108,14 +108,14 @@ describe("API process failure policy", () => {
     await server.emit("error", new Error("listener failed"));
 
     expect(logger.records).toEqual([
-      expect.objectContaining({
+      objectContaining({
         level: "fatal",
         event: "unshelf.api.error.unexpected",
         phase: "runtime",
       }),
     ]);
-    expect(logger.flush).toHaveBeenCalledOnce();
-    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(logger.flush.mock.calls).toHaveLength(1);
+    expect(runtime.exit.mock.calls).toEqual([[1]]);
   });
 });
 

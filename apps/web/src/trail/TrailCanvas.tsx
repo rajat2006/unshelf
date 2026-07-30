@@ -569,7 +569,6 @@ function DraftForm({
       className="trail-draft"
     >
       <input
-        // eslint-disable-next-line jsx-a11y/no-autofocus
         autoFocus
         value={name}
         placeholder={placeholder}

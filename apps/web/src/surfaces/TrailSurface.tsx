@@ -87,9 +87,9 @@ export function TrailSurface({
             user={user}
             onTrailChanged={setTrail}
             onRefresh={refresh}
-            onOpenStop={(selectedStopId) =>
-              navigate(`/trails/${trailId}/stops/${selectedStopId}`)
-            }
+            onOpenStop={(selectedStopId) => {
+              void navigate(`/trails/${trailId}/stops/${selectedStopId}`);
+            }}
             readOnly={readOnly}
           />
         )}
@@ -99,7 +99,7 @@ export function TrailSurface({
           stopId={stopId as StopId}
           trailId={trailId as TrailId}
           user={user}
-          onClose={() => navigate(`/trails/${trailId}`)}
+          onClose={() => void navigate(`/trails/${trailId}`)}
           onTrailChanged={refresh}
         />
       )}

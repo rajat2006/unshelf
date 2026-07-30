@@ -7,6 +7,11 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { createCollectingLogger } from "../src/logging/testing";
 import { createDatabase } from "../src/db";
+import {
+  anyValue,
+  objectContaining,
+  parseJsonRecord,
+} from "./assertion-boundaries";
 
 const execFileAsync = promisify(execFile);
 const API_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -30,22 +35,19 @@ describe("migration CLI", () => {
           },
         },
       );
-      const records = stdout
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const records = stdout.trim().split("\n").map(parseJsonRecord);
 
       expect(records).toEqual([
-        expect.objectContaining({
+        objectContaining({
           level: "info",
           event: "unshelf.migration.started",
           msg: "Migration started",
         }),
-        expect.objectContaining({
+        objectContaining({
           level: "info",
           event: "unshelf.migration.completed",
           msg: "Migration completed",
-          durationMs: expect.any(Number),
+          durationMs: anyValue(Number),
         }),
       ]);
 

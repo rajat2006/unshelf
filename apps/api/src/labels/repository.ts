@@ -33,7 +33,7 @@ export async function createLabel(
       user_id: labels.userId,
       name: labels.name,
     });
-  return toLabel(row!);
+  return toLabel(row);
 }
 
 export async function listLabels(

@@ -47,7 +47,7 @@ const databaseDate = async (offsetDays: number): Promise<string> => {
     "SELECT (CURRENT_DATE + $1::integer)::text AS date",
     [offsetDays],
   );
-  return rows[0]!.date;
+  return rows[0].date;
 };
 
 beforeAll(async () => {
@@ -223,7 +223,7 @@ describe("shared Item vocabulary", () => {
 
       const all = (await listAll(clerkUserId)).body as Item[];
       expect(all).toHaveLength(1);
-      expect(all[0]!.status).toBe(status);
+      expect(all[0].status).toBe(status);
     },
   );
 });
@@ -450,7 +450,7 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
 
     // The rejected writes left the Item's date alone.
     expect(
-      ((await listAll(clerkUserId)).body as Item[])[0]!.targetDate,
+      ((await listAll(clerkUserId)).body as Item[])[0].targetDate,
     ).toBeNull();
   });
 
@@ -482,7 +482,7 @@ describe("PATCH /api/items/:itemId/target-date — the soft Target date", () => 
 
     expect(res.status).toBe(404);
     expect(
-      ((await listAll("clerk_target_owner")).body as Item[])[0]!.targetDate,
+      ((await listAll("clerk_target_owner")).body as Item[])[0].targetDate,
     ).toBeNull();
   });
 
@@ -629,7 +629,7 @@ describe("past target — derived, never stored, never nagging", () => {
     await setTargetDate(clerkUserId, item.id, {
       targetDate: await databaseDate(1),
     });
-    expect(((await listAll(clerkUserId)).body as Item[])[0]!.pastTarget).toBe(
+    expect(((await listAll(clerkUserId)).body as Item[])[0].pastTarget).toBe(
       false,
     );
 
@@ -640,7 +640,7 @@ describe("past target — derived, never stored, never nagging", () => {
       [item.id],
     );
 
-    expect(((await listAll(clerkUserId)).body as Item[])[0]!.pastTarget).toBe(
+    expect(((await listAll(clerkUserId)).body as Item[])[0].pastTarget).toBe(
       true,
     );
   });
@@ -694,7 +694,7 @@ describe("per-User isolation", () => {
     expect(bobTitles).not.toContain("Alice's item");
 
     // Every Item in Alice's All is stamped with Alice's own anchor id.
-    const aliceId = aliceAll[0]!.userId;
+    const aliceId = aliceAll[0].userId;
     expect(aliceAll.every((item) => item.userId === aliceId)).toBe(true);
     expect(bobAll.every((item) => item.userId !== aliceId)).toBe(true);
   });

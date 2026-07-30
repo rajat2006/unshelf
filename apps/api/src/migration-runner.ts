@@ -33,13 +33,15 @@ export async function runMigration({
           secrets: diagnosticSecrets,
         }),
       });
-    } finally {
-      try {
-        await logger.flush();
-      } finally {
-        throw failure;
-      }
+    } catch {
+      // Preserve the migration failure even if reporting it fails.
     }
+    try {
+      await logger.flush();
+    } catch {
+      // Preserve the migration failure even if flushing it fails.
+    }
+    throw failure;
   }
 
   logger.info({

@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "noEmit": true,
+    "paths": {
+      "@unshelf/shared": ["src/index.ts"],
+      "@unshelf/shared/validation": ["src/validation.ts"]
+    },
+    "rootDir": "..",
+    "types": ["node"]
+  },
+  "include": ["."]
+}

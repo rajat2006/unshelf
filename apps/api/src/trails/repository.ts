@@ -126,5 +126,5 @@ export async function createTrail(
       done: sql<number>`0`.mapWith(Number),
       total: sql<number>`0`.mapWith(Number),
     });
-  return toTrail(row!);
+  return toTrail(row);
 }

@@ -10,7 +10,7 @@ async function openTrailWithStop(
   await page.getByLabel("Trail name").fill(`${user} Trail`);
   await page.getByRole("button", { name: "Start a Trail" }).click();
   await page.getByRole("link", { name: new RegExp(`${user} Trail`) }).click();
-  const trailId = /trails\/([0-9a-f-]{36})/.exec(page.url())![1]!;
+  const trailId = /trails\/([0-9a-f-]{36})/.exec(page.url())![1];
 
   await page.getByRole("button", { name: /Start your trail/ }).click();
   await page.getByPlaceholder("Name your first stop").fill(stopName);
