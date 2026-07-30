@@ -5,7 +5,7 @@ import type { UserId } from "@unshelf/shared";
 import type { Database } from "../src/db";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
+import { createCollectingLogger } from "../src/logging/testing";
 
 describe("expected API request failures", () => {
   it("records one correlated warning when authentication is absent", async () => {

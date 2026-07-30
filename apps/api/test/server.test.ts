@@ -7,8 +7,8 @@ import {
   superviseApiProcess,
   type ProcessRuntime,
 } from "../src/process-failures";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
-import { createProductionLogger } from "../src/logging/pino-logger";
+import { createProductionLogger } from "../src/logging";
+import { createCollectingLogger } from "../src/logging/testing";
 import { StringDestination } from "./string-destination";
 
 describe("API server startup", () => {

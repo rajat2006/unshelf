@@ -1,5 +1,5 @@
 import { serializeFailure } from "./diagnostics";
-import type { Logger } from "./logging/logger";
+import type { Logger } from "./logging";
 
 export interface MigrationRunnerOptions {
   readonly logger: Logger;

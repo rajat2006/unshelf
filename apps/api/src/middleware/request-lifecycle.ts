@@ -5,7 +5,7 @@ import {
   serializeDiagnosticQuery,
   serializeDiagnosticValue,
 } from "../diagnostics";
-import type { Logger, LogLevel } from "../logging/logger";
+import type { Logger, LogLevel } from "../logging";
 
 declare global {
   namespace Express {

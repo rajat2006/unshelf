@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   boundLogRecord,
   MAX_SERIALIZED_EVENT_BYTES,
-} from "../src/logging/bound-log-record";
-import type { LogBindings, LogEvent, LogLevel } from "../src/logging/logger";
+} from "../src/logging/internal/bound-log-record";
+import type { LogBindings, LogEvent, LogLevel } from "../src/logging";
 
 describe("bounded log record", () => {
   it("preserves the envelope and error identity while truncating diagnostics", () => {

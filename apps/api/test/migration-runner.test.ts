@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
+import { createCollectingLogger } from "../src/logging/testing";
 import { runMigration } from "../src/migration-runner";
 
 describe("migration runner", () => {

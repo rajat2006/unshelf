@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import type { Express } from "express";
-import type { Logger } from "./logging/logger";
+import type { Logger } from "./logging";
 
 export function startApiServer(
   app: Express,

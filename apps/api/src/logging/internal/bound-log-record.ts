@@ -1,4 +1,4 @@
-import type { LogBindings, LogEvent, LogLevel } from "./logger";
+import type { LogBindings, LogEvent, LogLevel } from "../contract";
 
 export function boundLogRecord(
   level: LogLevel,

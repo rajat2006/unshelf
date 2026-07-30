@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import pretty from "pino-pretty";
-import {
-  createProductionLogger,
-  parseLogLevel,
-} from "../src/logging/pino-logger";
+import { createProductionLogger, parseLogLevel } from "../src/logging";
 import { serializeFailure } from "../src/diagnostics";
 import { StringDestination } from "./string-destination";
 

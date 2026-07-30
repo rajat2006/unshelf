@@ -1,5 +1,5 @@
 import { boundLogRecord } from "./bound-log-record";
-import type { LogBindings, LogEvent, Logger, LogLevel } from "./logger";
+import type { LogBindings, LogEvent, Logger, LogLevel } from "../contract";
 
 export type CollectedLogRecord = LogEvent &
   LogBindings & {

@@ -4,7 +4,7 @@ import type { RequestHandler } from "express";
 import { Type, type UserId } from "@unshelf/shared";
 import type { Database } from "../src/db";
 import { createApp } from "../src/app";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
+import { createCollectingLogger } from "../src/logging/testing";
 
 describe("API request lifecycle", () => {
   it("returns a server-owned request ID and records a completed matched request", async () => {

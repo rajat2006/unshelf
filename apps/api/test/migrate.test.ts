@@ -5,7 +5,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
+import { createCollectingLogger } from "../src/logging/testing";
 import { createDatabase } from "../src/db";
 
 const execFileAsync = promisify(execFile);

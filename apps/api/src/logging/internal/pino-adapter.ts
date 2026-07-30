@@ -6,7 +6,7 @@ import {
   type LogEvent,
   type Logger,
   type LogLevel,
-} from "./logger";
+} from "../contract";
 
 export interface LogDestination {
   write(line: string): void;

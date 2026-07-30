@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCollectingLogger } from "../src/logging/collecting-logger";
+import { createCollectingLogger } from "../src/logging/testing";
 
 describe("collecting logger", () => {
   it("collects child-bound events synchronously", () => {
