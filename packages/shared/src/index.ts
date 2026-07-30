@@ -1,4 +1,3 @@
-// PROTOTYPE: clean lint-staged 17 timing probe.
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
  * ends can never drift. In v1 this holds the walking-skeleton health contract,
