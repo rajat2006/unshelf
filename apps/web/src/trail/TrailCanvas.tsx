@@ -133,7 +133,7 @@ export function TrailCanvas({
   };
   const unlink = (from: StopId, to: StopId) =>
     void run(() => disconnectStops(user, trailId, from, to));
-  const sequence = (stopId: StopId, predecessorId: StopId) =>
+  const sequence = ({ stopId, predecessorId }: SequenceStopInput) =>
     void run(() => connectStops(user, trailId, predecessorId, stopId));
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
@@ -409,6 +409,11 @@ export function TrailCanvas({
 
 // ---------------------------------------------------------------------------
 
+interface SequenceStopInput {
+  stopId: StopId;
+  predecessorId: StopId;
+}
+
 function LooseStopRail({
   nodes,
   allNodes,
@@ -422,7 +427,7 @@ function LooseStopRail({
   busy: boolean;
   readOnly: boolean;
   onOpen: (stopId: StopId) => void;
-  onSequence: (stopId: StopId, predecessorId: StopId) => void;
+  onSequence: (input: SequenceStopInput) => void;
 }) {
   const [draft, setDraft] = useState<{
     stopId: StopId;
@@ -456,7 +461,10 @@ function LooseStopRail({
                     onSubmit={(event) => {
                       event.preventDefault();
                       if (draft.predecessorId) {
-                        onSequence(node.id, draft.predecessorId);
+                        onSequence({
+                          stopId: node.id,
+                          predecessorId: draft.predecessorId,
+                        });
                         setDraft(null);
                       }
                     }}

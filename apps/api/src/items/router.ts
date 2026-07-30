@@ -9,10 +9,8 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import {
-  createStopWithItem,
-  getItemPlacementCatalog,
-} from "../placements/repository";
+import { getItemPlacementCatalog } from "../placements/repository";
+import { createStopWithItem } from "../placements/service";
 import {
   createItem,
   applyLabelToItem,

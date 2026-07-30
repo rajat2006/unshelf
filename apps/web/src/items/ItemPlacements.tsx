@@ -66,16 +66,9 @@ export function ItemPlacements({
     setRetryAction(null);
     try {
       await action();
-      await load();
-      onChanged?.();
     } catch (caught: unknown) {
       setError(String(caught));
       setRetryAction(() => action);
-      try {
-        await load();
-      } catch {
-        // Preserve the placement failure as the local action the User can retry.
-      }
     } finally {
       setBusy(false);
     }
@@ -84,19 +77,47 @@ export function ItemPlacements({
   const place = (stopId: StopId) =>
     runPlacementMutation(async () => {
       await addItemToStop(user, stopId, itemId);
+      await load();
+      onChanged?.();
     });
   const remove = (stopId: StopId) =>
     runPlacementMutation(async () => {
       await removeItemFromStop(user, stopId, itemId);
+      await load();
+      onChanged?.();
     });
   const create = (trailId: TrailId, name: string) =>
     runPlacementMutation(async () => {
       const stop = await createStopWithItem(user, itemId, { trailId, name });
+      const placementStop = { id: stop.id, name: stop.name };
+      setCatalog((current) =>
+        current
+          ? {
+              ...current,
+              trails: current.trails.map((state) =>
+                state.trail.id === trailId
+                  ? {
+                      kind: "placed",
+                      trail: state.trail,
+                      stop: placementStop,
+                    }
+                  : state,
+              ),
+            }
+          : current,
+      );
       setLastCreated({
         trailId,
-        stop: { id: stop.id, name: stop.name },
+        stop: placementStop,
       });
       setCreatingOn(null);
+      onChanged?.();
+      try {
+        await load();
+      } catch (caught: unknown) {
+        setError(`Could not refresh Trail placements: ${String(caught)}`);
+        setRetryAction(() => load);
+      }
     });
 
   if (!catalog) {

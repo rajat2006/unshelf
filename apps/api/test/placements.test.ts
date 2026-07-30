@@ -210,6 +210,9 @@ describe("POST /api/items/:itemId/placements", () => {
     const intruderApi = asUser(intruder);
     const trail = (await ownerApi.post("/api/trails", { name: "Private" }))
       .body as Trail;
+    const intruderTrail = (
+      await intruderApi.post("/api/trails", { name: "Foreign Trail" })
+    ).body as Trail;
     const existingStop = (
       await ownerApi.post(`/api/trails/${trail.id}/stops`, {
         name: "Existing",
@@ -218,6 +221,12 @@ describe("POST /api/items/:itemId/placements", () => {
     const item = (
       await ownerApi.post("/api/items", {
         title: "Private Item",
+        type: "book",
+      })
+    ).body as Item;
+    const intruderItem = (
+      await intruderApi.post("/api/items", {
+        title: "Foreign Item",
         type: "book",
       })
     ).body as Item;
@@ -231,9 +240,32 @@ describe("POST /api/items/:itemId/placements", () => {
         trailId: trail.id,
         name: "  ",
       }),
+      ownerApi.post("/api/items/not-an-item/placements", {
+        trailId: trail.id,
+        name: "Malformed Item",
+      }),
+      ownerApi.post(`/api/items/${item.id}/placements`, {
+        trailId: "not-a-trail",
+        name: "Malformed Trail",
+      }),
+      ownerApi.post(
+        "/api/items/00000000-0000-0000-0000-000000000000/placements",
+        {
+          trailId: trail.id,
+          name: "Missing Item",
+        },
+      ),
       ownerApi.post(`/api/items/${item.id}/placements`, {
         trailId: "00000000-0000-0000-0000-000000000000",
         name: "Missing Trail",
+      }),
+      ownerApi.post(`/api/items/${item.id}/placements`, {
+        trailId: intruderTrail.id,
+        name: "Foreign Trail",
+      }),
+      ownerApi.post(`/api/items/${intruderItem.id}/placements`, {
+        trailId: trail.id,
+        name: "Foreign Item",
       }),
       intruderApi.post(`/api/items/${item.id}/placements`, {
         trailId: trail.id,
@@ -249,9 +281,10 @@ describe("POST /api/items/:itemId/placements", () => {
     ]);
 
     expect(responses.map(({ status }) => status)).toEqual([
-      400, 404, 404, 409, 401,
+      400, 400, 400, 404, 404, 404, 404, 404, 409, 401,
     ]);
     expect((await ownerApi.get("/api/stops")).body).toEqual(stopsBefore);
+    expect((await intruderApi.get("/api/stops")).body).toEqual([]);
     expect(
       (
         (await ownerApi.get(`/api/trails/${trail.id}/topology`)).body as {
