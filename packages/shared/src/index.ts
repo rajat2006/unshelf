@@ -283,6 +283,3 @@ export interface HealthResponse {
   /** Server/database timestamp, ISO-8601. */
   time: string;
 }
-
-const prototypeLintStaged17Probe = "partial";
-export { prototypeLintStaged17Probe };
