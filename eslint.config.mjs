@@ -17,9 +17,12 @@ const webTypeScript = [
 const webSource = ["apps/web/src/**/*.{ts,tsx}"];
 const webBrowserHarness = ["apps/web/test/browser/main.tsx"];
 const webPlaywrightSpecs = ["apps/web/test/browser/**/*.spec.ts"];
+const webNodeTestHarness = [
+  "apps/web/test/browser/{harness,server,test-helpers}.ts",
+];
 const webNodeScopes = [
   "apps/web/{playwright,vite}.config.ts",
-  "apps/web/test/browser/{harness,server,test-helpers}.ts",
+  ...webNodeTestHarness,
 ];
 const typeCheckedTypeScript = {
   extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
@@ -113,6 +116,12 @@ export default defineConfig(
     files: webNodeScopes,
     languageOptions: {
       globals: globals.nodeBuiltin,
+    },
+  },
+  {
+    files: webNodeTestHarness,
+    rules: {
+      "@typescript-eslint/require-await": "off",
     },
   },
   {

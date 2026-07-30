@@ -18,47 +18,33 @@ const ciWorkflow = readFileSync(
   new URL("../../../.github/workflows/ci.yml", import.meta.url),
   "utf8",
 );
-const fixFixture = fileURLToPath(
-  new URL("product-lint-fix-fixture.ts", import.meta.url),
+
+function fixturePath(relativePath: string): string {
+  return fileURLToPath(new URL(relativePath, import.meta.url));
+}
+
+const fixFixture = fixturePath("product-lint-fix-fixture.ts");
+const ciViolationFixture = fixturePath("product-ci-lint-violation.ts");
+const webRuleFixture = fixturePath(
+  "../../../apps/web/src/product-lint-rule-fixture.tsx",
 );
-const ciViolationFixture = fileURLToPath(
-  new URL("product-ci-lint-violation.ts", import.meta.url),
+const apiTestBoundaryFixture = fixturePath(
+  "../../../apps/api/test/product-lint-boundary-fixture.test.ts",
 );
-const webRuleFixture = fileURLToPath(
-  new URL(
-    "../../../apps/web/src/product-lint-rule-fixture.tsx",
-    import.meta.url,
-  ),
+const apiSourceBoundaryFixture = fixturePath(
+  "../../../apps/api/src/product-lint-boundary-fixture.ts",
 );
-const apiTestBoundaryFixture = fileURLToPath(
-  new URL(
-    "../../../apps/api/test/product-lint-boundary-fixture.test.ts",
-    import.meta.url,
-  ),
+const sharedTestDoubleFixture = fixturePath(
+  "product-lint-async-double-fixture.test.ts",
 );
-const apiSourceBoundaryFixture = fileURLToPath(
-  new URL(
-    "../../../apps/api/src/product-lint-boundary-fixture.ts",
-    import.meta.url,
-  ),
+const sharedSourceDoubleFixture = fixturePath(
+  "../src/product-lint-async-double-fixture.ts",
 );
-const sharedTestDoubleFixture = fileURLToPath(
-  new URL("product-lint-async-double-fixture.test.ts", import.meta.url),
+const sandcastleIgnoredFixture = fixturePath(
+  "../../../.sandcastle/product-lint-ignored-fixture.ts",
 );
-const sharedSourceDoubleFixture = fileURLToPath(
-  new URL("../src/product-lint-async-double-fixture.ts", import.meta.url),
-);
-const sandcastleIgnoredFixture = fileURLToPath(
-  new URL(
-    "../../../.sandcastle/product-lint-ignored-fixture.ts",
-    import.meta.url,
-  ),
-);
-const generatedIgnoredFixture = fileURLToPath(
-  new URL(
-    "../../../apps/api/drizzle/product-lint-ignored-fixture.ts",
-    import.meta.url,
-  ),
+const generatedIgnoredFixture = fixturePath(
+  "../../../apps/api/drizzle/product-lint-ignored-fixture.ts",
 );
 const disposableFixtures = [
   fixFixture,
