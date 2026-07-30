@@ -13,9 +13,8 @@ import { items, stopItems, stops, trails } from "../schema";
 import { getStop } from "../stops/repository";
 
 export type PlaceItemInStopResult =
-  | { kind: "ok"; stop: StopDetail }
-  | { kind: "not_found" }
-  | { kind: "conflict" };
+  | { ok: true; stop: StopDetail }
+  | { ok: false; error: "not_found" | "conflict" };
 
 interface PlaceItemInStopInput {
   userId: UserId;
@@ -109,7 +108,7 @@ export async function placeItemInStop(
     )
     .where(and(eq(stops.id, input.stopId), eq(stops.userId, input.userId)))
     .limit(1);
-  if (!destination) return { kind: "not_found" };
+  if (!destination) return { ok: false, error: "not_found" };
 
   const [existing] = await db
     .select({ stopId: stopItems.stopId })
@@ -124,7 +123,7 @@ export async function placeItemInStop(
     .limit(1);
 
   if (existing && existing.stopId !== input.stopId) {
-    return { kind: "conflict" };
+    return { ok: false, error: "conflict" };
   }
 
   if (!existing) {
@@ -150,10 +149,31 @@ export async function placeItemInStop(
       )
       .limit(1);
     if (settled?.stopId !== input.stopId) {
-      return { kind: "conflict" };
+      return { ok: false, error: "conflict" };
     }
   }
 
   const stop = await getStop(db, input.userId, input.stopId);
-  return stop ? { kind: "ok", stop } : { kind: "not_found" };
+  return stop ? { ok: true, stop } : { ok: false, error: "not_found" };
+}
+
+/**
+ * Remove one Item–Stop membership without changing the Item or its placements on
+ * other Trails. Repeating removal is idempotent; only a missing or foreign Stop
+ * fails the private boundary.
+ */
+export async function removeItemFromStop(
+  db: Database,
+  input: { userId: UserId; stopId: StopId; itemId: ItemId },
+): Promise<StopDetail | null> {
+  await db
+    .delete(stopItems)
+    .where(
+      and(
+        eq(stopItems.stopId, input.stopId),
+        eq(stopItems.itemId, input.itemId),
+        eq(stopItems.userId, input.userId),
+      ),
+    );
+  return getStop(db, input.userId, input.stopId);
 }

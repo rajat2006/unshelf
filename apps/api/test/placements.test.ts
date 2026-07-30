@@ -139,6 +139,30 @@ describe("GET /api/items/:itemId/placements", () => {
 });
 
 describe("POST /api/stops/:stopId/items", () => {
+  it("rejects malformed and missing Stop identifiers", async () => {
+    const user = "placement-stop-boundary-user";
+    const api = asUser(user);
+    const item = (
+      await api.post("/api/items", {
+        title: "Boundary Item",
+        type: "article",
+      })
+    ).body as Item;
+
+    expect(
+      (await api.post("/api/stops/not-a-stop/items", { itemId: item.id }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await api.post(
+          "/api/stops/00000000-0000-0000-0000-000000000000/items",
+          { itemId: item.id },
+        )
+      ).status,
+    ).toBe(404);
+  });
+
   it("resolves concurrent same-Trail placements as one success and one conflict", async () => {
     const user = "placement-concurrent-user";
     const api = asUser(user);

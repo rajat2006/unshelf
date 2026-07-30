@@ -6,8 +6,8 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import { placeItemInStop } from "../placements/repository";
-import { getStop, listStops, removeItemFromStop } from "./repository";
+import { placeItemInStop, removeItemFromStop } from "../placements/repository";
+import { getStop, listStops } from "./repository";
 
 /**
  * Mount the authenticated Stop HTTP interface at `/api/stops`.
@@ -75,7 +75,11 @@ export function createStopsRouter(
         stopId: params.stopId,
         itemId: body.itemId,
       });
-      switch (result.kind) {
+      if (result.ok) {
+        res.json(result.stop);
+        return;
+      }
+      switch (result.error) {
         case "not_found":
           res.status(404).json({ error: "stop or item not found" });
           return;
@@ -83,9 +87,6 @@ export function createStopsRouter(
           res.status(409).json({
             error: "item already placed on this trail",
           });
-          return;
-        case "ok":
-          res.json(result.stop);
           return;
       }
     },
@@ -101,12 +102,11 @@ export function createStopsRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const stop = await removeItemFromStop(
-        db,
-        req.user!.id,
-        params.stopId,
-        params.itemId,
-      );
+      const stop = await removeItemFromStop(db, {
+        userId: req.user!.id,
+        stopId: params.stopId,
+        itemId: params.itemId,
+      });
       if (!stop) {
         res.status(404).json({ error: "stop not found" });
         return;

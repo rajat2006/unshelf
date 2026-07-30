@@ -2,7 +2,6 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   CreateStopRequest,
   Item,
-  ItemId,
   Stop,
   StopDetail,
   StopId,
@@ -149,37 +148,4 @@ async function listItemsIn(
     .where(and(eq(items.userId, userId), inArray(items.id, memberItemIds)))
     .orderBy(asc(items.title));
   return rows.map(toItem);
-}
-
-/**
- * Remove an Item from a Stop, returning the Stop's new contents — or null when
- * the Stop is not this User's.
- *
- * Only the membership goes: the Item keeps its Status, its dates, its place in
- * All, and every other Stop it belongs to. Deleting a membership that is not
- * there succeeds, because the caller asked for a state ("that Item is not in this
- * Stop") that already holds — a set has no notion of removing something twice.
- * A Stop that is not this User's is the one real failure, and it 404s.
- *
- * The delete names the User directly on the membership. Composite owner foreign
- * keys guarantee that this is also the User on both the Stop and Item, while the
- * `getStop` that follows reports a foreign Stop as missing. One User's request can
- * therefore neither read nor alter another's membership.
- */
-export async function removeItemFromStop(
-  db: Database,
-  userId: UserId,
-  stopId: StopId,
-  itemId: ItemId,
-): Promise<StopDetail | null> {
-  await db
-    .delete(stopItems)
-    .where(
-      and(
-        eq(stopItems.stopId, stopId),
-        eq(stopItems.itemId, itemId),
-        eq(stopItems.userId, userId),
-      ),
-    );
-  return getStop(db, userId, stopId);
 }

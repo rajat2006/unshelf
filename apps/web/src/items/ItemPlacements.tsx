@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
 import type { ItemId, ItemPlacementCatalog, StopId } from "@unshelf/shared";
 import { addItemToStop, fetchItemPlacements, removeItemFromStop } from "../api";
 import type { CurrentUser } from "../application-auth/types";
@@ -23,7 +22,9 @@ export function ItemPlacements({
   const [catalog, setCatalog] = useState<ItemPlacementCatalog | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [retry, setRetry] = useState<(() => Promise<void>) | null>(null);
+  const [retryAction, setRetryAction] = useState<(() => Promise<void>) | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setCatalog(await fetchItemPlacements(user, itemId));
@@ -32,24 +33,24 @@ export function ItemPlacements({
   useEffect(() => {
     setCatalog(null);
     setError(null);
-    setRetry(null);
+    setRetryAction(null);
     void load().catch((caught: unknown) => {
       setError(String(caught));
-      setRetry(() => load);
+      setRetryAction(() => load);
     });
   }, [load]);
 
-  const change = async (action: () => Promise<void>) => {
+  const runPlacementMutation = async (action: () => Promise<void>) => {
     setBusy(true);
     setError(null);
-    setRetry(null);
+    setRetryAction(null);
     try {
       await action();
       await load();
       onChanged?.();
     } catch (caught: unknown) {
       setError(String(caught));
-      setRetry(() => action);
+      setRetryAction(() => action);
       try {
         await load();
       } catch {
@@ -61,11 +62,11 @@ export function ItemPlacements({
   };
 
   const place = (stopId: StopId) =>
-    change(async () => {
+    runPlacementMutation(async () => {
       await addItemToStop(user, stopId, itemId);
     });
   const remove = (stopId: StopId) =>
-    change(async () => {
+    runPlacementMutation(async () => {
       await removeItemFromStop(user, stopId, itemId);
     });
 
@@ -79,14 +80,11 @@ export function ItemPlacements({
         {!error ? (
           <p role="status">Loading Trail placements…</p>
         ) : (
-          <div role="alert">
-            <p>Could not load Trail placements: {error}</p>
-            {retry && (
-              <button type="button" onClick={() => void change(retry)}>
-                Retry
-              </button>
-            )}
-          </div>
+          <PlacementError
+            message={`Could not load Trail placements: ${error}`}
+            retryAction={retryAction}
+            onRetry={runPlacementMutation}
+          />
         )}
       </section>
     );
@@ -123,10 +121,7 @@ export function ItemPlacements({
       )}
 
       {catalog.trails.length === 0 ? (
-        <p>
-          Create a Trail from <Link to="/">Trails</Link> before placing this
-          Item.
-        </p>
+        <p>No Trails available</p>
       ) : (
         <details>
           <summary>Add to Trail…</summary>
@@ -165,15 +160,35 @@ export function ItemPlacements({
 
       {busy && <p role="status">Updating placement…</p>}
       {error && (
-        <div role="alert">
-          <p>Could not load or update this placement: {error}</p>
-          {retry && (
-            <button type="button" onClick={() => void change(retry)}>
-              Retry
-            </button>
-          )}
-        </div>
+        <PlacementError
+          message={`Could not load or update this placement: ${error}`}
+          retryAction={retryAction}
+          onRetry={runPlacementMutation}
+        />
       )}
     </section>
+  );
+}
+
+interface PlacementErrorProps {
+  message: string;
+  retryAction: (() => Promise<void>) | null;
+  onRetry: (action: () => Promise<void>) => Promise<void>;
+}
+
+function PlacementError({
+  message,
+  retryAction,
+  onRetry,
+}: PlacementErrorProps) {
+  return (
+    <div role="alert">
+      <p>{message}</p>
+      {retryAction && (
+        <button type="button" onClick={() => void onRetry(retryAction)}>
+          Retry
+        </button>
+      )}
+    </div>
   );
 }
