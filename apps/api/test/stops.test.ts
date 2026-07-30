@@ -51,13 +51,27 @@ const createStop = async (clerkUserId: string, body: object) => {
     .send(body);
 };
 
-const createTrail = (clerkUserId: string, name: string) =>
+const createTrail = ({
+  clerkUserId,
+  name,
+}: {
+  clerkUserId: string;
+  name: string;
+}) =>
   request(app)
     .post("/api/trails")
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ name });
 
-const createStopOn = (clerkUserId: string, trailId: string, body: object) =>
+const createStopOn = ({
+  clerkUserId,
+  trailId,
+  body,
+}: {
+  clerkUserId: string;
+  trailId: string;
+  body: object;
+}) =>
   request(app)
     .post(`/api/trails/${trailId}/stops`)
     .set(TEST_USER_HEADER, clerkUserId)
@@ -265,13 +279,25 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     const item = (
       await capture(user, { title: "Shared across Trails", type: "course" })
     ).body as Item;
-    const firstTrail = (await createTrail(user, "First Trail")).body as Trail;
-    const secondTrail = (await createTrail(user, "Second Trail")).body as Trail;
+    const firstTrail = (
+      await createTrail({ clerkUserId: user, name: "First Trail" })
+    ).body as Trail;
+    const secondTrail = (
+      await createTrail({ clerkUserId: user, name: "Second Trail" })
+    ).body as Trail;
     const first = (
-      await createStopOn(user, firstTrail.id, { name: "Foundations" })
+      await createStopOn({
+        clerkUserId: user,
+        trailId: firstTrail.id,
+        body: { name: "Foundations" },
+      })
     ).body as Stop;
     const second = (
-      await createStopOn(user, secondTrail.id, { name: "Foundations" })
+      await createStopOn({
+        clerkUserId: user,
+        trailId: secondTrail.id,
+        body: { name: "Foundations" },
+      })
     ).body as Stop;
 
     expect((await addToStop(user, first.id, { itemId: item.id })).status).toBe(
@@ -371,10 +397,14 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
       .body as Item;
     const first = (await createStop(clerkUserId, { name: "First" }))
       .body as Stop;
-    const otherTrail = (await createTrail(clerkUserId, "Other Trail"))
+    const otherTrail = (await createTrail({ clerkUserId, name: "Other Trail" }))
       .body as Trail;
     const second = (
-      await createStopOn(clerkUserId, otherTrail.id, { name: "Second" })
+      await createStopOn({
+        clerkUserId,
+        trailId: otherTrail.id,
+        body: { name: "Second" },
+      })
     ).body as Stop;
     await addToStop(clerkUserId, first.id, { itemId: item.id });
     await addToStop(clerkUserId, second.id, { itemId: item.id });
@@ -565,10 +595,15 @@ describe("one Status, read through every Stop that holds the Item", () => {
     ).body as Item;
     const stops: Stop[] = [];
     for (const name of ["Learn CSS", "Build the API", "Reading list"]) {
-      const trail = (await createTrail(clerkUserId, `${name} Trail`))
+      const trail = (await createTrail({ clerkUserId, name: `${name} Trail` }))
         .body as Trail;
-      const stop = (await createStopOn(clerkUserId, trail.id, { name }))
-        .body as Stop;
+      const stop = (
+        await createStopOn({
+          clerkUserId,
+          trailId: trail.id,
+          body: { name },
+        })
+      ).body as Stop;
       await addToStop(clerkUserId, stop.id, { itemId: item.id });
       stops.push(stop);
     }
