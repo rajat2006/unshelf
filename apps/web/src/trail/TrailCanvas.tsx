@@ -602,43 +602,40 @@ function Waypoint({
         <div className="trail-waypoint__frontier">You are here</div>
       )}
 
-      <div
+      <button
+        type="button"
+        className="trail-stop-link"
+        aria-label={`Open ${node.name}`}
         title={`${node.done} of ${node.total} items done`}
-        className="trail-medallion"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={onOpen}
       >
-        {done ? (
-          <Seal />
-        ) : (
-          <div
-            className={`trail-medallion__ring${isFrontier ? " is-frontier" : ""}`}
-          >
-            <ProgressRing
-              size={R * 2 - 8}
-              stroke={5}
-              progress={progressOf(node)}
-              track="var(--field-line)"
-              fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
-              center={
-                <span className="trail-progress-label">
-                  {`${node.done}/${node.total}`}
-                </span>
-              }
-            />
-          </div>
-        )}
-      </div>
-
-      <div className={`trail-waypoint__name${done ? " is-done" : ""}`}>
-        <button
-          type="button"
-          className="trail-stop-link"
-          aria-label={`Open ${node.name}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={onOpen}
-        >
+        <span className="trail-medallion">
+          {done ? (
+            <Seal />
+          ) : (
+            <span
+              className={`trail-medallion__ring${isFrontier ? " is-frontier" : ""}`}
+            >
+              <ProgressRing
+                size={R * 2 - 8}
+                stroke={5}
+                progress={progressOf(node)}
+                track="var(--field-line)"
+                fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
+                center={
+                  <span className="trail-progress-label">
+                    {node.total === 0 ? "＋" : `${node.done}/${node.total}`}
+                  </span>
+                }
+              />
+            </span>
+          )}
+        </span>
+        <span className={`trail-waypoint__name${done ? " is-done" : ""}`}>
           {node.name}
-        </button>
-      </div>
+        </span>
+      </button>
 
       {!readOnly && (
         <div onPointerDown={(e) => e.stopPropagation()}>

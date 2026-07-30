@@ -404,3 +404,218 @@ describe("POST /api/stops/:stopId/items", () => {
     ]);
   });
 });
+
+describe("GET /api/stops/:stopId/items", () => {
+  it("returns the first ten Library candidates in stable title order and omits current members", async () => {
+    const user = "placement-stop-intake-page";
+    const api = asUser(user);
+    const trail = (await api.post("/api/trails", { name: "Intake Trail" }))
+      .body as Trail;
+    const stop = (
+      await api.post(`/api/trails/${trail.id}/stops`, { name: "Open Stop" })
+    ).body as Stop;
+    const titles = [
+      "11 Eleventh",
+      "03 Third",
+      "08 Eighth",
+      "01 First",
+      "06 Sixth",
+      "12 Twelfth",
+      "05 Fifth",
+      "10 Tenth",
+      "02 Second",
+      "09 Ninth",
+      "04 Fourth",
+      "07 Seventh",
+    ];
+    const captured = await Promise.all(
+      titles.map(async (title) => {
+        const response = await api.post("/api/items", {
+          title,
+          type: "article",
+        });
+        return response.body as Item;
+      }),
+    );
+    await api.post(`/api/stops/${stop.id}/items`, {
+      itemId: captured.find((item) => item.title === "05 Fifth")!.id,
+    });
+
+    const response = await api.get(`/api/stops/${stop.id}/items`);
+
+    expect(response.status).toBe(200);
+    expect(
+      (response.body as Array<{ title: string }>).map(({ title }) => title),
+    ).toEqual([
+      "01 First",
+      "02 Second",
+      "03 Third",
+      "04 Fourth",
+      "06 Sixth",
+      "07 Seventh",
+      "08 Eighth",
+      "09 Ninth",
+      "10 Tenth",
+      "11 Eleventh",
+    ]);
+  });
+
+  it("matches title text case-insensitively as a plain contains query", async () => {
+    const user = "placement-stop-intake-search";
+    const api = asUser(user);
+    const trail = (await api.post("/api/trails", { name: "Search Trail" }))
+      .body as Trail;
+    const stop = (
+      await api.post(`/api/trails/${trail.id}/stops`, { name: "Search Stop" })
+    ).body as Stop;
+    for (const title of [
+      "Learn CSS Grid",
+      "css architecture",
+      "Learn Rust",
+      "Percent % guide",
+    ]) {
+      await api.post("/api/items", { title, type: "article" });
+    }
+
+    const response = await api.get(
+      `/api/stops/${stop.id}/items?query=${encodeURIComponent("cSs")}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      (response.body as Array<{ title: string }>).map(({ title }) => title),
+    ).toEqual(["Learn CSS Grid", "css architecture"]);
+
+    const literalWildcard = await api.get(
+      `/api/stops/${stop.id}/items?query=${encodeURIComponent("%")}`,
+    );
+    expect(
+      (literalWildcard.body as Array<{ title: string }>).map(
+        ({ title }) => title,
+      ),
+    ).toEqual(["Percent % guide"]);
+  });
+
+  it("uses Item identity as the tie-breaker for equal titles", async () => {
+    const user = "placement-stop-intake-tie";
+    const api = asUser(user);
+    const stop = (await createStopFor(user, "Tied Results")).body as Stop;
+    const first = (
+      await api.post("/api/items", {
+        title: "Same title",
+        type: "video",
+      })
+    ).body as Item;
+    const second = (
+      await api.post("/api/items", {
+        title: "Same title",
+        type: "video",
+      })
+    ).body as Item;
+
+    const response = await api.get(`/api/stops/${stop.id}/items`);
+
+    const expectedIds =
+      first.id < second.id ? [first.id, second.id] : [second.id, first.id];
+    expect(
+      (response.body as Array<{ id: string }>).map(({ id }) => id),
+    ).toEqual(expectedIds);
+  });
+
+  it("returns only compact Item facts and the same-Trail conflict state", async () => {
+    const user = "placement-stop-intake-conflicts";
+    const api = asUser(user);
+    const currentTrail = (
+      await api.post("/api/trails", { name: "Current Trail" })
+    ).body as Trail;
+    const otherTrail = (await api.post("/api/trails", { name: "Other Trail" }))
+      .body as Trail;
+    const openStop = (
+      await api.post(`/api/trails/${currentTrail.id}/stops`, {
+        name: "Open Stop",
+      })
+    ).body as Stop;
+    const conflictingStop = (
+      await api.post(`/api/trails/${currentTrail.id}/stops`, {
+        name: "Earlier Stop",
+      })
+    ).body as Stop;
+    const otherTrailStop = (
+      await api.post(`/api/trails/${otherTrail.id}/stops`, {
+        name: "Elsewhere",
+      })
+    ).body as Stop;
+    const conflict = (
+      await api.post("/api/items", {
+        title: "Conflict Item",
+        type: "course",
+        source: "private source detail",
+      })
+    ).body as Item;
+    const available = (
+      await api.post("/api/items", {
+        title: "Other Trail Item",
+        type: "book",
+      })
+    ).body as Item;
+    await api.post(`/api/stops/${conflictingStop.id}/items`, {
+      itemId: conflict.id,
+    });
+    await api.post(`/api/stops/${otherTrailStop.id}/items`, {
+      itemId: available.id,
+    });
+
+    const response = await api.get(`/api/stops/${openStop.id}/items`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      {
+        kind: "conflict",
+        id: conflict.id,
+        title: "Conflict Item",
+        type: "course",
+        stop: { id: conflictingStop.id, name: "Earlier Stop" },
+      },
+      {
+        kind: "available",
+        id: available.id,
+        title: "Other Trail Item",
+        type: "book",
+      },
+    ]);
+  });
+
+  it("keeps malformed, missing, foreign, and unauthenticated Stops private", async () => {
+    const owner = "placement-stop-intake-owner";
+    const intruder = "placement-stop-intake-intruder";
+    const stop = (await createStopFor(owner, "Private Stop")).body as Stop;
+
+    expect(
+      (await asUser(owner).get("/api/stops/not-a-stop/items")).status,
+    ).toBe(400);
+    expect(
+      (
+        await asUser(owner).get(
+          "/api/stops/00000000-0000-0000-0000-000000000000/items",
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (await asUser(intruder).get(`/api/stops/${stop.id}/items`)).status,
+    ).toBe(404);
+    expect((await request(app).get(`/api/stops/${stop.id}/items`)).status).toBe(
+      401,
+    );
+    expect(
+      (await asUser(owner).get(`/api/stops/${stop.id}/items?unexpected=value`))
+        .status,
+    ).toBe(400);
+  });
+});
+
+async function createStopFor(user: string, name: string) {
+  const api = asUser(user);
+  const trail = (await api.post("/api/trails", { name: `${name} Trail` }))
+    .body as Trail;
+  return api.post(`/api/trails/${trail.id}/stops`, { name });
+}

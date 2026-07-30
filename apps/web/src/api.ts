@@ -14,6 +14,7 @@ import type {
   Stop,
   StopDetail,
   StopId,
+  StopItemCandidate,
   Trail,
   TrailId,
   TrailView,
@@ -226,6 +227,21 @@ export async function addItemToStop(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/** Search the compact Library intake beneath one open Stop. */
+export async function fetchStopItemCandidates(
+  user: CurrentUser,
+  stopId: StopId,
+  query: string,
+): Promise<StopItemCandidate[]> {
+  const search = new URLSearchParams();
+  if (query) search.set("query", query);
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return requestJson<StopItemCandidate[]>(
+    user,
+    `/api/stops/${stopId}/items${suffix}`,
+  );
 }
 
 /**

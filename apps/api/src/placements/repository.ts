@@ -1,8 +1,9 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, notExists, sql } from "drizzle-orm";
 import type {
   ItemId,
   ItemPlacementCatalog,
   ItemPlacementTrail,
+  StopItemCandidate,
   StopDetail,
   StopId,
   TrailId,
@@ -21,6 +22,9 @@ interface PlaceItemInStopInput {
   stopId: StopId;
   itemId: ItemId;
 }
+
+const escapeLikePattern = (value: string) =>
+  value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
 /**
  * Read every owned Trail exactly once for one owned Item.
@@ -86,6 +90,91 @@ export async function getItemPlacementCatalog(
   });
 
   return { itemId: input.itemId, trails: catalogTrails };
+}
+
+/**
+ * Search the owned Library beneath one owned Stop.
+ *
+ * Current members are absent because the Stop renders them above this intake.
+ * The capped result is presentation-ordered by title and stable Item identity.
+ */
+export async function searchStopItemCandidates(
+  db: Database,
+  input: { userId: UserId; stopId: StopId; query: string },
+): Promise<StopItemCandidate[] | null> {
+  const [destination] = await db
+    .select({ trailId: stops.trailId })
+    .from(stops)
+    .where(and(eq(stops.id, input.stopId), eq(stops.userId, input.userId)))
+    .limit(1);
+  if (!destination) return null;
+
+  const currentMembership = db
+    .select({ itemId: stopItems.itemId })
+    .from(stopItems)
+    .where(
+      and(
+        eq(stopItems.stopId, input.stopId),
+        eq(stopItems.itemId, items.id),
+        eq(stopItems.userId, input.userId),
+      ),
+    );
+  const predicates = [
+    eq(items.userId, input.userId),
+    notExists(currentMembership),
+  ];
+  if (input.query) {
+    predicates.push(ilike(items.title, `%${escapeLikePattern(input.query)}%`));
+  }
+
+  const candidates = await db
+    .select({ id: items.id, title: items.title, type: items.type })
+    .from(items)
+    .where(and(...predicates))
+    .orderBy(asc(items.title), asc(items.id))
+    .limit(10);
+  if (candidates.length === 0) return [];
+
+  const conflicts = await db
+    .select({
+      itemId: stopItems.itemId,
+      stopId: stops.id,
+      stopName: stops.name,
+    })
+    .from(stopItems)
+    .innerJoin(stops, eq(stops.id, stopItems.stopId))
+    .where(
+      and(
+        eq(stopItems.userId, input.userId),
+        eq(stopItems.trailId, destination.trailId),
+        inArray(
+          stopItems.itemId,
+          candidates.map(({ id }) => id),
+        ),
+      ),
+    );
+  const conflictByItem = new Map(
+    conflicts.map((conflict) => [conflict.itemId, conflict]),
+  );
+
+  return candidates.map((candidate) => {
+    const conflict = conflictByItem.get(candidate.id);
+    return conflict
+      ? {
+          kind: "conflict",
+          ...candidate,
+          id: candidate.id as ItemId,
+          stop: {
+            id: conflict.stopId as StopId,
+            name: conflict.stopName,
+          },
+        }
+      : {
+          kind: "available",
+          ...candidate,
+          id: candidate.id as ItemId,
+        };
+  });
 }
 
 /**

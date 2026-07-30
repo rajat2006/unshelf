@@ -46,6 +46,10 @@ export const addStopItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
+export const stopItemSearchQuerySchema = z.strictObject({
+  query: z.string().optional(),
+});
+
 export const createStopWithItemRequestSchema = z.strictObject({
   trailId: trailIdSchema,
   name: nameSchema,
@@ -67,6 +71,7 @@ export type CreateLabelRequest = z.infer<typeof createLabelRequestSchema>;
 export type CreateStopRequest = z.infer<typeof createStopRequestSchema>;
 export type CreateTrailRequest = z.infer<typeof createTrailRequestSchema>;
 export type AddStopItemRequest = z.infer<typeof addStopItemRequestSchema>;
+export type StopItemSearchQuery = z.infer<typeof stopItemSearchQuerySchema>;
 export type CreateStopWithItemRequest = z.infer<
   typeof createStopWithItemRequestSchema
 >;

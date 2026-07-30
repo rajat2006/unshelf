@@ -2,11 +2,16 @@ import { Router, type RequestHandler } from "express";
 import {
   addStopItemRequestSchema,
   itemIdSchema,
+  stopItemSearchQuerySchema,
   stopIdSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import { placeItemInStop, removeItemFromStop } from "../placements/repository";
+import {
+  placeItemInStop,
+  removeItemFromStop,
+  searchStopItemCandidates,
+} from "../placements/repository";
 import { getStop, listStops } from "./repository";
 
 /**
@@ -89,6 +94,30 @@ export function createStopsRouter(
           });
           return;
       }
+    },
+  );
+
+  router.get(
+    "/:stopId/items",
+    validateRequest(
+      {
+        params: { stopId: stopIdSchema },
+        query: stopItemSearchQuerySchema,
+      },
+      "invalid_stop_item_search",
+    ),
+    async (req, res) => {
+      const { params, query } = res.locals.validated;
+      const results = await searchStopItemCandidates(db, {
+        userId: req.user!.id,
+        stopId: params.stopId,
+        query: query.query ?? "",
+      });
+      if (!results) {
+        res.status(404).json({ error: "stop not found" });
+        return;
+      }
+      res.json(results);
     },
   );
 

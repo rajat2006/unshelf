@@ -214,6 +214,22 @@ export interface ItemPlacementCatalog {
   trails: ItemPlacementTrail[];
 }
 
+/** One compact Library result offered while filling an open Stop. */
+export type StopItemCandidate =
+  | {
+      kind: "available";
+      id: ItemId;
+      title: string;
+      type: Type;
+    }
+  | {
+      kind: "conflict";
+      id: ItemId;
+      title: string;
+      type: Type;
+      stop: PlacementStop;
+    };
+
 /**
  * A first-class Trail — one User's learning journey, owning a canvas of Stops and
  * forks (ADR-0014, CONTEXT.md *Trail*). A User owns *many* Trails, each with an
