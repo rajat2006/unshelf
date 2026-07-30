@@ -31,10 +31,14 @@ The full workspace must have been installed before typed ESLint runs.
 ### Compatibility
 
 - Husky `9.1.7` supports Node 18 and newer.
-- lint-staged `17.2.0` was rejected because it requires Node `22.22.1`, while
-  Unshelf promises Node `22.13` and newer.
-- lint-staged `16.4.0` supports Node `20.17` and newer and works with pnpm
-  `11.12.0`, so it is the compatible candidate.
+- The initial lint-staged `17.2.0` rejection was solely a mismatch with
+  Unshelf's former Node `>=22.13` floor: lint-staged 17 requires Node
+  `>=22.22.1`.
+- Unshelf's candidate runtime is now Node `>=24`, using the latest LTS line in
+  package metadata, GitHub Actions, and production Docker builds.
+- lint-staged `17.2.0` passed the same staged-file, partial-staging, failure
+  rollback, and multi-workspace probes under Node `24.18.0`. It supersedes the
+  temporary `16.4.0` choice.
 - An ordinary fresh `pnpm install` ran the CI-aware `prepare` script, set
   `core.hooksPath` to `.husky/_`, and installed the hook automatically.
 - A fresh install with `CI=true` completed without setting `core.hooksPath` or
@@ -64,24 +68,24 @@ The full workspace must have been installed before typed ESLint runs.
 
 ### Timings
 
-Measured on the local prototype:
+Measured on the local prototype. The first group is the final lint-staged
+`17.2.0` candidate running on Node `24.18.0`; the remaining environment and
+Git-native timings came from the initial compatibility probe.
 
 | Scenario | Wall time |
 | --- | ---: |
-| Configuration-only staged commit, first run | 2.22 s |
-| One staged shared TypeScript file | 2.03 s |
-| Partially staged TypeScript file | 1.69 s |
-| Three TypeScript files across API, web, and shared, cold | 5.21 s |
-| Same three-workspace shape, warm | 3.08 s |
-| Expected ESLint failure | 1.28 s |
+| lint-staged 17: one staged shared TypeScript file | 1.94 s |
+| lint-staged 17: partially staged TypeScript file | 1.86 s |
+| lint-staged 17: API, web, and shared TypeScript files | 3.37 s |
+| lint-staged 17: expected ESLint failure and rollback | 1.76 s |
+| Initial configuration-only staged commit | 2.22 s |
 | Expected Git conflict-marker failure | 0.32 s |
 | Valid commit with lint-staged unavailable | 0.09 s |
 | Explicit `--no-verify` bypass | 0.05 s |
 | Worktree with no generated hook or dependencies | 0.02 s |
 
-The ordinary one-file path is comfortably below five seconds. A cold commit
-spanning all three product workspaces is approximately at the five-second
-budget, while the warm run is below it.
+The ordinary one-file path and the measured three-workspace path are below the
+five-second budget.
 
 ### Important setup finding
 
