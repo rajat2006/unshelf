@@ -20,7 +20,7 @@
     "lint": "turbo run lint --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "lint:fix": "turbo run lint:fix --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "prepare": "node .husky/install.mjs",
-    "prototype:pre-commit": "lint-staged --concurrent false && git diff --cached --check",
+    "prototype:pre-commit": "lint-staged --concurrent false --hide-unstaged && git diff --cached --check",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },

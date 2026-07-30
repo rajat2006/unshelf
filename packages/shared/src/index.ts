@@ -1,4 +1,3 @@
-// PROTOTYPE: staged file while another tracked file has unstaged invalid syntax.
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
  * ends can never drift. In v1 this holds the walking-skeleton health contract,

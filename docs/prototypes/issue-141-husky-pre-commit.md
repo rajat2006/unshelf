@@ -16,4 +16,84 @@ snapshot.
 
 ## Results
 
-Missing-dependency probe marker.
+### Verdict
+
+The candidate is viable with a staged-only contract:
+
+1. hide all unstaged tracked changes;
+2. run typed ESLint with fixes on staged product TypeScript and TSX;
+3. run Prettier on all staged files, respecting `.prettierignore`;
+4. run `git diff --cached --check` against the resulting index.
+
+ESLint and Prettier must run serially because both can edit a TypeScript file.
+The full workspace must have been installed before typed ESLint runs.
+
+### Compatibility
+
+- Husky `9.1.7` supports Node 18 and newer.
+- lint-staged `17.2.0` was rejected because it requires Node `22.22.1`, while
+  Unshelf promises Node `22.13` and newer.
+- lint-staged `16.4.0` supports Node `20.17` and newer and works with pnpm
+  `11.12.0`, so it is the compatible candidate.
+- An ordinary fresh `pnpm install` ran the CI-aware `prepare` script, set
+  `core.hooksPath` to `.husky/_`, and installed the hook automatically.
+- A fresh install with `CI=true` completed without setting `core.hooksPath` or
+  creating `.husky/_`. This is also the GitHub Actions/Sandcastle path.
+
+### Behavior
+
+- ESLint changed a staged `let` to `const`; Prettier then normalized the final
+  layout and lint-staged updated the index.
+- A file with both staged and unstaged edits committed only the staged edit,
+  while the unstaged edit was restored byte-for-byte.
+- `--hide-unstaged` also hid deliberately invalid changes in a different
+  tracked file while the staged file was checked, so typed lint evaluated the
+  intended tracked snapshot instead of unrelated work.
+- A deliberate ESLint error blocked the commit and lint-staged restored the
+  original index and worktree.
+- A conflict marker in ignored Markdown passed through Prettier but was blocked
+  by `git diff --cached --check`.
+- `git commit --no-verify` bypassed the hook successfully.
+- In a worktree whose Husky launcher existed but whose dependencies were
+  unavailable, the hook warned, skipped lint-staged, still ran the Git-native
+  check, and allowed a clean commit.
+- A separate worktree with neither dependencies nor the generated Husky
+  launcher committed normally despite the repository-wide `core.hooksPath`.
+  Such a worktree receives no hook feedback until it runs `pnpm install`, but it
+  is not blocked.
+
+### Timings
+
+Measured on the local prototype:
+
+| Scenario | Wall time |
+| --- | ---: |
+| Configuration-only staged commit, first run | 2.22 s |
+| One staged shared TypeScript file | 2.03 s |
+| Partially staged TypeScript file | 1.69 s |
+| Three TypeScript files across API, web, and shared, cold | 5.21 s |
+| Same three-workspace shape, warm | 3.08 s |
+| Expected ESLint failure | 1.28 s |
+| Expected Git conflict-marker failure | 0.32 s |
+| Valid commit with lint-staged unavailable | 0.09 s |
+| Explicit `--no-verify` bypass | 0.05 s |
+| Worktree with no generated hook or dependencies | 0.02 s |
+
+The ordinary one-file path is comfortably below five seconds. A cold commit
+spanning all three product workspaces is approximately at the five-second
+budget, while the warm run is below it.
+
+### Important setup finding
+
+Typed ESLint produced cascading unresolved-type errors when only the root hook
+tools were linked and the product workspace dependencies were absent. A complete
+root `pnpm install` resolved the same staged files cleanly. The implementation
+must therefore:
+
+- install the complete workspace before accepting timing or lint results;
+- avoid `pnpm exec` inside the hook because pnpm may attempt an interactive
+  repair of an incomplete installation;
+- call the already-installed `lint-staged` binary from Husky's augmented
+  `PATH`; and
+- warn and fall back to the Git-native staged check when the hook tool is
+  unavailable.
