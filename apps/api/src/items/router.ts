@@ -9,8 +9,11 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import { getItemPlacementCatalog } from "../placements/repository";
-import { createStopWithItem } from "../placements/service";
+import { respondToPlacementFailure } from "../placements/http";
+import {
+  createStopWithItem,
+  getItemPlacementCatalog,
+} from "../placements/service";
 import {
   createItem,
   applyLabelToItem,
@@ -77,20 +80,15 @@ export function createItemsRouter(
         itemId: params.itemId,
         placement: body,
       });
-      if (result.ok) {
-        res.status(201).json(result.stop);
+      if (!result.ok) {
+        respondToPlacementFailure({
+          response: res,
+          failure: result,
+          notFoundMessage: "item or trail not found",
+        });
         return;
       }
-      switch (result.error) {
-        case "not_found":
-          res.status(404).json({ error: "item or trail not found" });
-          return;
-        case "conflict":
-          res.status(409).json({
-            error: "item already placed on this trail",
-          });
-          return;
-      }
+      res.status(201).json(result.stop);
     },
   );
 

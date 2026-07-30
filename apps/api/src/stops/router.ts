@@ -7,11 +7,12 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
+import { respondToPlacementFailure } from "../placements/http";
 import {
   placeItemInStop,
   removeItemFromStop,
   searchStopItemCandidates,
-} from "../placements/repository";
+} from "../placements/service";
 import { getStop, listStops } from "./repository";
 
 /**
@@ -80,20 +81,15 @@ export function createStopsRouter(
         stopId: params.stopId,
         itemId: body.itemId,
       });
-      if (result.ok) {
-        res.json(result.stop);
+      if (!result.ok) {
+        respondToPlacementFailure({
+          response: res,
+          failure: result,
+          notFoundMessage: "stop or item not found",
+        });
         return;
       }
-      switch (result.error) {
-        case "not_found":
-          res.status(404).json({ error: "stop or item not found" });
-          return;
-        case "conflict":
-          res.status(409).json({
-            error: "item already placed on this trail",
-          });
-          return;
-      }
+      res.json(result.stop);
     },
   );
 
