@@ -313,9 +313,30 @@ export function TrailCanvas({
             </svg>
 
             {sequencedNodes.length === 0 && (
-              <p className="trail-canvas__empty">
-                Sequence a Stop to place it on the canvas.
-              </p>
+              <div
+                className="trail-canvas__empty"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <p>Sequence a Stop to place it on the canvas.</p>
+                {!readOnly &&
+                  (draft?.from === null ? (
+                    <DraftForm
+                      busy={busy}
+                      placeholder="Name another stop"
+                      onCancel={() => setDraft(null)}
+                      onSubmit={(name) => void createAndLink(name, null)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="quiet-button"
+                      onClick={() => setDraft({ from: null, mode: "start" })}
+                    >
+                      ＋ Add another Stop
+                    </button>
+                  ))}
+              </div>
             )}
 
             {g.placed.map((p) => {

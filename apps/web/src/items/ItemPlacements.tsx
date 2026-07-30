@@ -47,7 +47,9 @@ export function ItemPlacements({
   } | null>(null);
 
   const load = useCallback(async () => {
-    setCatalog(await fetchItemPlacements(user, itemId));
+    const nextCatalog = await fetchItemPlacements(user, itemId);
+    setCatalog(nextCatalog);
+    return nextCatalog;
   }, [itemId, user]);
 
   useEffect(() => {
@@ -56,13 +58,19 @@ export function ItemPlacements({
     setRetryAction(null);
     void load().catch((caught: unknown) => {
       setError(String(caught));
-      setRetryAction(() => load);
+      setRetryAction(() => async () => {
+        await load();
+      });
     });
   }, [load]);
 
   const runPlacementMutation = async (
     action: () => Promise<void>,
-    options: { reconcileAfterFailure?: boolean } = {},
+    options: {
+      retryStillAppliesAfterReconciliation?: (
+        reconciled: ItemPlacementCatalog,
+      ) => boolean;
+    } = {},
   ) => {
     setBusy(true);
     setError(null);
@@ -71,14 +79,15 @@ export function ItemPlacements({
       await action();
     } catch (caught: unknown) {
       setError(String(caught));
-      setRetryAction(() => action);
-      if (options.reconcileAfterFailure !== false) {
-        try {
-          await load();
-        } catch {
-          // Preserve the mutation failure as the local action the User can retry.
-        }
+      let retryStillApplies = true;
+      try {
+        const reconciled = await load();
+        retryStillApplies =
+          options.retryStillAppliesAfterReconciliation?.(reconciled) ?? true;
+      } catch {
+        // Preserve the mutation failure as the local action the User can retry.
       }
+      setRetryAction(retryStillApplies ? () => action : null);
     } finally {
       setBusy(false);
     }
@@ -127,10 +136,17 @@ export function ItemPlacements({
           await load();
         } catch (caught: unknown) {
           setError(`Could not refresh Trail placements: ${String(caught)}`);
-          setRetryAction(() => load);
+          setRetryAction(() => async () => {
+            await load();
+          });
         }
       },
-      { reconcileAfterFailure: false },
+      {
+        retryStillAppliesAfterReconciliation: (reconciled) =>
+          reconciled.trails.some(
+            (state) => state.trail.id === trailId && state.kind === "available",
+          ),
+      },
     );
 
   if (!catalog) {
