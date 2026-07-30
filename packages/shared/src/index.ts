@@ -284,5 +284,5 @@ export interface HealthResponse {
   time: string;
 }
 
-const prototypeHookProbe = "staged";
+const prototypeHookProbe = "partial stage";
 export { prototypeHookProbe };
