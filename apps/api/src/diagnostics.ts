@@ -219,10 +219,11 @@ function redactString(value: string, secrets: readonly string[]): string {
     /\b(Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi,
     `$1: ${REDACTED}`,
   );
-  return redacted.replace(
-    /\b(password|passphrase|access_token|refresh_token|session_token|api_key|secret_key|client_secret)\s*([=:])\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
+  redacted = redacted.replace(
+    /\b(password|passphrase|(?:access|refresh|session|bearer)[\s_-]*token|token|api[\s_-]*key|secret[\s_-]*key|client[\s_-]*secret|cookies?|set[\s_-]*cookie|clerk[\s_-]*user[\s_-]*id)\s*([=:])\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
     `$1$2${REDACTED}`,
   );
+  return redacted.replace(CLERK_USER_ID_PATTERN, REDACTED);
 }
 
 function sanitizeUrl(candidate: string): string {
@@ -253,6 +254,9 @@ function isCredentialKey(key: string): boolean {
     normalized === "cookie" ||
     normalized === "cookies" ||
     normalized === "setcookie" ||
+    normalized === "clerkuserid" ||
+    normalized === "externaluserid" ||
+    normalized === "externalidentityid" ||
     normalized === "authentication" ||
     normalized === "auth" ||
     normalized.includes("credential") ||
@@ -293,3 +297,5 @@ function normalizeKey(key: string): string {
 
 const URL_PATTERN =
   /\b(?:https?|postgres(?:ql)?):\/\/[^\s<>"'`]+/gi;
+const CLERK_USER_ID_PATTERN =
+  /\buser_(?=[A-Za-z0-9]{12,}\b)(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+\b/g;

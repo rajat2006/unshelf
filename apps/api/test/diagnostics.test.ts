@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { serializeFailure } from "../src/diagnostics";
+import {
+  serializeDiagnosticValue,
+  serializeFailure,
+} from "../src/diagnostics";
 
 describe("failure diagnostics", () => {
   it("retains five nested Error causes and safely represents non-Error throws", () => {
@@ -135,6 +138,37 @@ describe("failure diagnostics", () => {
     expect(rendered).toContain("keep this value");
     expect(rendered).toContain("safe-cause");
     expect(rendered).toContain("typescript");
+    expect(rendered).toContain("[REDACTED]");
+  });
+
+  it("removes embedded credential aliases and external Clerk identities", () => {
+    const clerkUserId = "user_2ZxYwV9876543210";
+    const diagnostics = serializeDiagnosticValue({
+      message: [
+        "retained-business-context",
+        "bearer_token=inline-bearer-sentinel",
+        "token=inline-token-sentinel",
+        "cookie=inline-cookie-sentinel",
+        "apiKey=inline-api-key-sentinel",
+        "secret-key=inline-secret-key-sentinel",
+        `related external identity ${clerkUserId}`,
+      ].join(" "),
+      clerkUserId: "structured-clerk-id-sentinel",
+    });
+    const rendered = JSON.stringify(diagnostics);
+
+    for (const sentinel of [
+      "inline-bearer-sentinel",
+      "inline-token-sentinel",
+      "inline-cookie-sentinel",
+      "inline-api-key-sentinel",
+      "inline-secret-key-sentinel",
+      clerkUserId,
+      "structured-clerk-id-sentinel",
+    ]) {
+      expect(rendered).not.toContain(sentinel);
+    }
+    expect(rendered).toContain("retained-business-context");
     expect(rendered).toContain("[REDACTED]");
   });
 
