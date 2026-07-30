@@ -1,4 +1,3 @@
-// PROTOTYPE: lint-staged 17 multi-workspace timing.
 import { z } from "zod";
 import type { ItemId, LabelId, StopId, TrailId, UserId } from "./index";
 import { Status, Type } from "./index";

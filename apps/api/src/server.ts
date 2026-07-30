@@ -1,4 +1,3 @@
-// PROTOTYPE: lint-staged 17 multi-workspace timing.
 import { createApp } from "./app";
 import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./middleware/auth";
