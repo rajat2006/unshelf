@@ -6,12 +6,8 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import {
-  addItemToStop,
-  getStop,
-  listStops,
-  removeItemFromStop,
-} from "./repository";
+import { placeItemInStop } from "../placements/repository";
+import { getStop, listStops, removeItemFromStop } from "./repository";
 
 /**
  * Mount the authenticated Stop HTTP interface at `/api/stops`.
@@ -46,9 +42,12 @@ export function createStopsRouter(
 
   router.get(
     "/:stopId",
-    validateRequest({
-      params: { stopId: stopIdSchema },
-    }, "invalid_stop_name"),
+    validateRequest(
+      {
+        params: { stopId: stopIdSchema },
+      },
+      "invalid_stop_name",
+    ),
     async (req, res) => {
       const { params } = res.locals.validated;
       const stop = await getStop(db, req.user!.id, params.stopId);
@@ -62,31 +61,44 @@ export function createStopsRouter(
 
   router.post(
     "/:stopId/items",
-    validateRequest({
-      body: addStopItemRequestSchema,
-      params: { stopId: stopIdSchema },
-    }, "missing_item_id"),
+    validateRequest(
+      {
+        body: addStopItemRequestSchema,
+        params: { stopId: stopIdSchema },
+      },
+      "missing_item_id",
+    ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const stop = await addItemToStop(
-        db,
-        req.user!.id,
-        params.stopId,
-        body.itemId,
-      );
-      if (!stop) {
-        res.status(404).json({ error: "stop or item not found" });
-        return;
+      const result = await placeItemInStop(db, {
+        userId: req.user!.id,
+        stopId: params.stopId,
+        itemId: body.itemId,
+      });
+      switch (result.kind) {
+        case "not_found":
+          res.status(404).json({ error: "stop or item not found" });
+          return;
+        case "conflict":
+          res.status(409).json({
+            error: "item already placed on this trail",
+          });
+          return;
+        case "ok":
+          res.json(result.stop);
+          return;
       }
-      res.json(stop);
     },
   );
 
   router.delete(
     "/:stopId/items/:itemId",
-    validateRequest({
-      params: { stopId: stopIdSchema, itemId: itemIdSchema },
-    }, "missing_item_id"),
+    validateRequest(
+      {
+        params: { stopId: stopIdSchema, itemId: itemIdSchema },
+      },
+      "missing_item_id",
+    ),
     async (req, res) => {
       const { params } = res.locals.validated;
       const stop = await removeItemFromStop(

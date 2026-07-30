@@ -21,7 +21,8 @@ course, YouTube playlist, or (offline) book — added by hand: paste a link or t
 a title. Referenced, not copied: one Item can appear in many Stops, but they all
 point at the single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capture the same link twice and you
-have two Items (v1 does not dedupe).
+have two Items (v1 does not dedupe). An Item may appear in Stops on several
+Trails, but at most once on any one Trail.
 _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:

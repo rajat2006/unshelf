@@ -2,16 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 import { Type } from "@unshelf/shared";
 import { testApi, testAppUrl } from "./test-helpers";
 
-async function seedTrailStop(page: Page, user: string, name: string) {
-  const trail = (await (
-    await testApi(page, user, "/api/trails", "POST", { name: `${name} Trail` })
-  ).json()) as { id: string };
-  const stop = (await (
-    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", { name })
-  ).json()) as { id: string; name: string };
-  return { ...stop, trailId: trail.id };
-}
-
 async function seedLabelledItem(
   page: Page,
   user: string,
@@ -29,13 +19,11 @@ async function seedLabelledItem(
   return { item, label };
 }
 
-test("the Library triages one shared Item across Status, Target date, and Stops", async ({
+test("the Library triages one shared Item across Status and Target date", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-library-triage`;
   const foreignUser = `${user}-foreign`;
-  const firstStop = await seedTrailStop(page, user, "Foundations");
-  const secondStop = await seedTrailStop(page, user, "Practice");
   const item = (await (
     await testApi(page, user, "/api/items", "POST", {
       title: "Shared TypeScript handbook",
@@ -73,30 +61,6 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
   await expect(pastTarget).toBeVisible();
   await expect(pastTarget).toHaveCSS("color", "rgb(118, 124, 136)");
 
-  const placement = page.getByRole("group", {
-    name: "Stop placement for Shared TypeScript handbook",
-  });
-  await expect(placement.getByText("Not in a Stop")).toBeVisible();
-
-  const stopPicker = page.getByLabel(
-    "Add Shared TypeScript handbook to a Stop",
-  );
-  await stopPicker.selectOption(firstStop.id);
-  await expect(
-    placement.getByText(firstStop.name, { exact: true }),
-  ).toBeVisible();
-  await stopPicker.selectOption(secondStop.id);
-  await expect(
-    placement.getByText(secondStop.name, { exact: true }),
-  ).toBeVisible();
-
-  await testApi(page, user, `/api/stops/${firstStop.id}/items`, "POST", {
-    itemId: item.id,
-  });
-  await expect(
-    placement.getByText(firstStop.name, { exact: true }),
-  ).toHaveCount(1);
-
   await status.getByRole("button", { name: "Done" }).click();
   await expect(pastTarget).toHaveCount(0);
   await expect(
@@ -120,33 +84,11 @@ test("the Library triages one shared Item across Status, Target date, and Stops"
     }),
   ]);
 
-  for (const stop of [firstStop, secondStop]) {
-    const detail = (await (
-      await testApi(page, user, `/api/stops/${stop.id}`)
-    ).json()) as { items: Array<{ id: string }> };
-    expect(detail.items.map((member) => member.id)).toEqual([item.id]);
-  }
-
   const widths = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
     page: document.documentElement.scrollWidth,
   }));
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
-
-  await page.goto(
-    testAppUrl(`/trails/${firstStop.trailId}/stops/${firstStop.id}`, user),
-  );
-  const stopSidebar = page.getByRole("complementary", {
-    name: `${firstStop.name} details`,
-  });
-  await expect(
-    stopSidebar
-      .getByRole("group", { name: "Status for Shared TypeScript handbook" })
-      .getByRole("button", { name: "Done" }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    stopSidebar.getByLabel("Target date for Shared TypeScript handbook"),
-  ).toHaveValue("2000-01-01");
 });
 
 test("a Library Item applies and removes provisioned private Labels by keyboard", async ({

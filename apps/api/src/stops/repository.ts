@@ -152,45 +152,6 @@ async function listItemsIn(
 }
 
 /**
- * Pull an Item into a Stop, returning the Stop's new contents — or null when
- * either end is not this User's.
- *
- * The insert selects both ends under a single `user_id`, which is what makes
- * membership incapable of crossing tenants: there is no pairing of a Stop and an
- * Item belonging to different Users that this statement can write, so neither
- * "add my Item to your Stop" nor "add your Item to my Stop" has a code path.
- *
- * `ON CONFLICT` makes a repeat add a no-op — membership is a set, so adding an
- * Item already in the Stop is a request for a state that already holds, not an
- * error. The no-op `DO UPDATE` (rather than `DO NOTHING`) is what makes the
- * distinction we actually need visible: it returns a row for the already-a-member
- * case, so an empty result means one and only one thing — a Stop or Item this
- * User does not have, which is the 404.
- */
-export async function addItemToStop(
-  db: Database,
-  userId: UserId,
-  stopId: StopId,
-  itemId: ItemId,
-): Promise<StopDetail | null> {
-  const ownedMembership = db
-    .select({ userId: stops.userId, stopId: stops.id, itemId: items.id })
-    .from(stops)
-    .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
-    .where(and(eq(stops.id, stopId), eq(stops.userId, userId)));
-  const rows = await db
-    .insert(stopItems)
-    .select(ownedMembership)
-    .onConflictDoUpdate({
-      target: [stopItems.stopId, stopItems.itemId],
-      set: { userId },
-    })
-    .returning({ stopId: stopItems.stopId });
-  if (rows.length === 0) return null;
-  return getStop(db, userId, stopId);
-}
-
-/**
  * Remove an Item from a Stop, returning the Stop's new contents — or null when
  * the Stop is not this User's.
  *

@@ -18,6 +18,7 @@ export function ItemSurface() {
   const navigate = useNavigate();
   const user = useCurrentUser();
   const [changedItems, setChangedItems] = useState<Record<string, Item>>({});
+  const [placementVersion, setPlacementVersion] = useState(0);
   const recordItemChange = useCallback((changed: Item) => {
     setChangedItems((current) => ({ ...current, [changed.id]: changed }));
   }, []);
@@ -37,9 +38,9 @@ export function ItemSurface() {
       {backgroundLocation ? (
         backgroundTrailId ? (
           <TrailSurface
-            key={
+            key={`${
               changedItem ? `${changedItem.id}:${changedItem.status}` : "trail"
-            }
+            }:${placementVersion}`}
             trailId={backgroundTrailId}
           />
         ) : (
@@ -68,6 +69,9 @@ export function ItemSurface() {
           user={user}
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
+          onPlacementChanged={() =>
+            setPlacementVersion((current) => current + 1)
+          }
           onClose={() => {
             void (backgroundLocation ? navigate(-1) : navigate("/library"));
           }}

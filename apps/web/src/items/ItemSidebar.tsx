@@ -5,6 +5,7 @@ import type { CurrentUser } from "../application-auth/types";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { ItemSource } from "./ItemSource";
+import { ItemPlacements } from "./ItemPlacements";
 import { TYPE_LABELS } from "./presentation";
 
 interface ItemSidebarProps {
@@ -13,6 +14,7 @@ interface ItemSidebarProps {
   itemOverride?: Item;
   onClose: () => void;
   onItemChanged?: (item: Item) => void;
+  onPlacementChanged?: () => void;
 }
 
 /** Route-owned canonical Item detail, isolated from the live surface beside it. */
@@ -22,6 +24,7 @@ export function ItemSidebar({
   itemOverride,
   onClose,
   onItemChanged,
+  onPlacementChanged,
 }: ItemSidebarProps) {
   const [item, setItem] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +95,11 @@ export function ItemSidebar({
             item={visibleItem}
             user={user}
             onChanged={replaceItem}
+          />
+          <ItemPlacements
+            itemId={visibleItem.id}
+            user={user}
+            onChanged={onPlacementChanged}
           />
           {visibleItem.source && <ItemSource source={visibleItem.source} />}
         </div>

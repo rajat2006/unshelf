@@ -6,6 +6,7 @@ import type {
   CreateTrailRequest,
   Item,
   ItemId,
+  ItemPlacementCatalog,
   Label,
   LabelId,
   Status,
@@ -51,6 +52,17 @@ export async function fetchItem(
   itemId: ItemId,
 ): Promise<Item> {
   return requestJson<Item>(user, `/api/items/${itemId}`);
+}
+
+/** Every Trail represented once for placement from one Item's sidebar. */
+export async function fetchItemPlacements(
+  user: CurrentUser,
+  itemId: ItemId,
+): Promise<ItemPlacementCatalog> {
+  return requestJson<ItemPlacementCatalog>(
+    user,
+    `/api/items/${itemId}/placements`,
+  );
 }
 
 /** Capture an Item — the one uniform insert (ADR-0007). Returns the new Item. */
@@ -186,8 +198,8 @@ export async function fetchTrailStop(
 }
 
 /**
- * Pull an Item from All into a Stop — a reference, never a copy, so the Item
- * stays in All and in any other Stop. Returns the Stop's new contents.
+ * Place an Item into a Stop — a reference, never a copy, so the Item stays in
+ * the Library. It may appear on several Trails, but only once on each Trail.
  */
 export async function addItemToStop(
   user: CurrentUser,
