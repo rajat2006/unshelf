@@ -1,0 +1,360 @@
+/* PROTOTYPE — throwaway styling. Ticket #219, map #211. */
+
+.loose-proto-page {
+  max-width: 88rem;
+}
+
+.loose-proto-page-heading {
+  max-width: 72rem;
+}
+
+.loose-proto-page-heading h1 {
+  max-width: 48rem;
+  margin-top: var(--space-2);
+  letter-spacing: -0.025em;
+}
+
+.loose-proto-eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.loose-proto-scenario {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  margin-top: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.loose-proto-scenario > span {
+  padding-left: var(--space-2);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.loose-proto-scenario > div {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.loose-proto-scenario button {
+  min-width: 44px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.loose-proto-scenario button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.loose-proto-frame {
+  margin-top: var(--space-6);
+}
+
+.loose-proto-layout:not(.trail-detail-layout) {
+  display: block;
+}
+
+.loose-proto-trail-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.loose-proto-trail-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.015em;
+}
+
+.loose-proto-saved {
+  color: var(--done);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.loose-proto-canvas {
+  height: var(--trail-height, 560px);
+  min-height: 22rem;
+}
+
+.loose-proto-waypoint {
+  z-index: 2;
+}
+
+.loose-proto-waypoint.is-selected .trail-medallion__ring,
+.loose-proto-waypoint.is-selected .trail-seal {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.loose-proto-waypoint .trail-authoring-row {
+  gap: 2px;
+}
+
+.loose-proto-waypoint .trail-icon-button {
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 0.8rem;
+}
+
+.loose-proto-link-target {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.loose-proto-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-2);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.loose-proto-state strong {
+  color: var(--ink);
+}
+
+.loose-proto-sidebar {
+  position: sticky;
+  top: var(--space-4);
+}
+
+.loose-proto-sidebar-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.loose-proto-sidebar-heading h2 {
+  margin: 0;
+}
+
+.loose-proto-sidebar-section {
+  padding: var(--space-5) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.loose-proto-sidebar-section h3 {
+  margin: 0 0 var(--space-3);
+  font-size: 0.82rem;
+}
+
+.loose-proto-sidebar-section ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.loose-proto-sidebar-section li {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.loose-proto-sequence-action {
+  padding-top: var(--space-5);
+}
+
+.loose-proto-sequence-action p {
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.loose-proto-sequence-action button {
+  width: 100%;
+}
+
+/* Variant B — keep every real coordinate and mark the loose-root region. */
+.loose-proto-stage-band {
+  position: absolute;
+  top: var(--band-top);
+  left: var(--space-4);
+  z-index: 0;
+  width: 178px;
+  height: var(--band-height);
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  pointer-events: none;
+}
+
+.loose-proto-badge {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  z-index: 3;
+  min-height: 1rem;
+  padding: 2px var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+}
+
+.loose-proto-waypoint.is-loose .trail-medallion__ring {
+  border-style: dashed;
+}
+
+/* Variant C — a compact presentation rail beside the untouched Trail. */
+.loose-proto-canvas--rail {
+  display: grid;
+  height: 560px;
+  grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+  overflow: hidden;
+  cursor: default;
+  user-select: auto;
+}
+
+.loose-proto-rail {
+  z-index: 4;
+  display: grid;
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.loose-proto-rail-heading {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.loose-proto-rail-heading > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.loose-proto-rail-heading span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.loose-proto-rail-heading strong {
+  font-size: 0.72rem;
+}
+
+.loose-proto-rail-heading .loose-proto-rail-hint {
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.loose-proto-rail ul {
+  padding: var(--space-2);
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.loose-proto-rail li + li {
+  border-top: 1px solid var(--line);
+}
+
+.loose-proto-rail-row {
+  display: grid;
+  width: 100%;
+  min-height: 64px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.loose-proto-rail-row:hover,
+.loose-proto-rail-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.loose-proto-rail-row.is-selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.loose-proto-rail-row > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.loose-proto-rail-row strong {
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.loose-proto-rail-row small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.loose-proto-mini-medallion {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px dashed var(--field-line);
+  border-radius: 50%;
+  background: var(--field-bg);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.loose-proto-sequenced-viewport {
+  min-width: 0;
+  overflow: auto;
+  background: var(--trail-bg);
+}
+
+@media (max-width: 64rem) {
+  .loose-proto-canvas--rail {
+    grid-template-columns: 12rem minmax(38rem, 1fr);
+    overflow-x: auto;
+  }
+}
