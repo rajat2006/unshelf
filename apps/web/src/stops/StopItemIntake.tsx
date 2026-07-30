@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { StopDetail, StopId, StopItemCandidate } from "@unshelf/shared";
+import type {
+  ItemId,
+  StopDetail,
+  StopId,
+  StopItemCandidate,
+} from "@unshelf/shared";
 import {
   addItemToStop,
   fetchStopItemCandidates,
@@ -32,8 +37,8 @@ export function StopItemIntake({
   const [results, setResults] = useState<StopItemCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [pendingItemId, setPendingItemId] = useState<string | null>(null);
-  const [failedItemId, setFailedItemId] = useState<string | null>(null);
+  const [pendingItemId, setPendingItemId] = useState<ItemId | null>(null);
+  const [failedItemId, setFailedItemId] = useState<ItemId | null>(null);
   const [moved, setMoved] = useState<AvailableCandidate | null>(null);
   const requestVersion = useRef(0);
 
@@ -72,6 +77,7 @@ export function StopItemIntake({
   };
 
   async function add(candidate: AvailableCandidate) {
+    if (pendingItemId) return;
     settleMovedRow();
     setPendingItemId(candidate.id);
     setFailedItemId(null);
@@ -81,13 +87,20 @@ export function StopItemIntake({
       setMoved(candidate);
     } catch {
       setFailedItemId(candidate.id);
+      const version = ++requestVersion.current;
+      try {
+        const reconciled = await fetchStopItemCandidates(user, stopId, query);
+        if (version === requestVersion.current) setResults(reconciled);
+      } catch {
+        // Keep the placement failure local; the explicit search Retry owns reads.
+      }
     } finally {
       setPendingItemId(null);
     }
   }
 
   async function undo() {
-    if (!moved) return;
+    if (!moved || pendingItemId) return;
     setPendingItemId(moved.id);
     setFailedItemId(null);
     try {
@@ -109,6 +122,7 @@ export function StopItemIntake({
         <input
           type="search"
           value={query}
+          disabled={pendingItemId !== null}
           onChange={(event) => {
             requestVersion.current += 1;
             setMoved(null);
@@ -151,7 +165,7 @@ export function StopItemIntake({
                     <span>Moved to In this Stop</span>
                     <button
                       type="button"
-                      disabled={isPending}
+                      disabled={pendingItemId !== null}
                       onClick={() => void undo()}
                     >
                       {isPending ? "Undoing…" : "Undo"}
@@ -168,7 +182,7 @@ export function StopItemIntake({
                   <span className="stop-intake__result-action">
                     <button
                       type="button"
-                      disabled={isPending}
+                      disabled={pendingItemId !== null}
                       onClick={() => void add(candidate)}
                     >
                       {isPending ? "Adding…" : "Add to this Stop"}

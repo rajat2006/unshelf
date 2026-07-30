@@ -214,21 +214,21 @@ export interface ItemPlacementCatalog {
   trails: ItemPlacementTrail[];
 }
 
+interface StopItemCandidateFacts {
+  id: ItemId;
+  title: string;
+  type: Type;
+}
+
 /** One compact Library result offered while filling an open Stop. */
-export type StopItemCandidate =
-  | {
-      kind: "available";
-      id: ItemId;
-      title: string;
-      type: Type;
-    }
-  | {
-      kind: "conflict";
-      id: ItemId;
-      title: string;
-      type: Type;
-      stop: PlacementStop;
-    };
+export type StopItemCandidate = StopItemCandidateFacts &
+  (
+    | { kind: "available" }
+    | {
+        kind: "conflict";
+        stop: PlacementStop;
+      }
+  );
 
 /**
  * A first-class Trail — one User's learning journey, owning a canvas of Stops and

@@ -80,19 +80,29 @@ export function TrailSurface({
             <span aria-hidden="true" />
           </div>
         )}
-        {trail && trailId && (
-          <TrailCanvas
-            trailId={trailId as TrailId}
-            trail={trail}
-            user={user}
-            onTrailChanged={setTrail}
-            onRefresh={refresh}
-            onOpenStop={(selectedStopId) => {
-              void navigate(`/trails/${trailId}/stops/${selectedStopId}`);
-            }}
-            readOnly={readOnly}
-          />
-        )}
+        {trail &&
+          trailId &&
+          (readOnly && stopId ? (
+            <div className="trail-phone-context" aria-label="Trail context">
+              <span>Open Stop</span>
+              <strong>
+                {trail.nodes.find((node) => node.id === stopId)?.name ??
+                  "Stop details"}
+              </strong>
+            </div>
+          ) : (
+            <TrailCanvas
+              trailId={trailId as TrailId}
+              trail={trail}
+              user={user}
+              onTrailChanged={setTrail}
+              onRefresh={refresh}
+              onOpenStop={(selectedStopId) => {
+                void navigate(`/trails/${trailId}/stops/${selectedStopId}`);
+              }}
+              readOnly={readOnly}
+            />
+          ))}
       </section>
       {stopId && trailId && (
         <StopSidebar

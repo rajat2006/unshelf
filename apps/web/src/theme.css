@@ -1190,6 +1190,22 @@ body {
   min-width: 0;
 }
 
+.trail-phone-context {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--trail-bg);
+}
+
+.trail-phone-context span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .stop-sidebar {
   min-width: 0;
   padding: var(--space-5);

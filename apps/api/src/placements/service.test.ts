@@ -499,7 +499,8 @@ describe("GET /api/stops/:stopId/items", () => {
   it("uses Item identity as the tie-breaker for equal titles", async () => {
     const user = "placement-stop-intake-tie";
     const api = asUser(user);
-    const stop = (await createStopFor(user, "Tied Results")).body as Stop;
+    const stop = (await createStopFor({ user, name: "Tied Results" }))
+      .body as Stop;
     const first = (
       await api.post("/api/items", {
         title: "Same title",
@@ -588,7 +589,8 @@ describe("GET /api/stops/:stopId/items", () => {
   it("keeps malformed, missing, foreign, and unauthenticated Stops private", async () => {
     const owner = "placement-stop-intake-owner";
     const intruder = "placement-stop-intake-intruder";
-    const stop = (await createStopFor(owner, "Private Stop")).body as Stop;
+    const stop = (await createStopFor({ user: owner, name: "Private Stop" }))
+      .body as Stop;
 
     expect(
       (await asUser(owner).get("/api/stops/not-a-stop/items")).status,
@@ -613,7 +615,7 @@ describe("GET /api/stops/:stopId/items", () => {
   });
 });
 
-async function createStopFor(user: string, name: string) {
+async function createStopFor({ user, name }: { user: string; name: string }) {
   const api = asUser(user);
   const trail = (await api.post("/api/trails", { name: `${name} Trail` }))
     .body as Trail;
