@@ -8,7 +8,11 @@ import type {
   StopDetail,
   Trail,
 } from "@unshelf/shared";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "../../test/harness";
 
 let harness: TestApp;
 let app: Express;
@@ -125,16 +129,16 @@ describe("GET /api/items/:itemId/placements", () => {
     ).body as Item;
     await api.post(`/api/stops/${stop.id}/items`, { itemId: item.id });
 
-    expect(
-      (await api.get(`/api/items/${item.id}/placements`)).body.trails[0].kind,
-    ).toBe("placed");
+    const placedCatalog = (await api.get(`/api/items/${item.id}/placements`))
+      .body as ItemPlacementCatalog;
+    expect(placedCatalog.trails[0]?.kind).toBe("placed");
     await request(app)
       .delete(`/api/stops/${stop.id}/items/${item.id}`)
       .set(TEST_USER_HEADER, user);
 
-    expect(
-      (await api.get(`/api/items/${item.id}/placements`)).body.trails,
-    ).toEqual([
+    const availableCatalog = (await api.get(`/api/items/${item.id}/placements`))
+      .body as ItemPlacementCatalog;
+    expect(availableCatalog.trails).toEqual([
       {
         kind: "available",
         trail: { id: trail.id, name: "Mutable Trail" },
@@ -324,9 +328,9 @@ describe("POST /api/items/:itemId/placements", () => {
 
       expect(response.status).toBe(500);
       expect((await api.get("/api/stops")).body).toEqual([]);
-      expect(
-        (await api.get(`/api/items/${item.id}/placements`)).body.trails,
-      ).toEqual([
+      const catalog = (await api.get(`/api/items/${item.id}/placements`))
+        .body as ItemPlacementCatalog;
+      expect(catalog.trails).toEqual([
         {
           kind: "available",
           trail: { id: trail.id, name: "Rollback Trail" },
