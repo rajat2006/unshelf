@@ -1,0 +1,495 @@
+/*
+ * PROTOTYPE — throwaway phone-width interaction styling. Ticket #218.
+ *
+ * The document itself scrolls. No component establishes an inner vertical
+ * scroll container: the browser owns the only up/down gesture.
+ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 0%, rgb(126 92 54 / 10%), transparent 32rem),
+    var(--bg);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.phone-proto-page {
+  --accent-soft: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  --font-display: var(--font);
+
+  width: min(100%, 26rem);
+  min-height: 100dvh;
+  margin-inline: auto;
+  border-inline: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 0 3rem rgb(27 22 17 / 8%);
+}
+
+.phone-proto-route {
+  min-height: 100dvh;
+  padding-bottom: 7rem;
+}
+
+.phone-proto-route-bar {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 4rem;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.phone-proto-route-bar button {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.phone-proto-route-bar div {
+  display: grid;
+  min-width: 0;
+}
+
+.phone-proto-route-bar div span,
+.phone-proto-stop-header div > span,
+.phone-proto-ticket-note > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phone-proto-route-bar strong {
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-proto-view-only {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.phone-proto-ticket-note {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.phone-proto-ticket-note p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.phone-proto-stop-header {
+  display: flex;
+  gap: var(--space-3);
+  align-items: start;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-4) var(--space-3);
+}
+
+.phone-proto-stop-header h1 {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 8vw, 2.1rem);
+  line-height: 1;
+}
+
+.phone-proto-count {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.phone-proto-state-controls {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.phone-proto-state-controls button,
+.phone-proto-anchor-nav button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.phone-proto-state-controls button:hover,
+.phone-proto-state-controls button:focus-visible,
+.phone-proto-anchor-nav button:hover,
+.phone-proto-anchor-nav button:focus-visible {
+  border-color: var(--accent);
+}
+
+.phone-proto-anchor-nav {
+  position: sticky;
+  z-index: 4;
+  top: 4rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-block: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.phone-proto-anchor-nav button:last-child {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.phone-proto-section {
+  scroll-margin-top: 7.75rem;
+  padding: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.phone-proto-section-heading {
+  display: flex;
+  gap: var(--space-3);
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.phone-proto-section-heading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+
+.phone-proto-section-heading span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.phone-proto-empty-current {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-2);
+  background: var(--bg);
+}
+
+.phone-proto-empty-current > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.phone-proto-empty-current p {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.phone-proto-empty-current strong {
+  color: var(--ink);
+}
+
+.phone-proto-current-list,
+.phone-proto-results {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.phone-proto-current-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 4.2rem;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.phone-proto-current-list > li.is-recent {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.phone-proto-current-list li > div,
+.phone-proto-result > span:last-child,
+.phone-proto-moved-echo > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.phone-proto-current-list strong,
+.phone-proto-result strong,
+.phone-proto-moved-echo strong {
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.phone-proto-current-list li div > span,
+.phone-proto-result small,
+.phone-proto-moved-echo small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.phone-proto-current-list button,
+.phone-proto-moved-echo button {
+  min-height: 2.75rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.phone-proto-item-mark {
+  color: var(--done);
+  font-weight: 800;
+}
+
+.phone-proto-library {
+  min-height: 70dvh;
+  background: var(--bg);
+}
+
+.phone-proto-search {
+  position: relative;
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.phone-proto-search input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.65rem 0.75rem 0.65rem 2.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.phone-proto-search input:focus {
+  border-color: var(--accent);
+}
+
+.phone-proto-search-icon {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.9rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+  transform: translateY(-50%);
+}
+
+.phone-proto-result {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  min-height: 4.4rem;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.phone-proto-result:hover,
+.phone-proto-result:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.phone-proto-result > span:first-child,
+.phone-proto-moved-echo > span:first-child {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.15rem;
+}
+
+.phone-proto-no-results {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-2);
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.phone-proto-no-results strong {
+  color: var(--ink);
+}
+
+/* Variant B: one horizontal scroller, never an inner vertical scroller. */
+.phone-proto-rail-section {
+  padding-inline: 0;
+}
+
+.phone-proto-rail-section .phone-proto-section-heading,
+.phone-proto-rail-section .phone-proto-empty-current {
+  margin-inline: var(--space-4);
+}
+
+.phone-proto-current-list.is-compact {
+  display: flex;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 var(--space-4) var(--space-2);
+  overflow-x: auto;
+  scroll-padding-inline: var(--space-4);
+  scroll-snap-type: x proximity;
+}
+
+.phone-proto-current-list.is-compact > li {
+  flex: 0 0 14rem;
+  scroll-snap-align: start;
+}
+
+/* Variant C: the intake chrome sticks only once document scroll reaches it. */
+.phone-proto-sticky-intake {
+  position: sticky;
+  z-index: 3;
+  top: 4rem;
+  padding: var(--space-3) var(--space-4) 0;
+  margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1)
+    var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.phone-proto-moved-echo {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 4.4rem;
+  padding: var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-2);
+  background: var(--accent-soft);
+}
+
+.phone-proto-switcher {
+  position: fixed;
+  z-index: 20;
+  right: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, auto) 2.75rem;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: calc(100vw - 2rem);
+  padding: 0.45rem;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 999px;
+  background: #1f1b17;
+  color: #fffaf2;
+  box-shadow: 0 0.7rem 2rem rgb(0 0 0 / 28%);
+  transform: translateX(50%);
+}
+
+.phone-proto-switcher button {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 12%);
+  color: inherit;
+  cursor: pointer;
+}
+
+.phone-proto-switcher span {
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 40rem) {
+  .phone-proto-page {
+    margin-block: var(--space-6);
+    border: 1px solid var(--line);
+    border-radius: 1.5rem;
+    overflow: clip;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
