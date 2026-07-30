@@ -489,6 +489,105 @@ body {
   font-size: 0.85rem;
 }
 
+.trail-workbench {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.unsequenced-rail {
+  max-height: 35rem;
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+
+.unsequenced-rail h2 {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 var(--space-3);
+  font-size: 0.85rem;
+}
+
+.unsequenced-rail h2 span {
+  display: inline-grid;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--line);
+  font-size: 0.75rem;
+}
+
+.unsequenced-rail > p,
+.unsequenced-rail li p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.unsequenced-rail ul {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.unsequenced-rail li,
+.unsequenced-rail form,
+.unsequenced-rail label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.unsequenced-rail li {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.unsequenced-rail li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.unsequenced-rail button,
+.unsequenced-rail select {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+.unsequenced-rail__stop {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.unsequenced-rail form > span {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.trail-canvas__empty {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  transform: translate(-50%, -50%);
+}
+
 .trail-canvas {
   position: relative;
   width: 100%;
@@ -1104,6 +1203,44 @@ body {
   max-width: 100%;
 }
 
+.item-placement-actions,
+.item-placement-choice,
+.item-new-stop-form,
+.item-new-stop-form label {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.item-placement-actions,
+.item-placement-choice {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.item-placement-choice {
+  justify-content: flex-end;
+}
+
+.item-new-stop-form,
+.item-new-stop-form label {
+  width: 100%;
+  flex-direction: column;
+}
+
+.item-new-stop-form p {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.item-new-stop-form input {
+  min-height: 44px;
+}
+
+.item-new-stop-form > span {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .item-sidebar-skeleton,
 .stop-sidebar-skeleton {
   display: grid;
@@ -1172,6 +1309,14 @@ body {
   .trail-detail-layout,
   .item-detail-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trail-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .unsequenced-rail {
+    max-height: 14rem;
   }
 
   .stop-sidebar,

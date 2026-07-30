@@ -62,7 +62,12 @@ export function TrailCanvas({
   readOnly,
 }: TrailCanvasProps) {
   const { nodes, edges } = trail;
-  const g = layout(nodes, edges);
+  const connectedStopIds = new Set(
+    edges.flatMap((edge) => [edge.fromStopId, edge.toStopId]),
+  );
+  const looseNodes = nodes.filter((node) => !connectedStopIds.has(node.id));
+  const sequencedNodes = nodes.filter((node) => connectedStopIds.has(node.id));
+  const g = layout(sequencedNodes, edges);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
   const [busy, setBusy] = useState(false);
@@ -128,6 +133,8 @@ export function TrailCanvas({
   };
   const unlink = (from: StopId, to: StopId) =>
     void run(() => disconnectStops(user, trailId, from, to));
+  const sequence = (stopId: StopId, predecessorId: StopId) =>
+    void run(() => connectStops(user, trailId, predecessorId, stopId));
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
   const wander = (p: Placed<TrailNode>) =>
@@ -144,7 +151,7 @@ export function TrailCanvas({
   const width = PAD * 2 + g.depthCount * COL_W;
   const height = PAD * 2 + g.laneCount * LANE_H;
 
-  const frontier = nodes.find((n) => {
+  const frontier = sequencedNodes.find((n) => {
     if (isDone(n)) return false;
     const preds = edges
       .filter((e) => e.toStopId === n.id)
@@ -238,134 +245,150 @@ export function TrailCanvas({
 
   return (
     <section aria-label="Trail journey">
-      <div
-        ref={canvasRef}
-        role="region"
-        aria-label="Trail canvas"
-        tabIndex={0}
-        className={`trail-canvas${grabbing ? " is-grabbing" : ""}`}
-        onPointerDown={onPanDown}
-        onPointerMove={onPanMove}
-        onPointerUp={onPanUp}
-        onPointerLeave={onPanUp}
-        style={
-          {
-            "--trail-height": `${Math.min(height, 560)}px`,
-          } as CSSProperties
-        }
-      >
+      <div className="trail-workbench">
+        <LooseStopRail
+          nodes={looseNodes}
+          allNodes={nodes}
+          busy={busy}
+          readOnly={readOnly}
+          onOpen={onOpenStop}
+          onSequence={sequence}
+        />
         <div
-          className="trail-canvas__ground"
+          ref={canvasRef}
+          role="region"
+          aria-label="Trail canvas"
+          tabIndex={0}
+          className={`trail-canvas${grabbing ? " is-grabbing" : ""}`}
+          onPointerDown={onPanDown}
+          onPointerMove={onPanMove}
+          onPointerUp={onPanUp}
+          onPointerLeave={onPanUp}
           style={
             {
-              "--trail-width": `${width}px`,
-              "--trail-content-height": `${height}px`,
+              "--trail-height": `${Math.min(height, 560)}px`,
             } as CSSProperties
           }
         >
-          {/* the trail: dotted ahead beneath, solid walked ground on top */}
-          <svg
-            width={width}
-            height={height}
-            className="trail-canvas__edges"
-            aria-hidden="true"
+          <div
+            className="trail-canvas__ground"
+            style={
+              {
+                "--trail-width": `${width}px`,
+                "--trail-content-height": `${height}px`,
+              } as CSSProperties
+            }
           >
-            {edges.map((e) => (
-              <TrailSeg
-                key={`u-${e.fromStopId}-${e.toStopId}`}
-                pos={pos}
-                from={e.fromStopId}
-                to={e.toStopId}
-                stroke="var(--line)"
-                width={3.5}
-                dotted
-              />
-            ))}
-            {edges
-              .filter((e) => isDone(nodeById.get(e.fromStopId)!))
-              .map((e) => (
+            {/* the trail: dotted ahead beneath, solid walked ground on top */}
+            <svg
+              width={width}
+              height={height}
+              className="trail-canvas__edges"
+              aria-hidden="true"
+            >
+              {edges.map((e) => (
                 <TrailSeg
-                  key={`w-${e.fromStopId}-${e.toStopId}`}
+                  key={`u-${e.fromStopId}-${e.toStopId}`}
                   pos={pos}
                   from={e.fromStopId}
                   to={e.toStopId}
-                  stroke="var(--done)"
-                  width={5}
+                  stroke="var(--line)"
+                  width={3.5}
+                  dotted
                 />
               ))}
-          </svg>
+              {edges
+                .filter((e) => isDone(nodeById.get(e.fromStopId)!))
+                .map((e) => (
+                  <TrailSeg
+                    key={`w-${e.fromStopId}-${e.toStopId}`}
+                    pos={pos}
+                    from={e.fromStopId}
+                    to={e.toStopId}
+                    stroke="var(--done)"
+                    width={5}
+                  />
+                ))}
+            </svg>
 
-          {g.placed.map((p) => {
-            const n = p.node;
-            const here = pos.get(n.id)!;
-            return (
-              <Waypoint
-                key={n.id}
-                node={n}
-                x={here.x}
-                y={here.y}
-                isFrontier={frontier?.id === n.id}
-                readOnly={readOnly}
-                busy={busy}
-                isDrafting={draft?.from === n.id}
-                isLinkSource={linkingFrom === n.id}
-                isLinkTarget={
-                  linkingFrom !== null &&
-                  linkingFrom !== n.id &&
-                  canConnect(edges, linkingFrom, n.id)
-                }
-                linking={linkingFrom !== null}
-                onPointerDown={(e) => startNodeDrag(n.id, e)}
-                onOpen={() => onOpenStop(n.id)}
-                onNext={() => setDraft({ from: n.id, mode: "next" })}
-                onFork={() => setDraft({ from: n.id, mode: "fork" })}
-                onStartLink={() => setLinkingFrom(n.id)}
-                onCancelLink={() => setLinkingFrom(null)}
-                onLinkHere={() => link(n.id)}
-                onDraftSubmit={(name) => void createAndLink(name, n.id)}
-                onDraftCancel={() => setDraft(null)}
-              />
-            );
-          })}
+            {sequencedNodes.length === 0 && (
+              <p className="trail-canvas__empty">
+                Sequence a Stop to place it on the canvas.
+              </p>
+            )}
 
-          {!readOnly &&
-            edges.map((e) => {
-              const a = pos.get(e.fromStopId);
-              const b = pos.get(e.toStopId);
-              if (!a || !b) return null;
+            {g.placed.map((p) => {
+              const n = p.node;
+              const here = pos.get(n.id)!;
               return (
-                <button
-                  key={`x-${e.fromStopId}-${e.toStopId}`}
-                  type="button"
-                  title="Remove this link"
-                  aria-label="Remove this link"
-                  disabled={busy}
-                  onPointerDown={(ev) => ev.stopPropagation()}
-                  onClick={() => unlink(e.fromStopId, e.toStopId)}
-                  className="trail-edge-remove"
-                  style={
-                    {
-                      "--trail-x": `${(a.x + b.x) / 2 - 22}px`,
-                      "--trail-y": `${(a.y + b.y) / 2 - 22}px`,
-                    } as CSSProperties
+                <Waypoint
+                  key={n.id}
+                  node={n}
+                  x={here.x}
+                  y={here.y}
+                  isFrontier={frontier?.id === n.id}
+                  readOnly={readOnly}
+                  busy={busy}
+                  isDrafting={draft?.from === n.id}
+                  isLinkSource={linkingFrom === n.id}
+                  isLinkTarget={
+                    linkingFrom !== null &&
+                    linkingFrom !== n.id &&
+                    canConnect(edges, linkingFrom, n.id)
                   }
-                >
-                  ✕
-                </button>
+                  linking={linkingFrom !== null}
+                  onPointerDown={(e) => startNodeDrag(n.id, e)}
+                  onOpen={() => onOpenStop(n.id)}
+                  onNext={() => setDraft({ from: n.id, mode: "next" })}
+                  onFork={() => setDraft({ from: n.id, mode: "fork" })}
+                  onStartLink={() => setLinkingFrom(n.id)}
+                  onCancelLink={() => setLinkingFrom(null)}
+                  onLinkHere={() => link(n.id)}
+                  onDraftSubmit={(name) => void createAndLink(name, n.id)}
+                  onDraftCancel={() => setDraft(null)}
+                />
               );
             })}
-        </div>
 
-        {rearranged && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setOffsets({})}
-            className="trail-reset quiet-button"
-          >
-            ↺ reset layout
-          </button>
-        )}
+            {!readOnly &&
+              edges.map((e) => {
+                const a = pos.get(e.fromStopId);
+                const b = pos.get(e.toStopId);
+                if (!a || !b) return null;
+                return (
+                  <button
+                    key={`x-${e.fromStopId}-${e.toStopId}`}
+                    type="button"
+                    title="Remove this link"
+                    aria-label="Remove this link"
+                    disabled={busy}
+                    onPointerDown={(ev) => ev.stopPropagation()}
+                    onClick={() => unlink(e.fromStopId, e.toStopId)}
+                    className="trail-edge-remove"
+                    style={
+                      {
+                        "--trail-x": `${(a.x + b.x) / 2 - 22}px`,
+                        "--trail-y": `${(a.y + b.y) / 2 - 22}px`,
+                      } as CSSProperties
+                    }
+                  >
+                    ✕
+                  </button>
+                );
+              })}
+          </div>
+
+          {rearranged && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setOffsets({})}
+              className="trail-reset quiet-button"
+            >
+              ↺ reset layout
+            </button>
+          )}
+        </div>
       </div>
 
       <p className="trail-legend">
@@ -385,6 +408,119 @@ export function TrailCanvas({
 }
 
 // ---------------------------------------------------------------------------
+
+function LooseStopRail({
+  nodes,
+  allNodes,
+  busy,
+  readOnly,
+  onOpen,
+  onSequence,
+}: {
+  nodes: TrailNode[];
+  allNodes: TrailNode[];
+  busy: boolean;
+  readOnly: boolean;
+  onOpen: (stopId: StopId) => void;
+  onSequence: (stopId: StopId, predecessorId: StopId) => void;
+}) {
+  const [draft, setDraft] = useState<{
+    stopId: StopId;
+    predecessorId: StopId | "";
+  } | null>(null);
+
+  return (
+    <aside className="unsequenced-rail" aria-labelledby="unsequenced-title">
+      <h2 id="unsequenced-title">
+        Unsequenced <span>{nodes.length}</span>
+      </h2>
+      {nodes.length === 0 ? (
+        <p>Loose Stops will wait here.</p>
+      ) : (
+        <ul>
+          {nodes.map((node) => {
+            const candidates = allNodes.filter(
+              (candidate) => candidate.id !== node.id,
+            );
+            return (
+              <li key={node.id}>
+                <button
+                  type="button"
+                  className="unsequenced-rail__stop"
+                  onClick={() => onOpen(node.id)}
+                >
+                  {node.name}
+                </button>
+                {!readOnly && draft?.stopId === node.id ? (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (draft.predecessorId) {
+                        onSequence(node.id, draft.predecessorId);
+                        setDraft(null);
+                      }
+                    }}
+                  >
+                    <label>
+                      Follows
+                      <select
+                        value={draft.predecessorId}
+                        disabled={busy || candidates.length === 0}
+                        onChange={(event) =>
+                          setDraft({
+                            stopId: node.id,
+                            predecessorId: event.target.value as StopId,
+                          })
+                        }
+                      >
+                        <option value="" disabled>
+                          Choose a Stop…
+                        </option>
+                        {candidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {candidates.length === 0 && (
+                      <p>Add another Stop before sequencing this one.</p>
+                    )}
+                    <span>
+                      <button
+                        type="submit"
+                        disabled={busy || !draft.predecessorId}
+                      >
+                        Sequence
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setDraft(null)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </form>
+                ) : !readOnly ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      setDraft({ stopId: node.id, predecessorId: "" })
+                    }
+                  >
+                    Sequence this Stop
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </aside>
+  );
+}
 
 interface WaypointProps {
   node: TrailNode;

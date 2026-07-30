@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Item, Stop, Trail } from "@unshelf/shared";
+import type {
+  Item,
+  ItemPlacementCatalog,
+  Stop,
+  StopDetail,
+  Trail,
+} from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 let harness: TestApp;
@@ -135,6 +141,171 @@ describe("GET /api/items/:itemId/placements", () => {
         stops: [{ id: stop.id, name: "Only Stop" }],
       },
     ]);
+  });
+});
+
+describe("POST /api/items/:itemId/placements", () => {
+  it("atomically creates a loose Stop containing the Item", async () => {
+    const user = "placement-create-stop-user";
+    const api = asUser(user);
+    const trail = (await api.post("/api/trails", { name: "Systems" }))
+      .body as Trail;
+    const existingStop = (
+      await api.post(`/api/trails/${trail.id}/stops`, {
+        name: "Architecture notes",
+      })
+    ).body as Stop;
+    const item = (
+      await api.post("/api/items", {
+        title: "Architecture notes",
+        type: "article",
+      })
+    ).body as Item;
+
+    const response = await api.post(`/api/items/${item.id}/placements`, {
+      trailId: trail.id,
+      name: "Architecture notes",
+    });
+
+    expect(response.status).toBe(201);
+    const createdStop = response.body as StopDetail;
+    expect(createdStop).toMatchObject({
+      name: "Architecture notes",
+      items: [{ id: item.id }],
+    });
+    const topology = (await api.get(`/api/trails/${trail.id}/topology`))
+      .body as {
+      nodes: Array<{ id: string; name: string; done: number; total: number }>;
+      edges: unknown[];
+    };
+    expect(topology.nodes).toHaveLength(2);
+    expect(topology.nodes).toContainEqual({
+      id: existingStop.id,
+      name: "Architecture notes",
+      done: 0,
+      total: 0,
+    });
+    expect(topology.nodes).toContainEqual({
+      id: createdStop.id,
+      name: "Architecture notes",
+      done: 0,
+      total: 1,
+    });
+    expect(topology.edges).toEqual([]);
+    const catalog = (await api.get(`/api/items/${item.id}/placements`))
+      .body as ItemPlacementCatalog;
+    expect(catalog.trails).toEqual([
+      {
+        kind: "placed",
+        trail: { id: trail.id, name: "Systems" },
+        stop: { id: createdStop.id, name: "Architecture notes" },
+      },
+    ]);
+  });
+
+  it("leaves no Stop when validation, ownership, or placement conflicts fail", async () => {
+    const owner = "placement-create-boundary-owner";
+    const intruder = "placement-create-boundary-intruder";
+    const ownerApi = asUser(owner);
+    const intruderApi = asUser(intruder);
+    const trail = (await ownerApi.post("/api/trails", { name: "Private" }))
+      .body as Trail;
+    const existingStop = (
+      await ownerApi.post(`/api/trails/${trail.id}/stops`, {
+        name: "Existing",
+      })
+    ).body as Stop;
+    const item = (
+      await ownerApi.post("/api/items", {
+        title: "Private Item",
+        type: "book",
+      })
+    ).body as Item;
+    await ownerApi.post(`/api/stops/${existingStop.id}/items`, {
+      itemId: item.id,
+    });
+    const stopsBefore = (await ownerApi.get("/api/stops")).body as Stop[];
+
+    const responses = await Promise.all([
+      ownerApi.post(`/api/items/${item.id}/placements`, {
+        trailId: trail.id,
+        name: "  ",
+      }),
+      ownerApi.post(`/api/items/${item.id}/placements`, {
+        trailId: "00000000-0000-0000-0000-000000000000",
+        name: "Missing Trail",
+      }),
+      intruderApi.post(`/api/items/${item.id}/placements`, {
+        trailId: trail.id,
+        name: "Foreign ends",
+      }),
+      ownerApi.post(`/api/items/${item.id}/placements`, {
+        trailId: trail.id,
+        name: "Conflicting Stop",
+      }),
+      request(app)
+        .post(`/api/items/${item.id}/placements`)
+        .send({ trailId: trail.id, name: "Unauthenticated" }),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([
+      400, 404, 404, 409, 401,
+    ]);
+    expect((await ownerApi.get("/api/stops")).body).toEqual(stopsBefore);
+    expect(
+      (
+        (await ownerApi.get(`/api/trails/${trail.id}/topology`)).body as {
+          edges: unknown[];
+        }
+      ).edges,
+    ).toEqual([]);
+  });
+
+  it("rolls back the Stop when PostgreSQL rejects its first membership", async () => {
+    const user = "placement-create-database-failure";
+    const api = asUser(user);
+    const trail = (await api.post("/api/trails", { name: "Rollback Trail" }))
+      .body as Trail;
+    const item = (
+      await api.post("/api/items", {
+        title: "Rollback Item",
+        type: "video",
+      })
+    ).body as Item;
+    await harness.pool.query(`
+      CREATE FUNCTION reject_atomic_membership() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'forced membership failure';
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER reject_atomic_membership
+        BEFORE INSERT ON stop_items
+        FOR EACH ROW EXECUTE FUNCTION reject_atomic_membership();
+    `);
+
+    try {
+      const response = await api.post(`/api/items/${item.id}/placements`, {
+        trailId: trail.id,
+        name: "Must roll back",
+      });
+
+      expect(response.status).toBe(500);
+      expect((await api.get("/api/stops")).body).toEqual([]);
+      expect(
+        (await api.get(`/api/items/${item.id}/placements`)).body.trails,
+      ).toEqual([
+        {
+          kind: "available",
+          trail: { id: trail.id, name: "Rollback Trail" },
+          stops: [],
+        },
+      ]);
+    } finally {
+      await harness.pool.query(`
+        DROP TRIGGER reject_atomic_membership ON stop_items;
+        DROP FUNCTION reject_atomic_membership();
+      `);
+    }
   });
 });
 

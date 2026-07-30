@@ -3,6 +3,7 @@ import type {
   ConnectStopsRequest,
   CreateItemRequest,
   CreateStopRequest,
+  CreateStopWithItemRequest,
   CreateTrailRequest,
   Item,
   ItemId,
@@ -63,6 +64,19 @@ export async function fetchItemPlacements(
     user,
     `/api/items/${itemId}/placements`,
   );
+}
+
+/** Atomically create a loose Stop on a Trail with this Item as its first member. */
+export async function createStopWithItem(
+  user: CurrentUser,
+  itemId: ItemId,
+  input: CreateStopWithItemRequest,
+): Promise<StopDetail> {
+  return requestJson<StopDetail>(user, `/api/items/${itemId}/placements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 /** Capture an Item — the one uniform insert (ADR-0007). Returns the new Item. */

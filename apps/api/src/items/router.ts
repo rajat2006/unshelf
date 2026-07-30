@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import {
   createItemRequestSchema,
+  createStopWithItemRequestSchema,
   itemIdSchema,
   labelIdSchema,
   updateItemStatusRequestSchema,
@@ -8,7 +9,10 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import { getItemPlacementCatalog } from "../placements/repository";
+import {
+  createStopWithItem,
+  getItemPlacementCatalog,
+} from "../placements/repository";
 import {
   createItem,
   applyLabelToItem,
@@ -56,6 +60,39 @@ export function createItemsRouter(
         return;
       }
       res.json(catalog);
+    },
+  );
+
+  router.post(
+    "/:itemId/placements",
+    validateRequest(
+      {
+        body: createStopWithItemRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_stop_name",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await createStopWithItem(db, {
+        userId: req.user!.id,
+        itemId: params.itemId,
+        placement: body,
+      });
+      if (result.ok) {
+        res.status(201).json(result.stop);
+        return;
+      }
+      switch (result.error) {
+        case "not_found":
+          res.status(404).json({ error: "item or trail not found" });
+          return;
+        case "conflict":
+          res.status(409).json({
+            error: "item already placed on this trail",
+          });
+          return;
+      }
     },
   );
 

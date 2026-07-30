@@ -98,6 +98,7 @@ export function ItemSidebar({
           />
           <ItemPlacements
             itemId={visibleItem.id}
+            itemTitle={visibleItem.title}
             user={user}
             onChanged={onPlacementChanged}
           />

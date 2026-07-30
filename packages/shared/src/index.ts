@@ -71,6 +71,7 @@ export type {
   CreateItemRequest,
   CreateLabelRequest,
   CreateStopRequest,
+  CreateStopWithItemRequest,
   CreateTrailRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,

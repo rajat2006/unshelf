@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ItemId, ItemPlacementCatalog, StopId } from "@unshelf/shared";
-import { addItemToStop, fetchItemPlacements, removeItemFromStop } from "../api";
+import { Link } from "react-router";
+import type {
+  ItemId,
+  ItemPlacementCatalog,
+  PlacementStop,
+  StopId,
+  TrailId,
+} from "@unshelf/shared";
+import {
+  addItemToStop,
+  createStopWithItem,
+  fetchItemPlacements,
+  removeItemFromStop,
+} from "../api";
 import type { CurrentUser } from "../application-auth/types";
 
 interface ItemPlacementsProps {
   itemId: ItemId;
+  itemTitle: string;
   user: CurrentUser;
   onChanged?: () => void;
 }
@@ -16,6 +29,7 @@ interface ItemPlacementsProps {
  */
 export function ItemPlacements({
   itemId,
+  itemTitle,
   user,
   onChanged,
 }: ItemPlacementsProps) {
@@ -25,6 +39,12 @@ export function ItemPlacements({
   const [retryAction, setRetryAction] = useState<(() => Promise<void>) | null>(
     null,
   );
+  const [creatingOn, setCreatingOn] = useState<TrailId | null>(null);
+  const [newStopName, setNewStopName] = useState(itemTitle);
+  const [lastCreated, setLastCreated] = useState<{
+    trailId: TrailId;
+    stop: PlacementStop;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setCatalog(await fetchItemPlacements(user, itemId));
@@ -69,6 +89,15 @@ export function ItemPlacements({
     runPlacementMutation(async () => {
       await removeItemFromStop(user, stopId, itemId);
     });
+  const create = (trailId: TrailId, name: string) =>
+    runPlacementMutation(async () => {
+      const stop = await createStopWithItem(user, itemId, { trailId, name });
+      setLastCreated({
+        trailId,
+        stop: { id: stop.id, name: stop.name },
+      });
+      setCreatingOn(null);
+    });
 
   if (!catalog) {
     return (
@@ -107,21 +136,31 @@ export function ItemPlacements({
               <span>
                 {trail.name} · {stop.name}
               </span>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void remove(stop.id)}
-                aria-label={`Remove from ${trail.name} · ${stop.name}`}
-              >
-                Remove
-              </button>
+              <span className="item-placement-actions">
+                {lastCreated?.trailId === trail.id &&
+                  lastCreated.stop.id === stop.id && (
+                    <Link to={`/trails/${trail.id}/stops/${stop.id}`}>
+                      Open Stop
+                    </Link>
+                  )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void remove(stop.id)}
+                  aria-label={`Remove from ${trail.name} · ${stop.name}`}
+                >
+                  Remove
+                </button>
+              </span>
             </li>
           ))}
         </ul>
       )}
 
       {catalog.trails.length === 0 ? (
-        <p>No Trails available</p>
+        <p>
+          No Trails yet. <Link to="/">Create a Trail first</Link>.
+        </p>
       ) : (
         <details>
           <summary>Add to Trail…</summary>
@@ -131,26 +170,49 @@ export function ItemPlacements({
                 <strong>{state.trail.name}</strong>
                 {state.kind === "placed" ? (
                   <span>Already in {state.stop.name}</span>
-                ) : state.stops.length === 0 ? (
-                  <span>No existing Stops</span>
                 ) : (
-                  <select
-                    aria-label={`Add to ${state.trail.name}`}
-                    value=""
-                    disabled={busy}
-                    onChange={(event) =>
-                      void place(event.target.value as StopId)
-                    }
-                  >
-                    <option value="" disabled>
-                      Choose a Stop…
-                    </option>
-                    {state.stops.map((stop) => (
-                      <option key={stop.id} value={stop.id}>
-                        {stop.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="item-placement-choice">
+                    {state.stops.length > 0 && (
+                      <select
+                        aria-label={`Add to ${state.trail.name}`}
+                        value=""
+                        disabled={busy}
+                        onChange={(event) =>
+                          void place(event.target.value as StopId)
+                        }
+                      >
+                        <option value="" disabled>
+                          Choose a Stop…
+                        </option>
+                        {state.stops.map((stop) => (
+                          <option key={stop.id} value={stop.id}>
+                            {stop.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setCreatingOn(state.trail.id);
+                        setNewStopName(itemTitle);
+                      }}
+                    >
+                      New Stop
+                    </button>
+                    {creatingOn === state.trail.id && (
+                      <NewStopForm
+                        trailName={state.trail.name}
+                        name={newStopName}
+                        existingStops={state.stops}
+                        busy={busy}
+                        onNameChange={setNewStopName}
+                        onCancel={() => setCreatingOn(null)}
+                        onSubmit={(name) => void create(state.trail.id, name)}
+                      />
+                    )}
+                  </div>
                 )}
               </li>
             ))}
@@ -167,6 +229,64 @@ export function ItemPlacements({
         />
       )}
     </section>
+  );
+}
+
+interface NewStopFormProps {
+  trailName: string;
+  name: string;
+  existingStops: PlacementStop[];
+  busy: boolean;
+  onNameChange: (name: string) => void;
+  onCancel: () => void;
+  onSubmit: (name: string) => void;
+}
+
+function NewStopForm({
+  trailName,
+  name,
+  existingStops,
+  busy,
+  onNameChange,
+  onCancel,
+  onSubmit,
+}: NewStopFormProps) {
+  const trimmedName = name.trim();
+  const repeatsName = existingStops.some((stop) => stop.name === trimmedName);
+
+  return (
+    <form
+      className="item-new-stop-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (trimmedName) onSubmit(trimmedName);
+      }}
+    >
+      <label>
+        Stop name on {trailName}
+        <input
+          autoFocus
+          required
+          value={name}
+          disabled={busy}
+          onChange={(event) => onNameChange(event.target.value)}
+        />
+      </label>
+      {repeatsName && (
+        <p role="status">
+          A Stop on this Trail already has this name. You can still create
+          another.
+        </p>
+      )}
+      <span>
+        <button type="submit" disabled={busy || !trimmedName}>
+          Create Stop
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </span>
+    </form>
   );
 }
 
