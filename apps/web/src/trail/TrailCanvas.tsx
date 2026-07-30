@@ -111,7 +111,7 @@ export function TrailCanvas({
     }
   }
 
-  /** Create a Stop on this Trail, link it after `from` when there is one, then refresh. */
+  /** Create and link a Stop, refresh the Trail, then open its durable detail. */
   async function createAndLink(name: string, from: StopId | null) {
     setBusy(true);
     setError(null);
@@ -120,6 +120,7 @@ export function TrailCanvas({
       if (from) await connectStops(user, trailId, from, stop.id);
       setDraft(null);
       await onRefresh();
+      onOpenStop(stop.id);
     } catch (caught: unknown) {
       setError(String(caught));
     } finally {
