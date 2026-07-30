@@ -7,7 +7,16 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStopsRouter } from "./stops/router";
 import { createTrailsRouter } from "./trails/router";
-import { apiErrorHandler } from "./error-handler";
+import { createApiErrorHandler } from "./middleware/error-handler";
+import { serializeFailure } from "./diagnostics";
+import {
+  captureRouteMount,
+  createRequestLifecycle,
+  markRoutingResolved,
+  type RequestLifecycleOptions,
+} from "./middleware/request-lifecycle";
+
+export type AppOptions = RequestLifecycleOptions;
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -17,11 +26,16 @@ import { apiErrorHandler } from "./error-handler";
  * Clerk-backed chain. Every later ticket's routes hang off this same factory and
  * scope their data to `req.user`.
  */
-export function createApp(db: Database, auth: RequestHandler[]): Express {
+export function createApp(
+  db: Database,
+  auth: RequestHandler[],
+  options: AppOptions,
+): Express {
   const app = express();
+  app.use(createRequestLifecycle(options));
   app.use(express.json({ strict: false }));
 
-  app.get("/api/health", async (_req, res) => {
+  app.get("/api/health", async (req, res) => {
     try {
       const [row] = await db
         .select({ message: healthCheck.message, time: sql<string>`now()` })
@@ -34,7 +48,15 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
         time: row ? new Date(row.time).toISOString() : new Date().toISOString(),
       };
       res.json(body);
-    } catch {
+    } catch (error) {
+      req.logger.error({
+        event: "unshelf.api.health.failed",
+        msg: "API health check failed",
+        dependency: "postgres",
+        ...serializeFailure(error, {
+          secrets: options.diagnosticSecrets,
+        }),
+      });
       const body: HealthResponse = {
         status: "error",
         message: "database unavailable",
@@ -53,11 +75,16 @@ export function createApp(db: Database, auth: RequestHandler[]): Express {
     res.json(req.user);
   });
 
-  app.use("/api/items", createItemsRouter(db, auth));
-  app.use("/api/labels", createLabelsRouter(db, auth));
-  app.use("/api/stops", createStopsRouter(db, auth));
-  app.use("/api/trails", createTrailsRouter(db, auth));
-  app.use(apiErrorHandler);
+  app.use("/api/items", captureRouteMount, createItemsRouter(db, auth));
+  app.use("/api/labels", captureRouteMount, createLabelsRouter(db, auth));
+  app.use("/api/stops", captureRouteMount, createStopsRouter(db, auth));
+  app.use("/api/trails", captureRouteMount, createTrailsRouter(db, auth));
+  app.use(markRoutingResolved);
+  app.use(
+    createApiErrorHandler({
+      secrets: options.diagnosticSecrets,
+    }),
+  );
 
   return app;
 }

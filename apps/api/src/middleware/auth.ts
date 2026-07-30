@@ -1,8 +1,8 @@
 import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, RequestHandler } from "express";
 import type { ClerkUserId, User } from "@unshelf/shared";
-import type { Database } from "./db";
-import { provisionUser } from "./users";
+import type { Database } from "../db";
+import { provisionUser } from "../users";
 
 /**
  * The one place Clerk is imported on the api (ADR-0009 guardrail). It is also the
@@ -42,10 +42,16 @@ export function createAuthMiddleware(
   return async (req, res, next) => {
     const clerkUserId = await identify(req);
     if (!clerkUserId) {
+      req.logger.warn({
+        event: "unshelf.api.authentication.failed",
+        msg: "Authentication failed",
+        reason: "unauthenticated",
+      });
       res.status(401).json({ error: "unauthenticated" });
       return;
     }
     req.user = await provisionUser(db, clerkUserId);
+    req.logger = req.logger.child({ userId: req.user.id });
     next();
   };
 }

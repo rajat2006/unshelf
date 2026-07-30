@@ -8,9 +8,13 @@ import type { Express } from "express";
 import type { Pool } from "pg";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
-import { createAuthMiddleware } from "../src/auth";
-import type { Identify } from "../src/auth";
+import { createAuthMiddleware } from "../src/middleware/auth";
+import type { Identify } from "../src/middleware/auth";
 import { createDatabase, type Database } from "../src/db";
+import {
+  createCollectingLogger,
+  type CollectingLogger,
+} from "../src/logging/testing";
 
 /**
  * The committed migration folder, resolved from this file rather than the
@@ -42,6 +46,7 @@ export const TEST_USER_HEADER = "x-test-clerk-user-id";
 export interface TestApp {
   app: Express;
   pool: Pool;
+  logger: CollectingLogger;
   stop: () => Promise<void>;
 }
 
@@ -55,11 +60,13 @@ export async function startTestApp(
   await migrateTestDatabase(db);
 
   const auth = createAuthMiddleware(db, identify);
-  const app = createApp(db, [auth]);
+  const logger = createCollectingLogger();
+  const app = createApp(db, [auth], { logger });
 
   return {
     app,
     pool: db.$client,
+    logger,
     stop: async () => {
       await db.$client.end();
       await container.stop();
