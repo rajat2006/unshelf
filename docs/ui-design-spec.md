@@ -112,9 +112,11 @@ The surfaces:
   Trails-only: **no** label quick-filters, **no** capture line (both were tried and
   dropped — see §3).
 - **Library** (the store, formerly *All*) — every **Item**, filterable by label.
-  The per-row home for triage: **Status**, **target date**, applied **labels**, and
-  **＋ Stop** (pull an Item onto a Trail). Renamed from *All* because "All" read as a
-  vague catch-all; "Library" names the flat store plainly.
+  The per-row home for triage: **Status**, **target date**, and applied **labels**.
+  Library rows carry no placement gesture. Single-Item placement lives in the
+  Item's URL-owned sidebar; bulk placement lives inside an open Stop. Renamed from
+  *All* because "All" read as a vague catch-all; "Library" names the flat store
+  plainly.
 - **Trail** — one Trail's canvas of Stops + forks; open a Stop node for its Items.
 
 The **Item** remains the one shared record (ADR-0003); every surface is a view over
@@ -167,7 +169,9 @@ behind one named door; tags demoted inside it; capture a quiet global action).
 - **Open Stop / open Item = a non-modal right sidebar.** It docks right; the canvas
   reflows beside it; no scrim; it stays interactive; it **owns its URL**, so back /
   refresh / bookmark / deep-link all work. Full-page, drawer-with-scrim, and
-  centered-modal were rejected.
+  centered-modal were rejected. The Item sidebar owns single-Item placement through
+  `Add to Trail…`; the open Stop owns Library search and multi-add. Neither flow
+  introduces a modal or replaces its underlying surface.
 - **Cold deep-link fallback.** The Item URL is context-independent, so opening
   `/items/:itemId` fresh (no origin surface to reflow beside) renders the sidebar
   over the **Library** — the Item's home surface, since every Item lives in the
@@ -212,6 +216,10 @@ no Items). Loading and error were carried into this spec to specify:
     Capture) from **empty-under-filter** ("No Items match this label" + clear-filter),
     since the recovery differs.
   - _Trail_ — "This Trail has no Stops yet" + add-a-Stop.
+  - _Open Stop_ — no dead-end empty copy and no link away to the Library. An empty
+    Stop opens directly into **Add Items from your Library**: visible search and
+    eligible Items. The intake remains present below current Items after the Stop
+    is populated. Adding commits immediately and offers Undo in place.
 - **Loading.** Skeleton placeholders in the surface's own layout (Trail cards,
   Library rows, the Trail canvas), tinted with theme tokens — never a full-screen
   spinner once the shell is up. The only full-screen hold is the first-load auth
@@ -248,6 +256,14 @@ and the **compass rose**. The canvas now sits on a cool neutral surface with a f
 neutral graticule, per Quiet Focus's "not map-themed." Layout stays **derived from
 topology** (ADR-0010) — no stored positions.
 
+The whole Stop waypoint — medallion and name — opens its URL-owned detail. An empty
+Stop shows **＋** instead of `0/0`; the plus communicates that opening the Stop is
+how Items are added and does not itself mutate the Stop. Loose Stops stay
+unsequenced roots and appear in a compact, independently scrollable left-hand rail
+labelled **Unsequenced** with its count. Rail order is presentation-only. Selecting
+one opens the existing Stop sidebar; **Sequence this Stop** reuses the existing
+directed-link interaction.
+
 ## 9. Responsive
 
 Per ADR-0008 (single responsive web app, desktop-primary, must reflow to phone):
@@ -260,7 +276,11 @@ Per ADR-0008 (single responsive web app, desktop-primary, must reflow to phone):
   authoring; layout derives from topology, so the same Trail renders read-only with
   no extra data — ADR-0010). This is an inner-container pan, **not** the page-level
   horizontal scroll ADR-0008 forbids.
-- No separate phone mockup was drawn; the reflowing shell is the spec.
+- At phone width an open Stop owns the full-width route surface beneath a compact
+  Trail back/context bar. The document is the only vertical scroll owner: full
+  current-Item cards appear before the always-present Library intake. Adding keeps
+  the search and scroll position stable; the tapped result temporarily becomes a
+  **Moved to In this Stop** row with Undo while the Item moves to the current list.
 
 ## 10. Decisions record (map index)
 

@@ -71,3 +71,23 @@ it files an Item into the Library and leaves the current route untouched.
 - **Full spec:** `docs/ui-design-spec.md` §4. Chosen from the throwaway
   `prototype-routing.html` (`worktree-issue-58-routing-prototype`, variant D), never
   merged.
+
+## Update — Item placement stays inside URL-owned detail (2026-07-30, map “How an Item gets into a Stop”)
+
+[Prototype the Item picker in its two hardest frames](https://github.com/rajat2006/unshelf/issues/212)
+and [Creating a Stop for an Item from the Item sidebar](https://github.com/rajat2006/unshelf/issues/214)
+preserve the route-owned right-sidebar decision:
+
+- `/items/:itemId` owns single-Item placement. Its Item sidebar shows
+  Trail-qualified placement chips and `Add to Trail…`, including placement into an
+  existing Stop and atomic creation of a new loose Stop.
+- `/trails/:trailId/stops/:stopId` owns Stop-first intake. The open Stop keeps its
+  current Items above an always-present Library search with immediate placement and
+  Undo.
+- Library rows carry no placement control, and neither flow introduces a modal,
+  scrim, or temporary URL. The underlying Library or Trail stays available beside
+  the sidebar.
+
+At phone width the same Stop URL owns a full-width detail surface beneath a compact
+Trail context bar. That responsive presentation changes the rectangle, not route
+ownership, history, refresh, bookmark, or deep-link behavior.
