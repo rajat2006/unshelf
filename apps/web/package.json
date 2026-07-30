@@ -9,8 +9,7 @@
     "lint": "eslint src test playwright.config.ts vite.config.ts",
     "lint:fix": "eslint src test playwright.config.ts vite.config.ts --fix",
     "preview": "vite preview",
-    "test": "vitest run --exclude 'test/browser/**'",
-    "test:browser": "playwright test",
+    "test": "vitest run --exclude 'test/browser/**' && playwright test",
     "test:product": "vitest run --exclude 'test/browser/**'",
     "typecheck": "tsc --noEmit"
   },
