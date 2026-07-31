@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import {
   createItemRequestSchema,
+  createStopWithItemRequestSchema,
   itemIdSchema,
   labelIdSchema,
   updateItemStatusRequestSchema,
@@ -8,6 +9,11 @@ import {
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
+import { respondToPlacementFailure } from "../placements/http";
+import {
+  createStopWithItem,
+  getItemPlacementCatalog,
+} from "../placements/service";
 import {
   createItem,
   applyLabelToItem,
@@ -28,10 +34,7 @@ export function createItemsRouter(
 
   router.post(
     "/",
-    validateRequest(
-      { body: createItemRequestSchema },
-      "invalid_item_create",
-    ),
+    validateRequest({ body: createItemRequestSchema }, "invalid_item_create"),
     async (req, res) => {
       const { body } = res.locals.validated;
       const item = await createItem(db, req.user!.id, body);
@@ -45,11 +48,53 @@ export function createItemsRouter(
   });
 
   router.get(
-    "/:itemId",
+    "/:itemId/placements",
+    validateRequest({ params: { itemId: itemIdSchema } }, "missing_item_id"),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const catalog = await getItemPlacementCatalog(db, {
+        userId: req.user!.id,
+        itemId: params.itemId,
+      });
+      if (!catalog) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.json(catalog);
+    },
+  );
+
+  router.post(
+    "/:itemId/placements",
     validateRequest(
-      { params: { itemId: itemIdSchema } },
-      "missing_item_id",
+      {
+        body: createStopWithItemRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_stop_name",
     ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await createStopWithItem(db, {
+        userId: req.user!.id,
+        itemId: params.itemId,
+        placement: body,
+      });
+      if (!result.ok) {
+        respondToPlacementFailure({
+          response: res,
+          failure: result,
+          notFoundMessage: "item or trail not found",
+        });
+        return;
+      }
+      res.status(201).json(result.stop);
+    },
+  );
+
+  router.get(
+    "/:itemId",
+    validateRequest({ params: { itemId: itemIdSchema } }, "missing_item_id"),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await getItem(db, req.user!.id, params.itemId);
@@ -63,9 +108,12 @@ export function createItemsRouter(
 
   router.post(
     "/:itemId/labels/:labelId",
-    validateRequest({
-      params: { itemId: itemIdSchema, labelId: labelIdSchema },
-    }, "missing_item_id"),
+    validateRequest(
+      {
+        params: { itemId: itemIdSchema, labelId: labelIdSchema },
+      },
+      "missing_item_id",
+    ),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await applyLabelToItem(
@@ -84,9 +132,12 @@ export function createItemsRouter(
 
   router.delete(
     "/:itemId/labels/:labelId",
-    validateRequest({
-      params: { itemId: itemIdSchema, labelId: labelIdSchema },
-    }, "missing_item_id"),
+    validateRequest(
+      {
+        params: { itemId: itemIdSchema, labelId: labelIdSchema },
+      },
+      "missing_item_id",
+    ),
     async (req, res) => {
       const { params } = res.locals.validated;
       const item = await removeLabelFromItem(
@@ -105,10 +156,13 @@ export function createItemsRouter(
 
   router.patch(
     "/:itemId/status",
-    validateRequest({
-      body: updateItemStatusRequestSchema,
-      params: { itemId: itemIdSchema },
-    }, "invalid_item_status"),
+    validateRequest(
+      {
+        body: updateItemStatusRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_item_status",
+    ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const item = await updateItemStatus(
@@ -127,10 +181,13 @@ export function createItemsRouter(
 
   router.patch(
     "/:itemId/target-date",
-    validateRequest({
-      body: updateItemTargetDateRequestSchema,
-      params: { itemId: itemIdSchema },
-    }, "invalid_target_date"),
+    validateRequest(
+      {
+        body: updateItemTargetDateRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_target_date",
+    ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
       const item = await updateItemTargetDate(

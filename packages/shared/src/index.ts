@@ -71,6 +71,7 @@ export type {
   CreateItemRequest,
   CreateLabelRequest,
   CreateStopRequest,
+  CreateStopWithItemRequest,
   CreateTrailRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
@@ -140,9 +141,9 @@ export interface Stop {
 }
 
 /**
- * Membership: this User's Item is in that User's Stop. A bare many-to-many join
- * plus the tenancy anchor every domain record carries (ADR-0001, ADR-0004,
- * ADR-0009) — the two ends are the whole membership.
+ * Membership: this User's Item is in that User's Stop. The User anchor keeps the
+ * ends in one private space, while the repeated Trail anchor lets PostgreSQL
+ * enforce at most one Stop per Item on a Trail.
  *
  * It carries no `position`, because a Stop is an unordered set and all sequencing
  * lives on the Trail; and no `status`, because Status is one value on the Item
@@ -157,6 +158,11 @@ export interface StopItem {
   stopId: StopId;
   /** The Item end of the membership. */
   itemId: ItemId;
+  /**
+   * The Trail containing the Stop, repeated so PostgreSQL can enforce that this
+   * Item appears at most once on that Trail.
+   */
+  trailId: TrailId;
 }
 
 /**
@@ -172,6 +178,57 @@ export interface StopDetail extends Stop {
    */
   items: Item[];
 }
+
+/** The minimum Stop identity needed to describe or choose an Item placement. */
+export interface PlacementStop {
+  id: StopId;
+  name: string;
+}
+
+/** The minimum Trail identity needed to qualify an Item placement destination. */
+export interface PlacementTrail {
+  id: TrailId;
+  name: string;
+}
+
+/**
+ * One Trail's mutually exclusive state for one Item. A placed Trail exposes
+ * exactly the Stop already containing the Item; an available Trail exposes its
+ * existing Stop destinations.
+ */
+export type ItemPlacementTrail =
+  | {
+      kind: "available";
+      trail: PlacementTrail;
+      stops: PlacementStop[];
+    }
+  | {
+      kind: "placed";
+      trail: PlacementTrail;
+      stop: PlacementStop;
+    };
+
+/** Every Trail the User owns, represented once for one Item. */
+export interface ItemPlacementCatalog {
+  itemId: ItemId;
+  trails: ItemPlacementTrail[];
+}
+
+interface StopItemCandidateFacts {
+  id: ItemId;
+  title: string;
+  type: Type;
+}
+
+/** One compact Library result offered while filling an open Stop. */
+export type StopItemCandidate = StopItemCandidateFacts &
+  (
+    | { kind: "available" }
+    | {
+        kind: "conflict";
+        stop: PlacementStop;
+      }
+  );
 
 /**
  * A first-class Trail — one User's learning journey, owning a canvas of Stops and

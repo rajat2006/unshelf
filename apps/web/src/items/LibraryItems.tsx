@@ -1,32 +1,24 @@
-import type { Item, Label, Stop, StopDetail } from "@unshelf/shared";
+import type { Item, Label } from "@unshelf/shared";
 import type { CurrentUser } from "../application-auth/types";
-import { AddToStopControl } from "../stops/AddToStopControl";
 import { ItemRow } from "./ItemRow";
 import { ItemLabels } from "./ItemLabels";
 
 interface LibraryItemsProps {
   items: Item[];
   labels: Label[];
-  /** The User's Stops — what a Library Item can be pulled into. */
-  stops: Stop[];
-  stopDetails: StopDetail[];
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
-  onStopChanged: (stop: StopDetail) => void;
 }
 
 /**
- * The Library's Item list. Adding to a Stop never takes an Item out of this list:
- * placement adds a reference to the one shared Item spine.
+ * The Library's triage-focused Item list. Placement lives in URL-owned Item and
+ * Stop detail surfaces rather than competing with Status, Target date, and Labels.
  */
 export function LibraryItems({
   items,
   labels,
-  stops,
-  stopDetails,
   user,
   onItemChanged,
-  onStopChanged,
 }: LibraryItemsProps) {
   return (
     <ul className="library-list">
@@ -42,15 +34,6 @@ export function LibraryItems({
             labels={labels}
             user={user}
             onItemChanged={onItemChanged}
-          />
-          <AddToStopControl
-            item={item}
-            stops={stops}
-            placedStops={stopDetails.filter((stop) =>
-              stop.items.some((member) => member.id === item.id),
-            )}
-            user={user}
-            onStopChanged={onStopChanged}
           />
         </ItemRow>
       ))}

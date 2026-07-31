@@ -51,6 +51,32 @@ const createStop = async (clerkUserId: string, body: object) => {
     .send(body);
 };
 
+const createTrail = ({
+  clerkUserId,
+  name,
+}: {
+  clerkUserId: string;
+  name: string;
+}) =>
+  request(app)
+    .post("/api/trails")
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ name });
+
+const createStopOn = ({
+  clerkUserId,
+  trailId,
+  body,
+}: {
+  clerkUserId: string;
+  trailId: string;
+  body: object;
+}) =>
+  request(app)
+    .post(`/api/trails/${trailId}/stops`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send(body);
+
 const listStops = (clerkUserId: string) =>
   request(app).get("/api/stops").set(TEST_USER_HEADER, clerkUserId);
 
@@ -217,7 +243,7 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     expect(titlesIn(again.body as StopDetail)).toEqual(["Added twice"]);
   });
 
-  it("puts the same Item in more than one Stop without duplicating it", async () => {
+  it("rejects placing an Item into a second Stop on the same Trail", async () => {
     const clerkUserId = "clerk_stop_multi";
     const item = (
       await capture(clerkUserId, { title: "Shared item", type: "course" })
@@ -230,20 +256,63 @@ describe("POST /api/stops/:stopId/items — pull an Item from All into a Stop", 
     expect(
       (await addToStop(clerkUserId, css.id, { itemId: item.id })).status,
     ).toBe(200);
-    expect(
-      (await addToStop(clerkUserId, api.id, { itemId: item.id })).status,
-    ).toBe(200);
+    const conflict = await addToStop(clerkUserId, api.id, {
+      itemId: item.id,
+    });
 
-    // One Item, two memberships — both Stops point at the very same record.
-    for (const stop of [css, api]) {
-      const detail = (await viewStop(clerkUserId, stop.id)).body as StopDetail;
-      expect(detail.items).toHaveLength(1);
-      expect(detail.items[0].id).toBe(item.id);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toEqual({
+      error: "item already placed on this trail",
+    });
+    expect(
+      ((await viewStop(clerkUserId, css.id)).body as StopDetail).items.map(
+        (member) => member.id,
+      ),
+    ).toEqual([item.id]);
+    expect(
+      ((await viewStop(clerkUserId, api.id)).body as StopDetail).items,
+    ).toEqual([]);
+  });
+
+  it("places the same Item into Stops on different Trails", async () => {
+    const user = "clerk_stop_cross_trail";
+    const item = (
+      await capture(user, { title: "Shared across Trails", type: "course" })
+    ).body as Item;
+    const firstTrail = (
+      await createTrail({ clerkUserId: user, name: "First Trail" })
+    ).body as Trail;
+    const secondTrail = (
+      await createTrail({ clerkUserId: user, name: "Second Trail" })
+    ).body as Trail;
+    const first = (
+      await createStopOn({
+        clerkUserId: user,
+        trailId: firstTrail.id,
+        body: { name: "Foundations" },
+      })
+    ).body as Stop;
+    const second = (
+      await createStopOn({
+        clerkUserId: user,
+        trailId: secondTrail.id,
+        body: { name: "Foundations" },
+      })
+    ).body as Stop;
+
+    expect((await addToStop(user, first.id, { itemId: item.id })).status).toBe(
+      200,
+    );
+    expect((await addToStop(user, second.id, { itemId: item.id })).status).toBe(
+      200,
+    );
+    for (const stop of [first, second]) {
+      expect(
+        ((await viewStop(user, stop.id)).body as StopDetail).items.map(
+          (member) => member.id,
+        ),
+      ).toEqual([item.id]);
     }
-    const all = (
-      await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
-    ).body as Item[];
-    expect(all).toHaveLength(1);
   });
 
   it("rejects an add with no valid itemId", async () => {
@@ -328,8 +397,15 @@ describe("DELETE /api/stops/:stopId/items/:itemId — remove an Item from a Stop
       .body as Item;
     const first = (await createStop(clerkUserId, { name: "First" }))
       .body as Stop;
-    const second = (await createStop(clerkUserId, { name: "Second" }))
-      .body as Stop;
+    const otherTrail = (await createTrail({ clerkUserId, name: "Other Trail" }))
+      .body as Trail;
+    const second = (
+      await createStopOn({
+        clerkUserId,
+        trailId: otherTrail.id,
+        body: { name: "Second" },
+      })
+    ).body as Stop;
     await addToStop(clerkUserId, first.id, { itemId: item.id });
     await addToStop(clerkUserId, second.id, { itemId: item.id });
 
@@ -519,7 +595,15 @@ describe("one Status, read through every Stop that holds the Item", () => {
     ).body as Item;
     const stops: Stop[] = [];
     for (const name of ["Learn CSS", "Build the API", "Reading list"]) {
-      const stop = (await createStop(clerkUserId, { name })).body as Stop;
+      const trail = (await createTrail({ clerkUserId, name: `${name} Trail` }))
+        .body as Trail;
+      const stop = (
+        await createStopOn({
+          clerkUserId,
+          trailId: trail.id,
+          body: { name },
+        })
+      ).body as Stop;
       await addToStop(clerkUserId, stop.id, { itemId: item.id });
       stops.push(stop);
     }
@@ -539,18 +623,18 @@ describe("one Status, read through every Stop that holds the Item", () => {
   });
 });
 
-describe("StopItem — a bare join and nothing more", () => {
-  it("carries only its User anchor and membership ends — no position or status", async () => {
+describe("StopItem — membership with database invariant anchors", () => {
+  it("carries its User and Trail anchors but no position or status", async () => {
     const { rows } = await harness.pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'stop_items'`,
     );
     const columns = rows.map((row) => row.column_name).sort();
 
-    // user_id is the tenancy guardrail ADR-0009 requires on every domain table.
-    // The two membership ends still carry no domain fact of their own: ordering
-    // lives on the Trail, and Status lives on the Item.
-    expect(columns).toEqual(["item_id", "stop_id", "user_id"]);
+    // user_id is the tenancy guardrail ADR-0009 requires; trail_id lets Postgres
+    // enforce one placement per Trail. Ordering still lives on the Trail, and
+    // Status still lives on the Item.
+    expect(columns).toEqual(["item_id", "stop_id", "trail_id", "user_id"]);
   });
 
   it("cannot hold the same Item in the same Stop twice, at the database", async () => {
@@ -561,11 +645,30 @@ describe("StopItem — a bare join and nothing more", () => {
     // Set semantics are the schema's guarantee, not just the route's.
     await expect(
       harness.pool.query(
-        `INSERT INTO stop_items (user_id, stop_id, item_id)
-         VALUES ($1, $2, $3)`,
+        `INSERT INTO stop_items (user_id, stop_id, item_id, trail_id)
+         SELECT $1, $2, $3, trail_id FROM stops WHERE id = $2`,
         [stop.userId, stop.id, item.id],
       ),
     ).rejects.toThrow();
+  });
+
+  it("cannot place one Item into two Stops on the same Trail at the database", async () => {
+    const user = "clerk_stop_item_trail_unique";
+    const { item, stop: first } = await givenItemAndStop(
+      user,
+      "One place per Trail",
+      "First",
+    );
+    const second = (await createStop(user, { name: "Second" })).body as Stop;
+    await addToStop(user, first.id, { itemId: item.id });
+
+    await expect(
+      harness.pool.query(
+        `INSERT INTO stop_items (user_id, stop_id, item_id, trail_id)
+         SELECT $1, $2, $3, trail_id FROM stops WHERE id = $2`,
+        [first.userId, second.id, item.id],
+      ),
+    ).rejects.toThrow(/stop_items_item_trail_unique/);
   });
 
   it("rejects a cross-User membership at the database boundary", async () => {
@@ -582,8 +685,8 @@ describe("StopItem — a bare join and nothing more", () => {
 
     await expect(
       harness.pool.query(
-        `INSERT INTO stop_items (user_id, stop_id, item_id)
-         VALUES ($1, $2, $3)`,
+        `INSERT INTO stop_items (user_id, stop_id, item_id, trail_id)
+         SELECT $1, $2, $3, trail_id FROM stops WHERE id = $2`,
         [alice.stop.userId, alice.stop.id, bob.item.id],
       ),
     ).rejects.toThrow(/stop_items_item_owner_fk/);

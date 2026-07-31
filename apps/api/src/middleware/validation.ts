@@ -26,12 +26,12 @@ export const VALIDATION_FAILURE_CODES = [
   "missing_item_id",
   "invalid_trail_name",
   "invalid_stop_name",
+  "invalid_stop_item_search",
   "invalid_edge_endpoints",
   "self_edge",
 ] as const;
 
-export type ValidationFailureCode =
-  (typeof VALIDATION_FAILURE_CODES)[number];
+export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];
 
 interface RequestSchemas {
   body?: Schema;

@@ -221,15 +221,16 @@ export const stops = pgTable(
 );
 
 /**
- * StopItem: membership plus its mandatory tenancy anchor, and nothing else
+ * StopItem: membership plus its mandatory User and Trail invariant anchors
  * (ADR-0001, ADR-0004, ADR-0009). The composite primary key makes the two ends
  * the membership identity and a Stop's contents a set, so the same Item cannot
- * be held twice however it is added. There is no `position` (a Stop is
- * unordered; sequencing lives on the Trail) and no `status` (one Status lives on
- * the Item, shared by every Stop holding it) — either column would be a second
- * place to keep the same domain fact true.
+ * be held twice however it is added. Repeating `trail_id` lets PostgreSQL
+ * enforce that an Item appears in at most one Stop on a Trail. There is no
+ * `position` (a Stop is unordered; sequencing lives on the Trail) and no
+ * `status` (one Status lives on the Item, shared by every Stop holding it) —
+ * either column would be a second place to keep the same domain fact true.
  *
- * user_id is deliberately repeated as a security constraint: the paired foreign
+ * user_id and trail_id are deliberately repeated as constraints: the foreign
  * keys below make disagreement impossible at the database boundary, even for a
  * write that bypasses the repository. Every domain table therefore points at our
  * User anchor, as ADR-0009 requires.
@@ -246,6 +247,7 @@ export const stopItems = pgTable(
     itemId: uuid("item_id")
       .notNull()
       .references(() => items.id, { onDelete: "cascade" }),
+    trailId: uuid("trail_id").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.stopId, table.itemId] }),
@@ -259,6 +261,12 @@ export const stopItems = pgTable(
       columns: [table.itemId, table.userId],
       foreignColumns: [items.id, items.userId],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "stop_items_stop_trail_fk",
+      columns: [table.stopId, table.trailId],
+      foreignColumns: [stops.id, stops.trailId],
+    }).onDelete("cascade"),
+    unique("stop_items_item_trail_unique").on(table.itemId, table.trailId),
     // The primary key already indexes stop_id (a Stop's contents); this covers
     // the other direction — every Stop holding a given Item.
     index("stop_items_item_id_idx").on(table.itemId),
