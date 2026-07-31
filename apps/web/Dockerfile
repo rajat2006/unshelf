@@ -19,7 +19,7 @@ COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY .husky/install.mjs .husky/install.mjs
-RUN CI=true pnpm install --frozen-lockfile
+RUN HUSKY=0 pnpm install --frozen-lockfile
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web
