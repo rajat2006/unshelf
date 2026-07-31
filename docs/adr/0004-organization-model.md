@@ -55,3 +55,20 @@ ruled out multiple folders) and ADR-0003 (the Item spine and the many-to-many
   half-modelled now.
 - **"Topic" and "Tag" are not domain terms.** Grouping is always expressed as a
   Stop; the glossary lists both under _Avoid_.
+
+## Update — Stop membership is constrained per Trail (2026-07-30, map “How an Item gets into a Stop”)
+
+[Creating a Stop for an Item from the Item sidebar](https://github.com/rajat2006/unshelf/issues/214)
+keeps the core of this ADR: a Stop remains a flat, unordered set and `StopItem`
+still carries neither Status nor position. It narrows the old unconstrained
+many-to-many reading now that every Stop belongs to exactly one Trail:
+
+- an Item may appear in Stops on different Trails;
+- an Item may appear in at most one Stop on any one Trail;
+- the membership remains the same bare Item–Stop relationship—Trail identity is
+  derived through the Stop rather than stored as another `StopItem` fact.
+
+This is a sequencing invariant, not an ordering within the Stop. One shared Item
+has one Status, and one Trail must not present that Status at several points in its
+own plan. The database and every Item–Stop read and write boundary enforce the
+invariant; the web merely avoids offering invalid same-Trail destinations.

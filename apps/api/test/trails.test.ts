@@ -115,13 +115,12 @@ describe("Trails at the HTTP boundary", () => {
     });
   });
 
-  it("derives Trail progress from its Stops' Items, counting each Item once", async () => {
+  it("derives Trail progress from its Stops' Items", async () => {
     const user = "trails-progress-user";
     const trail = (await createTrail(user, { name: "Progress journey" }))
       .body as Trail;
 
-    // Two Stops created directly on this Trail; one shared Item done, one still
-    // in progress.
+    // Two Stops created directly on this Trail; one Item is done and one is not.
     const stopA = (
       await request(app)
         .post(`/api/trails/${trail.id}/stops`)
@@ -148,9 +147,7 @@ describe("Trails at the HTTP boundary", () => {
         .send({ title: "Open thing", type: "article" })
     ).body as { id: string };
 
-    // The done Item lives in both Stops — it must count once, not twice.
     await addItemToStop(user, stopA.id, doneItem.id);
-    await addItemToStop(user, stopB.id, doneItem.id);
     await addItemToStop(user, stopB.id, openItem.id);
     await request(app)
       .patch(`/api/items/${doneItem.id}/status`)

@@ -7,7 +7,7 @@
 # as a build arg — it is not a runtime secret (it is the browser-public key).
 
 # ── base ──────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS base
+FROM node:24-alpine AS base
 RUN corepack enable
 WORKDIR /app
 

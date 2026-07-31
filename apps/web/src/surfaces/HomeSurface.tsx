@@ -55,7 +55,7 @@ export function HomeSurface() {
         state={state}
         creating={creating}
         onCreate={create}
-        onRetry={refresh}
+        onRetry={() => void refresh()}
       />
     </section>
   );

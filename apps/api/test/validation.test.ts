@@ -2,7 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createLabelRequestSchema } from "@unshelf/shared/validation";
-import { validateRequest } from "../src/validation";
+import { validateRequest } from "../src/middleware/validation";
 
 describe("request validation boundary", () => {
   it("parses a declared query schema for future query-bearing routes", async () => {
@@ -40,7 +40,10 @@ function queryTestApp() {
   const app = express();
   app.get(
     "/search",
-    validateRequest({ query: createLabelRequestSchema }),
+    validateRequest(
+      { query: createLabelRequestSchema },
+      "invalid_label_name",
+    ),
     (_req, res) => {
       res.json(res.locals.validated.query);
     },

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Item, Label, LabelId, Stop, StopDetail } from "@unshelf/shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Item, Label, LabelId } from "@unshelf/shared";
 import { useSearchParams } from "react-router";
-import { fetchAll, fetchLabels, fetchStop, fetchStops } from "../api";
+import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
 import { useCapture } from "../shell/useCapture";
@@ -14,8 +14,6 @@ type LibraryState =
       status: "ready";
       items: Item[];
       labels: Label[];
-      stops: Stop[];
-      stopDetails: StopDetail[];
     };
 
 /**
@@ -44,10 +42,13 @@ export function LibrarySurface({
   const user = useCurrentUser();
   const capture = useCapture();
   const [routeSearchParams, setRouteSearchParams] = useSearchParams();
-  const searchParams =
-    labelFilterSearch === undefined
-      ? routeSearchParams
-      : new URLSearchParams(labelFilterSearch);
+  const searchParams = useMemo(
+    () =>
+      labelFilterSearch === undefined
+        ? routeSearchParams
+        : new URLSearchParams(labelFilterSearch),
+    [labelFilterSearch, routeSearchParams],
+  );
   const [state, setState] = useState<LibraryState>({ status: "loading" });
   const loadGeneration = useRef(0);
 
@@ -55,16 +56,12 @@ export function LibrarySurface({
     const generation = ++loadGeneration.current;
     setState({ status: "loading" });
     try {
-      const [items, labels, stops] = await Promise.all([
+      const [items, labels] = await Promise.all([
         fetchAll(user),
         fetchLabels(user),
-        fetchStops(user),
       ]);
-      const stopDetails = await Promise.all(
-        stops.map((stop) => fetchStop(user, stop.id)),
-      );
       if (generation !== loadGeneration.current) return;
-      setState({ status: "ready", items, labels, stops, stopDetails });
+      setState({ status: "ready", items, labels });
     } catch {
       if (generation !== loadGeneration.current) return;
       setState({ status: "error" });
@@ -83,19 +80,6 @@ export function LibrarySurface({
     },
     [onItemChanged],
   );
-
-  const replaceStop = useCallback((changed: StopDetail) => {
-    setState((current) =>
-      current.status === "ready"
-        ? {
-            ...current,
-            stopDetails: current.stopDetails.map((stop) =>
-              stop.id === changed.id ? changed : stop,
-            ),
-          }
-        : current,
-    );
-  }, []);
 
   const displayedState = itemOverrides.reduce(replaceItemInLibraryState, state);
   const activeLabelId = labelFilterEnabled ? searchParams.get("label") : null;
@@ -192,11 +176,8 @@ export function LibrarySurface({
         <LibraryItems
           items={visibleItems}
           labels={displayedState.labels}
-          stops={displayedState.stops}
-          stopDetails={displayedState.stopDetails}
           user={user}
           onItemChanged={replaceItem}
-          onStopChanged={replaceStop}
         />
       )}
     </section>
@@ -215,10 +196,6 @@ function replaceItemInLibraryState(
     ? {
         ...state,
         items: replaceItemIn(state.items, changed),
-        stopDetails: state.stopDetails.map((stop) => ({
-          ...stop,
-          items: replaceItemIn(stop.items, changed),
-        })),
       }
     : state;
 }

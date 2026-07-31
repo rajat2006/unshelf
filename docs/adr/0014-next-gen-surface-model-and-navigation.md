@@ -99,23 +99,33 @@ ADRs do not describe. Building that model is a **separate downstream effort — 
   _Avoid_); its **model realisation — schema + enforcement — lands with #74**, not
   here.
 
-## Update — one placement per Item per Trail (2026-07-29)
+## Update — placement is not Capture, and a Trail sequences an Item once (2026-07-30, map “How an Item gets into a Stop”)
 
-An Item may appear in many Stops across different Trails, but it belongs to **at
-most one Stop on any one Trail**. A Trail sequences each Item once. Repeating the
-same shared Item in two Stops on one Trail would make its one shared Status appear
-at two points in the plan and make "what comes next" misleading. Cross-cutting
-relevance belongs on Labels; reuse in a genuinely different plan belongs on
-another Trail.
+[Creating a Stop for an Item from the Item sidebar](https://github.com/rajat2006/unshelf/issues/214)
+clarifies the boundary around this ADR's global Capture action:
 
-This deliberately rejects same-Trail reuse even when one Item supports two Stops:
-the User chooses the single Stop that owns its place in that Trail. Every placement
-door must respect the invariant. Once an Item is placed on a Trail, that Trail may
-show the existing `Trail · Stop` placement but must not offer another Stop or a new
-Stop for it.
+- **Capture** still creates one Item in the Library and never files it into a
+  Trail. Placement acts on an Item that already exists.
+- From an Item sidebar, `Add to Trail…` may place that Item in an existing Stop or
+  atomically create a loose Stop containing it. That is placement onto a Trail,
+  not another Capture path.
+- An Item may appear in Stops on different Trails, but in at most one Stop on any
+  one Trail. A Trail sequences the shared Item once: repeating it in two Stops
+  would make its one shared Status appear at two points in the plan and make
+  "what comes next" misleading. Cross-cutting relevance belongs on Labels; reuse
+  in a genuinely different plan belongs on another Trail.
+- This deliberately rejects same-Trail reuse even when one Item supports two Stops:
+  the User chooses the single Stop that owns its place in that Trail. Every
+  placement door and every read and write boundary must respect the invariant,
+  with the database enforcing it as the final boundary.
+- A Trail where the Item is already placed remains visible as
+  `Already in <Stop>` but offers neither another Stop nor `New Stop`.
 
-The built `stop_items` join currently prevents only a duplicate pair of one Stop
-and one Item; the API explicitly permits the same Item in two Stops without
-considering their Trail. The downstream model build must therefore enforce the
-stronger per-Trail invariant at the write boundary and database boundary. This
-wayfinding effort records the decision and hands off its implementation.
+At the time this invariant was identified, the built `stop_items` join prevented
+only a duplicate Stop–Item pair and the API did not consider the Trail. The
+downstream model build has since made membership Trail-qualified and added the
+stronger write-boundary and database enforcement.
+
+Direct Capture from inside an open Stop remains a separate, deliberately deferred
+decision. The placement design reserves that future seam without changing
+Capture's meaning here.

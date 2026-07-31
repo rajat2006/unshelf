@@ -102,7 +102,7 @@ export async function createItem(
     .insert(items)
     .values({ userId, title: input.title, source, type: input.type })
     .returning({ id: items.id });
-  return (await getItem(db, userId, rows[0]!.id as ItemId))!;
+  return (await getItem(db, userId, rows[0].id as ItemId))!;
 }
 
 /** All for a User: every Item where `user_id = me`, and only that User's. */

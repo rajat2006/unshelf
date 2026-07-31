@@ -3,6 +3,7 @@ import type { Item, ItemId, StopDetail, StopId } from "@unshelf/shared";
 import { removeItemFromStop } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemRow } from "../items/ItemRow";
+import { StopItemIntake } from "./StopItemIntake";
 
 interface StopViewProps {
   stop: StopDetail;
@@ -33,7 +34,7 @@ export function StopView({
   closeLabel = "← All stops",
   headingLevel = 3,
 }: StopViewProps) {
-  const Heading = `h${headingLevel}` as "h2" | "h3";
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   return (
     <div>
       <div className="stop-view__heading">
@@ -43,11 +44,7 @@ export function StopView({
         </button>
       </div>
 
-      {stop.items.length === 0 ? (
-        <p className="quiet-copy">
-          Nothing here yet — add Items to this Stop from the Library.
-        </p>
-      ) : (
+      {stop.items.length > 0 && (
         <ul className="stop-view__items">
           {stop.items.map((item) => (
             <ItemRow
@@ -66,6 +63,11 @@ export function StopView({
           ))}
         </ul>
       )}
+      <StopItemIntake
+        stopId={stop.id}
+        user={user}
+        onStopChanged={onStopChanged}
+      />
     </div>
   );
 }

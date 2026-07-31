@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
 interface ValidationIssue {
   code: string;
@@ -16,6 +16,22 @@ interface Schema<Output = unknown> {
 
 type SchemaOutput<T> = T extends Schema<infer Output> ? Output : never;
 type ParameterSchemas = Record<string, Schema>;
+
+export const VALIDATION_FAILURE_CODES = [
+  "malformed_json",
+  "invalid_item_create",
+  "invalid_item_status",
+  "invalid_target_date",
+  "invalid_label_name",
+  "missing_item_id",
+  "invalid_trail_name",
+  "invalid_stop_name",
+  "invalid_stop_item_search",
+  "invalid_edge_endpoints",
+  "self_edge",
+] as const;
+
+export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];
 
 interface RequestSchemas {
   body?: Schema;
@@ -50,10 +66,14 @@ interface PublicIssue {
  * Schemas own both runtime parsing and `res.locals.validated`, the request-scoped
  * input container consumed by the next handler. Path parameters are declared
  * individually so the API can consume the shared branded UUID schemas without
- * importing Zod or rebuilding identifier contracts locally.
+ * importing Zod or rebuilding identifier contracts locally. The validation code
+ * classifies the whole route operation from the fixed logging catalog; it is not
+ * inferred from an individual Zod issue when one boundary validates several
+ * fields or surfaces.
  */
 export function validateRequest<const Schemas extends RequestSchemas>(
   schemas: Schemas,
+  validationCode: ValidationFailureCode,
 ): RequestHandler<
   Record<string, string>,
   unknown,
@@ -90,6 +110,7 @@ export function validateRequest<const Schemas extends RequestSchemas>(
     }
 
     if (issues.length > 0) {
+      recordValidationFailure(req, validationCode);
       res.status(400).json({ error: "invalid_request", issues });
       return;
     }
@@ -97,6 +118,18 @@ export function validateRequest<const Schemas extends RequestSchemas>(
     res.locals.validated = parsed as ValidatedInput<Schemas>;
     next();
   };
+}
+
+export function recordValidationFailure(
+  req: Pick<Request, "logger" | "user">,
+  validationCode: ValidationFailureCode,
+): void {
+  req.logger?.warn({
+    event: "unshelf.api.validation.failed",
+    msg: "Request validation failed",
+    ...(req.user === undefined ? {} : { userId: req.user.id }),
+    validationCode,
+  });
 }
 
 function normalizeIssues(

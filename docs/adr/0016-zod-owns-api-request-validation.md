@@ -39,6 +39,20 @@ The boundary does not log errors or rejected values. Logging remains a separate
 decision; a future logging seam may consume internal errors, but it must preserve
 the public redaction and must not log whole request bodies.
 
+## Revision — failure-only production diagnostics (#163)
+
+The production logging decision makes one narrow exception to the final
+constraint above: a 4xx, 5xx, or aborted request has one server-side request
+snapshot that may include the whole rejected body after recursive
+credential-focused redaction. Successful requests still never log request
+bodies, and validation events themselves carry only a stable validation code.
+
+This does not change the public error contract: rejected values and diagnostics
+remain absent from HTTP responses. The failure snapshot is restricted,
+byte-bounded operational evidence that deliberately retains non-secret
+User-authored values; access to container logs and exported evidence must
+therefore remain restricted as documented in `docs/deploy.md`.
+
 ## Contract behavior retained
 
 - Request objects are strict, so undeclared fields are rejected.

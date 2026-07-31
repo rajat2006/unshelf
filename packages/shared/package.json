@@ -23,6 +23,8 @@
   "scripts": {
     "build": "tsup src/index.ts src/validation.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts src/validation.ts --format esm --dts --watch",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
     "test": "pnpm run build && vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -30,6 +32,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "esbuild": "^0.25.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

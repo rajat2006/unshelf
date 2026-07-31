@@ -11,6 +11,9 @@ pnpm dev
 
 The api expects Postgres at `DATABASE_URL`. Tests need no `.env` at all —
 `pnpm test` spins up a throwaway Postgres via testcontainers (Docker required).
+API logs remain structured NDJSON by default. For human-friendly local output,
+run `pnpm --filter @unshelf/api dev:pretty`; that local-only command pipes the
+same NDJSON events through `pino-pretty` without changing the production bundle.
 
 **Run the migrations before the first `pnpm dev`, and again after any pull that
 adds one:**
@@ -65,6 +68,31 @@ branch is rebased before merge, refresh the full commit identity in
 Older branches and worktrees should rebase onto the merged rollout, resolve
 substantive conflicts instead of retaining obsolete whitespace, and then run
 `pnpm format` before continuing.
+
+## Pre-commit checks
+
+A normal `pnpm install` enables the Husky pre-commit hook automatically. The
+hook runs only against staged files: product TypeScript and TSX are fixed by the
+typed ESLint policy and then formatted by Prettier, while other supported staged
+files are formatted by Prettier. Unstaged tracked changes are hidden and restored
+while those checks run. Git's staged-diff check runs last against the final
+snapshot.
+
+CI installations skip hook activation. If a worktree has an installed Husky
+launcher but not the hook dependencies, the hook warns, skips linting and
+formatting, and still runs the Git-native staged check. A worktree with neither
+the generated launcher nor dependencies remains commit-capable.
+
+The hook is fast local feedback, not the merge gate: required CI remains
+authoritative. `git commit --no-verify` is an intentional escape hatch when a
+contributor or autonomous agent needs to bypass the local hook. Builds,
+typechecks, and tests do not run at commit time.
+
+Implementation validation on Node 24 and pnpm 11 measured the isolated
+real-commit fixture at 1.31 seconds for one staged TypeScript file and 1.49
+seconds for staged API, web, and shared TypeScript files together. The complete
+focused Vitest commands, including test-runner startup, took 2.29 and 2.47
+seconds respectively. These are recorded benchmarks, not CI timing assertions.
 
 ## Deployment
 

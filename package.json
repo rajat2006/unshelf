@@ -4,24 +4,34 @@
   "private": true,
   "packageManager": "pnpm@11.12.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "build": "turbo run build",
-    "ci:product": "pnpm run ci:product:build && pnpm run ci:product:typecheck && pnpm run ci:product:test",
+    "ci:product": "pnpm run ci:product:build && pnpm run ci:product:typecheck && pnpm run ci:product:lint && pnpm run ci:product:test",
     "ci:product:build": "turbo run build --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "ci:product:lint": "pnpm run lint",
     "ci:product:test": "turbo run test:product --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "ci:product:typecheck": "turbo run typecheck --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
     "db:generate": "turbo run db:generate",
     "dev": "turbo run dev",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
+    "lint": "turbo run lint --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "lint:fix": "turbo run lint:fix --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared",
+    "prepare": "node .husky/install.mjs",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "9.1.7",
+    "lint-staged": "17.2.0",
     "prettier": "3.9.6",
     "turbo": "^2.3.3",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.65.0"
   }
 }

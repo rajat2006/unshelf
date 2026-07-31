@@ -1,7 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { apiErrorHandler } from "../src/error-handler";
+import { apiErrorHandler } from "../src/middleware/error-handler";
 
 describe("API error policy", () => {
   it("does not treat an unrelated typed error as malformed JSON", async () => {

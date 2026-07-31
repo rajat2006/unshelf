@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { createLabelRequestSchema } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { createLabel, listLabels } from "./repository";
-import { validateRequest } from "../validation";
+import { validateRequest } from "../middleware/validation";
 
 export function createLabelsRouter(
   db: Database,
@@ -17,7 +17,10 @@ export function createLabelsRouter(
 
   router.post(
     "/",
-    validateRequest({ body: createLabelRequestSchema }),
+    validateRequest(
+      { body: createLabelRequestSchema },
+      "invalid_label_name",
+    ),
     async (req, res) => {
       const { body } = res.locals.validated;
       res.status(201).json(await createLabel(db, req.user!.id, body));

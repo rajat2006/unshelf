@@ -88,7 +88,7 @@ function SignInRoute() {
 
   useEffect(() => {
     if (status === "signed-in") {
-      navigate(destination, { replace: true });
+      void navigate(destination, { replace: true });
     }
   }, [status, destination, navigate]);
 

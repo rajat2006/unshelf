@@ -5,7 +5,6 @@ import type {
   Item,
   Stop,
   Trail,
-  TrailEdge,
   TrailNode,
   TrailView,
 } from "@unshelf/shared";
@@ -237,7 +236,7 @@ describe("POST /api/trails/:trailId/edges — draw an edge", () => {
     // And it survives a fresh read, not just the write's own echo.
     const readBack = (await getTrail(clerkUserId)).body as TrailView;
     expect(edgePairs(readBack)).toEqual([`${a}->${b}`]);
-    const edge = readBack.edges[0] as TrailEdge;
+    const edge = readBack.edges[0];
     expect(edge.fromStopId).toBe(a);
     expect(edge.toStopId).toBe(b);
     expect(typeof edge.userId).toBe("string");

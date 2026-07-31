@@ -88,7 +88,7 @@ function CaptureComposer({
   }
 
   return (
-    <form onSubmit={submit} className="capture-form">
+    <form onSubmit={(event) => void submit(event)} className="capture-form">
       <div className="capture-form__heading">
         <h2 id="capture-heading">Capture</h2>
         <button

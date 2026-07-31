@@ -26,7 +26,7 @@ export function TrailsIndex({
 }: {
   state: TrailsIndexState;
   creating: boolean;
-  onCreate: (name: string) => void | Promise<void>;
+  onCreate: (name: string) => Promise<void>;
   onRetry: () => void;
 }) {
   if (state.status === "loading") {
@@ -88,7 +88,7 @@ function NewTrailForm({
   onCreate,
 }: {
   creating: boolean;
-  onCreate: (name: string) => void | Promise<void>;
+  onCreate: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const trimmed = name.trim();
@@ -101,7 +101,7 @@ function NewTrailForm({
   }
 
   return (
-    <form onSubmit={submit} className="new-trail-form">
+    <form onSubmit={(event) => void submit(event)} className="new-trail-form">
       <label htmlFor="new-trail-name">Trail name</label>
       <div className="new-trail-form__controls">
         <input
