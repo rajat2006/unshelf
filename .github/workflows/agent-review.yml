@@ -137,11 +137,11 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 24
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: pnpm
 
       - name: Install dependencies

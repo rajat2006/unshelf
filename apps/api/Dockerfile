@@ -7,7 +7,7 @@
 # sets `context: .` with `dockerfile: apps/api/Dockerfile`.
 
 # ── base ──────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS base
+FROM node:24-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
