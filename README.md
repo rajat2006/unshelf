@@ -88,6 +88,12 @@ authoritative. `git commit --no-verify` is an intentional escape hatch when a
 contributor or autonomous agent needs to bypass the local hook. Builds,
 typechecks, and tests do not run at commit time.
 
+Implementation validation on Node 24 and pnpm 11 measured the isolated
+real-commit fixture at 1.31 seconds for one staged TypeScript file and 1.49
+seconds for staged API, web, and shared TypeScript files together. The complete
+focused Vitest commands, including test-runner startup, took 2.29 and 2.47
+seconds respectively. These are recorded benchmarks, not CI timing assertions.
+
 ## Deployment
 
 Production runs on a Hostinger VPS via Dokploy (ADR-0009). The Dockerfiles,

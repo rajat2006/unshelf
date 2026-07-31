@@ -6,6 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const temporaryRepositories: string[] = [];
+const systemPath = ["/usr/bin", "/bin"].join(path.delimiter);
+const dependencyBackedPath = [
+  path.join(repositoryRoot, "node_modules", ".bin"),
+  path.dirname(process.execPath),
+  systemPath,
+].join(path.delimiter);
 
 function runGit({
   repository,
@@ -19,9 +25,50 @@ function runGit({
     encoding: "utf8",
     env: {
       ...process.env,
-      PATH: "/usr/bin:/bin",
+      PATH: systemPath,
     },
   });
+}
+
+function configureGitIdentity(repository: string) {
+  runGit({
+    repository,
+    args: ["config", "user.email", "pre-commit-test@unshelf.local"],
+  });
+  runGit({
+    repository,
+    args: ["config", "user.name", "Unshelf pre-commit test"],
+  });
+}
+
+function commit({
+  repository,
+  message,
+  dependencyBackedChecks = false,
+  noVerify = false,
+}: {
+  repository: string;
+  message: string;
+  dependencyBackedChecks?: boolean;
+  noVerify?: boolean;
+}) {
+  return spawnSync(
+    "git",
+    [
+      "commit",
+      ...(noVerify ? ["--no-verify"] : []),
+      "-m",
+      message,
+    ],
+    {
+      cwd: repository,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: dependencyBackedChecks ? dependencyBackedPath : systemPath,
+      },
+    },
+  );
 }
 
 function createRepository({
@@ -35,14 +82,7 @@ function createRepository({
   temporaryRepositories.push(repository);
 
   runGit({ repository, args: ["init", "--quiet"] });
-  runGit({
-    repository,
-    args: ["config", "user.email", "pre-commit-test@unshelf.local"],
-  });
-  runGit({
-    repository,
-    args: ["config", "user.name", "Unshelf pre-commit test"],
-  });
+  configureGitIdentity(repository);
 
   fs.writeFileSync(path.join(repository, "README.md"), "# Fixture\n");
   runGit({ repository, args: ["add", "README.md"] });
@@ -141,6 +181,53 @@ function createInstallFixture() {
       2,
     )}\n`,
   );
+  fs.writeFileSync(
+    path.join(repository, "pnpm-workspace.yaml"),
+    'packages:\n  - "packages/*"\n',
+  );
+
+  return repository;
+}
+
+function installWorkspace({
+  repository,
+  ci = false,
+}: {
+  repository: string;
+  ci?: boolean;
+}) {
+  return spawnSync("pnpm", ["install", "--no-frozen-lockfile"], {
+    cwd: repository,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CI: ci ? "true" : "",
+    },
+  });
+}
+
+function createInstalledRepository() {
+  const repository = createInstallFixture();
+  configureGitIdentity(repository);
+  const installation = installWorkspace({ repository });
+  if (installation.status !== 0) {
+    throw new Error(`${installation.stdout}${installation.stderr}`);
+  }
+
+  fs.writeFileSync(path.join(repository, "baseline.txt"), "baseline\n");
+  runGit({
+    repository,
+    args: [
+      "add",
+      ".husky/install.mjs",
+      ".husky/pre-commit",
+      "baseline.txt",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+    ],
+  });
+  commit({ repository, message: "baseline", noVerify: true });
 
   return repository;
 }
@@ -167,21 +254,16 @@ describe("pre-commit hook", () => {
     }
     runGit({ repository, args: ["add", ...stagedFiles] });
 
-    const commit = spawnSync("git", ["commit", "-m", "product workspaces"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: [
-          path.join(repositoryRoot, "node_modules", ".bin"),
-          path.dirname(process.execPath),
-          "/usr/bin",
-          "/bin",
-        ].join(path.delimiter),
-      },
+    const commitResult = commit({
+      repository,
+      message: "product workspaces",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     for (const stagedFile of stagedFiles) {
       expect(
         runGit({
@@ -220,21 +302,16 @@ describe("pre-commit hook", () => {
     const worktreeContent = `${stagedContent}export const unstagedValue = 3;\n`;
     fs.writeFileSync(source, worktreeContent);
 
-    const commit = spawnSync("git", ["commit", "-m", "partial source"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: [
-          path.join(repositoryRoot, "node_modules", ".bin"),
-          path.dirname(process.execPath),
-          "/usr/bin",
-          "/bin",
-        ].join(path.delimiter),
-      },
+    const commitResult = commit({
+      repository,
+      message: "partial source",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     expect(
       runGit({
         repository,
@@ -276,22 +353,14 @@ describe("pre-commit hook", () => {
       `${stagedContent}export const unstagedValue = "preserve me";\n`;
     fs.writeFileSync(source, worktreeContent);
 
-    const commit = spawnSync("git", ["commit", "-m", "lint failure"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: [
-          path.join(repositoryRoot, "node_modules", ".bin"),
-          path.dirname(process.execPath),
-          "/usr/bin",
-          "/bin",
-        ].join(path.delimiter),
-      },
+    const commitResult = commit({
+      repository,
+      message: "lint failure",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status).not.toBe(0);
-    expect(`${commit.stdout}${commit.stderr}`).toContain(
+    expect(commitResult.status).not.toBe(0);
+    expect(`${commitResult.stdout}${commitResult.stderr}`).toContain(
       "@typescript-eslint/no-unsafe-assignment",
     );
     expect(runGit({ repository, args: ["rev-list", "--count", "HEAD"] }).trim()).toBe(
@@ -320,58 +389,23 @@ describe("pre-commit hook", () => {
     fs.writeFileSync(readme, conflictedContent);
     runGit({ repository, args: ["add", "README.md"] });
 
-    const commit = spawnSync(
-      "git",
-      ["commit", "--no-verify", "-m", "intentional bypass"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: "/usr/bin:/bin",
-        },
-      },
-    );
+    const commitResult = commit({
+      repository,
+      message: "intentional bypass",
+      noVerify: true,
+    });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     expect(runGit({ repository, args: ["show", "HEAD:README.md"] })).toBe(
       conflictedContent,
     );
   });
 
   it("warns and permits a clean commit when hook dependencies are unavailable", () => {
-    const repository = createInstallFixture();
-    runGit({
-      repository,
-      args: ["config", "user.email", "pre-commit-test@unshelf.local"],
-    });
-    runGit({
-      repository,
-      args: ["config", "user.name", "Unshelf pre-commit test"],
-    });
-    const installation = spawnSync(
-      "pnpm",
-      ["install", "--ignore-workspace", "--no-frozen-lockfile"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          CI: "",
-        },
-      },
-    );
-    expect(
-      installation.status,
-      `${installation.stdout}${installation.stderr}`,
-    ).toBe(0);
-
-    fs.writeFileSync(path.join(repository, "baseline.txt"), "baseline\n");
-    runGit({ repository, args: ["add", "."] });
-    runGit({
-      repository,
-      args: ["commit", "--quiet", "--no-verify", "-m", "baseline"],
-    });
+    const repository = createInstalledRepository();
     fs.rmSync(path.join(repository, "node_modules"), {
       recursive: true,
       force: true,
@@ -379,54 +413,22 @@ describe("pre-commit hook", () => {
     fs.writeFileSync(path.join(repository, "clean.txt"), "clean\n");
     runGit({ repository, args: ["add", "clean.txt"] });
 
-    const commit = spawnSync("git", ["commit", "-m", "clean fallback"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: "/usr/bin:/bin",
-      },
+    const commitResult = commit({
+      repository,
+      message: "clean fallback",
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
-    expect(`${commit.stdout}${commit.stderr}`).toContain(
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
+    expect(`${commitResult.stdout}${commitResult.stderr}`).toContain(
       "lint-staged unavailable",
     );
   }, 30_000);
 
   it("permits commits in a worktree without generated hooks or dependencies", () => {
-    const repository = createInstallFixture();
-    runGit({
-      repository,
-      args: ["config", "user.email", "pre-commit-test@unshelf.local"],
-    });
-    runGit({
-      repository,
-      args: ["config", "user.name", "Unshelf pre-commit test"],
-    });
-    const installation = spawnSync(
-      "pnpm",
-      ["install", "--ignore-workspace", "--no-frozen-lockfile"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          CI: "",
-        },
-      },
-    );
-    expect(
-      installation.status,
-      `${installation.stdout}${installation.stderr}`,
-    ).toBe(0);
-
-    fs.writeFileSync(path.join(repository, "baseline.txt"), "baseline\n");
-    runGit({ repository, args: ["add", "."] });
-    runGit({
-      repository,
-      args: ["commit", "--quiet", "--no-verify", "-m", "baseline"],
-    });
+    const repository = createInstalledRepository();
     const worktree = `${repository}-worktree`;
     temporaryRepositories.push(worktree);
     runGit({
@@ -436,66 +438,44 @@ describe("pre-commit hook", () => {
     fs.writeFileSync(path.join(worktree, "worktree.txt"), "worktree\n");
     runGit({ repository: worktree, args: ["add", "worktree.txt"] });
 
-    const commit = spawnSync("git", ["commit", "-m", "worktree commit"], {
-      cwd: worktree,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: "/usr/bin:/bin",
-      },
+    const commitResult = commit({
+      repository: worktree,
+      message: "worktree commit",
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     expect(fs.existsSync(path.join(worktree, ".husky", "_"))).toBe(false);
   }, 30_000);
 
   it("leaves Git hook configuration untouched during CI installation", () => {
     const repository = createInstallFixture();
+    runGit({
+      repository,
+      args: ["config", "core.hooksPath", ".existing-hooks"],
+    });
 
-    const installation = spawnSync(
-      "pnpm",
-      ["install", "--ignore-workspace", "--no-frozen-lockfile"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          CI: "true",
-        },
-      },
-    );
-    const hookPath = spawnSync(
-      "git",
-      ["config", "--get", "core.hooksPath"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-      },
-    );
+    const installation = installWorkspace({ repository, ci: true });
 
     expect(
       installation.status,
       `${installation.stdout}${installation.stderr}`,
     ).toBe(0);
-    expect(hookPath.status).toBe(1);
+    expect(
+      runGit({
+        repository,
+        args: ["config", "--get", "core.hooksPath"],
+      }).trim(),
+    ).toBe(".existing-hooks");
     expect(fs.existsSync(path.join(repository, ".husky", "_"))).toBe(false);
   }, 30_000);
 
   it("enables Husky during a normal workspace installation", () => {
     const repository = createInstallFixture();
 
-    const installation = spawnSync(
-      "pnpm",
-      ["install", "--ignore-workspace", "--no-frozen-lockfile"],
-      {
-        cwd: repository,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          CI: "",
-        },
-      },
-    );
+    const installation = installWorkspace({ repository });
 
     expect(
       installation.status,
@@ -553,21 +533,16 @@ describe("pre-commit hook", () => {
     const unstagedContent = "export const supportingValue = ;\n";
     fs.writeFileSync(unstagedSource, unstagedContent);
 
-    const commit = spawnSync("git", ["commit", "-m", "staged source"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: [
-          path.join(repositoryRoot, "node_modules", ".bin"),
-          path.dirname(process.execPath),
-          "/usr/bin",
-          "/bin",
-        ].join(path.delimiter),
-      },
+    const commitResult = commit({
+      repository,
+      message: "staged source",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     expect(
       runGit({
         repository,
@@ -592,44 +567,76 @@ describe("pre-commit hook", () => {
       "src",
       "example.ts",
     );
-    fs.writeFileSync(
-      source,
-      "export let answer:number= 42\n",
-    );
+    fs.writeFileSync(source, "export let answer:number= 42\n");
     runGit({
       repository,
       args: ["add", "packages/shared/src/example.ts"],
     });
 
-    const commit = spawnSync("git", ["commit", "-m", "typed source"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: [
-          path.join(repositoryRoot, "node_modules", ".bin"),
-          path.dirname(process.execPath),
-          "/usr/bin",
-          "/bin",
-        ].join(path.delimiter),
-      },
+    const commitResult = commit({
+      repository,
+      message: "typed source",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status, `${commit.stdout}${commit.stderr}`).toBe(0);
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
     expect(
       runGit({
         repository,
         args: ["show", "HEAD:packages/shared/src/example.ts"],
       }),
-      `${commit.stdout}${commit.stderr}`,
+      `${commitResult.stdout}${commitResult.stderr}`,
     ).toBe("export const answer: number = 42;\n");
     expect(fs.readFileSync(source, "utf8")).toBe(
       "export const answer: number = 42;\n",
     );
   });
 
-  it("rejects conflict markers when dependency-backed checks are unavailable", () => {
-    const repository = createRepository();
+  it("formats supported non-TypeScript files and safely skips ignored and unknown files", () => {
+    const repository = createRepository({ dependencyBackedChecks: true });
+    const jsonContent = '{"name":"fixture","enabled":true}\n';
+    const ignoredContent = "#   Ignored markdown stays untouched\n";
+    const unknownContent = "unknown-format-content\n";
+    fs.writeFileSync(path.join(repository, "fixture.json"), jsonContent);
+    fs.writeFileSync(path.join(repository, "notes.md"), ignoredContent);
+    fs.writeFileSync(
+      path.join(repository, "artifact.unsupported"),
+      unknownContent,
+    );
+    runGit({
+      repository,
+      args: ["add", "fixture.json", "notes.md", "artifact.unsupported"],
+    });
+
+    const commitResult = commit({
+      repository,
+      message: "non-TypeScript files",
+      dependencyBackedChecks: true,
+    });
+
+    expect(
+      commitResult.status,
+      `${commitResult.stdout}${commitResult.stderr}`,
+    ).toBe(0);
+    expect(runGit({ repository, args: ["show", "HEAD:fixture.json"] })).toBe(
+      '{ "name": "fixture", "enabled": true }\n',
+    );
+    expect(runGit({ repository, args: ["show", "HEAD:notes.md"] })).toBe(
+      ignoredContent,
+    );
+    expect(
+      runGit({
+        repository,
+        args: ["show", "HEAD:artifact.unsupported"],
+      }),
+    ).toBe(unknownContent);
+  });
+
+  it("runs the Git-native check after dependency-backed staged checks", () => {
+    const repository = createRepository({ dependencyBackedChecks: true });
     const readme = path.join(repository, "README.md");
     fs.writeFileSync(
       readme,
@@ -639,18 +646,18 @@ describe("pre-commit hook", () => {
     );
     runGit({ repository, args: ["add", "README.md"] });
 
-    const commit = spawnSync("git", ["commit", "-m", "conflicted"], {
-      cwd: repository,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: "/usr/bin:/bin",
-      },
+    const commitResult = commit({
+      repository,
+      message: "conflicted",
+      dependencyBackedChecks: true,
     });
 
-    expect(commit.status).not.toBe(0);
-    expect(`${commit.stdout}${commit.stderr}`).toContain(
+    expect(commitResult.status).not.toBe(0);
+    expect(`${commitResult.stdout}${commitResult.stderr}`).not.toContain(
       "lint-staged unavailable",
+    );
+    expect(`${commitResult.stdout}${commitResult.stderr}`).toContain(
+      "leftover conflict marker",
     );
     expect(runGit({ repository, args: ["rev-list", "--count", "HEAD"] }).trim()).toBe(
       "1",
