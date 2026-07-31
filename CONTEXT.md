@@ -22,8 +22,7 @@ a title. Referenced, not copied: one Item can appear in many Stops across
 different Trails, but in at most one Stop on any one Trail, and every placement
 points at the single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capture the same link twice and you
-have two Items (v1 does not dedupe). An Item may appear in Stops on several
-Trails, but at most once on any one Trail.
+have two Items (v1 does not dedupe).
 _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:

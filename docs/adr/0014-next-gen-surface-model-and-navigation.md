@@ -110,10 +110,21 @@ clarifies the boundary around this ADR's global Capture action:
   atomically create a loose Stop containing it. That is placement onto a Trail,
   not another Capture path.
 - An Item may appear in Stops on different Trails, but in at most one Stop on any
-  one Trail. A Trail sequences the shared Item once; every read and write boundary
-  and the database enforce this invariant.
+  one Trail. A Trail sequences the shared Item once: repeating it in two Stops
+  would make its one shared Status appear at two points in the plan and make
+  "what comes next" misleading. Cross-cutting relevance belongs on Labels; reuse
+  in a genuinely different plan belongs on another Trail.
+- This deliberately rejects same-Trail reuse even when one Item supports two Stops:
+  the User chooses the single Stop that owns its place in that Trail. Every
+  placement door and every read and write boundary must respect the invariant,
+  with the database enforcing it as the final boundary.
 - A Trail where the Item is already placed remains visible as
   `Already in <Stop>` but offers neither another Stop nor `New Stop`.
+
+At the time this invariant was identified, the built `stop_items` join prevented
+only a duplicate Stop–Item pair and the API did not consider the Trail. The
+downstream model build has since made membership Trail-qualified and added the
+stronger write-boundary and database enforcement.
 
 Direct Capture from inside an open Stop remains a separate, deliberately deferred
 decision. The placement design reserves that future seam without changing
