@@ -23,7 +23,8 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile
+COPY .husky/install.mjs .husky/install.mjs
+RUN CI=true pnpm install --frozen-lockfile
 
 # Sources, then build the api (and its ^build dep, @unshelf/shared).
 COPY packages/shared packages/shared
