@@ -98,3 +98,23 @@ ADRs do not describe. Building that model is a **separate downstream effort — 
   User-owned, many-to-many marker over Items in the Library, with *Tag* moved to
   _Avoid_); its **model realisation — schema + enforcement — lands with #74**, not
   here.
+
+## Update — placement is not Capture, and a Trail sequences an Item once (2026-07-30, map “How an Item gets into a Stop”)
+
+[Creating a Stop for an Item from the Item sidebar](https://github.com/rajat2006/unshelf/issues/214)
+clarifies the boundary around this ADR's global Capture action:
+
+- **Capture** still creates one Item in the Library and never files it into a
+  Trail. Placement acts on an Item that already exists.
+- From an Item sidebar, `Add to Trail…` may place that Item in an existing Stop or
+  atomically create a loose Stop containing it. That is placement onto a Trail,
+  not another Capture path.
+- An Item may appear in Stops on different Trails, but in at most one Stop on any
+  one Trail. A Trail sequences the shared Item once; every read and write boundary
+  and the database enforce this invariant.
+- A Trail where the Item is already placed remains visible as
+  `Already in <Stop>` but offers neither another Stop nor `New Stop`.
+
+Direct Capture from inside an open Stop remains a separate, deliberately deferred
+decision. The placement design reserves that future seam without changing
+Capture's meaning here.

@@ -145,3 +145,21 @@ rejection are unchanged.
   `{ userId, fromStopId, toStopId }`: the Trail is the route it was read under, not a
   field, the same way the edge carries no position or date. `trail_id` is an enforcement
   anchor, not a domain fact the client reconciles.
+
+## Update — loose Stops use an Unsequenced staging rail (2026-07-30, map “How an Item gets into a Stop”)
+
+[Prototype loose Stops as an unsequenced staging area](https://github.com/rajat2006/unshelf/issues/219)
+confirms that a Stop may remain a loose, unconnected root at depth 0. This does not
+change the adjacency edge list or add stored layout:
+
+- loose Stops appear in a compact, independently scrollable left-hand rail labelled
+  **Unsequenced**, with the loose-Stop count;
+- rail order is presentation-only and adds no position or new domain concept;
+- selecting a loose Stop opens its existing URL-owned detail;
+- **Sequence this Stop** writes the existing directed-link relationship by choosing
+  the Stop it follows.
+
+The rail prevents many unconnected roots from consuming the canvas's depth-0
+column while preserving topology as the only persisted arrangement. Dragging loose
+Stops onto the canvas and any persistent free placement remain outside this
+decision.

@@ -18,8 +18,9 @@ _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 **Item**:
 A single piece of learning material captured into Unshelf — an article, video,
 course, YouTube playlist, or (offline) book — added by hand: paste a link or type
-a title. Referenced, not copied: one Item can appear in many Stops, but they all
-point at the single stored record. "Only one of it" is about model identity —
+a title. Referenced, not copied: one Item can appear in many Stops across
+different Trails, but in at most one Stop on any one Trail, and every placement
+points at the single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capture the same link twice and you
 have two Items (v1 does not dedupe). An Item may appear in Stops on several
 Trails, but at most once on any one Trail.
@@ -83,6 +84,8 @@ _Avoid_: Inbox, All-items, Dump (and — pre-redesign — Library, now the UI na
 A flat grouping the User forms by pulling one or more Items together — the single
 organising concept in v1 (no tags, sub-Stops, or extra folders). Its Items are an
 unordered set; ordering between Stops is expressed on the Trail, not within a Stop.
+An Item may belong to Stops on several Trails, but to at most one Stop on a given
+Trail, so a Trail sequences that shared Item once.
 One uniform kind of Stop serves every purpose: whether it stands for a topic to
 learn ("Learn CSS") or a project to build ("Build the API") is how the User uses
 it, not a type the model distinguishes. A Stop is also what appears as a node on
