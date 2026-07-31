@@ -7,11 +7,20 @@ import { afterEach, describe, expect, it } from "vitest";
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const temporaryRepositories: string[] = [];
 const systemPath = ["/usr/bin", "/bin"].join(path.delimiter);
+const realGitBoundaryTimeout = 30_000;
 const dependencyBackedPath = [
   path.join(repositoryRoot, "node_modules", ".bin"),
   path.dirname(process.execPath),
   systemPath,
 ].join(path.delimiter);
+const conflictMarkedMarkdown = [
+  "<<<<<<< HEAD",
+  "# Ours",
+  "=======",
+  "# Theirs",
+  ">>>>>>> branch",
+  "",
+].join("\n");
 
 function runGit({
   repository,
@@ -111,6 +120,7 @@ function createRepository({
       ".prettierrc.json",
       "eslint.config.mjs",
       "lint-staged.config.mjs",
+      "product-typescript-globs.mjs",
       "tsconfig.base.json",
     ]) {
       fs.copyFileSync(
@@ -238,7 +248,7 @@ afterEach(() => {
   }
 });
 
-describe("pre-commit hook", () => {
+describe("pre-commit hook", { timeout: realGitBoundaryTimeout }, () => {
   it("checks staged TypeScript across the product workspaces", () => {
     const repository = createRepository({ dependencyBackedChecks: true });
     const stagedFiles = [
@@ -378,15 +388,7 @@ describe("pre-commit hook", () => {
   it("allows an explicit no-verify commit to bypass the hook", () => {
     const repository = createRepository();
     const readme = path.join(repository, "README.md");
-    const conflictedContent = [
-      "<<<<<<< HEAD",
-      "# Ours",
-      "=======",
-      "# Theirs",
-      ">>>>>>> branch",
-      "",
-    ].join("\n");
-    fs.writeFileSync(readme, conflictedContent);
+    fs.writeFileSync(readme, conflictMarkedMarkdown);
     runGit({ repository, args: ["add", "README.md"] });
 
     const commitResult = commit({
@@ -400,7 +402,7 @@ describe("pre-commit hook", () => {
       `${commitResult.stdout}${commitResult.stderr}`,
     ).toBe(0);
     expect(runGit({ repository, args: ["show", "HEAD:README.md"] })).toBe(
-      conflictedContent,
+      conflictMarkedMarkdown,
     );
   });
 
@@ -425,7 +427,24 @@ describe("pre-commit hook", () => {
     expect(`${commitResult.stdout}${commitResult.stderr}`).toContain(
       "lint-staged unavailable",
     );
-  }, 30_000);
+
+    const readme = path.join(repository, "README.md");
+    fs.writeFileSync(readme, conflictMarkedMarkdown);
+    runGit({ repository, args: ["add", "README.md"] });
+
+    const rejectedCommit = commit({
+      repository,
+      message: "conflicted fallback",
+    });
+
+    expect(rejectedCommit.status).not.toBe(0);
+    expect(`${rejectedCommit.stdout}${rejectedCommit.stderr}`).toContain(
+      "lint-staged unavailable",
+    );
+    expect(`${rejectedCommit.stdout}${rejectedCommit.stderr}`).toContain(
+      "leftover conflict marker",
+    );
+  });
 
   it("permits commits in a worktree without generated hooks or dependencies", () => {
     const repository = createInstalledRepository();
@@ -448,7 +467,7 @@ describe("pre-commit hook", () => {
       `${commitResult.stdout}${commitResult.stderr}`,
     ).toBe(0);
     expect(fs.existsSync(path.join(worktree, ".husky", "_"))).toBe(false);
-  }, 30_000);
+  });
 
   it("leaves Git hook configuration untouched during CI installation", () => {
     const repository = createInstallFixture();
@@ -470,7 +489,7 @@ describe("pre-commit hook", () => {
       }).trim(),
     ).toBe(".existing-hooks");
     expect(fs.existsSync(path.join(repository, ".husky", "_"))).toBe(false);
-  }, 30_000);
+  });
 
   it("enables Husky during a normal workspace installation", () => {
     const repository = createInstallFixture();
@@ -490,7 +509,7 @@ describe("pre-commit hook", () => {
     expect(fs.existsSync(path.join(repository, ".husky", "_", "pre-commit"))).toBe(
       true,
     );
-  }, 30_000);
+  });
 
   it("hides unrelated unstaged content from typed staged checks", () => {
     const repository = createRepository({ dependencyBackedChecks: true });
@@ -567,7 +586,19 @@ describe("pre-commit hook", () => {
       "src",
       "example.ts",
     );
-    fs.writeFileSync(source, "export let answer:number= 42\n");
+    fs.writeFileSync(
+      source,
+      [
+        'const join = (...values: string[]) => values.join("");',
+        'export const answer = join("11111111111111111111", "aaaaaaaaaaa", "x" as string);',
+        "",
+      ].join("\n"),
+    );
+    const expectedContent = [
+      'const join = (...values: string[]) => values.join("");',
+      'export const answer = join("11111111111111111111", "aaaaaaaaaaa", "x");',
+      "",
+    ].join("\n");
     runGit({
       repository,
       args: ["add", "packages/shared/src/example.ts"],
@@ -589,10 +620,8 @@ describe("pre-commit hook", () => {
         args: ["show", "HEAD:packages/shared/src/example.ts"],
       }),
       `${commitResult.stdout}${commitResult.stderr}`,
-    ).toBe("export const answer: number = 42;\n");
-    expect(fs.readFileSync(source, "utf8")).toBe(
-      "export const answer: number = 42;\n",
-    );
+    ).toBe(expectedContent);
+    expect(fs.readFileSync(source, "utf8")).toBe(expectedContent);
   });
 
   it("formats supported non-TypeScript files and safely skips ignored and unknown files", () => {
@@ -638,12 +667,7 @@ describe("pre-commit hook", () => {
   it("runs the Git-native check after dependency-backed staged checks", () => {
     const repository = createRepository({ dependencyBackedChecks: true });
     const readme = path.join(repository, "README.md");
-    fs.writeFileSync(
-      readme,
-      ["<<<<<<< HEAD", "# Ours", "=======", "# Theirs", ">>>>>>> branch", ""].join(
-        "\n",
-      ),
-    );
+    fs.writeFileSync(readme, conflictMarkedMarkdown);
     runGit({ repository, args: ["add", "README.md"] });
 
     const commitResult = commit({
