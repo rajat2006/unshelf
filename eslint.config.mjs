@@ -3,13 +3,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
-const productTypeScript = [
-  "packages/shared/{src,test}/**/*.ts",
-  "apps/api/{src,test}/**/*.ts",
-  "apps/api/{drizzle,vitest}.config.ts",
-  "apps/web/{src,test}/**/*.{ts,tsx}",
-  "apps/web/{playwright,vite}.config.ts",
-];
+import { productTypeScriptGlobs } from "./product-typescript-globs.mjs";
 
 export default defineConfig(
   globalIgnores([
@@ -18,11 +12,8 @@ export default defineConfig(
     "apps/api/drizzle/**",
   ]),
   {
-    files: productTypeScript,
-    extends: [
-      js.configs.recommended,
-      tseslint.configs.recommendedTypeChecked,
-    ],
+    files: productTypeScriptGlobs,
+    extends: [js.configs.recommended, tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
         projectService: true,

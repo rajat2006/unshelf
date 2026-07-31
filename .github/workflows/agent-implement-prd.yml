@@ -272,11 +272,11 @@ jobs:
         if: steps.shape.outputs.mode == 'run'
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 24
         if: steps.shape.outputs.mode == 'run'
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: pnpm
 
       - name: Install dependencies
