@@ -1,0 +1,9 @@
+set -e
+
+if command -v lint-staged >/dev/null 2>&1; then
+  lint-staged --concurrent false --hide-unstaged
+else
+  echo "pre-commit: lint-staged unavailable; run pnpm install to enable staged linting and formatting" >&2
+fi
+
+git diff --cached --check
