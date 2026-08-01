@@ -1,0 +1,62 @@
+# PROTOTYPE ONLY — throw away after issue 242 is resolved.
+x-api-image: &api-image
+  image: ${API_IMAGE:?API_IMAGE is required}
+  pull_policy: always
+
+services:
+  migrate:
+    <<: *api-image
+    command: ["node", "dist/migrate.js"]
+    restart: "no"
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+        mode: blocking
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks: [database]
+
+  api:
+    <<: *api-image
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"
+        mode: blocking
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      PORT: "3001"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?CLERK_PUBLISHABLE_KEY is required}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [database]
+    labels:
+      - traefik.docker.network=${APP_NAME:?APP_NAME is required}
+
+  web:
+    image: ${WEB_IMAGE:?WEB_IMAGE is required}
+    pull_policy: always
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+        mode: blocking
+    depends_on: [api]
+    labels:
+      - traefik.docker.network=${APP_NAME:?APP_NAME is required}
+
+networks:
+  database:
+    name: ${DATABASE_NETWORK:?DATABASE_NETWORK is required}
+    external: true

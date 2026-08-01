@@ -1,0 +1,52 @@
+name: PROTOTYPE multi-service Dokploy images
+
+on:
+  push:
+    branches: [prototype/issue-242-dokploy-routing]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    name: Build prototype images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - name: api
+            dockerfile: apps/api/Dockerfile
+            image: ghcr.io/rajat2006/unshelf-api
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            image: ghcr.io/rajat2006/unshelf-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ matrix.image }}:prototype-issue-242-${{ github.sha }}
+          build-args: |
+            VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.PROTOTYPE_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Report immutable image
+        run: echo '${{ matrix.name }}=${{ matrix.image }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

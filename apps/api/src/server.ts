@@ -58,12 +58,25 @@ await superviseApiProcess({
       );
     }
 
+    const publicOrigin = process.env.PUBLIC_ORIGIN;
+    if (!publicOrigin) {
+      throw new Error("PUBLIC_ORIGIN is required");
+    }
+
+    const parsedPublicOrigin = new URL(publicOrigin);
+    if (
+      parsedPublicOrigin.protocol !== "https:" ||
+      parsedPublicOrigin.origin !== publicOrigin
+    ) {
+      throw new Error("PUBLIC_ORIGIN must be an exact HTTPS origin");
+    }
+
     const port = Number(process.env.PORT ?? 3001);
     const db = createDatabase(connectionString);
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.
-    const app = createApp(db, createClerkAuth(db), {
+    const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
     });

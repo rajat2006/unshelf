@@ -65,6 +65,12 @@ const clerkIdentify: Identify = (req) =>
  * maps it to a current User. `apps/api`'s server mounts these on protected
  * routes; tests substitute a single `createAuthMiddleware(db, testIdentify)`.
  */
-export function createClerkAuth(db: Database): RequestHandler[] {
-  return [clerkMiddleware(), createAuthMiddleware(db, clerkIdentify)];
+export function createClerkAuth(
+  db: Database,
+  publicOrigin: string,
+): RequestHandler[] {
+  return [
+    clerkMiddleware({ authorizedParties: [publicOrigin] }),
+    createAuthMiddleware(db, clerkIdentify),
+  ];
 }
