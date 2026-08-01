@@ -63,9 +63,7 @@ After the human confirmed the result:
   no custom network;
 - the temporary overlay network was removed;
 - the temporary Dokploy GHCR registry entry and Dokploy API key were removed;
-- the temporary GitHub Actions Clerk secret was removed; and
+- the temporary GitHub Actions Clerk secret was removed;
+- all GHCR image versions tagged for issue 242 were deleted using a one-time,
+  repository-scoped Actions cleanup job; and
 - local Dokploy, GHCR, and SSH credential material was deleted.
-
-The two private GHCR package versions could not be deleted through the active
-GitHub CLI credential because it lacks package deletion scope. They remain
-private and are identified above for manual deletion from GitHub Packages.
