@@ -1,4 +1,4 @@
-name: PROTOTYPE multi-service Dokploy images
+name: PROTOTYPE issue 242 package cleanup
 
 on:
   push:
@@ -9,44 +9,28 @@ permissions:
   packages: write
 
 jobs:
-  images:
-    name: Build prototype images
+  cleanup:
+    name: Delete prototype package versions
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        include:
-          - name: api
-            dockerfile: apps/api/Dockerfile
-            image: ghcr.io/rajat2006/unshelf-api
-          - name: web
-            dockerfile: apps/web/Dockerfile
-            image: ghcr.io/rajat2006/unshelf-web
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Delete issue 242 image versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          for package in unshelf-api unshelf-web; do
+            version_ids="$(
+              gh api --paginate \
+                "/users/${OWNER}/packages/container/${package}/versions?per_page=100" \
+                --jq '.[] | select(any(.metadata.container.tags[]?; startswith("prototype-issue-242-"))) | .id'
+            )"
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ matrix.image }}:prototype-issue-242-${{ github.sha }}
-          build-args: |
-            VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.PROTOTYPE_CLERK_PUBLISHABLE_KEY }}
-
-      - name: Report immutable image
-        run: echo '${{ matrix.name }}=${{ matrix.image }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+            for version_id in ${version_ids}; do
+              gh api --method DELETE \
+                "/users/${OWNER}/packages/container/${package}/versions/${version_id}"
+            done
+          done
