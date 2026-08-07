@@ -19,11 +19,13 @@ describe("migration runner", () => {
         level: "info",
         event: "unshelf.migration.started",
         msg: "Migration started",
+        mode: "apply",
       },
       {
         level: "info",
         event: "unshelf.migration.completed",
         msg: "Migration completed",
+        mode: "apply",
         durationMs: 24.5,
       },
     ]);
@@ -74,11 +76,13 @@ describe("migration runner", () => {
       level: "info",
       event: "unshelf.migration.started",
       msg: "Migration started",
+      mode: "apply",
     });
     expect(logger.records[1]).toMatchObject({
       level: "fatal",
       event: "unshelf.migration.failed",
       msg: "Migration failed",
+      mode: "apply",
       durationMs: 13,
       error: {
         type: "Error",

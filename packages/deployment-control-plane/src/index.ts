@@ -24,6 +24,35 @@ export type DeploymentIntent = {
 
 type ImagePair = Pick<DeploymentIntent, "apiImage" | "webImage">;
 
+export function runImagePairValidationCli(input: {
+  args: string[];
+  write: (line: string) => void;
+}): number {
+  const pair = parseDeploymentImagePair(input.args);
+  if (pair === undefined) {
+    input.write(
+      JSON.stringify({
+        ok: false,
+        error: {
+          code: "invalid-image-pair",
+          message: "Deployment image pair is invalid.",
+        },
+      }),
+    );
+    return 1;
+  }
+  input.write(
+    JSON.stringify({
+      ok: true,
+      ...pair,
+      apiDigest: pair.apiImage.split("@")[1],
+      webDigest: pair.webImage.split("@")[1],
+      state: "verified",
+    }),
+  );
+  return 0;
+}
+
 type VerifiedImagePair = {
   apiDigest: string;
   webDigest: string;
@@ -88,9 +117,9 @@ function parseIntent(args: string[]): DeploymentIntent | undefined {
     sourceSha === undefined ||
     !/^[a-f0-9]{40}$/.test(sourceSha) ||
     apiImage === undefined ||
-    !/^ghcr\.io\/rajat2006\/unshelf-api@sha256:[a-f0-9]{64}$/.test(apiImage) ||
+    !isDeploymentImage({ value: apiImage, repository: "unshelf-api" }) ||
     webImage === undefined ||
-    !/^ghcr\.io\/rajat2006\/unshelf-web@sha256:[a-f0-9]{64}$/.test(webImage) ||
+    !isDeploymentImage({ value: webImage, repository: "unshelf-web" }) ||
     publicOrigin === undefined ||
     !isValidPublicOrigin({ channel, publicOrigin }) ||
     correlation === undefined ||
@@ -106,6 +135,37 @@ function parseIntent(args: string[]): DeploymentIntent | undefined {
     publicOrigin,
     correlation,
   };
+}
+
+function parseDeploymentImagePair(args: string[]): ImagePair | undefined {
+  if (
+    args.length !== 5 ||
+    args[0] !== "validate-image-pair" ||
+    args[1] !== "--api-image" ||
+    args[3] !== "--web-image"
+  ) {
+    return undefined;
+  }
+  const apiImage = args[2];
+  const webImage = args[4];
+  return apiImage !== undefined &&
+    webImage !== undefined &&
+    isDeploymentImage({ value: apiImage, repository: "unshelf-api" }) &&
+    isDeploymentImage({ value: webImage, repository: "unshelf-web" })
+    ? { apiImage, webImage }
+    : undefined;
+}
+
+function isDeploymentImage({
+  value,
+  repository,
+}: {
+  value: string;
+  repository: "unshelf-api" | "unshelf-web";
+}): boolean {
+  return new RegExp(
+    `^ghcr\\.io/rajat2006/${repository}@sha256:[a-f0-9]{64}$`,
+  ).test(value);
 }
 
 function isValidPublicOrigin({

@@ -37,8 +37,14 @@ function resolveProductionCompose(logLevel = ""): ResolvedCompose {
       encoding: "utf8",
       env: {
         ...process.env,
-        DOMAIN: "unshelf.example.com",
-        POSTGRES_PASSWORD: "test-password",
+        API_IMAGE: `ghcr.io/rajat2006/unshelf-api@sha256:${"a".repeat(64)}`,
+        WEB_IMAGE: `ghcr.io/rajat2006/unshelf-web@sha256:${"b".repeat(64)}`,
+        DATABASE_URL: "postgresql://opaque-runtime-value",
+        DATABASE_NETWORK: "unshelf-nonproduction-database",
+        APP_NAME: "unshelf-development",
+        PUBLIC_ORIGIN: "https://generated.example.com",
+        APPLICATION_NAME: "unshelf-development",
+        MIGRATION_MODE: "apply",
         LOG_LEVEL: logLevel,
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
@@ -76,10 +82,6 @@ describe("production container logging", () => {
         driver: "local",
         options: { "max-file": "5", "max-size": "20m", mode: "blocking" },
       },
-      db: {
-        driver: "local",
-        options: { "max-file": "5", "max-size": "10m", mode: "blocking" },
-      },
       migrate: {
         driver: "local",
         options: { "max-file": "3", "max-size": "5m", mode: "blocking" },
@@ -95,7 +97,7 @@ describe("production container logging", () => {
     const runbook = readFileSync(resolve(repoRoot, "docs/deploy.md"), "utf8");
     const normalizedRunbook = runbook.replace(/\s+/g, " ");
     const requiredExcerpts = [
-      "180 MB",
+      "130 MB",
       "byte-bounded, not time-bounded",
       "not an audit trail",
       "not a cross-deployment archive",
@@ -111,6 +113,11 @@ describe("production container logging", () => {
       "ps --all --quiet migrate",
       "--since=24h --timestamps --no-color",
       "unshelf-predeploy.log",
+      "PostgreSQL 18",
+      "MIGRATION_MODE",
+      "PUBLIC_ORIGIN",
+      "traefik.docker.network=${APP_NAME}",
+      "Do not remove the legacy resource",
     ];
 
     expect(

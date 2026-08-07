@@ -1,300 +1,179 @@
-# Deploy (Dokploy on a Hostinger VPS)
+# Deploy Unshelf through Dokploy
 
-The stack and hosting decision is [ADR-0009](adr/0009-v1-stack-and-hosting.md):
-a Hostinger VPS, deploys managed by **Dokploy**, each `apps/*` its own Docker
-service behind Dokploy's **Traefik** proxy, with **Postgres** running as a
-service on the same box.
+This is the operator runbook for the architecture recorded by
+[ADR-0017](adr/0017-ci-images-and-managed-postgresql.md). GitHub Actions builds
+private API and web images; Dokploy deploys one immutable digest pair and owns
+same-origin HTTPS routing. PostgreSQL 18 is managed outside application Compose.
 
-This doc is the operator runbook. The repo ships the artifacts; standing up the
-VPS and running the deploy needs VPS credentials and is a human step (this is why
-issue #23 is `ready-for-human`).
+## Deployment contract
 
-## What the repo ships
+[`docker-compose.yml`](../docker-compose.yml) is one parameterized contract for
+preview, development, and production. It contains only:
 
-| Artifact | Purpose |
-| --- | --- |
-| `apps/api/Dockerfile` | Builds the Express API image (multi-stage; `pnpm deploy` → prod-only tree). |
-| `apps/web/Dockerfile` | Builds the SPA and serves it via Caddy. |
-| `apps/web/Caddyfile` | Static serving + SPA history fallback (does **not** proxy `/api`). |
-| `.dockerignore` | Keeps the (repo-root) build context small and reproducible. |
-| `docker-compose.yml` | **The Dokploy production stack** — db + api + web with Traefik labels. |
-
-Both images build from the **repo root** as context (they need the pnpm
-workspace lockfile and `packages/shared`), so the compose services set
-`context: .` with `dockerfile: apps/<app>/Dockerfile`.
-
-## Routing model
-
-One domain, path-based — the same shape as the dev Vite proxy, so the browser
-always talks to a single origin:
-
-- `PathPrefix(`/api`)` → **api** service (rule `Host && PathPrefix(`/api`)`)
-- everything else → **web** service (rule `Host && !PathPrefix(`/api`)`; the SPA + its history fallback)
-
-The two router rules are **mutually exclusive** — the web router explicitly
-excludes `/api` — so the split is stated in the rules themselves rather than
-resolved by Traefik priority. No `priority` labels are needed.
-
-```
-              Internet
-                 │ HTTPS
-                 ▼
-     ┌───────────────────────┐
-     │   Traefik (Dokploy)   │  TLS terminates + path split here
-     └─────┬───────────┬─────┘
-   /api    │           │  everything else
-           ▼           ▼
-   ┌────────────┐  ┌────────────┐
-   │ api :3001  │  │ web :80    │  Caddy: static files only
-   │ Express    │  │ Caddy      │
-   └─────┬──────┘  └────────────┘
-         │ internal network (private)
-         ▼
-   ┌────────────┐
-   │ db  (PG)   │
-   └────────────┘
-
-  dokploy-network (shared): api ✅  web ✅  db ❌
-  internal        (private): api ✅  web ❌  db ✅
+```text
+migrate (API digest) ──completed──▶ api (same API digest) ──started──▶ web
+          │                           │
+          └──── private DB network ───┘
 ```
 
-**Traefik owns the split, not Caddy.** Caddy in the web image only serves the
-SPA's static files and its history fallback; it never proxies `/api`. Why the
-split lives at the platform's Traefik (and not inside Caddy, with the api sealed
-behind it) — platform-native routing, independently-routable services, and free
-horizontal scaling — is [ADR-0011](adr/0011-traefik-owns-routing-caddy-serves-static.md).
+Dokploy isolated deployment adds all three services to the resource-specific
+ingress network. Only `migrate` and `api` additionally join the external
+`DATABASE_NETWORK`; `web` has no database path. No service publishes a host
+port. Dokploy Domains creates the routers, redirect, TLS, and certificate
+labels. The repository retains only
+`traefik.docker.network=${APP_NAME}` so the installed Dokploy version routes a
+multihomed API over the isolated ingress network rather than the database
+network.
 
-## Environment (set in Dokploy → the Compose service's Environment)
+The required resource environment is:
 
-`docker-compose.yml` reads these and hardcodes no secrets:
-
-| Var | Used by | Notes |
+| Variable | Consumer | Rule |
 | --- | --- | --- |
-| `DOMAIN` | Traefik router rules | e.g. `unshelf.example.com`. |
-| `POSTGRES_PASSWORD` | db + api `DATABASE_URL` | Generate a strong value; Dokploy stores it. |
-| `POSTGRES_USER` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
-| `POSTGRES_DB` | db + api `DATABASE_URL` | Optional; defaults to `unshelf`. Applied only on first DB init. |
-| `LOG_LEVEL` | api + migrate (runtime) | Optional; defaults to `info`. Accepted values: `debug`, `info`, `warn`, `error`, or `fatal`; any other value fails process startup. |
-| `CLERK_SECRET_KEY` | api (runtime) | Server-side only. From the Clerk dashboard. |
-| `CLERK_PUBLISHABLE_KEY` | api (runtime) | Browser-public key. |
-| `VITE_CLERK_PUBLISHABLE_KEY` | web (**build arg**) | Same publishable key; Vite inlines it at build. |
+| `API_IMAGE` | migrate, api | Full `ghcr.io/rajat2006/unshelf-api@sha256:…` reference. |
+| `WEB_IMAGE` | web | Full `ghcr.io/rajat2006/unshelf-web@sha256:…` reference. |
+| `DATABASE_URL` | migrate, api | Opaque internal connection URL; never assemble or print it in Compose or automation. |
+| `DATABASE_NETWORK` | migrate, api | Private attachable overlay used by non-production PostgreSQL. |
+| `APP_NAME` | routed services | Written by Dokploy; selects the isolated ingress network. |
+| `APPLICATION_NAME` | migrate, api | Non-secret stable deployment identifier. |
+| `PUBLIC_ORIGIN` | api | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
+| `CLERK_SECRET_KEY` | api | Matching Clerk instance secret. |
+| `CLERK_PUBLISHABLE_KEY` | api | Matching Clerk publishable key. |
+| `MIGRATION_MODE` | migrate | `apply` for development/production/schema previews; `verify` for ordinary previews. |
+| `LOG_LEVEL` | migrate, api | Optional; defaults to `info`. |
 
-The Clerk dashboard must be in the state `docs/clerk-setup.md` describes
-(Google-only, sign-up open) or admission silently drifts from ADR-0001.
+The web publishable key is compiled into each environment-specific web image.
+There is no frontend build argument at runtime and no artifact promotion between
+channels.
 
-## First deploy (operator steps)
+## Installed-version gate
 
-1. **Provision** a Hostinger VPS (root Docker access) and install Dokploy per its
-   docs. Dokploy creates the shared `dokploy-network` that `docker-compose.yml`
-   attaches to as `external`.
-2. **DNS**: point `DOMAIN` at the VPS IP (A record). Traefik will request a
-   Let's Encrypt cert for it (`certresolver=letsencrypt`, the Dokploy default —
-   adjust the label if your resolver is named differently).
-3. **Create a Compose application** in Dokploy pointing at this repo, compose
-   path `docker-compose.yml`.
-4. **Set the environment** variables from the table above.
-5. **Deploy.** Dokploy builds the services and wires Traefik from the labels.
-   Postgres data persists in the `unshelf-db` Compose volume. Before `api`
-   starts, the one-shot `migrate` service waits for healthy Postgres and applies
-   every pending committed migration from `apps/api/drizzle/`.
-6. **Verify end to end**:
-   - `https://$DOMAIN/api/health` → `{"status":"ok","db":"up",...}`
-   - `https://$DOMAIN/` → the SPA loads and Google sign-in works for any Google
-     account (first sign-in creates the User).
+The last redacted inventory was recorded on 2026-08-01 against Dokploy v0.29.13,
+Traefik v3.6.7, Docker 28.5.0, and a 2-vCPU/8-GB Ubuntu 24.04 VPS. Before any
+live mutation, revalidate all of the following and stop for review on meaningful
+drift:
 
-### Migration failure behaviour
+- Dokploy, Traefik, Docker, host capacity, and Swarm state;
+- raw Compose create/update/deploy semantics and project-scoped authorization;
+- isolated deployment creates an external network named by `APP_NAME`, adds all
+  services, and connects Traefik;
+- Dokploy Domains can create two records on one generated host;
+- managed PostgreSQL accepts a custom attachable overlay and no external port;
+- private registry credentials are pull-only; and
+- generated hosts still receive trusted HTTPS certificates and HTTP redirects.
 
-The API process never modifies the schema. A non-zero `migrate` exit prevents
-the replacement `api` container from starting and makes the Dokploy deployment
-fail. Read the `migrate` service logs, fix or replace the migration, and redeploy;
-do not bypass the gate or run `drizzle-kit` manually against production.
+Never capture raw Dokploy responses, environment dumps, connection strings, API
+keys, cookies, or bearer tokens as evidence.
 
-Dokploy currently deploys Compose applications in place with `docker compose up
--d --build --remove-orphans`. When the API definition or image changes, Compose
-may remove the old API container before the migration finishes. A failed
-migration can therefore cause an outage even though it correctly fails the
-deploy. The migration must be safe before deployment; the gate is not a
-zero-downtime rollout mechanism.
+## Non-production foundation and hosted-development cutover
 
-Compose recreates the stopped one-shot service when its image or configuration
-changes. A deploy containing a new migration changes the API image, so `migrate`
-runs again. Restarting an unchanged API container does not re-run migrations.
+Perform the cutover with a non-owner Dokploy identity that can access only the
+non-production project. Production resources, credentials, database networks,
+and data are out of scope.
 
-The installed Drizzle migrator creates its ledger schema/table first, then wraps
-all pending migration statements and ledger inserts in one transaction. Failed
-DDL rolls back, but the empty `drizzle.__drizzle_migrations` table can remain.
-Postgres operations forbidden inside a transaction, notably `CREATE INDEX
-CONCURRENTLY`, cannot be used in these migration files.
+1. Inventory the exact existing non-production project, `DB-dev`, legacy Compose
+   resource, its Compose-local database volume, domains, registry entries, and
+   backup schedule. Record only stable redacted identifiers.
+2. Create or verify a separate non-production project and non-owner API identity.
+   Prove the identity cannot access the production project.
+3. Reconfigure `DB-dev` to PostgreSQL 18. Attach it to a dedicated private,
+   attachable overlay network and leave the external port unset. Create distinct
+   owner/migration, application, and verification roles. The application role
+   must not create schemas or roles; the verification role needs only connection,
+   schema usage, and migration-ledger reads.
+4. Configure Dokploy with one machine-account classic PAT carrying
+   `read:packages` only. Prove authenticated pulls of both private packages,
+   anonymous denial, and inability to publish.
+5. Create one raw Compose resource with isolated deployment enabled. Load the
+   committed Compose text and set the required environment without printing it.
+   Before any Compose update, validate the pair through the trusted control
+   plane: `pnpm deployment:control validate-image-pair --api-image "$API_IMAGE" --web-image "$WEB_IMAGE"`.
+6. Generate one hostname. Reuse the bare hostname for two native Domain records:
+   `api`, path `/api`, port 3001, no strip; and `web`, path `/`, port 80, no
+   strip. Enable HTTPS and the installed certificate resolver. Set
+   `PUBLIC_ORIGIN` to the exact `https://<generated-host>` origin.
+7. Set a Product-CI-approved development API/web digest pair and
+   `MIGRATION_MODE=apply`, then deploy. The migration must exit successfully
+   before API and web start.
+8. Complete every acceptance check below. **Do not remove the legacy resource**
+   or its database volume before all checks pass and the replacement target is
+   resolved exactly.
+9. After explicit irreversible confirmation, stop and remove only the legacy
+   Compose resource and its application-local database volume. Recheck the exact
+   target immediately before deletion. Do not delete `DB-dev`, the replacement
+   Compose resource, shared Dokploy/Traefik state, or unrelated volumes.
 
-## Container logs and incident evidence
+The discarded application-local database contains no data requiring migration.
+That authorization applies only to this one proven cutover; it is not a general
+database-deletion procedure.
 
-The production Compose file sends each service's stdout and stderr to Docker's
-`local` logging driver in blocking mode. The limits are deliberately unequal:
+## Migration modes
 
-| Service | Rotation limit | Nominal current-container budget |
+The same API image owns both modes:
+
+- `apply` runs committed Drizzle migrations transactionally. A failure prevents
+  API startup and is fixed forward; there are no down-migrations.
+- `verify` compares every committed migration timestamp and SHA-256 hash with
+  `drizzle.__drizzle_migrations` using SELECT only. Missing, extra, rewritten,
+  or unapplied history fails closed and performs no DDL.
+
+The PostgreSQL 18 integration test executes `apply`, verifies API/database
+health, then executes `verify` as a role without DDL permission and confirms the
+schema shape is unchanged.
+
+## Routing, authentication, and cutover acceptance
+
+All checks must pass against the generated development host:
+
+| Check | Required result |
+| --- | --- |
+| HTTPS | A normal client trusts the certificate for `/` and `/api/health`. |
+| Cleartext | HTTP redirects to the same HTTPS host; no application response is served over cleartext. |
+| Same origin | `/` serves the Unshelf HTML shell and `/api/health` returns `status: ok` and `db: up`. |
+| Topology | Only API/migrate join the non-production DB overlay; all services join isolated ingress; no ports are published. |
+| Migration gate | `migrate` exits 0 before API/web; API and migrate report the exact same image digest. |
+| Clerk positive | Google sign-in returns to the configured origin and a protected API call succeeds. |
+| Clerk negative | A token minted for another generated origin is rejected with 401 and no token detail is logged. |
+| Refresh | Token refresh plus hard reload retains a usable session without a redirect loop. |
+| Changed host | Changing the generated host fails closed until `PUBLIC_ORIGIN` and Clerk configuration are deliberately updated. |
+| Cookie/URL hygiene | Cookies are Secure; callback/final URLs and history contain no session token. |
+| Credential hygiene | Deployment output and bounded app/Traefik logs contain no bearer token, cookie, database URL, Clerk secret, or GHCR credential. |
+| Authority | Non-production automation cannot access production; Dokploy can pull but cannot publish packages. |
+
+Record only pass/fail, source SHA, API/web digests, sanitized states, and
+durations. A real deployment record is required before the ticket's live
+acceptance can be closed.
+
+## Logs and incident evidence
+
+Application containers use Docker's blocking `local` driver:
+
+| Service | Rotation | Nominal budget |
 | --- | ---: | ---: |
-| `api` | `20m` × `5` files | 100 MB |
-| `db` | `10m` × `5` files | 50 MB |
-| `web` | `5m` × `3` files | 15 MB |
-| `migrate` | `5m` × `3` files | 15 MB |
+| api | `20m` × 5 | 100 MB |
+| web | `5m` × 3 | 15 MB |
+| migrate | `5m` × 3 | 15 MB |
 
-This is a nominal **180 MB** budget across one current container for each
-service. Replicas and additional retained containers multiply it, while the
-driver's compression and small implementation overheads affect actual disk use.
-Retention is **byte-bounded, not time-bounded**: traffic, message size, and error
-bursts determine whether the retained bytes cover hours, days, or longer.
+The **130 MB** total is byte-bounded, not time-bounded. Rotation removes old
+entries, container recreation removes previous-container history, and VPS loss
+removes all local history. It is not an audit trail and not a cross-deployment
+archive. Logs may include sensitive User data and require restricted access.
 
-This local history is intentionally short-lived. **Rotation removes** the oldest
-entries; **container recreation removes** previous-container history; and **VPS
-loss removes** all local history. The stopped `migrate` container retains only
-the current deployment attempt until Compose recreates it. A restart of the same
-container preserves its history subject to rotation, but a replacement does
-not. These logs are **not an audit trail** and **not a cross-deployment archive**.
-If those properties or a guaranteed retention duration become necessary, use a
-remote log sink rather than increasing local limits.
-
-Failure diagnostics deliberately retain non-secret User-authored and business
-values. Treat both container logs and exported incident evidence as **sensitive
-User data** requiring restricted access. Do not paste them into public issues or
-leave exports in broadly readable locations.
-
-### Inspect current logs
-
-Dokploy's per-service **Logs** view is suitable for a quick bounded look at a
-running service, but it is only a viewer over the same container-local history,
-not an archive. For precise windows, open a terminal in the Dokploy Compose
-application's code directory (where `docker-compose.yml` and the generated
-`.env` live) and use the following copyable commands:
+From the Dokploy Compose resource directory:
 
 ```sh
-# Include stopped containers, especially the one-shot migration.
 docker compose -f docker-compose.yml ps --all
-
-# Recent API context.
-docker compose -f docker-compose.yml logs \
-  --since=30m --tail=200 --timestamps api
-
-# Correlate a recent incident across the long-running services.
-docker compose -f docker-compose.yml logs \
-  --since=2h --tail=500 --timestamps api db web
-
-# Read all still-retained output from the stopped current migration attempt.
-# Its Compose logging policy bounds this output to 5m × 3 files.
+docker compose -f docker-compose.yml logs --since=30m --tail=200 --timestamps api
 docker compose -f docker-compose.yml logs --timestamps migrate
+docker compose -f docker-compose.yml logs --since=2h --tail=500 --timestamps api web
 
-# Follow new API output; Ctrl+C stops following, not the service.
-docker compose -f docker-compose.yml logs \
-  --follow --tail=100 --timestamps api
-```
-
-Prefer `--since` and `--tail` for routine investigation. Do not read or
-manipulate Docker's internal `local` driver files directly.
-
-### Verify the effective policy
-
-The logging policy applies when containers are created. After deploying this
-change, confirm all four services were recreated, then inspect the effective
-per-container configuration rather than relying on the daemon-wide default:
-
-```sh
-docker compose -f docker-compose.yml ps --all
-
-docker inspect \
-  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+docker inspect --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
   "$(docker compose -f docker-compose.yml ps --quiet api)"
-
-docker inspect \
-  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
-  "$(docker compose -f docker-compose.yml ps --quiet db)"
-
-docker inspect \
-  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
-  "$(docker compose -f docker-compose.yml ps --quiet web)"
-
-docker inspect \
-  --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+docker inspect --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
   "$(docker compose -f docker-compose.yml ps --all --quiet migrate)"
-```
 
-Each result must show type `local`, mode `blocking`, and the service's
-`max-size` / `max-file` pair from the table. `docker info` only reports the
-daemon default and does not verify these per-container overrides.
-
-### Export before planned replacement
-
-If an incident overlaps a planned deploy or other container replacement, export
-a point-in-time copy first:
-
-```sh
-umask 077
 docker compose -f docker-compose.yml logs \
-  --since=24h --timestamps --no-color api db web migrate \
-  > unshelf-predeploy.log
+  --since=24h --timestamps --no-color api web migrate > unshelf-predeploy.log
 ```
 
-The `umask` restricts the new file to its owner. Move the export off the VPS if
-it must survive host loss, grant access only to incident responders, and delete
-it when the investigation no longer needs it. Unlike the container policy, this
-manual file has no automatic rotation.
-
-### One-time Drizzle cutover from the pre-migration schema
-
-This is a destructive **human VPS step**, performed once and only while the
-existing deployed data is confirmed disposable. It must finish before Dokploy
-can deploy the commit containing the `migrate` service:
-
-1. If merging to the tracked branch triggers a Dokploy deployment, pause
-   automatic deployments before merging this cutover. Do not let the new
-   `migrate` service start against the old schema.
-2. In Dokploy, stop the Unshelf Compose application so the API cannot reconnect
-   while its database is removed.
-3. Open a VPS terminal in that Compose application's code directory (the one
-   containing `docker-compose.yml` and Dokploy's generated `.env`) and run:
-
-   ```sh
-   docker compose -f docker-compose.yml down --volumes
-   ```
-
-   This removes the Compose stack and its project-scoped `unshelf-db` volume.
-   It permanently deletes all deployed Unshelf database data.
-4. Merge if necessary, then deploy the commit that introduces the `migrate`
-   service (and re-enable automatic deployments). Compose creates a
-   fresh volume; Postgres creates an empty database; migration `0000` applies;
-   only then does the API start.
-5. Verify `/api/health`, the SPA, and sign-in as described above.
-
-Do not deploy the migration service against the old pre-Drizzle schema first.
-Applying `0000` to that schema was tested with `drizzle-kit`: it failed with an
-empty error and left an orphaned ledger table. The old schema is not a supported
-migration baseline. No separate cleanup of `drizzle.__drizzle_migrations` is
-needed after the volume is deleted. Never repeat this volume-deletion procedure
-after the cutover; subsequent schema changes use ordinary committed migrations.
-
-## Local development and verification
-
-**Everyday local development is `pnpm dev`** (see the README) — Vite + `tsx watch`
-with hot reload, and Vite's dev proxy already gives the single-origin `/api`
-routing the browser sees in production.
-
-Applying local migrations is deliberately explicit: run `pnpm --filter
-@unshelf/api db:migrate` after pulling a migration. It is not chained into
-`pnpm dev`, so starting the development server never writes to whichever
-database `DATABASE_URL` names.
-
-There is intentionally **no local Docker harness** that simulates the Dokploy
-stack. A hand-rolled local Traefik can only ever *approximate* the platform's
-proxy (its TLS, entrypoints, and network are Dokploy's, not ours), so it adds
-maintenance and drift without proving the thing that actually matters. The
-production images and their routing are verified where they run: on **deploy**,
-via the end-to-end check in "First deploy" step 6 (and, once a hosted dev/staging
-environment exists, there first).
-
-## Backups — a tracked, time-boxed risk
-
-v1 ships **no scheduled Postgres backups** — a conscious, time-boxed risk with a
-firm trigger to close it (stand up off-box backups before anyone but the founder
-holds data here — see the ADR: #77 removed the invite gate that used to define
-that milestone). The decision and its rationale are
-[ADR-0009 → "Data portability & backups"](adr/0009-v1-stack-and-hosting.md);
-the fast-follow that closes it is
-**[#40](https://github.com/rajat2006/unshelf/issues/40)**.
+Treat `unshelf-predeploy.log` as sensitive incident evidence: restrict access,
+inspect it for credentials before sharing, and remove it when no longer needed.

@@ -47,8 +47,9 @@ COPY --from=build --chown=node:node /app/apps/api/drizzle ./drizzle
 
 # The app reads PORT (default 3001); DATABASE_URL and the Clerk keys come from
 # the environment (Dokploy service env). The same image also supplies the
-# one-shot migration service: dist/migrate.js applies the committed SQL copied
-# above before Compose starts the API. `tsup` bundles JavaScript, not SQL, and
-# `pnpm deploy --prod` does not carry drizzle/ into the deploy tree.
+# one-shot migration service: dist/migrate.js either applies committed SQL or
+# verifies the database ledger without DDL before Compose starts the API.
+# `tsup` bundles JavaScript, not SQL, and `pnpm deploy --prod` does not carry
+# drizzle/ into the deploy tree.
 EXPOSE 3001
 CMD ["node", "dist/server.js"]

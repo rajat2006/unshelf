@@ -44,4 +44,31 @@ describe("deployment executable", () => {
     });
     expect(result.stderr).toBe("");
   });
+
+  it("validates immutable image pairs without external adapters", () => {
+    const apiImage = `ghcr.io/rajat2006/unshelf-api@sha256:${"a".repeat(64)}`;
+    const webImage = `ghcr.io/rajat2006/unshelf-web@sha256:${"b".repeat(64)}`;
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli.pathname,
+        "validate-image-pair",
+        "--api-image",
+        apiImage,
+        "--web-image",
+        webImage,
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status).toBe(0);
+    expect(parseJson(result.stdout)).toMatchObject({
+      ok: true,
+      apiImage,
+      webImage,
+      state: "verified",
+    });
+    expect(result.stderr).toBe("");
+  });
 });
