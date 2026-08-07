@@ -29,4 +29,19 @@ describe("deployment executable", () => {
       "pnpm --filter @unshelf/deployment-control-plane cli",
     );
   });
+
+  it("routes candidate commands through the public candidate seam", () => {
+    const result = spawnSync(
+      process.execPath,
+      [cli.pathname, "prepare-candidate", "--channel", "preview"],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status).toBe(1);
+    expect(parseJson(result.stdout)).toMatchObject({
+      ok: false,
+      error: { code: "invalid-candidate-intent" },
+    });
+    expect(result.stderr).toBe("");
+  });
 });

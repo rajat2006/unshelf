@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createGitHubActionsCandidateAdapters } from "./candidate-adapters.js";
+import { runCandidateCli } from "./candidate.js";
 import { runDeploymentCli, type DeploymentAdapters } from "./index.js";
 
 const unavailable = async () => ({ ok: false, code: "unavailable" }) as const;
@@ -15,8 +17,14 @@ const adapters: DeploymentAdapters = {
   clock: { nowMilliseconds: () => Date.now() },
 };
 
-process.exitCode = await runDeploymentCli({
-  args: process.argv.slice(2),
-  adapters,
-  write: (line) => process.stdout.write(`${line}\n`),
-});
+const args = process.argv.slice(2);
+const write = (line: string) => process.stdout.write(`${line}\n`);
+process.exitCode = args[0]?.endsWith("-candidate")
+  ? await runCandidateCli({
+      args,
+      adapters: createGitHubActionsCandidateAdapters({
+        environment: process.env,
+      }),
+      write,
+    })
+  : await runDeploymentCli({ args, adapters, write });

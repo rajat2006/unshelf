@@ -1,3 +1,18 @@
+import {
+  elapsedMilliseconds,
+  readClock,
+  writeStructuredFailure,
+  type AdapterResult,
+  type Clock,
+} from "./runtime.js";
+
+export {
+  runCandidateCli,
+  type CandidateAdapters,
+  type CandidateChannel,
+} from "./candidate.js";
+export { createGitHubActionsCandidateAdapters } from "./candidate-adapters.js";
+
 export type DeploymentIntent = {
   channel: "development" | "preview" | "production";
   sourceSha: string;
@@ -6,10 +21,6 @@ export type DeploymentIntent = {
   publicOrigin: string;
   correlation: string;
 };
-
-type AdapterResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; code: "unavailable" | "rejected" | "ambiguous" };
 
 type ImagePair = Pick<DeploymentIntent, "apiImage" | "webImage">;
 
@@ -46,9 +57,7 @@ export type DeploymentAdapters = {
       input: Pick<DeploymentIntent, "publicOrigin">,
     ): Promise<AdapterResult<undefined>>;
   };
-  clock: {
-    nowMilliseconds(): number;
-  };
+  clock: Clock;
 };
 
 function parseIntent(args: string[]): DeploymentIntent | undefined {
@@ -146,7 +155,7 @@ export async function runDeploymentCli(input: {
     return 1;
   }
 
-  const startedAt = readClock(input.adapters);
+  const startedAt = readClock(input.adapters.clock);
   if (startedAt === undefined) {
     return writeStructuredFailure({
       write: input.write,
@@ -226,7 +235,7 @@ export async function runDeploymentCli(input: {
         state: "healthy",
         durationMs: elapsedMilliseconds({
           startedAt,
-          finishedAt: readClock(input.adapters) ?? startedAt,
+          finishedAt: readClock(input.adapters.clock) ?? startedAt,
         }),
       }),
     );
@@ -282,25 +291,6 @@ function isSafePublicIdentifier(value: string): boolean {
   return matchesIdentifierSyntax(value) && !sensitiveShape.test(value);
 }
 
-function elapsedMilliseconds({
-  startedAt,
-  finishedAt,
-}: {
-  startedAt: number;
-  finishedAt: number;
-}): number {
-  return Math.max(0, finishedAt - startedAt);
-}
-
-function readClock(adapters: DeploymentAdapters): number | undefined {
-  try {
-    const value = adapters.clock.nowMilliseconds();
-    return Number.isFinite(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function writeAdapterFailure({
   input,
   startedAt,
@@ -341,22 +331,7 @@ function writeFailure({
     message,
     durationMs: elapsedMilliseconds({
       startedAt,
-      finishedAt: readClock(input.adapters) ?? startedAt,
+      finishedAt: readClock(input.adapters.clock) ?? startedAt,
     }),
   });
-}
-
-function writeStructuredFailure({
-  write,
-  code,
-  message,
-  durationMs,
-}: {
-  write: (line: string) => void;
-  code: string;
-  message: string;
-  durationMs: number;
-}): number {
-  write(JSON.stringify({ ok: false, error: { code, message }, durationMs }));
-  return 1;
 }
