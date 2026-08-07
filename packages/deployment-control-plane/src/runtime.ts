@@ -4,6 +4,7 @@ export type AdapterResult<T> =
 
 export type Clock = {
   nowMilliseconds(): number;
+  sleep?(milliseconds: number): Promise<void>;
 };
 
 export function readClock(clock: Clock): number | undefined {
@@ -30,12 +31,21 @@ export function writeStructuredFailure({
   code,
   message,
   durationMs,
+  evidence,
 }: {
   write: (line: string) => void;
   code: string;
   message: string;
   durationMs: number;
+  evidence?: Record<string, string>;
 }): number {
-  write(JSON.stringify({ ok: false, error: { code, message }, durationMs }));
+  write(
+    JSON.stringify({
+      ok: false,
+      error: { code, message },
+      ...(evidence === undefined ? {} : { evidence }),
+      durationMs,
+    }),
+  );
   return 1;
 }

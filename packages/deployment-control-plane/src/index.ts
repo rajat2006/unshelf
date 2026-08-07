@@ -12,6 +12,7 @@ export {
   type CandidateChannel,
 } from "./candidate.js";
 export { createGitHubActionsCandidateAdapters } from "./candidate-adapters.js";
+export { createGitHubActionsDeploymentAdapters } from "./deployment-adapters.js";
 
 export type DeploymentIntent = {
   channel: "development" | "preview" | "production";
@@ -61,7 +62,12 @@ type VerifiedImagePair = {
 
 type DeploymentRecord = {
   deploymentId: string;
-  intent: DeploymentIntent;
+  status: "running" | "done" | "error" | "cancelled";
+};
+
+type DeploymentAttempt = {
+  queue: { jobId: string; state: "waiting" | "active" }[];
+  deployments: DeploymentRecord[];
 };
 
 export type DeploymentAdapters = {
@@ -72,14 +78,16 @@ export type DeploymentAdapters = {
     verifyImagePair(
       input: ImagePair & Pick<DeploymentIntent, "sourceSha">,
     ): Promise<AdapterResult<VerifiedImagePair>>;
+    advanceChannel(
+      input: ImagePair & Pick<DeploymentIntent, "channel">,
+    ): Promise<AdapterResult<undefined>>;
   };
   dokploy: {
-    findDeployment(
+    convergeCompose(input: DeploymentIntent): Promise<AdapterResult<undefined>>;
+    inspectAttempt(
       input: DeploymentIntent,
-    ): Promise<AdapterResult<DeploymentRecord | undefined>>;
-    createDeployment(
-      input: DeploymentIntent,
-    ): Promise<AdapterResult<DeploymentRecord>>;
+    ): Promise<AdapterResult<DeploymentAttempt>>;
+    startDeployment(input: DeploymentIntent): Promise<AdapterResult<undefined>>;
   };
   healthCheck: {
     verify(
@@ -87,6 +95,12 @@ export type DeploymentAdapters = {
     ): Promise<AdapterResult<undefined>>;
   };
   clock: Clock;
+};
+
+type DeploymentCliInput = {
+  args: string[];
+  adapters: DeploymentAdapters;
+  write: (line: string) => void;
 };
 
 function parseIntent(args: string[]): DeploymentIntent | undefined {
@@ -196,11 +210,9 @@ function isValidPublicOrigin({
   }
 }
 
-export async function runDeploymentCli(input: {
-  args: string[];
-  adapters: DeploymentAdapters;
-  write: (line: string) => void;
-}): Promise<number> {
+export async function runDeploymentCli(
+  input: DeploymentCliInput,
+): Promise<number> {
   const intent = parseIntent(input.args);
   if (intent === undefined) {
     input.write(
@@ -222,6 +234,7 @@ export async function runDeploymentCli(input: {
       code: "unexpected-failure",
       message: "Deployment reconciliation failed safely.",
       durationMs: 0,
+      evidence: deploymentEvidence(intent),
     });
   }
   try {
@@ -245,37 +258,57 @@ export async function runDeploymentCli(input: {
         message: "An external adapter returned an invalid result.",
       });
     }
-    const existingDeployment =
-      await input.adapters.dokploy.findDeployment(intent);
-    if (!existingDeployment.ok) {
+    let attempt = await input.adapters.dokploy.inspectAttempt(intent);
+    if (!attempt.ok) {
       return writeAdapterFailure({ input, startedAt, adapter: "dokploy" });
     }
-    const deployment =
-      existingDeployment.value === undefined
-        ? await input.adapters.dokploy.createDeployment(intent)
-        : intentsMatch({ left: existingDeployment.value.intent, right: intent })
-          ? { ok: true as const, value: existingDeployment.value }
-          : undefined;
-    if (deployment === undefined) {
+    let state = inspectAttempt(attempt.value);
+    if (state.kind === "invalid") {
+      return writeInvalidAdapterResult({ input, startedAt });
+    }
+    if (state.kind === "ambiguous") {
+      return writeAmbiguousDeployment({ input, startedAt });
+    }
+    if (state.kind === "missing") {
+      const converged = await input.adapters.dokploy.convergeCompose(intent);
+      if (!converged.ok) {
+        return writeAdapterFailure({ input, startedAt, adapter: "dokploy" });
+      }
+      const started = await input.adapters.dokploy.startDeployment(intent);
+      if (!started.ok) {
+        return writeAdapterFailure({ input, startedAt, adapter: "dokploy" });
+      }
+    }
+    for (let poll = 0; state.kind !== "done" && poll < 120; poll += 1) {
+      attempt = await input.adapters.dokploy.inspectAttempt(intent);
+      if (!attempt.ok) {
+        return writeAdapterFailure({ input, startedAt, adapter: "dokploy" });
+      }
+      state = inspectAttempt(attempt.value);
+      if (state.kind === "invalid") {
+        return writeInvalidAdapterResult({ input, startedAt });
+      }
+      if (state.kind === "ambiguous") {
+        return writeAmbiguousDeployment({ input, startedAt });
+      }
+      if (state.kind === "failed") {
+        return writeFailure({
+          input,
+          startedAt,
+          code: "remote-deployment-failed",
+          message: "The correlated remote deployment did not succeed.",
+        });
+      }
+      if (state.kind !== "done") {
+        await (input.adapters.clock.sleep?.(5_000) ?? Promise.resolve());
+      }
+    }
+    if (state.kind !== "done") {
       return writeFailure({
         input,
         startedAt,
-        code: "ambiguous-deployment",
-        message: "Deployment reconciliation found conflicting state.",
-      });
-    }
-    if (!deployment.ok) {
-      return writeAdapterFailure({ input, startedAt, adapter: "dokploy" });
-    }
-    if (
-      !isSafePublicIdentifier(deployment.value.deploymentId) ||
-      !intentsMatch({ left: deployment.value.intent, right: intent })
-    ) {
-      return writeFailure({
-        input,
-        startedAt,
-        code: "invalid-adapter-result",
-        message: "An external adapter returned an invalid result.",
+        code: "missing-deployment",
+        message: "The correlated remote deployment could not be resolved.",
       });
     }
     const health = await input.adapters.healthCheck.verify({
@@ -284,6 +317,14 @@ export async function runDeploymentCli(input: {
     if (!health.ok) {
       return writeAdapterFailure({ input, startedAt, adapter: "health-check" });
     }
+    const advanced = await input.adapters.ghcr.advanceChannel({
+      channel: intent.channel,
+      apiImage: intent.apiImage,
+      webImage: intent.webImage,
+    });
+    if (!advanced.ok) {
+      return writeAdapterFailure({ input, startedAt, adapter: "ghcr" });
+    }
     input.write(
       JSON.stringify({
         ok: true,
@@ -291,7 +332,7 @@ export async function runDeploymentCli(input: {
         sourceSha: intent.sourceSha,
         apiDigest: images.value.apiDigest,
         webDigest: images.value.webDigest,
-        deploymentId: deployment.value.deploymentId,
+        deploymentId: state.deploymentId,
         state: "healthy",
         durationMs: elapsedMilliseconds({
           startedAt,
@@ -324,21 +365,69 @@ function isVerifiedImagePair({
   );
 }
 
-function intentsMatch({
-  left,
-  right,
+type AttemptState =
+  | { kind: "missing" | "pending" | "failed" | "ambiguous" | "invalid" }
+  | { kind: "done"; deploymentId: string };
+
+function inspectAttempt(attempt: DeploymentAttempt): AttemptState {
+  if (!Array.isArray(attempt.queue) || !Array.isArray(attempt.deployments)) {
+    return { kind: "invalid" };
+  }
+  if (attempt.queue.length > 1 || attempt.deployments.length > 1) {
+    return { kind: "ambiguous" };
+  }
+  const queue = attempt.queue[0];
+  const deployment = attempt.deployments[0];
+  if (
+    (queue !== undefined &&
+      (!isSafePublicIdentifier(queue.jobId) ||
+        (queue.state !== "waiting" && queue.state !== "active"))) ||
+    (deployment !== undefined &&
+      (!isSafePublicIdentifier(deployment.deploymentId) ||
+        !["running", "done", "error", "cancelled"].includes(deployment.status)))
+  ) {
+    return { kind: "invalid" };
+  }
+  if (deployment?.status === "done") {
+    return { kind: "done", deploymentId: deployment.deploymentId };
+  }
+  if (deployment?.status === "error" || deployment?.status === "cancelled") {
+    return { kind: "failed" };
+  }
+  if (queue !== undefined || deployment?.status === "running") {
+    return { kind: "pending" };
+  }
+  return { kind: "missing" };
+}
+
+function writeInvalidAdapterResult({
+  input,
+  startedAt,
 }: {
-  left: DeploymentIntent;
-  right: DeploymentIntent;
-}): boolean {
-  return (
-    left.channel === right.channel &&
-    left.sourceSha === right.sourceSha &&
-    left.apiImage === right.apiImage &&
-    left.webImage === right.webImage &&
-    left.publicOrigin === right.publicOrigin &&
-    left.correlation === right.correlation
-  );
+  input: DeploymentCliInput;
+  startedAt: number;
+}): number {
+  return writeFailure({
+    input,
+    startedAt,
+    code: "invalid-adapter-result",
+    message: "An external adapter returned an invalid result.",
+  });
+}
+
+function writeAmbiguousDeployment({
+  input,
+  startedAt,
+}: {
+  input: DeploymentCliInput;
+  startedAt: number;
+}): number {
+  return writeFailure({
+    input,
+    startedAt,
+    code: "ambiguous-deployment",
+    message: "Deployment reconciliation found conflicting state.",
+  });
 }
 
 function matchesIdentifierSyntax(value: string): boolean {
@@ -356,10 +445,7 @@ function writeAdapterFailure({
   startedAt,
   adapter,
 }: {
-  input: {
-    adapters: DeploymentAdapters;
-    write: (line: string) => void;
-  };
+  input: DeploymentCliInput;
   startedAt: number;
   adapter: "github" | "ghcr" | "dokploy" | "health-check";
 }): number {
@@ -377,10 +463,7 @@ function writeFailure({
   code,
   message,
 }: {
-  input: {
-    adapters: DeploymentAdapters;
-    write: (line: string) => void;
-  };
+  input: DeploymentCliInput;
   startedAt: number;
   code: string;
   message: string;
@@ -393,5 +476,18 @@ function writeFailure({
       startedAt,
       finishedAt: readClock(input.adapters.clock) ?? startedAt,
     }),
+    evidence: deploymentEvidence(parseIntent(input.args)),
   });
+}
+
+function deploymentEvidence(
+  intent: DeploymentIntent | undefined,
+): Record<string, string> | undefined {
+  return intent === undefined
+    ? undefined
+    : {
+        channel: intent.channel,
+        sourceSha: intent.sourceSha,
+        correlation: intent.correlation,
+      };
 }

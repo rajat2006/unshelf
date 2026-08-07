@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { createGitHubActionsCandidateAdapters } from "./candidate-adapters.js";
 import { runCandidateCli } from "./candidate.js";
+import { createGitHubActionsDeploymentAdapters } from "./deployment-adapters.js";
 import {
   runDeploymentCli,
   runImagePairValidationCli,
@@ -10,12 +12,13 @@ import {
 
 const unavailable = async () => ({ ok: false, code: "unavailable" }) as const;
 
-const adapters: DeploymentAdapters = {
+const unavailableAdapters: DeploymentAdapters = {
   github: { verifyIntent: unavailable },
-  ghcr: { verifyImagePair: unavailable },
+  ghcr: { verifyImagePair: unavailable, advanceChannel: unavailable },
   dokploy: {
-    findDeployment: unavailable,
-    createDeployment: unavailable,
+    convergeCompose: unavailable,
+    inspectAttempt: unavailable,
+    startDeployment: unavailable,
   },
   healthCheck: { verify: unavailable },
   clock: { nowMilliseconds: () => Date.now() },
@@ -23,6 +26,16 @@ const adapters: DeploymentAdapters = {
 
 const args = process.argv.slice(2);
 const write = (line: string) => process.stdout.write(`${line}\n`);
+const deploymentAdapters =
+  args[0] === "reconcile"
+    ? createGitHubActionsDeploymentAdapters({
+        environment: process.env,
+        composeFile: readFileSync(
+          new URL("../../../docker-compose.yml", import.meta.url),
+          "utf8",
+        ),
+      })
+    : unavailableAdapters;
 process.exitCode =
   args[0] === "validate-image-pair"
     ? runImagePairValidationCli({ args, write })
@@ -34,4 +47,4 @@ process.exitCode =
           }),
           write,
         })
-      : await runDeploymentCli({ args, adapters, write });
+      : await runDeploymentCli({ args, adapters: deploymentAdapters, write });

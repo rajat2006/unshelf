@@ -1,15 +1,13 @@
-import { execFile } from "node:child_process";
 import type { CandidateAdapters, CandidateChannel } from "./candidate.js";
-
-type InspectResult =
-  { ok: true; stdout: string } | { ok: false; reason: "not-found" | "failed" };
+import {
+  inspectGitHubWithGh,
+  inspectRegistryManifestWithDocker,
+  parseBranchHead,
+  type GitHubInspect,
+  type InspectResult,
+} from "./trusted-command.js";
 
 type RegistryInspect = (input: { trace: string }) => Promise<InspectResult>;
-
-type GitHubInspect = (input: {
-  path: string;
-  jq: string;
-}) => Promise<InspectResult>;
 
 type PackageInspect = (input: {
   packageName: "unshelf-api" | "unshelf-web";
@@ -17,7 +15,7 @@ type PackageInspect = (input: {
 
 export function createGitHubActionsCandidateAdapters({
   environment,
-  runRegistryInspect = inspectRegistryWithDocker,
+  runRegistryInspect = inspectRegistryManifestWithDocker,
   runGitHubInspect = inspectGitHubWithGh,
   runPackageInspect = inspectPackageWithGh,
   nowMilliseconds = () => Date.now(),
@@ -152,21 +150,6 @@ async function isApprovedCandidate({
   return result.ok && isEligiblePreview({ stdout: result.stdout, sourceSha });
 }
 
-function parseBranchHead(stdout: string): string | undefined {
-  try {
-    const parsed = JSON.parse(stdout) as unknown;
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      "headSha" in parsed &&
-      typeof parsed.headSha === "string" &&
-      /^[a-f0-9]{40}$/.test(parsed.headSha)
-      ? parsed.headSha
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function isEligiblePreview({
   stdout,
   sourceSha,
@@ -214,69 +197,6 @@ function parseManifestDigest(stdout: string): string | undefined {
     return undefined;
   }
   return undefined;
-}
-
-function inspectRegistryWithDocker({
-  trace,
-}: {
-  trace: string;
-}): Promise<InspectResult> {
-  return new Promise((resolve) => {
-    execFile(
-      "docker",
-      [
-        "buildx",
-        "imagetools",
-        "inspect",
-        trace,
-        "--format",
-        "{{json .Manifest}}",
-      ],
-      { encoding: "utf8" },
-      (error, stdout, stderr) => {
-        if (error === null) {
-          resolve({ ok: true, stdout });
-          return;
-        }
-        const diagnostic = stderr.toLowerCase();
-        const absent =
-          diagnostic.includes("manifest unknown") ||
-          diagnostic.includes("no such manifest") ||
-          diagnostic.includes("not found");
-        resolve({ ok: false, reason: absent ? "not-found" : "failed" });
-      },
-    );
-  });
-}
-
-function inspectGitHubWithGh({
-  path,
-  jq,
-}: {
-  path: string;
-  jq: string;
-}): Promise<InspectResult> {
-  return new Promise((resolve) => {
-    execFile(
-      "gh",
-      ["api", path, "--jq", jq],
-      { encoding: "utf8" },
-      (error, stdout, stderr) => {
-        if (error === null) {
-          resolve({ ok: true, stdout });
-          return;
-        }
-        const diagnostic = stderr.toLowerCase();
-        const absent =
-          diagnostic.includes("http 404") ||
-          (/\b404\b/.test(diagnostic) && diagnostic.includes("not found"));
-        resolve({
-          ok: false,
-          reason: absent ? "not-found" : "failed",
-        });
-      },
-    );
-  });
 }
 
 function inspectPackageWithGh({

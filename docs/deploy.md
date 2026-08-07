@@ -143,6 +143,66 @@ Record only pass/fail, source SHA, API/web digests, sanitized states, and
 durations. A real deployment record is required before the ticket's live
 acceptance can be closed.
 
+## Continuous hosted-development reconciliation
+
+`Deploy development` is a trusted `workflow_run` consumer of `Publish candidate
+images`. It accepts only a successful same-repository `dev` candidate run and
+then independently verifies that the requested SHA is still the current `dev`
+head and has an exact successful push run of Product CI. The deployment job uses
+only the `development` GitHub environment.
+
+Configure that environment with these values. The non-production Dokploy API
+key must be the restricted identity proven during the hosted-development
+cutover; do not reuse an owner or production key.
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `DOKPLOY_NONPRODUCTION_URL` | Exact HTTPS base URL of the Dokploy instance. |
+| Variable | `DOKPLOY_DEVELOPMENT_COMPOSE_ID` | Stable identifier of the proven hosted-development Compose resource. |
+| Variable | `DEVELOPMENT_PUBLIC_ORIGIN` | Exact generated HTTPS origin, with no trailing slash. |
+| Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Non-owner identity restricted to the non-production project. |
+| Secret | `DOKPLOY_DEVELOPMENT_COMPOSE_ENV` | Complete newline-delimited runtime environment except `API_IMAGE`, `WEB_IMAGE`, and `PUBLIC_ORIGIN`; those are bound by the control plane. |
+
+The workflow has one `development-deployment` concurrency group with
+`cancel-in-progress: false`. GitHub replaces an obsolete pending run with the
+newest pending `dev` SHA, while an active run continues following its already
+started Dokploy attempt. Candidate publication remains independently
+cancelable.
+
+Under that lock, the control plane:
+
+1. revalidates current `dev`, Product CI, the private GHCR trace pair, and both
+   immutable digests;
+2. converges the trusted raw Compose text and the exact environment-specific
+   digest pair;
+3. submits `development:<full source SHA>:run-<Actions run id>` as both the safe
+   correlation key and Dokploy deployment title;
+4. follows matching queue and deployment records, failing closed when either
+   source contains more than one match or no record appears within ten minutes;
+5. treats `error` and `cancelled` as terminal fix-forward failures and never
+   calls a Dokploy cancellation endpoint;
+6. independently requires `/api/health` to return `status: ok` and `db: up` and
+   `/` to return the Unshelf HTML shell; and
+7. moves both `development` GHCR tags to the healthy immutable pair only after
+   those checks pass, verifies both resolved digests, and retries the pair up to
+   three times to repair a transient single-tag failure.
+
+The CLI prints one allowlisted JSON result containing only channel, SHA,
+digests, deployment identifier, state, and duration. Adapter failures are
+generic and never include raw Dokploy, database, registry, or health response
+data. Keep Dokploy's built-in deployment-failure email enabled for the Compose
+resource; GitHub Actions is the record for stale intent, registry, control-plane,
+and external-health failures. Recovery is a corrected commit or configuration
+followed by a normal retry—never rollback or down-migration.
+
+Before enabling the workflow, prove with the restricted key that a production
+project/resource request returns `403`, and confirm the environment contains no
+production variable or secret. Then push one harmless commit to `dev` and record
+only the Actions run, source SHA, API/web digests, correlated deployment ID,
+migration-before-API ordering, external health results, final moving-tag
+digests, and durations. Do not close the rollout ticket without that live
+evidence.
+
 ## Logs and incident evidence
 
 Application containers use Docker's blocking `local` driver:

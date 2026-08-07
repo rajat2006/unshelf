@@ -49,7 +49,7 @@ describe("deployment control-plane CLI", () => {
         "--public-origin",
         "https://dev-123.dokploy.example",
         "--correlation",
-        "development:run-42",
+        `development:${sourceSha}:run-42`,
       ],
       adapters: createFakeDeploymentAdapters(mutations),
       write: (line) => output.push(line),
@@ -59,9 +59,12 @@ describe("deployment control-plane CLI", () => {
     expect(mutations).toEqual([
       "github",
       "ghcr",
-      "dokploy:find",
-      "dokploy:create",
+      "dokploy:inspect",
+      "dokploy:converge",
+      "dokploy:start",
+      "dokploy:inspect",
       "health-check",
+      "ghcr:advance-channel",
     ]);
     expect(output.map(parseJson)).toEqual([
       {
@@ -95,7 +98,7 @@ describe("deployment control-plane CLI", () => {
         "--public-origin",
         "https://dev-123.dokploy.example",
         "--correlation",
-        "development:run-42",
+        `development:${"a".repeat(40)}:run-42`,
       ],
       adapters: createFakeDeploymentAdapters(mutations),
       write: (line) => output.push(line),
@@ -190,8 +193,8 @@ describe("deployment control-plane CLI", () => {
 
     expect([firstExit, replayExit]).toEqual([0, 0]);
     expect(
-      mutations.filter((mutation) => mutation === "dokploy:create"),
-    ).toEqual(["dokploy:create"]);
+      mutations.filter((mutation) => mutation === "dokploy:start"),
+    ).toEqual(["dokploy:start"]);
     expect(output.map(parseJson)).toMatchObject([
       { deploymentId: "deployment-1" },
       { deploymentId: "deployment-1" },
@@ -249,9 +252,12 @@ describe("deployment control-plane CLI", () => {
     "redacts $name returned as a deployment identifier",
     async ({ seededId }) => {
       const adapters = createFakeDeploymentAdapters([]);
-      adapters.dokploy.createDeployment = async (intent) => ({
+      adapters.dokploy.inspectAttempt = async () => ({
         ok: true,
-        value: { deploymentId: seededId, intent },
+        value: {
+          queue: [],
+          deployments: [{ deploymentId: seededId, status: "done" }],
+        },
       });
       const output: string[] = [];
 
@@ -272,11 +278,13 @@ describe("deployment control-plane CLI", () => {
 
   it("rejects a created deployment record for different intent", async () => {
     const adapters = createFakeDeploymentAdapters([]);
-    adapters.dokploy.createDeployment = async (intent) => ({
+    adapters.dokploy.inspectAttempt = async () => ({
       ok: true,
       value: {
-        deploymentId: "deployment-1",
-        intent: { ...intent, sourceSha: "d".repeat(40) },
+        queue: [],
+        deployments: [
+          { deploymentId: "deployment-1", status: "unexpected" as "done" },
+        ],
       },
     });
     const output: string[] = [];
@@ -314,14 +322,14 @@ describe("deployment control-plane CLI", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(mutations).not.toContain("dokploy:create");
+    expect(mutations).not.toContain("dokploy:start");
     expect(parseJson(output[0] ?? "null")).toMatchObject({
       ok: false,
       error: { code: "invalid-adapter-result" },
     });
   });
 
-  it("fails closed when a correlation already names different intent", async () => {
+  it("fails closed when a correlation matches multiple remote attempts", async () => {
     const mutations: string[] = [];
     const output: string[] = [];
     const adapters = createFakeDeploymentAdapters(
@@ -329,25 +337,147 @@ describe("deployment control-plane CLI", () => {
       [1_000, 1_100, 2_000, 2_100],
     );
 
-    const firstExit = await runDeploymentCli({
+    adapters.dokploy.inspectAttempt = async () => ({
+      ok: true,
+      value: {
+        queue: [
+          { jobId: "job-1", state: "waiting" },
+          { jobId: "job-2", state: "waiting" },
+        ],
+        deployments: [],
+      },
+    });
+    const conflictingExit = await runDeploymentCli({
       args: validIntentArgs(),
       adapters,
       write: (line) => output.push(line),
     });
-    const conflictingExit = await runDeploymentCli({
-      args: validIntentArgs({ sourceSha: "d".repeat(40) }),
+
+    expect(conflictingExit).toBe(1);
+    expect(mutations).not.toContain("dokploy:start");
+    expect(parseJson(output[0] ?? "null")).toMatchObject({
+      ok: false,
+      error: { code: "ambiguous-deployment" },
+    });
+  });
+
+  it("does not advance the development tags when external health fails", async () => {
+    const mutations: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    adapters.healthCheck.verify = async () => ({
+      ok: false,
+      code: "rejected",
+    });
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
+      adapters,
+      write: () => undefined,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(mutations).not.toContain("ghcr:advance-channel");
+  });
+
+  it("rejects stale GitHub intent before converging Compose", async () => {
+    const mutations: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    adapters.github.verifyIntent = async () => ({
+      ok: false,
+      code: "rejected",
+    });
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
+      adapters,
+      write: () => undefined,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(mutations).not.toContain("dokploy:converge");
+    expect(mutations).not.toContain("dokploy:start");
+  });
+
+  it.each(["error", "cancelled"] as const)(
+    "stops on a terminal %s deployment without health or tag mutation",
+    async (status) => {
+      const mutations: string[] = [];
+      const output: string[] = [];
+      const adapters = createFakeDeploymentAdapters(mutations);
+      adapters.dokploy.inspectAttempt = async () => ({
+        ok: true,
+        value: {
+          queue: [],
+          deployments: [{ deploymentId: "deployment-1", status }],
+        },
+      });
+
+      const exitCode = await runDeploymentCli({
+        args: validIntentArgs(),
+        adapters,
+        write: (line) => output.push(line),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(parseJson(output[0] ?? "null")).toMatchObject({
+        error: { code: "remote-deployment-failed" },
+      });
+      expect(mutations).not.toContain("health-check");
+      expect(mutations).not.toContain("ghcr:advance-channel");
+    },
+  );
+
+  it("follows running remote work to completion without a cancellation port", async () => {
+    const mutations: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    let inspection = 0;
+    adapters.dokploy.inspectAttempt = async () => {
+      inspection += 1;
+      return {
+        ok: true,
+        value: {
+          queue: [],
+          deployments: [
+            {
+              deploymentId: "deployment-1",
+              status: inspection === 1 ? "running" : "done",
+            },
+          ],
+        },
+      };
+    };
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
+      adapters,
+      write: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(mutations).not.toContain("dokploy:start");
+    expect("cancelDeployment" in adapters.dokploy).toBe(false);
+  });
+
+  it("fails closed when a triggered correlation never appears remotely", async () => {
+    const mutations: string[] = [];
+    const output: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    adapters.dokploy.inspectAttempt = async () => ({
+      ok: true,
+      value: { queue: [], deployments: [] },
+    });
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
       adapters,
       write: (line) => output.push(line),
     });
 
-    expect([firstExit, conflictingExit]).toEqual([0, 1]);
-    expect(
-      mutations.filter((mutation) => mutation === "dokploy:create"),
-    ).toEqual(["dokploy:create"]);
-    expect(parseJson(output[1] ?? "null")).toMatchObject({
-      ok: false,
-      error: { code: "ambiguous-deployment" },
+    expect(exitCode).toBe(1);
+    expect(parseJson(output[0] ?? "null")).toMatchObject({
+      error: { code: "missing-deployment" },
     });
+    expect(mutations).not.toContain("health-check");
   });
 
   it("converts thrown adapter diagnostics into a safe structured failure", async () => {
@@ -370,6 +500,11 @@ describe("deployment control-plane CLI", () => {
       error: {
         code: "unexpected-failure",
         message: "Deployment reconciliation failed safely.",
+      },
+      evidence: {
+        channel: "development",
+        sourceSha: "a".repeat(40),
+        correlation: `development:${"a".repeat(40)}:run-42`,
       },
       durationMs: 0,
     });

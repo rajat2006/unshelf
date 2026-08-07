@@ -1,4 +1,4 @@
-import type { DeploymentAdapters, DeploymentIntent } from "../src/index.js";
+import type { DeploymentAdapters } from "../src/index.js";
 
 export function parseJson(line: string): unknown {
   return JSON.parse(line) as unknown;
@@ -8,9 +8,15 @@ export function createFakeDeploymentAdapters(
   mutations: string[],
   times: number[] = [1_000, 1_250],
 ): DeploymentAdapters {
-  const deployments = new Map<
+  const attempts = new Map<
     string,
-    { deploymentId: string; intent: DeploymentIntent }
+    {
+      queue: { jobId: string; state: "waiting" | "active" }[];
+      deployments: {
+        deploymentId: string;
+        status: "running" | "done" | "error" | "cancelled";
+      }[];
+    }
   >();
   return {
     github: {
@@ -31,21 +37,31 @@ export function createFakeDeploymentAdapters(
           },
         };
       },
+      advanceChannel: async () => {
+        mutations.push("ghcr:advance-channel");
+        return { ok: true, value: undefined };
+      },
     },
     dokploy: {
-      findDeployment: async (intent) => {
-        mutations.push("dokploy:find");
-        const deployment = deployments.get(intent.correlation);
+      convergeCompose: async () => {
+        mutations.push("dokploy:converge");
+        return { ok: true, value: undefined };
+      },
+      inspectAttempt: async (intent) => {
+        mutations.push("dokploy:inspect");
+        const attempt = attempts.get(intent.correlation);
         return {
           ok: true,
-          value: deployment,
+          value: attempt ?? { queue: [], deployments: [] },
         };
       },
-      createDeployment: async (intent) => {
-        mutations.push("dokploy:create");
-        const deployment = { deploymentId: "deployment-1", intent };
-        deployments.set(intent.correlation, deployment);
-        return { ok: true, value: deployment };
+      startDeployment: async (intent) => {
+        mutations.push("dokploy:start");
+        attempts.set(intent.correlation, {
+          queue: [],
+          deployments: [{ deploymentId: "deployment-1", status: "done" }],
+        });
+        return { ok: true, value: undefined };
       },
     },
     healthCheck: {
@@ -54,7 +70,10 @@ export function createFakeDeploymentAdapters(
         return { ok: true, value: undefined };
       },
     },
-    clock: { nowMilliseconds: () => times.shift() ?? 1_250 },
+    clock: {
+      nowMilliseconds: () => times.shift() ?? 1_250,
+      sleep: async () => undefined,
+    },
   };
 }
 
@@ -74,7 +93,7 @@ export function validIntentArgs(
     apiImage: `ghcr.io/rajat2006/unshelf-api@sha256:${"b".repeat(64)}`,
     webImage: `ghcr.io/rajat2006/unshelf-web@sha256:${"c".repeat(64)}`,
     publicOrigin: "https://dev-123.dokploy.example",
-    correlation: "development:run-42",
+    correlation: `development:${"a".repeat(40)}:run-42`,
     ...overrides,
   };
   return [
