@@ -6,6 +6,7 @@ import turboConfig from "../../../turbo.json" with { type: "json" };
 import apiPackage from "../../../apps/api/package.json" with { type: "json" };
 import webPackage from "../../../apps/web/package.json" with { type: "json" };
 import repositoryPolicyPackage from "../../repository-policy/package.json" with { type: "json" };
+import deploymentControlPlanePackage from "../../deployment-control-plane/package.json" with { type: "json" };
 import sharedPackage from "../package.json" with { type: "json" };
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -14,6 +15,7 @@ const productFilters = [
   "--filter=@unshelf/api",
   "--filter=@unshelf/shared",
   "--filter=@unshelf/repository-policy",
+  "--filter=@unshelf/deployment-control-plane",
 ].join(" ");
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const ciWorkflow = readFileSync(
@@ -131,6 +133,10 @@ describe("product lint commands", () => {
     ["@unshelf/api", apiPackage.scripts],
     ["@unshelf/shared", sharedPackage.scripts],
     ["@unshelf/repository-policy", repositoryPolicyPackage.scripts],
+    [
+      "@unshelf/deployment-control-plane",
+      deploymentControlPlanePackage.scripts,
+    ],
   ])(
     "keeps %s lint read-only and fixes explicitly opt-in",
     (_workspace, scripts) => {
@@ -206,7 +212,7 @@ describe("product lint behavior", () => {
     expect(readOnly.status).not.toBe(0);
     expect(readFileSync(fixFixture, "utf8")).toBe(fixableSource);
     expect(readOnly.output).toContain(
-      "Packages in scope: @unshelf/api, @unshelf/repository-policy, @unshelf/shared, @unshelf/web",
+      "Packages in scope: @unshelf/api, @unshelf/deployment-control-plane, @unshelf/repository-policy, @unshelf/shared, @unshelf/web",
     );
     expect(readOnly.output).not.toContain("@unshelf/sandcastle");
     const sharedBuildPosition = readOnly.output.indexOf(
@@ -227,7 +233,7 @@ describe("product lint behavior", () => {
       'const value = "representative autofix";',
     );
     expect(fixed.output.match(/cache bypass, force executing/g)).toHaveLength(
-      4,
+      5,
     );
 
     expect((await runRootScript("lint")).status).toBe(0);
