@@ -1,0 +1,70 @@
+name: Release policy
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+
+# This workflow evaluates trusted base-branch code only. It never checks out or
+# executes the pull-request tree, and it receives no deployment environment or
+# write authority.
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Release policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out trusted policy
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build trusted release policy
+        run: pnpm --filter @unshelf/repository-policy build
+
+      - name: Fetch policy inputs without executing pull-request code
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/dev:refs/remotes/origin/dev" \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
+
+      - name: Evaluate release policy
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node packages/repository-policy/dist/cli.js \
+            --base-ref "$BASE_REF" \
+            --head-ref "$HEAD_REF" \
+            --base-repository "$BASE_REPOSITORY" \
+            --head-repository "$HEAD_REPOSITORY" \
+            --labels-json "$LABELS_JSON" \
+            --main-sha "$(git rev-parse refs/remotes/origin/main)" \
+            --dev-sha "$(git rev-parse refs/remotes/origin/dev)" \
+            --head-sha "$HEAD_SHA"
