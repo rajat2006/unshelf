@@ -477,8 +477,26 @@ async function inspectRegistryWithDocker({
     : { ok: false, reason: "failed" };
 }
 
-function createDokployRequester(
+type DokployFetch = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string | undefined;
+    redirect: "error";
+  },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}>;
+
+// Dokploy serves its routes under /api. DOKPLOY_URL must stay an exact HTTPS
+// origin — isExactHttpsOrigin rejects anything carrying a path — so the prefix
+// is applied here rather than being folded into the variable.
+export function createDokployRequester(
   environment: Record<string, string | undefined>,
+  runFetch: DokployFetch = fetch,
 ): DokployRequest {
   return async ({ method, path, body }) => {
     const baseUrl = environment.DOKPLOY_URL;
@@ -487,7 +505,7 @@ function createDokployRequester(
       return { ok: false, status: 0 };
     }
     try {
-      const response = await fetch(`${baseUrl}${path}`, {
+      const response = await runFetch(`${baseUrl}/api${path}`, {
         method,
         headers: {
           "content-type": "application/json",
