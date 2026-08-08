@@ -1,48 +1,14 @@
-# Production stack for Dokploy (ADR-0009). Dokploy deploys this Compose file on
-# the Hostinger VPS: each apps/* is its own service behind Dokploy's Traefik
-# proxy, and Postgres runs as a service on the same box.
-#
-# Routing (one domain, path-based — mirrors the dev Vite proxy). The two router
-# rules are mutually exclusive, so the split is explicit, not priority-based:
-#   PathPrefix(`/api`)  → api service   (Host && PathPrefix(`/api`))
-#   everything else     → web service   (Host && !PathPrefix(`/api`))
-#
-# Config comes from Dokploy's Environment settings (this file reads them; it
-# hardcodes no secrets). Required env: DOMAIN, POSTGRES_PASSWORD,
-# CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, VITE_CLERK_PUBLISHABLE_KEY.
-# See docs/deploy.md.
+# One parameterized Dokploy application contract for preview, development, and
+# production. Dokploy isolated deployments add each service to the resource's
+# ingress network and Dokploy Domains owns host, path, redirect, and TLS labels.
+# The database is a separately managed PostgreSQL 18 service on the selected
+# private attachable overlay network.
 
 x-api-image: &api-image
-  image: ${COMPOSE_PROJECT_NAME:-unshelf}-api
+  image: ${API_IMAGE:?API_IMAGE must be a full ghcr.io/rajat2006/unshelf-api digest reference}
+  pull_policy: always
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
-        mode: blocking
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-unshelf}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-unshelf}
-    volumes:
-      - unshelf-db:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-unshelf} -d ${POSTGRES_DB:-unshelf}",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - internal
-
   migrate:
     <<: *api-image
     command: ["node", "dist/migrate.js"]
@@ -54,19 +20,14 @@ services:
         max-file: "3"
         mode: blocking
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
+      APPLICATION_NAME: ${APPLICATION_NAME:?APPLICATION_NAME is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - internal
+      MIGRATION_MODE: ${MIGRATION_MODE:?MIGRATION_MODE is required}
+    networks: [database]
 
   api:
     <<: *api-image
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     logging:
       driver: local
@@ -75,33 +36,23 @@ services:
         max-file: "5"
         mode: blocking
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-unshelf}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-unshelf}
-      PORT: 3001
+      APPLICATION_NAME: ${APPLICATION_NAME:?APPLICATION_NAME is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      PORT: "3001"
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?CLERK_PUBLISHABLE_KEY is required}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}
     depends_on:
-      db:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    networks:
-      - internal
-      - dokploy-network
+    networks: [database]
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.unshelf-api.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)
-      - traefik.http.routers.unshelf-api.entrypoints=websecure
-      - traefik.http.routers.unshelf-api.tls.certresolver=letsencrypt
-      - traefik.http.services.unshelf-api.loadbalancer.server.port=3001
+      - traefik.docker.network=${APP_NAME:?APP_NAME is required}
 
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      args:
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+    image: ${WEB_IMAGE:?WEB_IMAGE must be a full ghcr.io/rajat2006/unshelf-web digest reference}
+    pull_policy: always
     restart: unless-stopped
     logging:
       driver: local
@@ -109,24 +60,11 @@ services:
         max-size: "5m"
         max-file: "3"
         mode: blocking
-    depends_on:
-      - api
-    networks:
-      - dokploy-network
+    depends_on: [api]
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.unshelf-web.rule=Host(`${DOMAIN}`) && !PathPrefix(`/api`)
-      - traefik.http.routers.unshelf-web.entrypoints=websecure
-      - traefik.http.routers.unshelf-web.tls.certresolver=letsencrypt
-      - traefik.http.services.unshelf-web.loadbalancer.server.port=80
-
-volumes:
-  unshelf-db:
+      - traefik.docker.network=${APP_NAME:?APP_NAME is required}
 
 networks:
-  # Private network for db↔api; never exposed to Traefik.
-  internal:
-  # Dokploy's shared Traefik network, created by Dokploy on the VPS.
-  dokploy-network:
+  database:
+    name: ${DATABASE_NETWORK:?DATABASE_NETWORK is required}
     external: true

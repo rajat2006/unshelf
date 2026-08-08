@@ -2,12 +2,15 @@ import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDatabase } from "./db";
 import { createProductionLogger, parseLogLevel } from "./logging";
-import { runMigration } from "./migration-runner";
+import { runMigration, type MigrationMode } from "./migration-runner";
+import { verifyMigrationHistory } from "./migration-verifier";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error("DATABASE_URL is required");
 }
+
+const mode = parseMigrationMode(process.env.MIGRATION_MODE);
 
 const logger = createProductionLogger({
   level: parseLogLevel(process.env.LOG_LEVEL),
@@ -19,7 +22,11 @@ try {
   await runMigration({
     logger,
     diagnosticSecrets: [connectionString],
-    migrate: () => migrate(db, { migrationsFolder }),
+    mode,
+    migrate: () =>
+      mode === "apply"
+        ? migrate(db, { migrationsFolder })
+        : verifyMigrationHistory({ database: db, migrationsFolder }),
   });
 } catch (migrationFailure) {
   try {
@@ -32,3 +39,10 @@ try {
 }
 
 await db.$client.end();
+
+function parseMigrationMode(value: string | undefined): MigrationMode {
+  if (value === "apply" || value === "verify") {
+    return value;
+  }
+  throw new Error("MIGRATION_MODE must be apply or verify");
+}

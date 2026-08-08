@@ -65,6 +65,32 @@ const clerkIdentify: Identify = (req) =>
  * maps it to a current User. `apps/api`'s server mounts these on protected
  * routes; tests substitute a single `createAuthMiddleware(db, testIdentify)`.
  */
-export function createClerkAuth(db: Database): RequestHandler[] {
-  return [clerkMiddleware(), createAuthMiddleware(db, clerkIdentify)];
+export function createClerkAuth(
+  db: Database,
+  publicOrigin: string,
+): RequestHandler[] {
+  return [
+    clerkMiddleware(authorizedPartiesForOrigin({ publicOrigin })),
+    createAuthMiddleware(db, clerkIdentify),
+  ];
+}
+
+export function authorizedPartiesForOrigin({
+  publicOrigin,
+}: {
+  publicOrigin: string;
+}): { authorizedParties: string[] } {
+  return { authorizedParties: [parsePublicOrigin(publicOrigin)] };
+}
+
+export function parsePublicOrigin(value: string): string {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "https:" && parsed.origin === value) {
+      return value;
+    }
+  } catch {
+    // Invalid URLs fail with the same public configuration error.
+  }
+  throw new Error("PUBLIC_ORIGIN must be an exact HTTPS origin");
 }

@@ -1,0 +1,216 @@
+name: Publish candidate images
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+# Product CI is deliberately secret-free. This trusted default-branch workflow
+# receives package authority only after that run succeeds, and it rejects fork
+# heads before any privileged job starts.
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+  CHANNEL: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'dev' && 'development' || github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && 'production' || 'preview' }}
+  TRACE: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'dev' && 'development' || github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && 'production' || 'preview' }}-${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  preflight:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' ||
+       github.event.workflow_run.event == 'pull_request')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Check out trusted control plane
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install trusted control-plane dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build trusted control plane
+        run: pnpm --filter @unshelf/deployment-control-plane build
+
+      - name: Log in to private GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify approved intent and unused trace identities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPROVED_CHANNEL: ${{ env.CHANNEL }}
+          APPROVED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+          APPROVED_EVENT: ${{ github.event.workflow_run.event }}
+          APPROVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          APPROVED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: >-
+          node packages/deployment-control-plane/dist/cli.js prepare-candidate
+          --channel "$CHANNEL"
+          --source-sha "$SOURCE_SHA"
+
+  api-image:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+
+    steps:
+      - name: Check out the approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to private GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish API trace image
+        id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/rajat2006/unshelf-api:${{ env.TRACE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/rajat2006/unshelf
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            io.unshelf.channel=${{ env.CHANNEL }}
+
+  web-image:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+
+    steps:
+      - name: Check out the approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to private GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish web trace image
+        id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/rajat2006/unshelf-web:${{ env.TRACE }}
+          build-args: |
+            VITE_CLERK_PUBLISHABLE_KEY=${{ env.CHANNEL == 'production' && vars.VITE_CLERK_PUBLISHABLE_KEY_PRODUCTION || vars.VITE_CLERK_PUBLISHABLE_KEY_NONPRODUCTION }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/rajat2006/unshelf
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            io.unshelf.channel=${{ env.CHANNEL }}
+
+  candidate:
+    needs: [api-image, web-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Check out trusted control plane
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install trusted control-plane dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build trusted control plane
+        run: pnpm --filter @unshelf/deployment-control-plane build
+
+      - name: Log in to private GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve and emit the immutable pair
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPROVED_CHANNEL: ${{ env.CHANNEL }}
+          APPROVED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+          APPROVED_EVENT: ${{ github.event.workflow_run.event }}
+          APPROVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          APPROVED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          API_DIGEST: ${{ needs.api-image.outputs.digest }}
+          WEB_DIGEST: ${{ needs.web-image.outputs.digest }}
+        run: >-
+          node packages/deployment-control-plane/dist/cli.js finalize-candidate
+          --channel "$CHANNEL"
+          --source-sha "$SOURCE_SHA"
+          --api-digest "$API_DIGEST"
+          --web-digest "$WEB_DIGEST"

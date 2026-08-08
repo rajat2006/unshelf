@@ -14,6 +14,10 @@ coverage
 **/coverage
 .env
 **/.env
+.npmrc
+**/.npmrc
+.pnpm-store
+**/.pnpm-store
 .git
 .gitignore
 .DS_Store
