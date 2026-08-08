@@ -47,64 +47,150 @@ channels.
 
 ## Installed-version gate
 
-The last redacted inventory was recorded on 2026-08-01 against Dokploy v0.29.13,
-Traefik v3.6.7, Docker 28.5.0, and a 2-vCPU/8-GB Ubuntu 24.04 VPS. Before any
-live mutation, revalidate all of the following and stop for review on meaningful
-drift:
+A redacted inventory was recorded on 2026-08-01 against Dokploy v0.29.13,
+Traefik v3.6.7, Docker 28.5.0, and a 2-vCPU/8-GB Ubuntu 24.04 VPS. Treat that as
+a baseline, not a requirement: a server provisioned later runs newer components,
+and newer is not by itself a fault. Record the installed versions, then prove
+each behaviour this design depends on rather than assuming the recorded ones
+still hold:
 
-- Dokploy, Traefik, Docker, host capacity, and Swarm state;
 - raw Compose create/update/deploy semantics and project-scoped authorization;
 - isolated deployment creates an external network named by `APP_NAME`, adds all
   services, and connects Traefik;
 - Dokploy Domains can create two records on one generated host;
-- managed PostgreSQL accepts a custom attachable overlay and no external port;
+- managed PostgreSQL accepts a custom attachable overlay and no external port
+  (attach over SSH if the build omits the network UI — see step 5);
+- a project-scoped API key cannot reach another project;
 - private registry credentials are pull-only; and
 - generated hosts still receive trusted HTTPS certificates and HTTP redirects.
+
+Stop for review on any behaviour that fails, and on host capacity or Swarm state
+that cannot carry the three channels.
 
 Never capture raw Dokploy responses, environment dumps, connection strings, API
 keys, cookies, or bearer tokens as evidence.
 
-## Non-production foundation and hosted-development cutover
+## Control-plane transport
 
-Perform the cutover with a non-owner Dokploy identity that can access only the
+`Deploy development` refuses to act unless `DOKPLOY_URL` is an exact HTTPS
+origin: scheme `https:`, and no trailing slash, path, query, or fragment. The
+non-production API key travels in a request header on every call, so cleartext
+would expose it on the wire. A fresh Dokploy answers on `http://<host>:3000` and
+cannot be used until its own panel serves HTTPS.
+
+Where no domain is available, a wildcard-DNS host such as `<ip>.sslip.io`
+resolves to the server by construction. That also satisfies Dokploy's stated
+requirement that a name already point at the server before its domain is
+created, which a freshly created DNS record does not. Configure it under
+Settings → Web Server: `Host`, the `HTTPS` toggle, `Certificate` set to Let's
+Encrypt, and the Let's Encrypt notification email.
+
+Save once and wait. Roughly five or six failed issuance attempts block the
+address for 24 hours, so re-saving to force a retry makes recovery slower rather
+than faster. A plain HTTPS read of the panel is the safe way to poll.
+
+## Non-production foundation
+
+Provision with a non-owner Dokploy identity that can access only the
 non-production project. Production resources, credentials, database networks,
 and data are out of scope.
 
-1. Inventory the exact existing non-production project, `DB-dev`, legacy Compose
-   resource, its Compose-local database volume, domains, registry entries, and
-   backup schedule. Record only stable redacted identifiers.
-2. Create or verify a separate non-production project and non-owner API identity.
-   Prove the identity cannot access the production project.
-3. Reconfigure `DB-dev` to PostgreSQL 18. Attach it to a dedicated private,
-   attachable overlay network and leave the external port unset. Create distinct
-   owner/migration, application, and verification roles. The application role
-   must not create schemas or roles; the verification role needs only connection,
-   schema usage, and migration-ledger reads.
+Capture nothing inside the repository tree: the Dokploy API key, `DATABASE_URL`,
+and the Clerk secret belong in the `development` GitHub environment and in a
+private file outside the checkout.
+
+1. Give the Dokploy panel a trusted HTTPS address, per **Control-plane
+   transport** above. Nothing else can run until this holds.
+2. Record the installed versions and prove the behaviours in the gate above.
+3. Create a non-production project and a non-owner API identity scoped to it.
+   Prove that identity cannot reach a production project.
 4. Configure Dokploy with one machine-account classic PAT carrying
    `read:packages` only. Prove authenticated pulls of both private packages,
    anonymous denial, and inability to publish.
-5. Create one raw Compose resource with isolated deployment enabled. Load the
+5. Create a managed PostgreSQL 18 service and leave the external port unset.
+   Attach it to a dedicated private, attachable overlay network — see the note
+   below if this Dokploy build omits the network UI.
+
+   The target state is three distinct roles: owner/migration, application, and
+   verification. The application role must not create schemas or roles; the
+   verification role needs only connection, schema usage, and migration-ledger
+   reads (`drizzle.__drizzle_migrations`).
+
+   > **Hosted development runs the single Dokploy superuser instead, from
+   > 2026-08-08.** Dokploy's managed PostgreSQL form creates exactly one user,
+   > so the split needs SQL run by hand afterwards. That was judged not worth
+   > the cost for a channel holding throwaway data; `DATABASE_URL` therefore
+   > carries the Dokploy-created superuser. Tracked in #290.
+   >
+   > **Production must not copy this.** Create the full split before
+   > provisioning production (#282), because there `DATABASE_URL` reaches real
+   > user data and a compromised API container running as superuser can drop
+   > the schema or create roles.
+
+   > **Do the network attachment over SSH, recorded 2026-08-08.** On
+   > `dokploy/dokploy:v0.29.14` (`sha256:57771f6e…`) the network management UI
+   > is absent from the published image even though the v0.29.14 source tag
+   > contains it: `/dashboard/networks` returns 404, and the container's
+   > `.next/server/pages/dashboard/` holds `swarm.js` but no `networks.js`.
+   >
+   > This does not block the design. A Dokploy-managed database is a Swarm
+   > service, so attach it with Docker directly:
+   >
+   > ```
+   > docker network create --driver overlay --attachable unshelf-nonprod-db
+   > docker service ls | grep postgres:18
+   > docker service update --network-add unshelf-nonprod-db <service-name>
+   > ```
+   >
+   > Use the service **name**. Dokploy names it like `unshelf-dbdev-xxxxxx`,
+   > and its container name contains no `postgres` — filtering on `postgres`
+   > finds Dokploy's own metadata database (`postgres:16`) instead.
+   >
+   > Verify both networks are in the **service spec**, not just the running
+   > container, so the attachment survives a restart:
+   > `docker service inspect <service-name> --format
+   > '{{range .Spec.TaskTemplate.Networks}}{{.Target}} {{end}}'`
+   >
+   > **Drift risk:** Dokploy owns the service spec. Pressing Rebuild in the UI
+   > recreates the service from Dokploy's definition and drops the manual
+   > network, after which `migrate` and `api` cannot resolve the database
+   > host. Re-run the `service update` to recover. Re-test the UI on a later
+   > image; once it ships, attach through Dokploy so it owns the attachment.
+6. Create one raw Compose resource with isolated deployment enabled. Load the
    committed Compose text and set the required environment without printing it.
    Before any Compose update, validate the pair through the trusted control
    plane: `pnpm deployment:control validate-image-pair --api-image "$API_IMAGE" --web-image "$WEB_IMAGE"`.
-6. Generate one hostname. Reuse the bare hostname for two native Domain records:
+7. Generate one hostname. Reuse the bare hostname for two native Domain records:
    `api`, path `/api`, port 3001, no strip; and `web`, path `/`, port 80, no
    strip. Enable HTTPS and the installed certificate resolver. Set
    `PUBLIC_ORIGIN` to the exact `https://<generated-host>` origin.
-7. Set a Product-CI-approved development API/web digest pair and
+8. Set a Product-CI-approved development API/web digest pair and
    `MIGRATION_MODE=apply`, then deploy. The migration must exit successfully
    before API and web start.
-8. Complete every acceptance check below. **Do not remove the legacy resource**
-   or its database volume before all checks pass and the replacement target is
-   resolved exactly.
-9. After explicit irreversible confirmation, stop and remove only the legacy
-   Compose resource and its application-local database volume. Recheck the exact
-   target immediately before deletion. Do not delete `DB-dev`, the replacement
-   Compose resource, shared Dokploy/Traefik state, or unrelated volumes.
+9. Complete every acceptance check below.
 
-The discarded application-local database contains no data requiring migration.
-That authorization applies only to this one proven cutover; it is not a general
-database-deletion procedure.
+### Cutover from a legacy stack
+
+A server that already carries an earlier Unshelf deployment needs three
+additional steps. A freshly provisioned server has none of this state and must
+skip them.
+
+- Before provisioning, inventory the existing non-production project, its
+  database service, the legacy Compose resource, its Compose-local database
+  volume, domains, registry entries, and backup schedule. Record only stable
+  redacted identifiers. Reconfigure an existing database service to PostgreSQL 18
+  in step 5 instead of creating one.
+- **Do not remove the legacy resource** or its database volume before every
+  acceptance check passes and the replacement target is resolved exactly.
+- Only then, after explicit irreversible confirmation, stop and remove the legacy
+  Compose resource and its application-local database volume. Recheck the exact
+  target immediately before deletion. Do not delete the managed database service,
+  the replacement Compose resource, shared Dokploy/Traefik state, or unrelated
+  volumes.
+
+The application-local database discarded that way contains no data requiring
+migration. That authorization applies only to one proven cutover; it is not a
+general database-deletion procedure.
 
 ## Migration modes
 
