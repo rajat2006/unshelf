@@ -169,6 +169,50 @@ private file outside the checkout.
    before API and web start.
 9. Complete every acceptance check below.
 
+### What the first hosted-development deploy got wrong
+
+Every item below cost a failed run on 2026-08-08. None is a code defect; all are
+easy to repeat.
+
+**`DOKPLOY_DEVELOPMENT_COMPOSE_ID` is the `composeId`, not the app name.**
+Dokploy displays the generated app name (`unshelf-devcompose-hqfs9h`) far more
+prominently than the identifier its API accepts (`dq-mC-mH0t2q6VsD4457f`).
+Read the real one rather than copying from the page heading:
+
+```
+curl -s -H "x-api-key: $KEY" \
+  "$DOKPLOY_URL/api/compose.one?composeId=<id>" | jq .composeId
+```
+
+**The scoped member needs Create Services.** `compose.update` is guarded by
+`checkServicePermissionAndAccess(ctx, composeId, { service: ["create"] })`,
+which maps to the `canCreateServices` flag. Without it every read returns 200
+and the update is refused, surfacing as `dokploy-failure`. Dokploy's
+open-source tier has no narrower verb — separate update and create permissions
+are part of Enterprise custom roles — so this grant is wider than we want: the
+key can create services anywhere it has project access. Note it for #282.
+
+**`DATABASE_URL` must use the database's service name as the host.** Dokploy
+shows a localhost-style internal URL on the database page; that host is
+meaningless from another container. Use the Postgres service's `appName`
+(`unshelf-dbdev-siqt3l`). A malformed URL is worse than a wrong one — `pg`
+falls back to `localhost:5432` and reports `ECONNREFUSED 127.0.0.1`, which
+looks like a networking fault rather than a parsing one.
+
+**Clerk development instances need no domain configuration.** Origin validation
+applies to production instances only, and a development instance's domain
+cannot be changed. There is nothing to add for a `pk_test_` key. This becomes
+real for #282, where `pk_live_` keys require a domain we control — a generated
+sslip.io host cannot be verified.
+
+**A failed deploy cannot be retried in place.** The correlation embeds
+`GITHUB_RUN_ID`, so re-running a failed run reuses a correlation already
+recorded against a failed deployment and the control plane refuses to start a
+second one. Re-running the publish workflow fails too, with
+`duplicate-trace-identity`, because candidates are immutable per source SHA.
+**A new deploy requires a new commit on `dev`.** This is both guards working as
+designed; it is not a defect.
+
 ### Cutover from a legacy stack
 
 A server that already carries an earlier Unshelf deployment needs three
