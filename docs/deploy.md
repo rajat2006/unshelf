@@ -171,8 +171,11 @@ private file outside the checkout.
 
 ### What the first hosted-development deploy got wrong
 
-Every item below cost a failed run on 2026-08-08. None is a code defect; all are
-easy to repeat.
+Several runs failed on 2026-08-08 before run `31256899295` reconciled `dev` at
+`a81b309` and reported `state: healthy`. Most were configuration; two were
+defects in the control plane itself. All are easy to repeat.
+
+#### Configuration
 
 **`DOKPLOY_DEVELOPMENT_COMPOSE_ID` is the `composeId`, not the app name.**
 Dokploy displays the generated app name (`unshelf-devcompose-hqfs9h`) far more
@@ -212,6 +215,43 @@ second one. Re-running the publish workflow fails too, with
 `duplicate-trace-identity`, because candidates are immutable per source SHA.
 **A new deploy requires a new commit on `dev`.** This is both guards working as
 designed; it is not a defect.
+
+#### Control-plane defects, fixed
+
+Both were fixed on 2026-08-08. Both had already reported failure for a
+deployment Dokploy went on to complete, so the channel was serving correctly
+while Actions showed red — read a failed run against Dokploy's own deployment
+record before assuming the delivery failed.
+
+**Dokploy identifiers may open with `-` or `_`.** Dokploy mints job and
+deployment identifiers with nanoid over the URL-safe alphabet, so roughly one in
+thirty opens with a character the reconcile's identifier rule refused. Run
+`31254146003` reported `invalid-adapter-result` at 3.8 seconds against
+deployment `-GnwVscJnNNkhC-nhW9wd`, which Dokploy recorded as `done`. The random
+draw made a deterministic bug look intermittent. Remote identifiers now carry
+their own syntax rule; the correlation the control plane mints for itself keeps
+the stricter one, and the guard that redacts secret-shaped values is unchanged.
+
+**Dokploy reports `done` before the containers serve traffic.** `done` means the
+Swarm update was accepted, not that replacement containers have booted and
+Traefik has registered their backends. One health request loses that race: run
+`31253871641` failed `health-check-failure` at 9.8 seconds against a deployment
+Dokploy recorded as `done`, and the origin answered normally soon after. The
+health check now polls the public origin on the deployment cadence for about two
+minutes before reporting the channel unhealthy.
+
+#### Still open
+
+**A pull-request CI run can trigger a hosted-development deploy.** `Publish
+candidate images` is itself a `workflow_run` job, so GitHub stamps its head as
+the default branch. `Deploy development`'s `head_branch == 'dev'` gate therefore
+passes even when the originating CI ran on a pull-request branch, and the deploy
+reconciles whatever `dev` points at. Run `31256512614` fired this way.
+
+**`dokploy-failure` does not say which call failed.** The code covers converge,
+start, and both inspect calls. Run `31256512614` failed with it after 12.4
+seconds and left no deployment record in Dokploy, which narrows it to a rejected
+write, but no further. That rejection is unexplained and has not recurred.
 
 ### Cutover from a legacy stack
 
@@ -312,7 +352,9 @@ Under that lock, the control plane:
 5. treats `error` and `cancelled` as terminal fix-forward failures and never
    calls a Dokploy cancellation endpoint;
 6. independently requires `/api/health` to return `status: ok` and `db: up` and
-   `/` to return the Unshelf HTML shell; and
+   `/` to return the Unshelf HTML shell, polling the public origin on the
+   deployment cadence for about two minutes because Dokploy reports a deployment
+   done before the replacement containers serve traffic; and
 7. moves both `development` GHCR tags to the healthy immutable pair only after
    those checks pass, verifies both resolved digests, and retries the pair up to
    three times to repair a transient single-tag failure.
