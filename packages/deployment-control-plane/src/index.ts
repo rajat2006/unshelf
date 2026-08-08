@@ -311,7 +311,8 @@ export async function runDeploymentCli(
         message: "The correlated remote deployment could not be resolved.",
       });
     }
-    const health = await input.adapters.healthCheck.verify({
+    const health = await verifyPublicHealth({
+      adapters: input.adapters,
       publicOrigin: intent.publicOrigin,
     });
     if (!health.ok) {
@@ -363,6 +364,25 @@ function isVerifiedImagePair({
     images.apiDigest === intent.apiImage.split("@")[1] &&
     images.webDigest === intent.webImage.split("@")[1]
   );
+}
+
+// Dokploy reports a deployment done once it accepts the Swarm update, which is
+// before the replacement containers finish booting and the reverse proxy routes
+// to them. Poll the public origin on the deployment cadence instead of failing
+// the whole reconcile on the first refused request.
+async function verifyPublicHealth({
+  adapters,
+  publicOrigin,
+}: {
+  adapters: DeploymentAdapters;
+  publicOrigin: string;
+}): Promise<AdapterResult<undefined>> {
+  let health = await adapters.healthCheck.verify({ publicOrigin });
+  for (let poll = 0; !health.ok && poll < 24; poll += 1) {
+    await (adapters.clock.sleep?.(5_000) ?? Promise.resolve());
+    health = await adapters.healthCheck.verify({ publicOrigin });
+  }
+  return health;
 }
 
 type AttemptState =
@@ -434,10 +454,17 @@ function matchesIdentifierSyntax(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
 }
 
+// Dokploy mints job and deployment identifiers over the URL-safe alphabet, so
+// roughly one in thirty opens with "-" or "_". Reject the shape of a secret
+// rather than the leading character of a legitimate remote identifier.
+function matchesRemoteIdentifierSyntax(value: string): boolean {
+  return /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,127}$/.test(value);
+}
+
 function isSafePublicIdentifier(value: string): boolean {
   const sensitiveShape =
     /^(?:gh[opusr]_|github_pat_|sk[-_]|user[_-])|(?:^|[_-])(?:password|postgres|secret|token|user)(?:[_:-]|$)/i;
-  return matchesIdentifierSyntax(value) && !sensitiveShape.test(value);
+  return matchesRemoteIdentifierSyntax(value) && !sensitiveShape.test(value);
 }
 
 function writeAdapterFailure({

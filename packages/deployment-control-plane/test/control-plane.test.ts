@@ -276,6 +276,65 @@ describe("deployment control-plane CLI", () => {
     },
   );
 
+  it("accepts a Dokploy identifier that opens with the URL-safe alphabet", async () => {
+    const mutations: string[] = [];
+    const output: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    let inspections = 0;
+    adapters.dokploy.inspectAttempt = async () => {
+      inspections += 1;
+      mutations.push("dokploy:inspect");
+      return {
+        ok: true,
+        value: {
+          queue: [],
+          deployments:
+            inspections === 1
+              ? []
+              : [{ deploymentId: "-GnwVscJnNNkhC-nhW9wd", status: "done" }],
+        },
+      };
+    };
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
+      adapters,
+      write: (line) => output.push(line),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(parseJson(output[0] ?? "null")).toMatchObject({
+      ok: true,
+      deploymentId: "-GnwVscJnNNkhC-nhW9wd",
+      state: "healthy",
+    });
+    expect(mutations).toContain("ghcr:advance-channel");
+  });
+
+  it("waits for the public origin to answer before advancing the channel", async () => {
+    const mutations: string[] = [];
+    const output: string[] = [];
+    const adapters = createFakeDeploymentAdapters(mutations);
+    let checks = 0;
+    adapters.healthCheck.verify = async () => {
+      checks += 1;
+      mutations.push("health-check");
+      return checks < 3
+        ? { ok: false, code: "rejected" }
+        : { ok: true, value: undefined };
+    };
+
+    const exitCode = await runDeploymentCli({
+      args: validIntentArgs(),
+      adapters,
+      write: (line) => output.push(line),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(checks).toBe(3);
+    expect(mutations).toContain("ghcr:advance-channel");
+  });
+
   it("rejects a created deployment record for different intent", async () => {
     const adapters = createFakeDeploymentAdapters([]);
     adapters.dokploy.inspectAttempt = async () => ({
