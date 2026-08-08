@@ -1,4 +1,7 @@
-import { createGitHubActionsDeploymentAdapters } from "../src/deployment-adapters.js";
+import {
+  createDokployRequester,
+  createGitHubActionsDeploymentAdapters,
+} from "../src/deployment-adapters.js";
 import { validIntentArgs } from "./harness.js";
 import { describe, expect, it } from "vitest";
 
@@ -341,5 +344,38 @@ describe("GitHub Actions deployment adapters", () => {
   it("keeps the public reconcile command named and secret-free", () => {
     expect(validIntentArgs()).not.toContain("private-dokploy-key");
     expect(validIntentArgs()).not.toContain("postgresql://opaque");
+  });
+});
+
+describe("createDokployRequester", () => {
+  // DOKPLOY_URL must stay an exact HTTPS origin, so the /api prefix Dokploy
+  // serves its routes under belongs here rather than in the variable.
+  it("addresses Dokploy routes under the panel's /api prefix", async () => {
+    const requested: string[] = [];
+    const requester = createDokployRequester(
+      { DOKPLOY_URL: "https://dokploy.example.invalid", DOKPLOY_API_KEY: "k" },
+      async (url) => {
+        requested.push(url);
+        return { ok: true, status: 200, json: async () => ({ done: true }) };
+      },
+    );
+
+    await requester({ method: "POST", path: "/compose.update", body: {} });
+    await requester({ method: "GET", path: "/deployment.queueList" });
+
+    expect(requested).toEqual([
+      "https://dokploy.example.invalid/api/compose.update",
+      "https://dokploy.example.invalid/api/deployment.queueList",
+    ]);
+  });
+
+  it("reports failure without a base url or key", async () => {
+    const requester = createDokployRequester({}, async () => {
+      throw new Error("must not be called");
+    });
+
+    await expect(
+      requester({ method: "GET", path: "/deployment.queueList" }),
+    ).resolves.toEqual({ ok: false, status: 0 });
   });
 });
