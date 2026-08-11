@@ -7,7 +7,11 @@ import {
 import type { StopId, TrailId, TrailNode, TrailView } from "@unshelf/shared";
 import { connectStops, createStop, disconnectStops } from "../api";
 import type { CurrentUser } from "../application-auth/types";
-import { canConnect, layout, type Placed } from "./geometry";
+import {
+  canConnect,
+  deriveTopologyLayout,
+  type TopologyPlacement,
+} from "../topology";
 import { ProgressRing } from "./ProgressRing";
 
 /**
@@ -67,7 +71,18 @@ export function TrailCanvas({
   );
   const looseNodes = nodes.filter((node) => !connectedStopIds.has(node.id));
   const sequencedNodes = nodes.filter((node) => connectedStopIds.has(node.id));
-  const g = layout(sequencedNodes, edges);
+  const topologyEdges = edges.map((edge) => ({
+    from: edge.fromStopId,
+    to: edge.toStopId,
+  }));
+  const topologyLayout = deriveTopologyLayout({
+    nodeIds: sequencedNodes.map((node) => node.id),
+    edges: topologyEdges,
+  });
+  const placedNodes = sequencedNodes.map((node) => ({
+    node,
+    ...topologyLayout.byId.get(node.id)!,
+  }));
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
   const [busy, setBusy] = useState(false);
@@ -138,19 +153,19 @@ export function TrailCanvas({
     void run(() => connectStops(user, trailId, predecessorId, stopId));
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
-  const wander = (p: Placed<TrailNode>) =>
+  const wander = (p: TopologyPlacement) =>
     Math.sin(p.depth * 1.1 + p.lane * 2) * 14;
-  const baseX = (p: Placed<TrailNode>) => PAD + p.depth * COL_W + R;
-  const baseY = (p: Placed<TrailNode>) => PAD + p.lane * LANE_H + R + wander(p);
+  const baseX = (p: TopologyPlacement) => PAD + p.depth * COL_W + R;
+  const baseY = (p: TopologyPlacement) => PAD + p.lane * LANE_H + R + wander(p);
   const off = (id: string) => offsets[id] ?? { dx: 0, dy: 0 };
   const pos = new Map<string, { x: number; y: number }>(
-    g.placed.map((p) => [
+    placedNodes.map((p) => [
       p.node.id,
       { x: baseX(p) + off(p.node.id).dx, y: baseY(p) + off(p.node.id).dy },
     ]),
   );
-  const width = PAD * 2 + g.depthCount * COL_W;
-  const height = PAD * 2 + g.laneCount * LANE_H;
+  const width = PAD * 2 + topologyLayout.depthCount * COL_W;
+  const height = PAD * 2 + topologyLayout.laneCount * LANE_H;
 
   const frontier = sequencedNodes.find((n) => {
     if (isDone(n)) return false;
@@ -339,7 +354,7 @@ export function TrailCanvas({
               </div>
             )}
 
-            {g.placed.map((p) => {
+            {placedNodes.map((p) => {
               const n = p.node;
               const here = pos.get(n.id)!;
               return (
@@ -356,7 +371,11 @@ export function TrailCanvas({
                   isLinkTarget={
                     linkingFrom !== null &&
                     linkingFrom !== n.id &&
-                    canConnect(edges, linkingFrom, n.id)
+                    canConnect({
+                      edges: topologyEdges,
+                      from: linkingFrom,
+                      to: n.id,
+                    })
                   }
                   linking={linkingFrom !== null}
                   onPointerDown={(e) => startNodeDrag(n.id, e)}
