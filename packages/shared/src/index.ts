@@ -57,6 +57,10 @@ export type ItemId = string & {
   readonly [identifierBrand]: "ItemId";
 };
 
+export type PartId = string & {
+  readonly [identifierBrand]: "PartId";
+};
+
 export type StageId = string & {
   readonly [identifierBrand]: "StageId";
 };
@@ -83,6 +87,7 @@ export type LabelId = string & {
  */
 export type {
   AddStageItemRequest,
+  CreatePartsRequest,
   ConnectLearningPlanNodesRequest,
   CreateItemRequest,
   CreateLabelRequest,
@@ -91,6 +96,7 @@ export type {
   CreateLearningPlanRequest,
   PlaceLearningPlanItemRequest,
   MoveLearningPlanItemRequest,
+  ReorderPartsRequest,
   ReorderStageItemsRequest,
   RemoveStageRequest,
   StageItemDisposition,
@@ -98,6 +104,8 @@ export type {
   UpdateStageRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
+  UpdatePartCompletionRequest,
+  UpdatePartRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */
@@ -147,6 +155,21 @@ export interface Item {
   completedAt: string | null;
   /** The private Labels currently applied to this Item. */
   labels: Label[];
+}
+
+/** One lightweight checklist entry owned by an Item. */
+export interface Part {
+  id: PartId;
+  itemId: ItemId;
+  title: string;
+  position: number;
+  completed: boolean;
+}
+
+/** Canonical Item detail, including structure that is not a Library row. */
+export interface ItemDetail extends Item {
+  parts: Part[];
+  partPercentage: number | null;
 }
 
 /**

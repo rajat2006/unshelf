@@ -3,12 +3,15 @@ import {
   addStageItemRequestSchema,
   connectLearningPlanNodesRequestSchema,
   createItemRequestSchema,
+  createPartsRequestSchema,
   createLabelRequestSchema,
   createLearningPlanRequestSchema,
   createStageRequestSchema,
   itemIdSchema,
   labelIdSchema,
   learningPlanIdSchema,
+  partIdSchema,
+  reorderPartsRequestSchema,
   stageIdSchema,
   updateItemStatusRequestSchema,
   updateItemTargetDateRequestSchema,
@@ -158,10 +161,31 @@ describe("Item update request schemas", () => {
   });
 });
 
+describe("Part request schemas", () => {
+  it("normalizes a batch and ignores blank lines", () => {
+    expect(
+      createPartsRequestSchema.parse({ titles: ["  One  ", " ", "Two"] }),
+    ).toEqual({ titles: ["One", "Two"] });
+  });
+
+  it("requires at least one nonblank Part title", () => {
+    expect(
+      createPartsRequestSchema.safeParse({ titles: [" ", "\t"] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects repeated Part identities in a submitted order", () => {
+    expect(
+      reorderPartsRequestSchema.safeParse({ partIds: [uuid, uuid] }).success,
+    ).toBe(false);
+  });
+});
+
 describe("identifier schemas", () => {
   it.each([
     ["User", userIdSchema],
     ["Item", itemIdSchema],
+    ["Part", partIdSchema],
     ["Stage", stageIdSchema],
     ["Learning Plan", learningPlanIdSchema],
     ["Label", labelIdSchema],

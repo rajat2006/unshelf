@@ -4,6 +4,7 @@ import type {
   LabelId,
   LearningPlanId,
   PlanNodeId,
+  PartId,
   StageId,
   UserId,
 } from "./index";
@@ -20,6 +21,7 @@ const identifierSchema = <Identifier extends string>() =>
 
 export const userIdSchema = identifierSchema<UserId>();
 export const itemIdSchema = identifierSchema<ItemId>();
+export const partIdSchema = identifierSchema<PartId>();
 export const stageIdSchema = identifierSchema<StageId>();
 export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
 export const planNodeIdSchema = identifierSchema<PlanNodeId>();
@@ -42,6 +44,29 @@ export const targetDateSchema = z.iso
 
 export const updateItemTargetDateRequestSchema = z.strictObject({
   targetDate: targetDateSchema.nullable(),
+});
+
+export const createPartsRequestSchema = z.strictObject({
+  titles: z
+    .array(z.string())
+    .transform((titles) => titles.map((title) => title.trim()).filter(Boolean))
+    .refine((titles) => titles.length > 0, {
+      message: "Must contain at least one nonblank title",
+    }),
+});
+
+export const updatePartRequestSchema = z.strictObject({ title: titleSchema });
+
+export const updatePartCompletionRequestSchema = z.strictObject({
+  completed: z.boolean(),
+});
+
+export const reorderPartsRequestSchema = z.strictObject({
+  partIds: z
+    .array(partIdSchema)
+    .refine((partIds) => new Set(partIds).size === partIds.length, {
+      message: "Part ids must be unique",
+    }),
 });
 
 export const createLabelRequestSchema = z.strictObject({ name: nameSchema });
@@ -99,6 +124,12 @@ export type UpdateItemStatusRequest = z.infer<
 export type UpdateItemTargetDateRequest = z.infer<
   typeof updateItemTargetDateRequestSchema
 >;
+export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
+export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
+export type UpdatePartCompletionRequest = z.infer<
+  typeof updatePartCompletionRequestSchema
+>;
+export type ReorderPartsRequest = z.infer<typeof reorderPartsRequestSchema>;
 export type CreateLabelRequest = z.infer<typeof createLabelRequestSchema>;
 export type CreateStageRequest = z.infer<typeof createStageRequestSchema>;
 export type UpdateStageRequest = z.infer<typeof updateStageRequestSchema>;

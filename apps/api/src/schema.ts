@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  boolean,
   date,
   foreignKey,
   index,
@@ -107,6 +108,33 @@ export const items = pgTable(
       "items_status_check",
       sql`${table.status} in ${enumList(ITEM_STATUSES)}`,
     ),
+  ],
+);
+
+/** Ordered, lightweight checklist entries that structure one shared Item. */
+export const parts = pgTable(
+  "parts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    itemId: uuid("item_id").notNull(),
+    title: text("title").notNull(),
+    position: integer("position").notNull(),
+    completed: boolean("completed").notNull().default(false),
+  },
+  (table) => [
+    foreignKey({
+      name: "parts_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }).onDelete("cascade"),
+    unique("parts_item_position_idx").on(table.itemId, table.position),
+    unique("parts_id_user_id_idx").on(table.id, table.userId),
+    index("parts_item_id_idx").on(table.itemId),
+    check("parts_title_nonblank_check", sql`btrim(${table.title}) <> ''`),
+    check("parts_position_nonnegative_check", sql`${table.position} >= 0`),
   ],
 );
 

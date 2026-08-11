@@ -564,6 +564,84 @@ body {
   padding: var(--space-2) var(--space-4);
 }
 
+.part-checklist {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.part-checklist__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.part-checklist__heading h3,
+.part-checklist p {
+  margin: 0;
+}
+
+.part-checklist__heading span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.part-checklist ol {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.part-checklist li,
+.part-checklist__add {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.part-checklist li {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+}
+
+.part-checklist__completion {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.part-checklist li input:not([type="checkbox"]),
+.part-checklist textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-1);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.part-checklist textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.part-checklist__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.part-checklist__actions button {
+  min-height: 44px;
+}
+
 .quiet-button--primary {
   border-color: var(--accent);
   background: var(--accent);

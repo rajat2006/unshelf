@@ -240,7 +240,7 @@ describe("GET /api/items/:itemId — canonical Item read", () => {
     const res = await readItem("clerk_item_read_owner", item.id);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(item);
+    expect(res.body).toEqual({ ...item, parts: [], partPercentage: null });
   });
 
   it("treats another User's Item as missing", async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Item, ItemId } from "@unshelf/shared";
+import type { Item, ItemDetail, ItemId } from "@unshelf/shared";
 import { fetchItem } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemStatusSelect } from "./ItemStatusSelect";
@@ -7,6 +7,7 @@ import { ItemTargetDate } from "./ItemTargetDate";
 import { ItemSource } from "./ItemSource";
 import { ItemPlacements } from "./ItemPlacements";
 import { TYPE_LABELS } from "./presentation";
+import { PartChecklist } from "./PartChecklist";
 
 interface ItemSidebarProps {
   itemId: ItemId;
@@ -26,7 +27,7 @@ export function ItemSidebar({
   onItemChanged,
   onPlacementChanged,
 }: ItemSidebarProps) {
-  const [item, setItem] = useState<Item | null>(null);
+  const [item, setItem] = useState<ItemDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -44,12 +45,16 @@ export function ItemSidebar({
   }, [load]);
 
   const replaceItem = (changed: Item) => {
-    setItem(changed);
+    setItem((current) => (current ? { ...current, ...changed } : null));
     onItemChanged?.(changed);
   };
 
   const loadedItem = item?.id === itemId ? item : null;
-  const visibleItem = itemOverride?.id === itemId ? itemOverride : loadedItem;
+  const visibleItem = loadedItem
+    ? itemOverride?.id === itemId
+      ? { ...loadedItem, ...itemOverride }
+      : loadedItem
+    : null;
 
   return (
     <aside
@@ -92,6 +97,11 @@ export function ItemSidebar({
             onChanged={replaceItem}
           />
           <ItemTargetDate
+            item={visibleItem}
+            user={user}
+            onChanged={replaceItem}
+          />
+          <PartChecklist
             item={visibleItem}
             user={user}
             onChanged={replaceItem}

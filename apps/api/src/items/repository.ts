@@ -2,9 +2,11 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type {
   CreateItemRequest,
   Item,
+  ItemDetail,
   ItemId,
   Label,
   LabelId,
+  Part,
   Status,
   Type,
   UserId,
@@ -87,6 +89,41 @@ export const toItem = (row: ItemRow): Item => ({
   labels: row.labels,
 });
 
+interface ItemDetailRow extends ItemRow {
+  parts: Part[];
+  part_percentage: number | null;
+}
+
+const ITEM_DETAIL_PROJECTION = {
+  ...ITEM_PROJECTION,
+  parts: sql<Part[]>`coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', parts.id,
+        'itemId', parts.item_id,
+        'title', parts.title,
+        'position', parts.position,
+        'completed', parts.completed
+      ) order by parts.position
+    )
+    from parts
+    where parts.item_id = items.id
+      and parts.user_id = items.user_id
+  ), '[]'::jsonb)`,
+  part_percentage: sql<number | null>`(
+    select round(100.0 * count(*) filter (where parts.completed) / nullif(count(*), 0))::integer
+    from parts
+    where parts.item_id = items.id
+      and parts.user_id = items.user_id
+  )`,
+} as const;
+
+const toItemDetail = (row: ItemDetailRow): ItemDetail => ({
+  ...toItem(row),
+  parts: row.parts,
+  partPercentage: row.part_percentage,
+});
+
 /**
  * Capture an Item for a User — the one uniform manual insert (ADR-0007). Title
  * and type land exactly as given; `source` is stored verbatim and unvalidated when
@@ -105,7 +142,7 @@ export async function createItem(
     .insert(items)
     .values({ userId, title: input.title, source, type: input.type })
     .returning({ id: items.id });
-  return (await getItem(db, userId, rows[0].id as ItemId))!;
+  return (await getItemSummary(db, userId, rows[0].id as ItemId))!;
 }
 
 /** The User's Library, ordered as deterministic recently captured material. */
@@ -118,8 +155,7 @@ export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   return rows.map(toItem);
 }
 
-/** Read one Item through both its stable identity and authenticated owner. */
-export async function getItem(
+async function getItemSummary(
   db: Database,
   userId: UserId,
   itemId: ItemId,
@@ -130,6 +166,20 @@ export async function getItem(
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .limit(1);
   return rows[0] ? toItem(rows[0]) : null;
+}
+
+/** Read one Item through both its stable identity and authenticated owner. */
+export async function getItem(
+  db: Database,
+  userId: UserId,
+  itemId: ItemId,
+): Promise<ItemDetail | null> {
+  const rows = await db
+    .select(ITEM_DETAIL_PROJECTION)
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
+  return rows[0] ? toItemDetail(rows[0]) : null;
 }
 
 /**
@@ -156,7 +206,7 @@ export async function updateItemStatus(
     })
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .returning({ id: items.id });
-  return rows[0] ? getItem(db, userId, itemId) : null;
+  return rows[0] ? getItemSummary(db, userId, itemId) : null;
 }
 
 /**
@@ -177,7 +227,7 @@ export async function updateItemTargetDate(
     .set({ targetDate })
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .returning({ id: items.id });
-  return rows[0] ? getItem(db, userId, itemId) : null;
+  return rows[0] ? getItemSummary(db, userId, itemId) : null;
 }
 
 /** Apply one owned Label to one owned Item; repeating the request is a no-op. */
@@ -200,7 +250,7 @@ export async function applyLabelToItem(
       set: { userId },
     })
     .returning({ itemId: itemLabels.itemId });
-  return rows.length > 0 ? getItem(db, userId, itemId) : null;
+  return rows.length > 0 ? getItemSummary(db, userId, itemId) : null;
 }
 
 /** Remove only Label membership; repeating removal preserves the requested set. */
@@ -227,5 +277,5 @@ export async function removeLabelFromItem(
         eq(itemLabels.userId, userId),
       ),
     );
-  return getItem(db, userId, itemId);
+  return getItemSummary(db, userId, itemId);
 }

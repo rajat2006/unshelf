@@ -110,6 +110,61 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
 });
 
+test("an Item can be structured and maintain its ordered Part checklist", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-parts`;
+  const { item } = await seedPlacedItem(page, user);
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+
+  await sidebar.getByLabel("New Part titles").fill(" Introduction \n\nProject");
+  await sidebar.getByRole("button", { name: "Add Parts" }).click();
+  await expect(sidebar.getByText("0% complete")).toBeVisible();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).not.toBeChecked();
+
+  await sidebar.getByRole("checkbox", { name: "Project" }).click();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+  await expect(sidebar.getByText("50% complete")).toBeVisible();
+  await expect(
+    sidebar
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await sidebar.getByLabel("Title for Introduction").fill("Foundations");
+  await sidebar.getByRole("button", { name: "Save Foundations" }).click();
+  await sidebar.getByRole("button", { name: "Move Project up" }).click();
+  await expect(
+    sidebar.getByRole("list", { name: "Parts" }).getByRole("listitem"),
+  ).toHaveText([/Project/, /Foundations/]);
+
+  await page.reload();
+  const refreshed = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  await expect(
+    refreshed.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+  await expect(refreshed.getByText("50% complete")).toBeVisible();
+
+  await refreshed.getByRole("button", { name: "Remove Foundations" }).click();
+  await expect(refreshed.getByText("100% complete")).toBeVisible();
+  await refreshed.getByRole("button", { name: "Remove Project" }).click();
+  await expect(refreshed.getByText("No Parts yet")).toBeVisible();
+  await expect(
+    refreshed
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
 test("opening an Item preserves its filtered Library beneath the sidebar", async ({
   page,
 }, testInfo) => {

@@ -43,6 +43,13 @@
       "when": 1786478532826,
       "tag": "0005_sweet_penance",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786479786630,
+      "tag": "0006_tired_mystique",
+      "breakpoints": true
     }
   ]
 }

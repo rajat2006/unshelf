@@ -2,10 +2,12 @@ import type {
   AddStageItemRequest,
   ConnectLearningPlanNodesRequest,
   CreateItemRequest,
+  CreatePartsRequest,
   CreateStageRequest,
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
   Item,
+  ItemDetail,
   ItemId,
   ItemPlacementCatalog,
   Label,
@@ -21,10 +23,14 @@ import type {
   LearningPlanView,
   PlaceLearningPlanItemRequest,
   MoveLearningPlanItemRequest,
+  PartId,
   RemoveStageRequest,
   ReorderStageItemsRequest,
+  ReorderPartsRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
+  UpdatePartCompletionRequest,
+  UpdatePartRequest,
   UpdateLearningPlanRequest,
   UpdateStageRequest,
 } from "@unshelf/shared";
@@ -59,8 +65,76 @@ export async function fetchAll(user: CurrentUser): Promise<Item[]> {
 export async function fetchItem(
   user: CurrentUser,
   itemId: ItemId,
-): Promise<Item> {
-  return requestJson<Item>(user, `/api/items/${itemId}`);
+): Promise<ItemDetail> {
+  return requestJson<ItemDetail>(user, `/api/items/${itemId}`);
+}
+
+export async function createParts(
+  user: CurrentUser,
+  itemId: ItemId,
+  titles: string[],
+): Promise<ItemDetail> {
+  const body: CreatePartsRequest = { titles };
+  return requestJson<ItemDetail>(user, `/api/items/${itemId}/parts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updatePart(
+  user: CurrentUser,
+  itemId: ItemId,
+  partId: PartId,
+  title: string,
+): Promise<ItemDetail> {
+  const body: UpdatePartRequest = { title };
+  return requestJson<ItemDetail>(user, `/api/items/${itemId}/parts/${partId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updatePartCompletion(
+  user: CurrentUser,
+  itemId: ItemId,
+  partId: PartId,
+  completed: boolean,
+): Promise<ItemDetail> {
+  const body: UpdatePartCompletionRequest = { completed };
+  return requestJson<ItemDetail>(
+    user,
+    `/api/items/${itemId}/parts/${partId}/completion`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function reorderParts(
+  user: CurrentUser,
+  itemId: ItemId,
+  partIds: PartId[],
+): Promise<ItemDetail> {
+  const body: ReorderPartsRequest = { partIds };
+  return requestJson<ItemDetail>(user, `/api/items/${itemId}/parts/order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function removePart(
+  user: CurrentUser,
+  itemId: ItemId,
+  partId: PartId,
+): Promise<ItemDetail> {
+  return requestJson<ItemDetail>(user, `/api/items/${itemId}/parts/${partId}`, {
+    method: "DELETE",
+  });
 }
 
 /** Every LearningPlan represented once for placement from one Item's sidebar. */
