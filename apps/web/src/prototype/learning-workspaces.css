@@ -1364,6 +1364,39 @@ p {
   margin-bottom: 24px;
 }
 
+.hybrid-room__heading--with-progress {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.hybrid-daily-progress {
+  display: grid;
+  width: min(320px, 36vw);
+  gap: 7px;
+}
+
+.hybrid-daily-progress > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hybrid-daily-progress strong {
+  color: #3f6048;
+  font-family: Georgia, serif;
+  font-size: 1.8rem;
+  font-weight: 500;
+}
+
+.hybrid-daily-progress span,
+.hybrid-daily-progress small {
+  color: #737870;
+  font-size: 0.66rem;
+}
+
 .hybrid-today-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.65fr);
@@ -2071,6 +2104,15 @@ p {
 
   .hybrid-room {
     padding: 24px 13px 45px;
+  }
+
+  .hybrid-room__heading--with-progress {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hybrid-daily-progress {
+    width: 100%;
   }
 
   .hybrid-today-grid,

@@ -56,7 +56,8 @@ the Library, and Daily Focus work as contextual sidecars around the plan.
 Hypothesis: A's four lifecycle rooms should govern the product globally, while
 C's plan-centered canvas becomes a local workspace only after the User enters a
 specific Learning Plan. The local drawer may place existing Library Items, but
-Candidate intake remains in Discover.
+Candidate intake remains in Discover. Today shows derived completion from the
+shared Status of its dated picks without becoming a plan or storing progress.
 
 - Validated if:
 - Falsified if:

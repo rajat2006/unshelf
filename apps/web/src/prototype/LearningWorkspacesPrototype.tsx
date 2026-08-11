@@ -849,6 +849,7 @@ function RoomsWithPlanStudioVariant({
   const [planOpen, setPlanOpen] = useState(true);
   const [query, setQuery] = useState("");
   const planProgress = getPlanProgress(state);
+  const dailyProgress = getDailyProgress(state);
 
   function chooseRoom(nextRoom: HybridRoom) {
     setRoom(nextRoom);
@@ -890,12 +891,27 @@ function RoomsWithPlanStudioVariant({
 
       {room === "today" && (
         <main className="hybrid-room hybrid-room--today">
-          <header className="hybrid-room__heading">
+          <header className="hybrid-room__heading hybrid-room__heading--with-progress">
             <VariantIntro
               eyebrow="Variant D · Global room"
               title="Today"
               detail="Daily Focus is a dated agenda, not a small Learning Plan."
             />
+            <div className="hybrid-daily-progress">
+              <div>
+                <strong>{dailyProgress.percent}%</strong>
+                <span>
+                  {dailyProgress.done} of {dailyProgress.total} picks done
+                </span>
+              </div>
+              <div className="meter">
+                <i style={{ width: `${dailyProgress.percent}%` }} />
+              </div>
+              <small>
+                Derived from each Item's shared Status; nothing extra is stored
+                on Daily Focus.
+              </small>
+            </div>
           </header>
           <div className="hybrid-today-grid">
             <section className="hybrid-agenda">
@@ -1829,6 +1845,18 @@ function getPlanProgress(state: PrototypeState) {
     done,
     total: itemIds.length,
     percent: Math.round((done / itemIds.length) * 100),
+  };
+}
+
+function getDailyProgress(state: PrototypeState) {
+  const total = state.dailyPicks.length;
+  const done = state.dailyPicks.filter(
+    (pick) => findItem(state, pick.itemId).status === "done",
+  ).length;
+  return {
+    done,
+    total,
+    percent: total === 0 ? 0 : Math.round((done / total) * 100),
   };
 }
 
