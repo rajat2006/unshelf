@@ -172,4 +172,35 @@ describe("Learning Plan canvas — Quiet Focus", () => {
       "Start your Learning Plan",
     );
   });
+
+  it("describes an empty Stage without implying completion or an add action", () => {
+    const view: LearningPlanView = {
+      nodes: [
+        {
+          kind: PlanNodeKind.Stage,
+          id: a,
+          name: "Empty checkpoint",
+          done: 0,
+          total: 0,
+        },
+        {
+          kind: PlanNodeKind.Stage,
+          id: b,
+          name: "Next checkpoint",
+          done: 0,
+          total: 1,
+        },
+      ],
+      edges: [{ userId, fromNodeId: a, toNodeId: b }],
+    };
+
+    const markup = render(true, view);
+
+    expect(markup).toContain("Empty checkpoint: No items added yet");
+    expect(markup).toContain(
+      'class="learning-plan-progress-label">Empty</span>',
+    );
+    expect(markup).not.toContain("＋");
+    expect(markup).not.toContain("0 of 0 items done");
+  });
 });

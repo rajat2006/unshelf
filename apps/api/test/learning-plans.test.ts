@@ -327,6 +327,26 @@ describe("LearningPlans at the HTTP boundary", () => {
       .post("/api/learning-plans/00000000-0000-0000-0000-000000000000/restore")
       .set(TEST_USER_HEADER, owner)
       .expect(404);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/restore`)
+      .set(TEST_USER_HEADER, owner)
+      .expect(404);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, owner)
+      .expect(200);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, owner)
+      .expect(404);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/restore`)
+      .set(TEST_USER_HEADER, owner)
+      .expect(200);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/restore`)
+      .set(TEST_USER_HEADER, owner)
+      .expect(404);
   });
 
   it("refuses structural edits to an archived Learning Plan at the API and database boundaries", async () => {

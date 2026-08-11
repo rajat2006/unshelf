@@ -73,6 +73,10 @@ export function StageView({
         </button>
       </div>
 
+      {stage.items.length === 0 && (
+        <p className="quiet-copy">No items added to this Stage yet.</p>
+      )}
+
       {stage.items.length > 0 && (
         <ul className="stage-view__items">
           {stage.items.map((item, index) => (

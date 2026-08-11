@@ -1,4 +1,12 @@
-import { and, asc, countDistinct, eq, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  countDistinct,
+  eq,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import type {
   CreateLearningPlanRequest,
   LearningPlan,
@@ -163,6 +171,9 @@ export async function setLearningPlanArchived({
       and(
         eq(learningPlans.id, learningPlanId),
         eq(learningPlans.userId, userId),
+        archived
+          ? isNull(learningPlans.archivedAt)
+          : isNotNull(learningPlans.archivedAt),
       ),
     )
     .returning({ id: learningPlans.id });

@@ -63,10 +63,11 @@ export function PlansSurface() {
   );
 
   const changeLifecycle = useCallback(
-    async (learningPlan: LearningPlan, archived: boolean) => {
-      const changed = archived
-        ? await archiveLearningPlan(user, learningPlan.id)
-        : await restoreLearningPlan(user, learningPlan.id);
+    async (learningPlan: LearningPlan, operation: "archive" | "restore") => {
+      const changed =
+        operation === "archive"
+          ? await archiveLearningPlan(user, learningPlan.id)
+          : await restoreLearningPlan(user, learningPlan.id);
       setState((current) =>
         current.status === "ready"
           ? {
@@ -88,8 +89,8 @@ export function PlansSurface() {
         state={state}
         creating={creating}
         onCreate={create}
-        onArchive={(learningPlan) => changeLifecycle(learningPlan, true)}
-        onRestore={(learningPlan) => changeLifecycle(learningPlan, false)}
+        onArchive={(learningPlan) => changeLifecycle(learningPlan, "archive")}
+        onRestore={(learningPlan) => changeLifecycle(learningPlan, "restore")}
         onRetry={() => void refresh()}
       />
     </section>

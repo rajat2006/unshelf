@@ -772,7 +772,9 @@ function Waypoint({
   const progressLabel =
     node.kind === PlanNodeKind.Item
       ? node.item.status.replace("_", " ")
-      : `${node.done} of ${node.total} items done`;
+      : node.total === 0
+        ? "No items added yet"
+        : `${node.done} of ${node.total} items done`;
   return (
     <div
       role="group"
@@ -910,7 +912,7 @@ function WaypointContents({
           ? "½"
           : "○"
       : emptyStage
-        ? "＋"
+        ? "Empty"
         : `${node.done}/${node.total}`;
   return (
     <>

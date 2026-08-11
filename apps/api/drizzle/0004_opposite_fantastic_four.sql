@@ -26,7 +26,7 @@ BEGIN
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END;
 $$;--> statement-breakpoint
-CREATE TRIGGER learning_plans_archived_name_guard
+CREATE TRIGGER learning_plans_archived_row_guard
 BEFORE UPDATE OR DELETE ON learning_plans
 FOR EACH ROW EXECUTE FUNCTION guard_archived_learning_plan_row();--> statement-breakpoint
 CREATE FUNCTION guard_archived_learning_plan_structure()

@@ -80,4 +80,11 @@ describe("Stages smoke coverage", () => {
     expect(markup).toContain("Remove from stage");
     expect(markup).toContain("All stages");
   });
+
+  it("describes an empty Stage without implying progress", () => {
+    const markup = renderStages({ ...stages[0], items: [] });
+
+    expect(markup).toContain("No items added to this Stage yet");
+    expect(markup).not.toContain("0 of 0");
+  });
 });
