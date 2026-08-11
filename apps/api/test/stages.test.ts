@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { Item, Stage, StageDetail, LearningPlan } from "@unshelf/shared";
+import type {
+  Item,
+  Stage,
+  StageDetail,
+  StageItemDisposition,
+  LearningPlan,
+} from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -174,7 +180,7 @@ const removeStage = ({
 }: {
   clerkUserId: string;
   stageId: string;
-  itemDisposition: "place_directly" | "remove_from_plan";
+  itemDisposition: StageItemDisposition;
 }) =>
   request(app)
     .delete(`/api/stages/${stageId}`)

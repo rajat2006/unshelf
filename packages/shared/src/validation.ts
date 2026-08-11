@@ -113,6 +113,7 @@ export type ReorderStageItemsRequest = z.infer<
   typeof reorderStageItemsRequestSchema
 >;
 export type RemoveStageRequest = z.infer<typeof removeStageRequestSchema>;
+export type StageItemDisposition = RemoveStageRequest["itemDisposition"];
 export type PlaceLearningPlanItemRequest = z.infer<
   typeof placeLearningPlanItemRequestSchema
 >;

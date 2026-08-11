@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type {
   Item,
   StageDetail,
+  StageItemDisposition,
   StageId,
   LearningPlanId,
 } from "@unshelf/shared";
@@ -84,9 +85,7 @@ export function StageSidebar({
     }
   };
 
-  const remove = async (
-    itemDisposition: "place_directly" | "remove_from_plan",
-  ) => {
+  const remove = async (itemDisposition: StageItemDisposition) => {
     setRemoving(true);
     setError(null);
     try {

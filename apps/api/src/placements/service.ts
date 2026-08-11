@@ -5,6 +5,7 @@ import type {
   ItemPlacementCatalog,
   ItemPlacementLearningPlan,
   StageItemCandidate,
+  StageItemDisposition,
   StageDetail,
   StageId,
   LearningPlanId,
@@ -512,20 +513,11 @@ export async function moveLearningPlanItem(
         ), -1) + 1`,
       });
     } else {
-      const [node] = await tx
-        .insert(learningPlanNodes)
-        .values({
-          userId: input.userId,
-          learningPlanId: input.learningPlanId,
-          kind: PlanNodeKind.Item,
-        })
-        .returning({ id: learningPlanNodes.id });
-      if (!node)
-        throw new Error("Learning Plan node insert returned no record");
-      await tx
-        .update(learningPlanItemPlacements)
-        .set({ stageId: null, nodeId: node.id, nodeKind: PlanNodeKind.Item })
-        .where(eq(learningPlanItemPlacements.id, placement.id));
+      await convertPlacementToDirect(tx, {
+        placementId: placement.id,
+        userId: input.userId,
+        learningPlanId: input.learningPlanId,
+      });
     }
     return true;
   });
@@ -539,7 +531,7 @@ export async function removeStageWithDisposition(
   input: {
     userId: UserId;
     stageId: StageId;
-    itemDisposition: "place_directly" | "remove_from_plan";
+    itemDisposition: StageItemDisposition;
   },
 ) {
   const learningPlanId = await db.transaction(async (tx) => {
@@ -574,20 +566,11 @@ export async function removeStageWithDisposition(
           ),
         );
       for (const placement of placements) {
-        const [node] = await tx
-          .insert(learningPlanNodes)
-          .values({
-            userId: input.userId,
-            learningPlanId: stage.learningPlanId,
-            kind: PlanNodeKind.Item,
-          })
-          .returning({ id: learningPlanNodes.id });
-        if (!node)
-          throw new Error("Learning Plan node insert returned no record");
-        await tx
-          .update(learningPlanItemPlacements)
-          .set({ stageId: null, nodeId: node.id, nodeKind: PlanNodeKind.Item })
-          .where(eq(learningPlanItemPlacements.id, placement.id));
+        await convertPlacementToDirect(tx, {
+          placementId: placement.id,
+          userId: input.userId,
+          learningPlanId: stage.learningPlanId as LearningPlanId,
+        });
       }
     }
 
@@ -606,4 +589,27 @@ export async function removeStageWithDisposition(
   return learningPlanId
     ? getLearningPlan(db, input.userId, learningPlanId)
     : null;
+}
+
+async function convertPlacementToDirect(
+  db: Database,
+  input: {
+    placementId: string;
+    userId: UserId;
+    learningPlanId: LearningPlanId;
+  },
+) {
+  const [node] = await db
+    .insert(learningPlanNodes)
+    .values({
+      userId: input.userId,
+      learningPlanId: input.learningPlanId,
+      kind: PlanNodeKind.Item,
+    })
+    .returning({ id: learningPlanNodes.id });
+  if (!node) throw new Error("Learning Plan node insert returned no record");
+  await db
+    .update(learningPlanItemPlacements)
+    .set({ stageId: null, nodeId: node.id, nodeKind: PlanNodeKind.Item })
+    .where(eq(learningPlanItemPlacements.id, input.placementId));
 }

@@ -93,6 +93,7 @@ export type {
   MoveLearningPlanItemRequest,
   ReorderStageItemsRequest,
   RemoveStageRequest,
+  StageItemDisposition,
   UpdateLearningPlanRequest,
   UpdateStageRequest,
   UpdateItemStatusRequest,
