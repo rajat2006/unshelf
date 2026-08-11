@@ -5,7 +5,7 @@ import type {
   StageId,
   LearningPlanId,
 } from "@unshelf/shared";
-import { fetchLearningPlanStage, updateStage } from "../api";
+import { fetchLearningPlanStage, removeStage, updateStage } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { StageView } from "./StageView";
 
@@ -29,6 +29,8 @@ export function StageSidebar({
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -82,6 +84,22 @@ export function StageSidebar({
     }
   };
 
+  const remove = async (
+    itemDisposition: "place_directly" | "remove_from_plan",
+  ) => {
+    setRemoving(true);
+    setError(null);
+    try {
+      await removeStage(user, stageId, itemDisposition);
+      onClose();
+      await onLearningPlanChanged();
+    } catch (caught: unknown) {
+      setError(String(caught));
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   return (
     <aside
       className="stage-sidebar"
@@ -131,6 +149,38 @@ export function StageSidebar({
             closeLabel="Close details"
             headingLevel={2}
           />
+          <section aria-label="Remove Stage">
+            {confirmingRemoval ? (
+              <>
+                <p>Choose what happens to the Items in this Stage.</p>
+                <button
+                  type="button"
+                  disabled={removing}
+                  onClick={() => void remove("place_directly")}
+                >
+                  Keep Items directly in plan
+                </button>
+                <button
+                  type="button"
+                  disabled={removing}
+                  onClick={() => void remove("remove_from_plan")}
+                >
+                  Remove Items from plan
+                </button>
+                <button
+                  type="button"
+                  disabled={removing}
+                  onClick={() => setConfirmingRemoval(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setConfirmingRemoval(true)}>
+                Remove Stage
+              </button>
+            )}
+          </section>
         </>
       )}
     </aside>

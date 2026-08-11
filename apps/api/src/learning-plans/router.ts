@@ -4,6 +4,7 @@ import {
   createStageRequestSchema,
   createLearningPlanRequestSchema,
   itemIdSchema,
+  moveLearningPlanItemRequestSchema,
   placeLearningPlanItemRequestSchema,
   planNodeIdSchema,
   stageItemSearchQuerySchema,
@@ -278,6 +279,37 @@ export function createLearningPlansRouter(
         return;
       }
       res.json(result.learningPlan);
+    },
+  );
+
+  router.put(
+    "/:learningPlanId/items/:itemId/placement",
+    validateRequest(
+      {
+        body: moveLearningPlanItemRequestSchema,
+        params: {
+          learningPlanId: learningPlanIdSchema,
+          itemId: itemIdSchema,
+        },
+      },
+      "invalid_item_placement",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const learningPlan = await learningPlansService.moveItem({
+        db,
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        itemId: params.itemId,
+        request: body,
+      });
+      if (!learningPlan) {
+        res
+          .status(404)
+          .json({ error: "learning plan, item, or stage not found" });
+        return;
+      }
+      res.json(learningPlan);
     },
   );
 

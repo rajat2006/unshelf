@@ -21,10 +21,9 @@ import {
 } from "../schema";
 
 /**
- * Stage storage (ADR-0004). A Stage is a flat, unordered set of references to the
- * Item spine, so nothing about an Item is written here — a membership is only its
- * two ends, and everything the Stage shows about an Item is read back off the Item
- * itself through the one shared projection.
+ * Stage storage (ADR-0018). A Stage is an optional named grouping whose Item
+ * placements have a local order. Everything the Stage shows about an Item is
+ * still read from the one shared Item projection.
  *
  * Every function takes the authenticated User's anchor id and scopes to it, so a
  * foreign Stage or Item is indistinguishable from a missing one at the boundary.
@@ -92,9 +91,9 @@ export async function createStage(
 }
 
 /**
- * Every Stage belonging to a User, and only that User's. Ordered by name for the
- * same reason a Stage's Items are: Stages carry no order of their own (that is the
- * LearningPlan's job, ADR-0004), so this is only a display convenience — but an
+ * Every Stage belonging to a User, and only that User's. Stages carry no order
+ * relative to one another (that is the Learning Plan topology's job), so name is
+ * only a display convenience — but an
  * unordered read is free to shuffle between refreshes, and a list that reorders
  * itself under the User reads as change where nothing changed.
  */
@@ -118,11 +117,9 @@ export async function listStages(
 /**
  * One Stage with its Items, or null when the Stage is not this User's.
  *
- * The Items are selected from `items` with membership as a subquery rather than a
- * join: it keeps exactly one `items` in scope, so `ITEM_PROJECTION` reads here
- * precisely as it does in All. The ordering is `ORDER BY title` — a display
- * convenience for a set with no order of its own (ADR-0004), chosen so the list
- * at least does not shuffle between reads. The `user_id` predicate is redundant
+ * The Items are selected from `items` through their placements so
+ * `ITEM_PROJECTION` reads here precisely as it does in the Library. Their stored
+ * positions are the Stage's stable local order. The `user_id` predicate is redundant
  * once the Stage is known to be the User's (membership can only ever join same-User
  * ends) and is kept as the belt to that braces: every read of `items` in this
  * codebase names its User.

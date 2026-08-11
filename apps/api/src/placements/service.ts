@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, inArray, notExists, sql } from "drizzle-orm";
+import { PlanNodeKind } from "@unshelf/shared";
 import type {
   ItemId,
   ItemPlacementCatalog,
@@ -13,12 +14,14 @@ import type { Database } from "../db";
 import {
   items,
   learningPlanItemPlacements,
+  learningPlanNodes,
   stageItems,
   stages,
   learningPlans,
 } from "../schema";
 import { getStage } from "../stages/repository";
 import { isUniqueConstraintViolation } from "./postgres";
+import { getLearningPlan } from "../learning-plan/repository";
 
 export {
   createStageWithItem,
@@ -26,6 +29,10 @@ export {
 } from "./create-stage-with-item";
 
 export type PlaceItemInStageResult =
+  | { ok: true; stage: StageDetail }
+  | { ok: false; error: "not_found" | "conflict" };
+
+export type ReorderStageItemsResult =
   | { ok: true; stage: StageDetail }
   | { ok: false; error: "not_found" | "conflict" };
 
@@ -264,6 +271,9 @@ export async function placeItemInStage(
   if (!existing) {
     try {
       await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`,
+        );
         const [placement] = await tx
           .insert(learningPlanItemPlacements)
           .values({
@@ -343,4 +353,257 @@ export async function removeItemFromStage(
       ),
     );
   return getStage(db, input.userId, input.stageId);
+}
+
+/** Replace one Stage's complete local order without changing any placement identity. */
+export async function reorderStageItems(
+  db: Database,
+  input: { userId: UserId; stageId: StageId; itemIds: ItemId[] },
+): Promise<ReorderStageItemsResult> {
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`,
+    );
+    const [ownedStage] = await tx
+      .select({ id: stages.id })
+      .from(stages)
+      .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
+      .limit(1);
+    if (!ownedStage) return "not_found" as const;
+
+    const current = await tx
+      .select({ itemId: stageItems.itemId })
+      .from(stageItems)
+      .where(
+        and(
+          eq(stageItems.stageId, input.stageId),
+          eq(stageItems.userId, input.userId),
+        ),
+      );
+    const currentIds = new Set(current.map(({ itemId }) => itemId));
+    if (
+      currentIds.size !== input.itemIds.length ||
+      input.itemIds.some((itemId) => !currentIds.has(itemId))
+    ) {
+      return "conflict" as const;
+    }
+
+    await tx
+      .update(stageItems)
+      .set({ position: sql`-${stageItems.position} - 1` })
+      .where(
+        and(
+          eq(stageItems.stageId, input.stageId),
+          eq(stageItems.userId, input.userId),
+        ),
+      );
+    for (const [position, itemId] of input.itemIds.entries()) {
+      await tx
+        .update(stageItems)
+        .set({ position })
+        .where(
+          and(
+            eq(stageItems.stageId, input.stageId),
+            eq(stageItems.itemId, itemId),
+            eq(stageItems.userId, input.userId),
+          ),
+        );
+    }
+    return "ok" as const;
+  });
+
+  if (result !== "ok") return { ok: false, error: result };
+  const stage = await getStage(db, input.userId, input.stageId);
+  return stage ? { ok: true, stage } : { ok: false, error: "not_found" };
+}
+
+/** Move one existing plan placement without copying its Item or shared facts. */
+export async function moveLearningPlanItem(
+  db: Database,
+  input: {
+    userId: UserId;
+    learningPlanId: LearningPlanId;
+    itemId: ItemId;
+    stageId: StageId | null;
+  },
+) {
+  const moved = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`,
+    );
+    const [placement] = await tx
+      .select({
+        id: learningPlanItemPlacements.id,
+        nodeId: learningPlanItemPlacements.nodeId,
+        stageId: learningPlanItemPlacements.stageId,
+      })
+      .from(learningPlanItemPlacements)
+      .innerJoin(
+        learningPlans,
+        and(
+          eq(learningPlans.id, learningPlanItemPlacements.learningPlanId),
+          eq(learningPlans.userId, input.userId),
+        ),
+      )
+      .innerJoin(
+        items,
+        and(
+          eq(items.id, learningPlanItemPlacements.itemId),
+          eq(items.userId, input.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(learningPlanItemPlacements.userId, input.userId),
+          eq(learningPlanItemPlacements.learningPlanId, input.learningPlanId),
+          eq(learningPlanItemPlacements.itemId, input.itemId),
+        ),
+      )
+      .limit(1);
+    if (!placement) return false;
+
+    if (input.stageId) {
+      const [destination] = await tx
+        .select({ id: stages.id })
+        .from(stages)
+        .where(
+          and(
+            eq(stages.id, input.stageId),
+            eq(stages.userId, input.userId),
+            eq(stages.learningPlanId, input.learningPlanId),
+          ),
+        )
+        .limit(1);
+      if (!destination) return false;
+    }
+    if (placement.stageId === input.stageId) return true;
+
+    if (placement.stageId) {
+      await tx
+        .delete(stageItems)
+        .where(
+          and(
+            eq(stageItems.placementId, placement.id),
+            eq(stageItems.userId, input.userId),
+          ),
+        );
+    }
+
+    if (input.stageId) {
+      await tx
+        .update(learningPlanItemPlacements)
+        .set({ stageId: input.stageId, nodeId: null, nodeKind: null })
+        .where(eq(learningPlanItemPlacements.id, placement.id));
+      if (placement.nodeId) {
+        await tx
+          .delete(learningPlanNodes)
+          .where(eq(learningPlanNodes.id, placement.nodeId));
+      }
+      await tx.insert(stageItems).values({
+        placementId: placement.id,
+        userId: input.userId,
+        learningPlanId: input.learningPlanId,
+        stageId: input.stageId,
+        itemId: input.itemId,
+        position: sql<number>`coalesce((
+          select max(${stageItems.position})
+          from ${stageItems}
+          where ${stageItems.stageId} = ${input.stageId}
+        ), -1) + 1`,
+      });
+    } else {
+      const [node] = await tx
+        .insert(learningPlanNodes)
+        .values({
+          userId: input.userId,
+          learningPlanId: input.learningPlanId,
+          kind: PlanNodeKind.Item,
+        })
+        .returning({ id: learningPlanNodes.id });
+      if (!node)
+        throw new Error("Learning Plan node insert returned no record");
+      await tx
+        .update(learningPlanItemPlacements)
+        .set({ stageId: null, nodeId: node.id, nodeKind: PlanNodeKind.Item })
+        .where(eq(learningPlanItemPlacements.id, placement.id));
+    }
+    return true;
+  });
+
+  return moved ? getLearningPlan(db, input.userId, input.learningPlanId) : null;
+}
+
+/** Remove a Stage only after the caller chooses what happens to its placements. */
+export async function removeStageWithDisposition(
+  db: Database,
+  input: {
+    userId: UserId;
+    stageId: StageId;
+    itemDisposition: "place_directly" | "remove_from_plan";
+  },
+) {
+  const learningPlanId = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0))`,
+    );
+    const [stage] = await tx
+      .select({ learningPlanId: stages.learningPlanId })
+      .from(stages)
+      .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
+      .limit(1);
+    if (!stage) return null;
+    if (input.itemDisposition === "place_directly") {
+      const placements = await tx
+        .select({
+          id: learningPlanItemPlacements.id,
+          itemId: learningPlanItemPlacements.itemId,
+        })
+        .from(learningPlanItemPlacements)
+        .where(
+          and(
+            eq(learningPlanItemPlacements.stageId, input.stageId),
+            eq(learningPlanItemPlacements.userId, input.userId),
+          ),
+        );
+      await tx
+        .delete(stageItems)
+        .where(
+          and(
+            eq(stageItems.stageId, input.stageId),
+            eq(stageItems.userId, input.userId),
+          ),
+        );
+      for (const placement of placements) {
+        const [node] = await tx
+          .insert(learningPlanNodes)
+          .values({
+            userId: input.userId,
+            learningPlanId: stage.learningPlanId,
+            kind: PlanNodeKind.Item,
+          })
+          .returning({ id: learningPlanNodes.id });
+        if (!node)
+          throw new Error("Learning Plan node insert returned no record");
+        await tx
+          .update(learningPlanItemPlacements)
+          .set({ stageId: null, nodeId: node.id, nodeKind: PlanNodeKind.Item })
+          .where(eq(learningPlanItemPlacements.id, placement.id));
+      }
+    }
+
+    await tx
+      .delete(learningPlanNodes)
+      .where(
+        and(
+          eq(learningPlanNodes.id, input.stageId),
+          eq(learningPlanNodes.userId, input.userId),
+          eq(learningPlanNodes.learningPlanId, stage.learningPlanId),
+        ),
+      );
+    return stage.learningPlanId as LearningPlanId;
+  });
+
+  return learningPlanId
+    ? getLearningPlan(db, input.userId, learningPlanId)
+    : null;
 }

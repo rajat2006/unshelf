@@ -20,6 +20,9 @@ import type {
   LearningPlanItemCandidate,
   LearningPlanView,
   PlaceLearningPlanItemRequest,
+  MoveLearningPlanItemRequest,
+  RemoveStageRequest,
+  ReorderStageItemsRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
   UpdateLearningPlanRequest,
@@ -311,6 +314,53 @@ export async function removeItemFromStage(
       method: "DELETE",
     },
   );
+}
+
+/** Replace a Stage's complete Item order while preserving every placement. */
+export async function reorderStageItems(
+  user: CurrentUser,
+  stageId: StageId,
+  itemIds: ItemId[],
+): Promise<StageDetail> {
+  const body: ReorderStageItemsRequest = { itemIds };
+  return requestJson<StageDetail>(user, `/api/stages/${stageId}/items/order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Move one existing placement between direct and staged structure. */
+export async function moveLearningPlanItem(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+  itemId: ItemId,
+  stageId: StageId | null,
+): Promise<LearningPlanView> {
+  const body: MoveLearningPlanItemRequest = { stageId };
+  return requestJson<LearningPlanView>(
+    user,
+    `/api/learning-plans/${learningPlanId}/items/${itemId}/placement`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** Remove a Stage with an explicit disposition for every placement it holds. */
+export async function removeStage(
+  user: CurrentUser,
+  stageId: StageId,
+  itemDisposition: RemoveStageRequest["itemDisposition"],
+): Promise<LearningPlanView> {
+  const body: RemoveStageRequest = { itemDisposition };
+  return requestJson<LearningPlanView>(user, `/api/stages/${stageId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 /**

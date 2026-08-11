@@ -2,6 +2,8 @@ import { Router, type RequestHandler } from "express";
 import {
   addStageItemRequestSchema,
   itemIdSchema,
+  reorderStageItemsRequestSchema,
+  removeStageRequestSchema,
   stageItemSearchQuerySchema,
   stageIdSchema,
   updateStageRequestSchema,
@@ -65,6 +67,39 @@ export function createStagesRouter(
     },
   );
 
+  router.put(
+    "/:stageId/items/order",
+    validateRequest(
+      {
+        body: reorderStageItemsRequestSchema,
+        params: { stageId: stageIdSchema },
+      },
+      "invalid_stage_item_order",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await stagesService.reorderItems({
+        db,
+        userId: req.user!.id,
+        stageId: params.stageId,
+        request: body,
+      });
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          res.status(404).json({ error: "stage not found" });
+        } else {
+          res
+            .status(409)
+            .json({
+              error: "item order must contain every stage item exactly once",
+            });
+        }
+        return;
+      }
+      res.json(result.stage);
+    },
+  );
+
   router.patch(
     "/:stageId",
     validateRequest(
@@ -87,6 +122,31 @@ export function createStagesRouter(
         return;
       }
       res.json(stage);
+    },
+  );
+
+  router.delete(
+    "/:stageId",
+    validateRequest(
+      {
+        body: removeStageRequestSchema,
+        params: { stageId: stageIdSchema },
+      },
+      "missing_stage_item_disposition",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const learningPlan = await stagesService.removeStage({
+        db,
+        userId: req.user!.id,
+        stageId: params.stageId,
+        request: body,
+      });
+      if (!learningPlan) {
+        res.status(404).json({ error: "stage not found" });
+        return;
+      }
+      res.json(learningPlan);
     },
   );
 

@@ -6,10 +6,10 @@ import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
  * Stages at the HTTP boundary (issue #20), driven against a real ephemeral
- * Postgres. These pin the organisation model ADR-0004 chose: a Stage is a flat,
- * unordered set of *references* to the Item spine, so one Item lives in many
- * Stages without being copied, its one Status is read through every one of them,
- * and membership itself carries no facts of its own. Per-User isolation runs
+ * Postgres. These pin ADR-0018's optional Stage model: a Stage owns a locally
+ * ordered set of references to the Item spine, so one Item lives in many Learning
+ * Plans without being copied and its one Status is read through every placement.
+ * Per-User isolation runs
  * through the same auth seam T2 established — a header names the acting User.
  */
 let harness: TestApp;
@@ -136,6 +136,50 @@ const removeFromStage = ({
   request(app)
     .delete(`/api/stages/${stageId}/items/${itemId}`)
     .set(TEST_USER_HEADER, clerkUserId);
+
+const reorderStageItems = ({
+  clerkUserId,
+  stageId,
+  itemIds,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  itemIds: string[];
+}) =>
+  request(app)
+    .put(`/api/stages/${stageId}/items/order`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ itemIds });
+
+const movePlanItem = ({
+  clerkUserId,
+  learningPlanId,
+  itemId,
+  stageId,
+}: {
+  clerkUserId: string;
+  learningPlanId: string;
+  itemId: string;
+  stageId: string | null;
+}) =>
+  request(app)
+    .put(`/api/learning-plans/${learningPlanId}/items/${itemId}/placement`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ stageId });
+
+const removeStage = ({
+  clerkUserId,
+  stageId,
+  itemDisposition,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  itemDisposition: "place_directly" | "remove_from_plan";
+}) =>
+  request(app)
+    .delete(`/api/stages/${stageId}`)
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ itemDisposition });
 
 /** Capture an Item and create a Stage for one User — the setup most tests need. */
 const givenItemAndStage = async ({
@@ -554,6 +598,302 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
       .send({ itemId: item.id });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe("PUT /api/stages/:stageId/items/order — reorder Stage Items", () => {
+  it("persists a complete local order without changing shared Item facts", async () => {
+    const user = "clerk-stage-reorder";
+    const stage = (await createStage(user, { name: "Ordered phase" }))
+      .body as Stage;
+    const first = (await capture(user, { title: "First", type: "article" }))
+      .body as Item;
+    const second = (await capture(user, { title: "Second", type: "course" }))
+      .body as Item;
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: first.id },
+    });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: second.id },
+    });
+    await setStatus({
+      clerkUserId: user,
+      itemId: first.id,
+      status: "in_progress",
+    });
+
+    const reordered = await reorderStageItems({
+      clerkUserId: user,
+      stageId: stage.id,
+      itemIds: [second.id, first.id],
+    });
+
+    expect(reordered.status).toBe(200);
+    expect(titlesIn(reordered.body as StageDetail)).toEqual([
+      "Second",
+      "First",
+    ]);
+    expect((reordered.body as StageDetail).items[1]).toMatchObject({
+      id: first.id,
+      status: "in_progress",
+      type: "article",
+    });
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Second", "First"]);
+  });
+
+  it("refuses a partial order and leaves the persisted order unchanged", async () => {
+    const user = "clerk-stage-reorder-partial";
+    const stage = (await createStage(user, { name: "Whole order" }))
+      .body as Stage;
+    const first = (await capture(user, { title: "One", type: "book" }))
+      .body as Item;
+    const second = (await capture(user, { title: "Two", type: "book" }))
+      .body as Item;
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: first.id },
+    });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: second.id },
+    });
+
+    const partial = await reorderStageItems({
+      clerkUserId: user,
+      stageId: stage.id,
+      itemIds: [second.id],
+    });
+
+    expect(partial.status).toBe(409);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: stage.id })).body,
+      ),
+    ).toEqual(["One", "Two"]);
+  });
+});
+
+describe("PUT /api/learning-plans/:learningPlanId/items/:itemId/placement — move a placement", () => {
+  it("moves one shared Item between direct and staged placement without changing its facts", async () => {
+    const user = "clerk-stage-move-placement";
+    const learningPlan = (
+      await createLearningPlan({ clerkUserId: user, name: "Compiler study" })
+    ).body as LearningPlan;
+    const parsing = (
+      await createStageOn({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+        body: { name: "Parsing" },
+      })
+    ).body as Stage;
+    const optimization = (
+      await createStageOn({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+        body: { name: "Optimization" },
+      })
+    ).body as Stage;
+    const item = (
+      await capture(user, { title: "Crafting Interpreters", type: "book" })
+    ).body as Item;
+    await setStatus({
+      clerkUserId: user,
+      itemId: item.id,
+      status: "in_progress",
+    });
+    expect(
+      (
+        await request(app)
+          .post(`/api/learning-plans/${learningPlan.id}/items`)
+          .set(TEST_USER_HEADER, user)
+          .send({ itemId: item.id })
+      ).status,
+    ).toBe(201);
+
+    expect(
+      (
+        await movePlanItem({
+          clerkUserId: user,
+          learningPlanId: learningPlan.id,
+          itemId: item.id,
+          stageId: parsing.id,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: parsing.id })).body,
+      ),
+    ).toEqual([item.title]);
+
+    expect(
+      (
+        await movePlanItem({
+          clerkUserId: user,
+          learningPlanId: learningPlan.id,
+          itemId: item.id,
+          stageId: optimization.id,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: parsing.id })).body,
+      ),
+    ).toEqual([]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: optimization.id })).body,
+      ),
+    ).toEqual([item.title]);
+
+    const direct = await movePlanItem({
+      clerkUserId: user,
+      learningPlanId: learningPlan.id,
+      itemId: item.id,
+      stageId: null,
+    });
+    expect(direct.status).toBe(200);
+    const directNode = (
+      direct.body as { nodes: Array<{ kind: string; item?: Item }> }
+    ).nodes.find((node) => node.item?.id === item.id);
+    expect(directNode?.kind).toBe("item");
+    expect(directNode?.item).toMatchObject({
+      id: item.id,
+      title: item.title,
+      status: "in_progress",
+      type: "book",
+    });
+  });
+
+  it("treats cross-Plan and cross-User Stage destinations as unavailable", async () => {
+    const owner = "clerk-stage-move-private-owner";
+    const learningPlan = (
+      await createLearningPlan({ clerkUserId: owner, name: "Owner Plan" })
+    ).body as LearningPlan;
+    const item = (await capture(owner, { title: "Private", type: "book" }))
+      .body as Item;
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/items`)
+      .set(TEST_USER_HEADER, owner)
+      .send({ itemId: item.id });
+    const otherPlan = (
+      await createLearningPlan({ clerkUserId: owner, name: "Other Plan" })
+    ).body as LearningPlan;
+    const otherStage = (
+      await createStageOn({
+        clerkUserId: owner,
+        learningPlanId: otherPlan.id,
+        body: { name: "Wrong Plan" },
+      })
+    ).body as Stage;
+
+    expect(
+      (
+        await movePlanItem({
+          clerkUserId: owner,
+          learningPlanId: learningPlan.id,
+          itemId: item.id,
+          stageId: otherStage.id,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await movePlanItem({
+          clerkUserId: "clerk-stage-move-private-intruder",
+          learningPlanId: learningPlan.id,
+          itemId: item.id,
+          stageId: null,
+        })
+      ).status,
+    ).toBe(404);
+  });
+});
+
+describe("DELETE /api/stages/:stageId — remove a Stage", () => {
+  it("requires and applies an explicit outcome for the Stage's Items", async () => {
+    const user = "clerk-stage-remove-structure";
+    const learningPlan = (
+      await createLearningPlan({ clerkUserId: user, name: "Systems" })
+    ).body as LearningPlan;
+    const keepStage = (
+      await createStageOn({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+        body: { name: "Keep these" },
+      })
+    ).body as Stage;
+    const removeStageNode = (
+      await createStageOn({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+        body: { name: "Uncommit these" },
+      })
+    ).body as Stage;
+    const keptItem = (
+      await capture(user, { title: "Kept in plan", type: "book" })
+    ).body as Item;
+    const uncommittedItem = (
+      await capture(user, { title: "Only in Library", type: "video" })
+    ).body as Item;
+    await addToStage({
+      clerkUserId: user,
+      stageId: keepStage.id,
+      body: { itemId: keptItem.id },
+    });
+    await addToStage({
+      clerkUserId: user,
+      stageId: removeStageNode.id,
+      body: { itemId: uncommittedItem.id },
+    });
+
+    expect(
+      (
+        await request(app)
+          .delete(`/api/stages/${keepStage.id}`)
+          .set(TEST_USER_HEADER, user)
+      ).status,
+    ).toBe(400);
+    const kept = await removeStage({
+      clerkUserId: user,
+      stageId: keepStage.id,
+      itemDisposition: "place_directly",
+    });
+    expect(kept.status).toBe(200);
+    expect(
+      (kept.body as { nodes: Array<{ item?: Item }> }).nodes.some(
+        (node) => node.item?.id === keptItem.id,
+      ),
+    ).toBe(true);
+
+    const removed = await removeStage({
+      clerkUserId: user,
+      stageId: removeStageNode.id,
+      itemDisposition: "remove_from_plan",
+    });
+    expect(removed.status).toBe(200);
+    expect(
+      (removed.body as { nodes: Array<{ item?: Item }> }).nodes.some(
+        (node) => node.item?.id === uncommittedItem.id,
+      ),
+    ).toBe(false);
+    const library = (
+      await request(app).get("/api/items").set(TEST_USER_HEADER, user)
+    ).body as Item[];
+    expect(library.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([keptItem.id, uncommittedItem.id]),
+    );
   });
 });
 

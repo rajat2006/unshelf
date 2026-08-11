@@ -136,9 +136,10 @@ test("a cold Stage deep link restores its LearningPlan and shared Item facts at 
   );
 
   await status.getByRole("button", { name: "Done" }).click();
-  await expect(
-    status.getByRole("button", { name: "Done" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(status.getByRole("button", { name: "Done" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   await page.reload();
   await expect(
@@ -205,6 +206,95 @@ test("removing an Item from the sidebar preserves the Item and its other Stage",
     )
   ).json()) as { items: Array<{ id: string }> };
   expect(otherDetail.items.map((listed) => listed.id)).toContain(item.id);
+});
+
+test("a desktop User orders and reshapes an optional Stage across refresh", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "Stage authoring is desktop-only",
+  );
+  const user = `${testInfo.project.name}-stage-order-and-shape`;
+  const {
+    learningPlan,
+    stage,
+    item: first,
+  } = await seedStageWithItem(page, user);
+  const second = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Second staged Item",
+      type: "article",
+    })
+  ).json()) as { id: string; title: string };
+  const direct = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Direct Item",
+      type: "book",
+    })
+  ).json()) as { id: string; title: string };
+  await testApi(page, user, `/api/stages/${stage.id}/items`, "POST", {
+    itemId: second.id,
+  });
+  await testApi(
+    page,
+    user,
+    `/api/learning-plans/${learningPlan.id}/items`,
+    "POST",
+    { itemId: direct.id },
+  );
+
+  const stageUrl = testAppUrl(
+    `/plans/${learningPlan.id}/stages/${stage.id}`,
+    user,
+  );
+  await page.goto(stageUrl);
+  let sidebar = page.getByRole("complementary", {
+    name: `${stage.name} details`,
+  });
+  await sidebar
+    .getByRole("button", { name: `Move ${second.title} up` })
+    .click();
+  await expect(
+    sidebar.getByRole("list").first().getByRole("listitem").first(),
+  ).toContainText(second.title);
+
+  await page.reload();
+  sidebar = page.getByRole("complementary", { name: `${stage.name} details` });
+  await expect(
+    sidebar.getByRole("list").first().getByRole("listitem").first(),
+  ).toContainText(second.title);
+
+  await sidebar.getByLabel("Search by title").fill(direct.title);
+  await sidebar.getByRole("button", { name: "Move to this Stage" }).click();
+  await expect(sidebar.getByText(direct.title, { exact: true })).toBeVisible();
+
+  const firstRow = sidebar
+    .getByRole("listitem")
+    .filter({ hasText: first.title })
+    .first();
+  await firstRow.getByRole("button", { name: "Move directly in plan" }).click();
+  await expect(firstRow).toHaveCount(0);
+
+  await sidebar.getByRole("button", { name: "Remove Stage" }).click();
+  await expect(
+    sidebar.getByText("Choose what happens to the Items in this Stage."),
+  ).toBeVisible();
+  await sidebar
+    .getByRole("button", { name: "Keep Items directly in plan" })
+    .click();
+  await expect(
+    page.getByRole("complementary", { name: `${stage.name} details` }),
+  ).toHaveCount(0);
+  await page.goto(testAppUrl(`/plans/${learningPlan.id}`, user));
+  await expect(
+    page.getByRole("link", { name: `Open ${direct.title}` }),
+  ).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByRole("link", { name: `Open ${second.title}` }),
+  ).toBeVisible();
 });
 
 test("a Stage detail failure retries inside the sidebar without replacing the LearningPlan", async ({

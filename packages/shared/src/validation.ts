@@ -60,7 +60,23 @@ export const addStageItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
+export const reorderStageItemsRequestSchema = z.strictObject({
+  itemIds: z
+    .array(itemIdSchema)
+    .refine((itemIds) => new Set(itemIds).size === itemIds.length, {
+      message: "Item ids must be unique",
+    }),
+});
+
+export const removeStageRequestSchema = z.strictObject({
+  itemDisposition: z.enum(["place_directly", "remove_from_plan"]),
+});
+
 export const placeLearningPlanItemRequestSchema = addStageItemRequestSchema;
+
+export const moveLearningPlanItemRequestSchema = z.strictObject({
+  stageId: stageIdSchema.nullable(),
+});
 
 export const stageItemSearchQuerySchema = z.strictObject({
   query: z.string().optional(),
@@ -93,8 +109,15 @@ export type UpdateLearningPlanRequest = z.infer<
   typeof updateLearningPlanRequestSchema
 >;
 export type AddStageItemRequest = z.infer<typeof addStageItemRequestSchema>;
+export type ReorderStageItemsRequest = z.infer<
+  typeof reorderStageItemsRequestSchema
+>;
+export type RemoveStageRequest = z.infer<typeof removeStageRequestSchema>;
 export type PlaceLearningPlanItemRequest = z.infer<
   typeof placeLearningPlanItemRequestSchema
+>;
+export type MoveLearningPlanItemRequest = z.infer<
+  typeof moveLearningPlanItemRequestSchema
 >;
 export type StageItemSearchQuery = z.infer<typeof stageItemSearchQuerySchema>;
 export type CreateStageWithItemRequest = z.infer<

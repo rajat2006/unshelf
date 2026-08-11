@@ -7,7 +7,9 @@ import type {
 } from "@unshelf/shared";
 import {
   addItemToStage,
+  fetchStage,
   fetchStageItemCandidates,
+  moveLearningPlanItem,
   removeItemFromStage,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
@@ -114,6 +116,26 @@ export function StageItemIntake({
     }
   }
 
+  async function moveHere(candidate: StageItemCandidate) {
+    if (pendingItemId) return;
+    setPendingItemId(candidate.id);
+    setFailedItemId(null);
+    try {
+      await moveLearningPlanItem(
+        user,
+        (await fetchStage(user, stageId)).learningPlanId,
+        candidate.id,
+        stageId,
+      );
+      onStageChanged(await fetchStage(user, stageId));
+      await search(query);
+    } catch {
+      setFailedItemId(candidate.id);
+    } finally {
+      setPendingItemId(null);
+    }
+  }
+
   return (
     <section
       className="stage-intake"
@@ -177,13 +199,24 @@ export function StageItemIntake({
                       <span role="alert">Could not undo. Try again.</span>
                     )}
                   </span>
-                ) : candidate.kind === "conflict" ? (
-                  <span className="stage-intake__conflict">
-                    Already in {candidate.stage.name}
-                  </span>
-                ) : candidate.kind === "direct_conflict" ? (
-                  <span className="stage-intake__conflict">
-                    Already placed directly on this Learning Plan
+                ) : candidate.kind === "conflict" ||
+                  candidate.kind === "direct_conflict" ? (
+                  <span className="stage-intake__result-action">
+                    <span className="stage-intake__conflict">
+                      {candidate.kind === "conflict"
+                        ? `In ${candidate.stage.name}`
+                        : "Placed directly on this Learning Plan"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pendingItemId !== null}
+                      onClick={() => void moveHere(candidate)}
+                    >
+                      {isPending ? "Moving…" : "Move to this Stage"}
+                    </button>
+                    {hasFailed && (
+                      <span role="alert">Could not move this Item.</span>
+                    )}
                   </span>
                 ) : (
                   <span className="stage-intake__result-action">

@@ -4,6 +4,7 @@ import type {
   CreateStageRequest,
   ItemId,
   LearningPlanId,
+  MoveLearningPlanItemRequest,
   StageId,
   UpdateLearningPlanRequest,
   UserId,
@@ -13,6 +14,7 @@ import * as topologyRepository from "../learning-plan/repository";
 import * as itemPlacementsRepository from "./item-placements-repository";
 import * as stagesRepository from "../stages/repository";
 import * as learningPlansRepository from "./repository";
+import { moveLearningPlanItem } from "../placements/service";
 
 interface OwnedLearningPlansInput {
   db: Database;
@@ -121,6 +123,20 @@ export const removeDirectItem = ({
     userId,
     learningPlanId,
     itemId,
+  });
+
+export const moveItem = ({
+  db,
+  userId,
+  learningPlanId,
+  itemId,
+  request,
+}: OwnedItemInput & { request: MoveLearningPlanItemRequest }) =>
+  moveLearningPlanItem(db, {
+    userId,
+    learningPlanId,
+    itemId,
+    stageId: request.stageId,
   });
 
 export type ConnectLearningPlanResult =

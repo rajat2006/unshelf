@@ -1,6 +1,8 @@
 import type {
   AddStageItemRequest,
   ItemId,
+  ReorderStageItemsRequest,
+  RemoveStageRequest,
   StageId,
   UpdateStageRequest,
   UserId,
@@ -8,6 +10,8 @@ import type {
 import type { Database } from "../db";
 import {
   placeItemInStage,
+  reorderStageItems,
+  removeStageWithDisposition,
   removeItemFromStage,
   searchStageItemCandidates,
 } from "../placements/service";
@@ -51,6 +55,26 @@ export const searchItemCandidates = ({
   query,
 }: OwnedStageInput & { query: string }) =>
   searchStageItemCandidates(db, { userId, stageId, query });
+
+export const reorderItems = ({
+  db,
+  userId,
+  stageId,
+  request,
+}: OwnedStageInput & { request: ReorderStageItemsRequest }) =>
+  reorderStageItems(db, { userId, stageId, itemIds: request.itemIds });
+
+export const removeStage = ({
+  db,
+  userId,
+  stageId,
+  request,
+}: OwnedStageInput & { request: RemoveStageRequest }) =>
+  removeStageWithDisposition(db, {
+    userId,
+    stageId,
+    itemDisposition: request.itemDisposition,
+  });
 
 export const removeItem = ({
   db,
