@@ -7,6 +7,7 @@ import type {
   LearningPlanView,
   Stage,
 } from "@unshelf/shared";
+import { PlanNodeKind } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 let harness: TestApp;
@@ -32,6 +33,50 @@ afterAll(async () => {
 });
 
 describe("direct Learning Plan Item placements", () => {
+  it("connects and disconnects direct Item and Stage nodes through one topology", async () => {
+    const api = asUser("mixed-plan-topology-owner");
+    const plan = (await api.post("/api/learning-plans", { name: "Mixed path" }))
+      .body as LearningPlan;
+    const stage = (
+      await api.post(`/api/learning-plans/${plan.id}/stages`, {
+        name: "Foundations",
+      })
+    ).body as Stage;
+    const item = (
+      await api.post("/api/items", {
+        title: "Domain-Driven Design",
+        type: "book",
+      })
+    ).body as Item;
+    const placed = (
+      await api.post(`/api/learning-plans/${plan.id}/items`, {
+        itemId: item.id,
+      })
+    ).body as LearningPlanView;
+    const itemNodeId = placed.nodes.find(
+      (node) => node.kind === PlanNodeKind.Item,
+    )?.id;
+    expect(itemNodeId).toBeDefined();
+
+    const connected = await api.post(`/api/learning-plans/${plan.id}/edges`, {
+      fromNodeId: stage.id,
+      toNodeId: itemNodeId,
+    });
+    const duplicate = await api.post(`/api/learning-plans/${plan.id}/edges`, {
+      fromNodeId: stage.id,
+      toNodeId: itemNodeId,
+    });
+
+    expect(connected.status).toBe(201);
+    expect((duplicate.body as LearningPlanView).edges).toHaveLength(1);
+
+    const disconnected = await api.delete(
+      `/api/learning-plans/${plan.id}/edges/${stage.id}/${itemNodeId}`,
+    );
+    expect(disconnected.status).toBe(200);
+    expect((disconnected.body as LearningPlanView).edges).toEqual([]);
+  });
+
   it("places one shared Item as a stable Plan Node and removes only the placement", async () => {
     const api = asUser("direct-plan-item-owner");
     const plan = (

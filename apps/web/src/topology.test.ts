@@ -70,6 +70,45 @@ describe("topology layout", () => {
     expect(placementOf(layout, "right")).toEqual({ depth: 1, lane: 1 });
     expect(placementOf(layout, "joined")).toEqual({ depth: 2, lane: 0 });
   });
+
+  it("derives the same layout when nodes and edges arrive in another order", () => {
+    const first = deriveTopologyLayout({
+      nodeIds: [
+        nodeId("root"),
+        nodeId("left"),
+        nodeId("right"),
+        nodeId("joined"),
+        nodeId("loose"),
+      ],
+      edges: [
+        edge({ from: "root", to: "left" }),
+        edge({ from: "root", to: "right" }),
+        edge({ from: "left", to: "joined" }),
+        edge({ from: "right", to: "joined" }),
+      ],
+    });
+    const reordered = deriveTopologyLayout({
+      nodeIds: [
+        nodeId("joined"),
+        nodeId("right"),
+        nodeId("loose"),
+        nodeId("left"),
+        nodeId("root"),
+      ],
+      edges: [
+        edge({ from: "right", to: "joined" }),
+        edge({ from: "left", to: "joined" }),
+        edge({ from: "root", to: "right" }),
+        edge({ from: "root", to: "left" }),
+      ],
+    });
+    const placements = (layout: typeof first) =>
+      [...layout.byId].sort(([left], [right]) => left.localeCompare(right));
+
+    expect(placements(reordered)).toEqual(placements(first));
+    expect(reordered.depthCount).toBe(first.depthCount);
+    expect(reordered.laneCount).toBe(first.laneCount);
+  });
 });
 
 describe("topology validation", () => {

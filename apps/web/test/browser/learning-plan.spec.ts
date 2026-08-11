@@ -74,7 +74,7 @@ async function addAndSequenceStage({
     .getByRole("complementary", { name: /Unsequenced/ })
     .getByRole("listitem")
     .filter({ hasText: name });
-  await looseStage.getByRole("button", { name: "Sequence this Stage" }).click();
+  await looseStage.getByRole("button", { name: `Sequence ${name}` }).click();
   await looseStage
     .getByLabel("Follows")
     .selectOption({ label: predecessorName });
@@ -170,7 +170,7 @@ test("a LearningPlan's Stages are private to its owner", async ({
   await expect(page.getByText("Owner only", { exact: true })).toHaveCount(0);
 });
 
-test("a desktop User forks and rejoins the LearningPlan through its authoring controls", async ({
+test("a desktop User forks and rejoins mixed Plan Nodes through keyboard-operable controls", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -180,7 +180,7 @@ test("a desktop User forks and rejoins the LearningPlan through its authoring co
   const user = `${testInfo.project.name}-learning-plan-fork-rejoin`;
 
   await page.goto(testAppUrl("/plans", user));
-  const { deepLink } = await startAndOpenLearningPlan({
+  const { learningPlanId, deepLink } = await startAndOpenLearningPlan({
     page,
     name: "Forking journey",
     user,
@@ -199,20 +199,64 @@ test("a desktop User forks and rejoins the LearningPlan through its authoring co
   await page.getByPlaceholder("Name the new stage").fill("Parallel branch");
   await page.getByPlaceholder("Name the new stage").press("Enter");
 
-  const parallel = page.getByRole("group", { name: /^Parallel branch:/ });
-  await parallel
-    .getByRole("button", { name: "Link to an existing Stage" })
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Parallel reading",
+      type: "article",
+    })
+  ).json()) as Item;
+  await testApi(
+    page,
+    user,
+    `/api/learning-plans/${learningPlanId}/items`,
+    "POST",
+    { itemId: item.id },
+  );
+  await page.goto(deepLink);
+
+  const looseItem = page
+    .getByRole("complementary", { name: /Unsequenced/ })
+    .getByRole("listitem")
+    .filter({ hasText: "Parallel reading" });
+  await looseItem
+    .getByRole("button", { name: "Sequence Parallel reading" })
     .click();
+  await looseItem
+    .getByLabel("Follows")
+    .selectOption({ label: "Parallel branch" });
+  await looseItem
+    .getByRole("button", { name: "Sequence", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Sequenced Parallel reading after Parallel branch",
+  );
+
+  const parallelReading = page.getByRole("group", {
+    name: /^Parallel reading:/,
+  });
+  await parallelReading
+    .getByRole("button", {
+      name: "Link from Parallel reading to another node",
+    })
+    .focus();
+  await parallelReading
+    .getByRole("button", {
+      name: "Link from Parallel reading to another node",
+    })
+    .press("Enter");
   const rejoin = page
     .getByRole("group", { name: /^Main branch:/ })
-    .getByRole("button", { name: "⇢ link here" });
+    .getByRole("button", { name: "Link Parallel reading to Main branch" });
   await rejoin.focus();
   await rejoin.press("Enter");
+  await expect(page.getByRole("status")).toHaveText(
+    "Linked Parallel reading to Main branch",
+  );
 
   await page.goto(deepLink);
   await expect(
     page.getByRole("button", { name: "Remove this link" }),
-  ).toHaveCount(3);
+  ).toHaveCount(4);
 });
 
 test("at phone width the LearningPlan is viewed, not authored", async ({
@@ -324,6 +368,9 @@ test("a phone User views a direct placement and opens the shared Item", async ({
   await expect(
     page.getByRole("complementary", { name: "Library placement drawer" }),
   ).toHaveCount(0);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
   await itemLink.click();
   await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
 });

@@ -96,6 +96,9 @@ export function deriveTopologyLayout<NodeId extends string>({
 }: Topology<NodeId>): TopologyLayout<NodeId> {
   const { incoming } = adjacency(edges);
   const known = new Set(nodeIds);
+  const stableNodeIds = [...nodeIds].sort((left, right) =>
+    left.localeCompare(right),
+  );
   const parentsOf = (id: NodeId): NodeId[] =>
     (incoming.get(id) ?? []).filter((parent) => known.has(parent));
 
@@ -116,7 +119,7 @@ export function deriveTopologyLayout<NodeId extends string>({
   };
 
   const columns: NodeId[][] = [];
-  for (const id of nodeIds) {
+  for (const id of stableNodeIds) {
     const depth = depthOf(id, new Set());
     (columns[depth] ??= []).push(id);
   }
@@ -149,7 +152,7 @@ export function deriveTopologyLayout<NodeId extends string>({
   });
 
   const byId = new Map<NodeId, TopologyPlacement>();
-  for (const id of nodeIds) {
+  for (const id of stableNodeIds) {
     byId.set(id, {
       depth: depthOf(id, new Set()),
       lane: laneById.get(id) ?? 0,

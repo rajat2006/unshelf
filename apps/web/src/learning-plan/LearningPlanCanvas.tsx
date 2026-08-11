@@ -82,8 +82,8 @@ interface LearningPlanCanvasProps {
   readOnly: boolean;
 }
 
-/** A Stage being named before it is created — extend, fork, or the first Stage. */
-type Draft = { from: StageId | null; mode: "next" | "fork" | "start" };
+/** A Stage being named before it is created — extend, fork, or the first node. */
+type Draft = { from: PlanNodeId | null; mode: "next" | "fork" | "start" };
 
 export function LearningPlanCanvas({
   learningPlanId,
@@ -116,7 +116,8 @@ export function LearningPlanCanvas({
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [linkingFrom, setLinkingFrom] = useState<StageId | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [linkingFrom, setLinkingFrom] = useState<PlanNodeId | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
 
   // Pan the whole map (drag background) — a pure viewport offset, no stored state.
@@ -142,12 +143,20 @@ export function LearningPlanCanvas({
   } | null>(null);
   const moved = useRef(false);
 
-  async function run(change: () => Promise<LearningPlanView>) {
+  async function run({
+    change,
+    successMessage,
+  }: {
+    change: () => Promise<LearningPlanView>;
+    successMessage: string;
+  }) {
     setBusy(true);
     setError(null);
+    setAnnouncement("");
     try {
       onLearningPlanChanged(await change());
       setLinkingFrom(null);
+      setAnnouncement(successMessage);
     } catch (caught: unknown) {
       setError(String(caught));
     } finally {
@@ -156,7 +165,7 @@ export function LearningPlanCanvas({
   }
 
   /** Create and link a Stage, refresh the LearningPlan, then open its durable detail. */
-  async function createAndLink(name: string, from: StageId | null) {
+  async function createAndLink(name: string, from: PlanNodeId | null) {
     setBusy(true);
     setError(null);
     try {
@@ -177,28 +186,37 @@ export function LearningPlanCanvas({
   }
 
   const link = (to: PlanNodeId) => {
-    if (linkingFrom)
-      void run(() =>
-        connectLearningPlanNodes(user, learningPlanId, {
-          fromNodeId: linkingFrom,
-          toNodeId: to,
-        }),
-      );
+    if (linkingFrom) {
+      const fromName = nodeName(nodeById.get(linkingFrom)!);
+      const toName = nodeName(nodeById.get(to)!);
+      void run({
+        change: () =>
+          connectLearningPlanNodes(user, learningPlanId, {
+            fromNodeId: linkingFrom,
+            toNodeId: to,
+          }),
+        successMessage: `Linked ${fromName} to ${toName}`,
+      });
+    }
   };
   const unlink = ({ from, to }: { from: PlanNodeId; to: PlanNodeId }) =>
-    void run(() =>
-      disconnectLearningPlanNodes(user, learningPlanId, {
-        fromNodeId: from,
-        toNodeId: to,
-      }),
-    );
-  const sequence = ({ stageId, predecessorId }: SequenceStageInput) =>
-    void run(() =>
-      connectLearningPlanNodes(user, learningPlanId, {
-        fromNodeId: predecessorId,
-        toNodeId: stageId,
-      }),
-    );
+    void run({
+      change: () =>
+        disconnectLearningPlanNodes(user, learningPlanId, {
+          fromNodeId: from,
+          toNodeId: to,
+        }),
+      successMessage: `Disconnected ${nodeName(nodeById.get(from)!)} from ${nodeName(nodeById.get(to)!)}`,
+    });
+  const sequence = ({ nodeId, predecessorId }: SequenceNodeInput) =>
+    void run({
+      change: () =>
+        connectLearningPlanNodes(user, learningPlanId, {
+          fromNodeId: predecessorId,
+          toNodeId: nodeId,
+        }),
+      successMessage: `Sequenced ${nodeName(nodeById.get(nodeId)!)} after ${nodeName(nodeById.get(predecessorId)!)}`,
+    });
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
   const wander = (p: TopologyPlacement) =>
@@ -426,22 +444,25 @@ export function LearningPlanCanvas({
                     })
                   }
                   linking={linkingFrom !== null}
-                  onPointerDown={(e) => startNodeDrag(n.id, e)}
-                  stageControls={
-                    n.kind === PlanNodeKind.Stage
-                      ? {
-                          onOpen: () => onOpenStage(n.id),
-                          onNext: () => setDraft({ from: n.id, mode: "next" }),
-                          onFork: () => setDraft({ from: n.id, mode: "fork" }),
-                          onStartLink: () => setLinkingFrom(n.id),
-                          onCancelLink: () => setLinkingFrom(null),
-                          onLinkHere: () => link(n.id),
-                          onDraftSubmit: (name) =>
-                            void createAndLink(name, n.id),
-                          onDraftCancel: () => setDraft(null),
-                        }
+                  linkingSourceName={
+                    linkingFrom
+                      ? nodeName(nodeById.get(linkingFrom)!)
                       : undefined
                   }
+                  onPointerDown={(e) => startNodeDrag(n.id, e)}
+                  controls={{
+                    onOpen:
+                      n.kind === PlanNodeKind.Stage
+                        ? () => onOpenStage(n.id)
+                        : undefined,
+                    onNext: () => setDraft({ from: n.id, mode: "next" }),
+                    onFork: () => setDraft({ from: n.id, mode: "fork" }),
+                    onStartLink: () => setLinkingFrom(n.id),
+                    onCancelLink: () => setLinkingFrom(null),
+                    onLinkHere: () => link(n.id),
+                    onDraftSubmit: (name) => void createAndLink(name, n.id),
+                    onDraftCancel: () => setDraft(null),
+                  }}
                 />
               );
             })}
@@ -501,15 +522,18 @@ export function LearningPlanCanvas({
           : "Drag to pan; ＋ adds the next stage, ⑃ forks a branch, ⇢ links to another, ✕ removes a link."}
       </p>
       {error && <ErrorLine error={error} />}
+      <p role="status" className="visually-hidden">
+        {announcement}
+      </p>
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-interface SequenceStageInput {
-  stageId: StageId;
-  predecessorId: StageId;
+interface SequenceNodeInput {
+  nodeId: PlanNodeId;
+  predecessorId: PlanNodeId;
 }
 
 function LooseNodeRail({
@@ -525,11 +549,11 @@ function LooseNodeRail({
   busy: boolean;
   readOnly: boolean;
   onOpen: (stageId: StageId) => void;
-  onSequence: (input: SequenceStageInput) => void;
+  onSequence: (input: SequenceNodeInput) => void;
 }) {
   const [draft, setDraft] = useState<{
-    stageId: StageId;
-    predecessorId: StageId | "";
+    nodeId: PlanNodeId;
+    predecessorId: PlanNodeId | "";
   } | null>(null);
 
   return (
@@ -542,41 +566,39 @@ function LooseNodeRail({
       ) : (
         <ul>
           {nodes.map((node) => {
-            if (node.kind === PlanNodeKind.Item) {
-              return (
-                <li key={node.id}>
-                  <Link
-                    to={`/items/${node.item.id}`}
-                    aria-label={`Open ${node.item.title}`}
-                    className="unsequenced-rail__stage"
-                  >
-                    {node.item.title}
-                  </Link>
-                  <span>{node.item.status.replace("_", " ")}</span>
-                </li>
-              );
-            }
             const candidates = allNodes.filter(
-              (candidate) =>
-                candidate.kind === PlanNodeKind.Stage &&
-                candidate.id !== node.id,
+              (candidate) => candidate.id !== node.id,
             );
+            const name = nodeName(node);
             return (
               <li key={node.id}>
-                <button
-                  type="button"
-                  className="unsequenced-rail__stage"
-                  onClick={() => onOpen(node.id)}
-                >
-                  {node.name}
-                </button>
-                {!readOnly && draft?.stageId === node.id ? (
+                {node.kind === PlanNodeKind.Item ? (
+                  <Link
+                    to={`/items/${node.item.id}`}
+                    aria-label={`Open ${name}`}
+                    className="unsequenced-rail__stage"
+                  >
+                    {name}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className="unsequenced-rail__stage"
+                    onClick={() => onOpen(node.id)}
+                  >
+                    {name}
+                  </button>
+                )}
+                {node.kind === PlanNodeKind.Item && (
+                  <span>{node.item.status.replace("_", " ")}</span>
+                )}
+                {!readOnly && draft?.nodeId === node.id ? (
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
                       if (draft.predecessorId) {
                         onSequence({
-                          stageId: node.id,
+                          nodeId: node.id,
                           predecessorId: draft.predecessorId,
                         });
                         setDraft(null);
@@ -590,13 +612,13 @@ function LooseNodeRail({
                         disabled={busy || candidates.length === 0}
                         onChange={(event) =>
                           setDraft({
-                            stageId: node.id,
-                            predecessorId: event.target.value as StageId,
+                            nodeId: node.id,
+                            predecessorId: event.target.value as PlanNodeId,
                           })
                         }
                       >
                         <option value="" disabled>
-                          Choose a Stage…
+                          Choose a Plan Node…
                         </option>
                         {candidates.map((candidate) => (
                           <option key={candidate.id} value={candidate.id}>
@@ -606,7 +628,7 @@ function LooseNodeRail({
                       </select>
                     </label>
                     {candidates.length === 0 && (
-                      <p>Add another Stage before sequencing this one.</p>
+                      <p>Add another node before sequencing this one.</p>
                     )}
                     <span>
                       <button
@@ -628,11 +650,13 @@ function LooseNodeRail({
                   <button
                     type="button"
                     disabled={busy}
+                    aria-label={`Sequence ${name}`}
                     onClick={() =>
-                      setDraft({ stageId: node.id, predecessorId: "" })
+                      setDraft({ nodeId: node.id, predecessorId: "" })
                     }
                   >
-                    Sequence this Stage
+                    Sequence this{" "}
+                    {node.kind === PlanNodeKind.Item ? "Item" : "Stage"}
                   </button>
                 ) : null}
               </li>
@@ -655,12 +679,13 @@ interface WaypointProps {
   isLinkSource: boolean;
   isLinkTarget: boolean;
   linking: boolean;
+  linkingSourceName?: string;
   onPointerDown: (e: ReactPointerEvent) => void;
-  stageControls?: StageWaypointControls;
+  controls: NodeWaypointControls;
 }
 
-interface StageWaypointControls {
-  onOpen: () => void;
+interface NodeWaypointControls {
+  onOpen?: () => void;
   onNext: () => void;
   onFork: () => void;
   onStartLink: () => void;
@@ -688,8 +713,9 @@ function Waypoint({
   isLinkSource,
   isLinkTarget,
   linking,
+  linkingSourceName,
   onPointerDown,
-  stageControls,
+  controls,
 }: WaypointProps) {
   const done = isDone(node);
   const underway = isUnderway(node);
@@ -741,7 +767,7 @@ function Waypoint({
           aria-label={`Open ${name}`}
           title={progressLabel}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={stageControls?.onOpen}
+          onClick={controls.onOpen}
         >
           <WaypointContents
             node={node}
@@ -753,25 +779,30 @@ function Waypoint({
         </button>
       )}
 
-      {!readOnly && node.kind === PlanNodeKind.Stage && stageControls && (
+      {!readOnly && (
         <div onPointerDown={(e) => e.stopPropagation()}>
           {isDrafting ? (
             <DraftForm
               busy={busy}
               placeholder="Name the new stage"
-              onCancel={stageControls.onDraftCancel}
-              onSubmit={stageControls.onDraftSubmit}
+              onCancel={controls.onDraftCancel}
+              onSubmit={controls.onDraftSubmit}
             />
           ) : isLinkSource ? (
             <RowButton
               label="Cancel"
-              onClick={stageControls.onCancelLink}
+              onClick={controls.onCancelLink}
               busy={busy}
             />
           ) : isLinkTarget ? (
             <RowButton
               label="⇢ link here"
-              onClick={stageControls.onLinkHere}
+              accessibleLabel={
+                linkingSourceName
+                  ? `Link ${linkingSourceName} to ${name}`
+                  : undefined
+              }
+              onClick={controls.onLinkHere}
               busy={busy}
             />
           ) : linking ? null : (
@@ -780,7 +811,7 @@ function Waypoint({
                 <IconButton
                   label="＋"
                   accessibleLabel="Add next Stage"
-                  onClick={stageControls.onNext}
+                  onClick={controls.onNext}
                   busy={busy}
                 />
               </Tip>
@@ -788,15 +819,15 @@ function Waypoint({
                 <IconButton
                   label="⑃"
                   accessibleLabel="Fork a parallel branch"
-                  onClick={stageControls.onFork}
+                  onClick={controls.onFork}
                   busy={busy}
                 />
               </Tip>
-              <Tip label="Link to an existing stage">
+              <Tip label="Link to another node">
                 <IconButton
                   label="⇢"
-                  accessibleLabel="Link to an existing Stage"
-                  onClick={stageControls.onStartLink}
+                  accessibleLabel={`Link from ${name} to another node`}
+                  onClick={controls.onStartLink}
                   busy={busy}
                 />
               </Tip>
@@ -990,10 +1021,12 @@ function IconButton({
 
 function RowButton({
   label,
+  accessibleLabel,
   onClick,
   busy,
 }: {
   label: string;
+  accessibleLabel?: string;
   onClick: () => void;
   busy: boolean;
 }) {
@@ -1003,6 +1036,7 @@ function RowButton({
       disabled={busy}
       onClick={onClick}
       className="learning-plan-row-button"
+      aria-label={accessibleLabel}
     >
       {label}
     </button>

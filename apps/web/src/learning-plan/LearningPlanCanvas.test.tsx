@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import {
   PlanNodeKind,
+  Status,
+  Type,
+  type DirectItemNodeId,
+  type ItemId,
   type LearningPlanId,
   type LearningPlanView,
   type StageId,
@@ -14,8 +19,35 @@ const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const learningPlanId = "00000000-0000-0000-0000-0000000000t1" as LearningPlanId;
 const a = "00000000-0000-0000-0000-00000000000a" as StageId;
 const b = "00000000-0000-0000-0000-00000000000b" as StageId;
+const directA = "00000000-0000-0000-0000-00000000001a" as DirectItemNodeId;
+const directB = "00000000-0000-0000-0000-00000000001b" as DirectItemNodeId;
 
 const user: CurrentUser = { getToken: async () => null };
+
+const directItemNode = ({
+  id,
+  itemId,
+  title,
+}: {
+  id: DirectItemNodeId;
+  itemId: ItemId;
+  title: string;
+}) => ({
+  kind: PlanNodeKind.Item as const,
+  id,
+  item: {
+    id: itemId,
+    userId,
+    title,
+    source: null,
+    type: Type.Book,
+    status: Status.NotStarted,
+    targetDate: null,
+    pastTarget: false,
+    completedAt: null,
+    labels: [],
+  },
+});
 
 // A → B, where A is fully done (its ground is "walked") and B is underway.
 const learningPlan: LearningPlanView = {
@@ -40,15 +72,17 @@ const learningPlan: LearningPlanView = {
 
 const render = (readOnly: boolean, view: LearningPlanView = learningPlan) =>
   renderToStaticMarkup(
-    <LearningPlanCanvas
-      learningPlanId={learningPlanId}
-      learningPlan={view}
-      user={user}
-      onLearningPlanChanged={() => undefined}
-      onRefresh={async () => undefined}
-      onOpenStage={() => undefined}
-      readOnly={readOnly}
-    />,
+    <MemoryRouter>
+      <LearningPlanCanvas
+        learningPlanId={learningPlanId}
+        learningPlan={view}
+        user={user}
+        onLearningPlanChanged={() => undefined}
+        onRefresh={async () => undefined}
+        onOpenStage={() => undefined}
+        readOnly={readOnly}
+      />
+    </MemoryRouter>,
   );
 
 describe("Learning Plan canvas — Quiet Focus", () => {
@@ -75,6 +109,49 @@ describe("Learning Plan canvas — Quiet Focus", () => {
     expect(markup).toContain("Add the next stage in sequence");
     expect(markup).toContain("Fork a parallel branch");
     expect(markup).toContain("Remove this link");
+  });
+
+  it("offers graph authoring controls on direct Item nodes", () => {
+    const view: LearningPlanView = {
+      nodes: [
+        directItemNode({
+          id: directA,
+          itemId: "00000000-0000-0000-0000-00000000002a" as ItemId,
+          title: "Domain-Driven Design",
+        }),
+        directItemNode({
+          id: directB,
+          itemId: "00000000-0000-0000-0000-00000000002b" as ItemId,
+          title: "Implementing Domain-Driven Design",
+        }),
+      ],
+      edges: [{ userId, fromNodeId: directA, toNodeId: directB }],
+    };
+
+    const markup = render(false, view);
+
+    expect(markup).toContain("Link from Domain-Driven Design to another node");
+    expect(markup).toContain(
+      "Link from Implementing Domain-Driven Design to another node",
+    );
+  });
+
+  it("offers to sequence a loose direct Item after any Plan Node", () => {
+    const looseItem = directItemNode({
+      id: directA,
+      itemId: "00000000-0000-0000-0000-00000000002a" as ItemId,
+      title: "Domain-Driven Design",
+    });
+    const view: LearningPlanView = {
+      nodes: [...learningPlan.nodes, looseItem],
+      edges: learningPlan.edges,
+    };
+
+    const markup = render(false, view);
+
+    expect(markup).toContain("Sequence Domain-Driven Design");
+    expect(markup).toContain("Learn CSS");
+    expect(markup).toContain("Build the API");
   });
 
   it("is read-only at phone width — viewable, not authored", () => {
