@@ -143,7 +143,7 @@ export function LearningPlanCanvas({
   } | null>(null);
   const moved = useRef(false);
 
-  async function run({
+  async function applyTopologyChange({
     change,
     successMessage,
   }: {
@@ -189,7 +189,7 @@ export function LearningPlanCanvas({
     if (linkingFrom) {
       const fromName = nodeName(nodeById.get(linkingFrom)!);
       const toName = nodeName(nodeById.get(to)!);
-      void run({
+      void applyTopologyChange({
         change: () =>
           connectLearningPlanNodes(user, learningPlanId, {
             fromNodeId: linkingFrom,
@@ -200,7 +200,7 @@ export function LearningPlanCanvas({
     }
   };
   const unlink = ({ from, to }: { from: PlanNodeId; to: PlanNodeId }) =>
-    void run({
+    void applyTopologyChange({
       change: () =>
         disconnectLearningPlanNodes(user, learningPlanId, {
           fromNodeId: from,
@@ -209,13 +209,22 @@ export function LearningPlanCanvas({
       successMessage: `Disconnected ${nodeName(nodeById.get(from)!)} from ${nodeName(nodeById.get(to)!)}`,
     });
   const sequence = ({ nodeId, predecessorId }: SequenceNodeInput) =>
-    void run({
+    void applyTopologyChange({
       change: () =>
         connectLearningPlanNodes(user, learningPlanId, {
           fromNodeId: predecessorId,
           toNodeId: nodeId,
         }),
       successMessage: `Sequenced ${nodeName(nodeById.get(nodeId)!)} after ${nodeName(nodeById.get(predecessorId)!)}`,
+    });
+  const sequenceBefore = ({ nodeId, successorId }: SequenceBeforeInput) =>
+    void applyTopologyChange({
+      change: () =>
+        connectLearningPlanNodes(user, learningPlanId, {
+          fromNodeId: nodeId,
+          toNodeId: successorId,
+        }),
+      successMessage: `Linked ${nodeName(nodeById.get(nodeId)!)} to ${nodeName(nodeById.get(successorId)!)}`,
     });
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
@@ -335,6 +344,7 @@ export function LearningPlanCanvas({
           readOnly={readOnly}
           onOpen={onOpenStage}
           onSequence={sequence}
+          onSequenceBefore={sequenceBefore}
         />
         <div
           ref={canvasRef}
@@ -472,12 +482,15 @@ export function LearningPlanCanvas({
                 const a = pos.get(e.fromNodeId);
                 const b = pos.get(e.toNodeId);
                 if (!a || !b) return null;
+                const fromName = nodeName(nodeById.get(e.fromNodeId)!);
+                const toName = nodeName(nodeById.get(e.toNodeId)!);
+                const accessibleLabel = `Disconnect ${fromName} from ${toName}`;
                 return (
                   <button
                     key={`x-${e.fromNodeId}-${e.toNodeId}`}
                     type="button"
-                    title="Remove this link"
-                    aria-label="Remove this link"
+                    title={accessibleLabel}
+                    aria-label={accessibleLabel}
                     disabled={busy}
                     onPointerDown={(ev) => ev.stopPropagation()}
                     onClick={() =>
@@ -536,6 +549,11 @@ interface SequenceNodeInput {
   predecessorId: PlanNodeId;
 }
 
+interface SequenceBeforeInput {
+  nodeId: PlanNodeId;
+  successorId: PlanNodeId;
+}
+
 function LooseNodeRail({
   nodes,
   allNodes,
@@ -543,6 +561,7 @@ function LooseNodeRail({
   readOnly,
   onOpen,
   onSequence,
+  onSequenceBefore,
 }: {
   nodes: LearningPlanNode[];
   allNodes: LearningPlanNode[];
@@ -550,10 +569,12 @@ function LooseNodeRail({
   readOnly: boolean;
   onOpen: (stageId: StageId) => void;
   onSequence: (input: SequenceNodeInput) => void;
+  onSequenceBefore: (input: SequenceBeforeInput) => void;
 }) {
   const [draft, setDraft] = useState<{
     nodeId: PlanNodeId;
-    predecessorId: PlanNodeId | "";
+    mode: "after" | "before";
+    otherNodeId: PlanNodeId | "";
   } | null>(null);
 
   return (
@@ -596,24 +617,32 @@ function LooseNodeRail({
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
-                      if (draft.predecessorId) {
-                        onSequence({
-                          nodeId: node.id,
-                          predecessorId: draft.predecessorId,
-                        });
+                      if (draft.otherNodeId) {
+                        if (draft.mode === "after") {
+                          onSequence({
+                            nodeId: node.id,
+                            predecessorId: draft.otherNodeId,
+                          });
+                        } else {
+                          onSequenceBefore({
+                            nodeId: node.id,
+                            successorId: draft.otherNodeId,
+                          });
+                        }
                         setDraft(null);
                       }
                     }}
                   >
                     <label>
-                      Follows
+                      {draft.mode === "after" ? "Follows" : "Before"}
                       <select
-                        value={draft.predecessorId}
+                        value={draft.otherNodeId}
                         disabled={busy || candidates.length === 0}
                         onChange={(event) =>
                           setDraft({
                             nodeId: node.id,
-                            predecessorId: event.target.value as PlanNodeId,
+                            mode: draft.mode,
+                            otherNodeId: event.target.value as PlanNodeId,
                           })
                         }
                       >
@@ -633,9 +662,9 @@ function LooseNodeRail({
                     <span>
                       <button
                         type="submit"
-                        disabled={busy || !draft.predecessorId}
+                        disabled={busy || !draft.otherNodeId}
                       >
-                        Sequence
+                        {draft.mode === "after" ? "Sequence" : "Link"}
                       </button>
                       <button
                         type="button"
@@ -647,17 +676,37 @@ function LooseNodeRail({
                     </span>
                   </form>
                 ) : !readOnly ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-label={`Sequence ${name}`}
-                    onClick={() =>
-                      setDraft({ nodeId: node.id, predecessorId: "" })
-                    }
-                  >
-                    Sequence this{" "}
-                    {node.kind === PlanNodeKind.Item ? "Item" : "Stage"}
-                  </button>
+                  <span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Sequence ${name}`}
+                      onClick={() =>
+                        setDraft({
+                          nodeId: node.id,
+                          mode: "after",
+                          otherNodeId: "",
+                        })
+                      }
+                    >
+                      Sequence this{" "}
+                      {node.kind === PlanNodeKind.Item ? "Item" : "Stage"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Link from ${name} to another node`}
+                      onClick={() =>
+                        setDraft({
+                          nodeId: node.id,
+                          mode: "before",
+                          otherNodeId: "",
+                        })
+                      }
+                    >
+                      Link forward
+                    </button>
+                  </span>
                 ) : null}
               </li>
             );

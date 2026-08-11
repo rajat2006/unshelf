@@ -108,7 +108,7 @@ describe("Learning Plan canvas — Quiet Focus", () => {
     // ＋ next, ⑃ fork, ⇢ link, ✕ remove-link — arranging, not data entry.
     expect(markup).toContain("Add the next stage in sequence");
     expect(markup).toContain("Fork a parallel branch");
-    expect(markup).toContain("Remove this link");
+    expect(markup).toContain("Disconnect Learn CSS from Build the API");
   });
 
   it("offers graph authoring controls on direct Item nodes", () => {
@@ -150,6 +150,7 @@ describe("Learning Plan canvas — Quiet Focus", () => {
     const markup = render(false, view);
 
     expect(markup).toContain("Sequence Domain-Driven Design");
+    expect(markup).toContain("Link from Domain-Driven Design to another node");
     expect(markup).toContain("Learn CSS");
     expect(markup).toContain("Build the API");
   });

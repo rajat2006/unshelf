@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { Item, LearningPlan } from "@unshelf/shared";
+import { PlanNodeKind } from "@unshelf/shared";
+import type {
+  Item,
+  LearningPlan,
+  LearningPlanView,
+  Stage,
+} from "@unshelf/shared";
 import { testApi, testAppUrl } from "./test-helpers";
 
 /**
@@ -126,7 +132,11 @@ test("a desktop User adds the first Stage, extends the sequence, and it persists
 
   // Removing the link between them leaves both Stages in place, and the removal
   // itself persists.
-  await page.getByRole("button", { name: "Remove this link" }).click();
+  await page
+    .getByRole("button", {
+      name: "Disconnect Learn the basics from Build something",
+    })
+    .click();
   await expect(
     page.getByText("Learn the basics", { exact: true }),
   ).toBeVisible();
@@ -137,9 +147,9 @@ test("a desktop User adds the first Stage, extends the sequence, and it persists
   await expect(
     page.getByText("Learn the basics", { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Remove this link" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Disconnect / })).toHaveCount(
+    0,
+  );
 });
 
 test("a LearningPlan's Stages are private to its owner", async ({
@@ -219,44 +229,40 @@ test("a desktop User forks and rejoins mixed Plan Nodes through keyboard-operabl
     .getByRole("listitem")
     .filter({ hasText: "Parallel reading" });
   await looseItem
-    .getByRole("button", { name: "Sequence Parallel reading" })
-    .click();
-  await looseItem
-    .getByLabel("Follows")
-    .selectOption({ label: "Parallel branch" });
-  await looseItem
-    .getByRole("button", { name: "Sequence", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toHaveText(
-    "Sequenced Parallel reading after Parallel branch",
-  );
-
-  const parallelReading = page.getByRole("group", {
-    name: /^Parallel reading:/,
-  });
-  await parallelReading
     .getByRole("button", {
       name: "Link from Parallel reading to another node",
     })
-    .focus();
-  await parallelReading
-    .getByRole("button", {
-      name: "Link from Parallel reading to another node",
-    })
-    .press("Enter");
-  const rejoin = page
-    .getByRole("group", { name: /^Main branch:/ })
-    .getByRole("button", { name: "Link Parallel reading to Main branch" });
-  await rejoin.focus();
-  await rejoin.press("Enter");
+    .click();
+  await looseItem.getByLabel("Before").selectOption({ label: "Main branch" });
+  await looseItem.getByRole("button", { name: "Link", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(
     "Linked Parallel reading to Main branch",
   );
 
+  const parallelBranch = page.getByRole("group", {
+    name: /^Parallel branch:/,
+  });
+  const startLink = parallelBranch.getByRole("button", {
+    name: "Link from Parallel branch to another node",
+  });
+  await startLink.focus();
+  await startLink.press("Enter");
+  const parallelReading = page.getByRole("group", {
+    name: /^Parallel reading:/,
+  });
+  const linkToReading = parallelReading.getByRole("button", {
+    name: "Link Parallel branch to Parallel reading",
+  });
+  await linkToReading.focus();
+  await linkToReading.press("Enter");
+  await expect(page.getByRole("status")).toHaveText(
+    "Linked Parallel branch to Parallel reading",
+  );
+
   await page.goto(deepLink);
-  await expect(
-    page.getByRole("button", { name: "Remove this link" }),
-  ).toHaveCount(4);
+  await expect(page.getByRole("button", { name: /^Disconnect / })).toHaveCount(
+    4,
+  );
 });
 
 test("at phone width the LearningPlan is viewed, not authored", async ({
@@ -342,7 +348,7 @@ test("a desktop User places and removes a shared Library Item directly", async (
   expect((await testApi(page, user, `/api/items/${item.id}`)).ok()).toBe(true);
 });
 
-test("a phone User views a direct placement and opens the shared Item", async ({
+test("a phone User views connected Plan structure without authoring or overflow", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "phone", "phone consultation flow");
@@ -358,19 +364,66 @@ test("a phone User views a direct placement and opens the shared Item", async ({
       type: "book",
     })
   ).json()) as Item;
-  await testApi(page, user, `/api/learning-plans/${plan.id}/items`, "POST", {
-    itemId: item.id,
-  });
+  const placed = (await (
+    await testApi(page, user, `/api/learning-plans/${plan.id}/items`, "POST", {
+      itemId: item.id,
+    })
+  ).json()) as LearningPlanView;
+  const itemNodeId = placed.nodes.find(
+    (node) => node.kind === PlanNodeKind.Item,
+  )!.id;
+  const createStage = async (name: string) =>
+    (await (
+      await testApi(
+        page,
+        user,
+        `/api/learning-plans/${plan.id}/stages`,
+        "POST",
+        { name },
+      )
+    ).json()) as Stage;
+  const foundation = await createStage("Foundation");
+  const parallel = await createStage("Parallel practice");
+  const rejoin = await createStage("Apply everything");
+  const connect = ({
+    fromNodeId,
+    toNodeId,
+  }: {
+    fromNodeId: string;
+    toNodeId: string;
+  }) =>
+    testApi(page, user, `/api/learning-plans/${plan.id}/edges`, "POST", {
+      fromNodeId,
+      toNodeId,
+    });
+  await connect({ fromNodeId: foundation.id, toNodeId: itemNodeId });
+  await connect({ fromNodeId: foundation.id, toNodeId: parallel.id });
+  await connect({ fromNodeId: itemNodeId, toNodeId: rejoin.id });
+  await connect({ fromNodeId: parallel.id, toNodeId: rejoin.id });
 
   await page.goto(testAppUrl(`/plans/${plan.id}`, user));
   const itemLink = page.getByRole("link", { name: "Open Database Internals" });
   await expect(itemLink).toBeVisible();
   await expect(
+    page.getByRole("button", { name: "Open Foundation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open Parallel practice" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open Apply everything" }),
+  ).toBeVisible();
+  await expect(
     page.getByRole("complementary", { name: "Library placement drawer" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^(Link from|Disconnect) / }),
   ).toHaveCount(0);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+  await page.reload();
+  await expect(itemLink).toBeVisible();
   await itemLink.click();
   await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
 });
