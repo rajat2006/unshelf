@@ -18,6 +18,7 @@ interface StageViewProps {
   onClose: () => void;
   closeLabel?: string;
   headingLevel?: 2 | 3;
+  structuralReadOnly?: boolean;
 }
 
 /**
@@ -37,6 +38,7 @@ export function StageView({
   onClose,
   closeLabel = "← All stages",
   headingLevel = 3,
+  structuralReadOnly = false,
 }: StageViewProps) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
   const [orderingItemId, setOrderingItemId] = useState<ItemId | null>(null);
@@ -80,40 +82,47 @@ export function StageView({
               user={user}
               onChanged={onItemChanged}
             >
-              <div>
-                <button
-                  type="button"
-                  className="quiet-button"
-                  aria-label={`Move ${item.title} up`}
-                  disabled={orderingItemId !== null || index === 0}
-                  onClick={() => void moveInOrder(item.id, -1)}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="quiet-button"
-                  aria-label={`Move ${item.title} down`}
-                  disabled={
-                    orderingItemId !== null || index === stage.items.length - 1
-                  }
-                  onClick={() => void moveInOrder(item.id, 1)}
-                >
-                  ↓
-                </button>
-              </div>
-              <RemoveFromStage
-                stageId={stage.id}
-                itemId={item.id}
-                user={user}
-                onStageChanged={onStageChanged}
-              />
-              <MoveDirectly
-                stage={stage}
-                itemId={item.id}
-                user={user}
-                onStageChanged={onStageChanged}
-              />
+              {!structuralReadOnly && (
+                <div>
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    aria-label={`Move ${item.title} up`}
+                    disabled={orderingItemId !== null || index === 0}
+                    onClick={() => void moveInOrder(item.id, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    aria-label={`Move ${item.title} down`}
+                    disabled={
+                      orderingItemId !== null ||
+                      index === stage.items.length - 1
+                    }
+                    onClick={() => void moveInOrder(item.id, 1)}
+                  >
+                    ↓
+                  </button>
+                </div>
+              )}
+              {!structuralReadOnly && (
+                <>
+                  <RemoveFromStage
+                    stageId={stage.id}
+                    itemId={item.id}
+                    user={user}
+                    onStageChanged={onStageChanged}
+                  />
+                  <MoveDirectly
+                    stage={stage}
+                    itemId={item.id}
+                    user={user}
+                    onStageChanged={onStageChanged}
+                  />
+                </>
+              )}
             </ItemRow>
           ))}
         </ul>
@@ -123,11 +132,13 @@ export function StageView({
           Could not reorder this Stage: {orderError}
         </div>
       )}
-      <StageItemIntake
-        stageId={stage.id}
-        user={user}
-        onStageChanged={onStageChanged}
-      />
+      {!structuralReadOnly && (
+        <StageItemIntake
+          stageId={stage.id}
+          user={user}
+          onStageChanged={onStageChanged}
+        />
+      )}
     </div>
   );
 }

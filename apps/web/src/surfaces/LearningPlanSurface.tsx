@@ -46,7 +46,7 @@ export function LearningPlanSurface({
   const stageId = selectedLearningPlanId ? undefined : params.stageId;
   const navigate = useNavigate();
   const user = useCurrentUser();
-  const readOnly = usePhoneViewport();
+  const phoneReadOnly = usePhoneViewport();
   const [learningPlan, setLearningPlan] = useState<LearningPlanView | null>(
     null,
   );
@@ -54,6 +54,8 @@ export function LearningPlanSurface({
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const archived = record?.archivedAt != null;
+  const readOnly = phoneReadOnly || archived;
 
   const refresh = useCallback(async () => {
     if (!learningPlanId) return;
@@ -104,7 +106,8 @@ export function LearningPlanSurface({
         className="learning-plan-surface"
       >
         <h1 id="learning-plan-heading">{record?.name ?? "Learning Plan"}</h1>
-        {record && (
+        {archived && <p className="quiet-copy">Archived · read-only</p>}
+        {record && !archived && (
           <form onSubmit={(event) => void rename(event)}>
             <label htmlFor="rename-learning-plan">Rename Learning Plan</label>
             <input
@@ -189,6 +192,7 @@ export function LearningPlanSurface({
           user={user}
           onClose={() => void navigate(`/plans/${learningPlanId}`)}
           onLearningPlanChanged={refresh}
+          structuralReadOnly={archived}
         />
       )}
     </div>

@@ -185,7 +185,9 @@ export function ItemPlacements({
 
   const placed = catalog.learningPlans.filter(
     (learningPlan) =>
-      learningPlan.kind === "placed" || learningPlan.kind === "placed_direct",
+      learningPlan.kind === "placed" ||
+      learningPlan.kind === "placed_direct" ||
+      (learningPlan.kind === "archived" && learningPlan.placement !== null),
   );
 
   return (
@@ -203,6 +205,12 @@ export function ItemPlacements({
               <span>
                 {state.learningPlan.name}
                 {state.kind === "placed" ? ` · ${state.stage.name}` : ""}
+                {state.kind === "archived" &&
+                state.placement !== null &&
+                state.placement !== "direct"
+                  ? ` · ${state.placement.name}`
+                  : ""}
+                {state.kind === "archived" ? " · Archived" : ""}
               </span>
               <span className="item-placement-actions">
                 {state.kind === "placed" &&
@@ -214,22 +222,24 @@ export function ItemPlacements({
                       Open Stage
                     </Link>
                   )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    state.kind === "placed"
-                      ? void remove(state.stage.id)
-                      : void removeDirect(state.learningPlan.id)
-                  }
-                  aria-label={
-                    state.kind === "placed"
-                      ? `Remove from ${state.learningPlan.name} · ${state.stage.name}`
-                      : `Remove from ${state.learningPlan.name}`
-                  }
-                >
-                  Remove
-                </button>
+                {state.kind !== "archived" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      state.kind === "placed"
+                        ? void remove(state.stage.id)
+                        : void removeDirect(state.learningPlan.id)
+                    }
+                    aria-label={
+                      state.kind === "placed"
+                        ? `Remove from ${state.learningPlan.name} · ${state.stage.name}`
+                        : `Remove from ${state.learningPlan.name}`
+                    }
+                  >
+                    Remove
+                  </button>
+                )}
               </span>
             </li>
           ))}
@@ -248,7 +258,9 @@ export function ItemPlacements({
             {catalog.learningPlans.map((state) => (
               <li key={state.learningPlan.id}>
                 <strong>{state.learningPlan.name}</strong>
-                {state.kind === "placed" ? (
+                {state.kind === "archived" ? (
+                  <span>Archived · read-only</span>
+                ) : state.kind === "placed" ? (
                   <span>Already in {state.stage.name}</span>
                 ) : state.kind === "placed_direct" ? (
                   <span>Already placed directly</span>

@@ -227,6 +227,11 @@ export type ItemPlacementLearningPlan =
   | {
       kind: "placed_direct";
       learningPlan: PlacementLearningPlan;
+    }
+  | {
+      kind: "archived";
+      learningPlan: PlacementLearningPlan;
+      placement: "direct" | PlacementStage | null;
     };
 
 /** Every LearningPlan the User owns, represented once for one Item. */
@@ -281,9 +286,11 @@ export interface LearningPlan {
   name: string;
   /** When this LearningPlan was created, ISO-8601 — the stable order the index lists in. */
   createdAt: string;
-  /** How many distinct Items across the LearningPlan's Stages are *done* (0 when none). */
+  /** When this Learning Plan was archived, ISO-8601, or null while active. */
+  archivedAt: string | null;
+  /** How many distinct current Items on the Learning Plan are *done* (0 when none). */
   done: number;
-  /** How many distinct Items the LearningPlan's Stages hold in total. */
+  /** How many distinct current Items the Learning Plan holds in total. */
   total: number;
 }
 

@@ -7,7 +7,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
-import { items, stageItems, stages, learningPlans } from "../schema";
+import { items, learningPlanItemPlacements, learningPlans } from "../schema";
 
 /**
  * LearningPlan storage (ADR-0014). The LearningPlan is now a first-class record — one User owns
@@ -25,6 +25,7 @@ interface LearningPlanRow {
   user_id: string;
   name: string;
   created_at: Date;
+  archived_at: Date | null;
   done: number;
   total: number;
 }
@@ -34,19 +35,19 @@ const toLearningPlan = (row: LearningPlanRow): LearningPlan => ({
   userId: row.user_id as UserId,
   name: row.name,
   createdAt: row.created_at.toISOString(),
+  archivedAt: row.archived_at?.toISOString() ?? null,
   done: row.done,
   total: row.total,
 });
 
 /**
  * Select a User's LearningPlans, each with derived progress, restricted by an optional
- * id. Progress is counted per *distinct* Item across the LearningPlan's Stages, so an
- * Item pulled into two of the LearningPlan's Stages counts once — the roll-up mirrors the
- * per-node progress the LearningPlan canvas reads (ADR-0010) but folds the whole journey
- * into one fraction. It is computed here on every read, never stored, exactly as
- * All derives `pastTarget` (ADR-0005): an empty LearningPlan reads as 0/0 and can never
- * drift from its Stages' actual contents. Ordered by creation so the index is
- * stable across reads. Takes an id filter so `getLearningPlan` reuses the same shape.
+ * id. Progress is counted through the plan's unique placement registry, so direct
+ * and staged Items each contribute exactly once. The roll-up is computed here on
+ * every read, never stored, exactly as Library derives `pastTarget` (ADR-0005):
+ * an empty Learning Plan reads as 0/0 and can never drift from its current Items.
+ * Ordered by creation so the index is stable across reads. Takes an id filter so
+ * `getLearningPlan` reuses the same shape.
  */
 async function selectLearningPlans(
   db: Database,
@@ -59,6 +60,7 @@ async function selectLearningPlans(
       user_id: learningPlans.userId,
       name: learningPlans.name,
       created_at: learningPlans.createdAt,
+      archived_at: learningPlans.archivedAt,
       done: sql<number>`count(distinct ${items.id}) filter (where ${items.status} = 'done')::int`.mapWith(
         Number,
       ),
@@ -66,23 +68,16 @@ async function selectLearningPlans(
     })
     .from(learningPlans)
     .leftJoin(
-      stages,
+      learningPlanItemPlacements,
       and(
-        eq(stages.learningPlanId, learningPlans.id),
-        eq(stages.userId, learningPlans.userId),
-      ),
-    )
-    .leftJoin(
-      stageItems,
-      and(
-        eq(stageItems.stageId, stages.id),
-        eq(stageItems.userId, learningPlans.userId),
+        eq(learningPlanItemPlacements.learningPlanId, learningPlans.id),
+        eq(learningPlanItemPlacements.userId, learningPlans.userId),
       ),
     )
     .leftJoin(
       items,
       and(
-        eq(items.id, stageItems.itemId),
+        eq(items.id, learningPlanItemPlacements.itemId),
         eq(items.userId, learningPlans.userId),
       ),
     )
@@ -99,6 +94,7 @@ async function selectLearningPlans(
       learningPlans.userId,
       learningPlans.name,
       learningPlans.createdAt,
+      learningPlans.archivedAt,
     )
     .orderBy(asc(learningPlans.createdAt), asc(learningPlans.id));
   return rows.map(toLearningPlan);
@@ -141,10 +137,36 @@ export async function createLearningPlan(
       user_id: learningPlans.userId,
       name: learningPlans.name,
       created_at: learningPlans.createdAt,
+      archived_at: learningPlans.archivedAt,
       done: sql<number>`0`.mapWith(Number),
       total: sql<number>`0`.mapWith(Number),
     });
   return toLearningPlan(row);
+}
+
+/** Change one owned Learning Plan's lifecycle state without touching its structure. */
+export async function setLearningPlanArchived({
+  db,
+  userId,
+  learningPlanId,
+  archived,
+}: {
+  db: Database;
+  userId: UserId;
+  learningPlanId: LearningPlanId;
+  archived: boolean;
+}): Promise<LearningPlan | null> {
+  const [updated] = await db
+    .update(learningPlans)
+    .set({ archivedAt: archived ? new Date() : null })
+    .where(
+      and(
+        eq(learningPlans.id, learningPlanId),
+        eq(learningPlans.userId, userId),
+      ),
+    )
+    .returning({ id: learningPlans.id });
+  return updated ? getLearningPlan(db, userId, learningPlanId) : null;
 }
 
 /** Rename one owned Learning Plan while preserving its stable identity. */

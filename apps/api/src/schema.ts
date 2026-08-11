@@ -160,10 +160,11 @@ export const itemLabels = pgTable(
 /**
  * learningPlans: the LearningPlan promoted to a first-class, User-owned record (ADR-0014).
  * The journey has an identity of its own: an opaque `id` that a URL carries and
- * that survives a rename, a `name`, and `created_at` (the stable order the index
- * lists in). There is deliberately no progress column — a LearningPlan's progress is
- * *derived* on read from its Stages' Items (like the derived `past_target`,
- * ADR-0005), never stored.
+ * that survives a rename, a `name`, `created_at` (the stable order the index
+ * lists in), and nullable `archived_at` for its active/archive lifecycle. There
+ * is deliberately no progress column — progress is derived on read from current
+ * direct and Stage placements (like the derived `past_target`, ADR-0005), never
+ * stored.
  */
 export const learningPlans = pgTable(
   "learning_plans",
@@ -176,6 +177,7 @@ export const learningPlans = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
     index("learning_plans_user_id_idx").on(table.userId),

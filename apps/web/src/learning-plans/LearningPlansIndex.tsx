@@ -22,11 +22,15 @@ export function LearningPlansIndex({
   state,
   creating,
   onCreate,
+  onArchive,
+  onRestore,
   onRetry,
 }: {
   state: LearningPlansIndexState;
   creating: boolean;
   onCreate: (name: string) => Promise<void>;
+  onArchive: (learningPlan: LearningPlan) => Promise<void>;
+  onRestore: (learningPlan: LearningPlan) => Promise<void>;
   onRetry: () => void;
 }) {
   if (state.status === "loading") {
@@ -37,21 +41,79 @@ export function LearningPlansIndex({
   }
 
   const { learningPlans } = state;
+  const activePlans = learningPlans.filter(
+    (learningPlan) => learningPlan.archivedAt === null,
+  );
+  const archivedPlans = learningPlans.filter(
+    (learningPlan) => learningPlan.archivedAt !== null,
+  );
   return (
     <div>
       <NewLearningPlanForm creating={creating} onCreate={onCreate} />
       {learningPlans.length === 0 ? (
         <EmptyLearningPlans />
       ) : (
+        <>
+          <LearningPlanGroup
+            heading="Active Plans"
+            learningPlans={activePlans}
+            emptyMessage="No active Learning Plans."
+            actionLabel="Archive"
+            onAction={onArchive}
+          />
+          {archivedPlans.length > 0 && (
+            <LearningPlanGroup
+              heading="Archived Plans"
+              learningPlans={archivedPlans}
+              actionLabel="Restore"
+              onAction={onRestore}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function LearningPlanGroup({
+  heading,
+  learningPlans,
+  emptyMessage,
+  actionLabel,
+  onAction,
+}: {
+  heading: string;
+  learningPlans: LearningPlan[];
+  emptyMessage?: string;
+  actionLabel: "Archive" | "Restore";
+  onAction: (learningPlan: LearningPlan) => Promise<void>;
+}) {
+  return (
+    <section
+      className="learning-plan-group"
+      aria-labelledby={`${actionLabel}-plans`}
+    >
+      <h2 id={`${actionLabel}-plans`}>{heading}</h2>
+      {learningPlans.length === 0 ? (
+        <p className="quiet-copy">{emptyMessage}</p>
+      ) : (
         <ul className="learning-plan-card-grid">
           {learningPlans.map((learningPlan) => (
-            <li key={learningPlan.id}>
+            <li key={learningPlan.id} className="learning-plan-card">
               <LearningPlanCard learningPlan={learningPlan} />
+              <button
+                type="button"
+                className="quiet-button"
+                aria-label={`${actionLabel} ${learningPlan.name}`}
+                onClick={() => void onAction(learningPlan)}
+              >
+                {actionLabel}
+              </button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -64,7 +126,7 @@ function progressLabel(learningPlan: LearningPlan): string {
 /** One LearningPlan as a card that opens the LearningPlan at its opaque, stable URL. */
 function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
   return (
-    <Link to={`/plans/${learningPlan.id}`} className="learning-plan-card">
+    <Link to={`/plans/${learningPlan.id}`} className="learning-plan-card__link">
       <span className="learning-plan-card__name">{learningPlan.name}</span>
       <span className="learning-plan-card__progress">
         {progressLabel(learningPlan)}

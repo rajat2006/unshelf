@@ -64,7 +64,11 @@ export async function getItemPlacementCatalog(
   if (!ownedItem) return null;
 
   const learningPlanRows = await db
-    .select({ id: learningPlans.id, name: learningPlans.name })
+    .select({
+      id: learningPlans.id,
+      name: learningPlans.name,
+      archivedAt: learningPlans.archivedAt,
+    })
     .from(learningPlans)
     .where(eq(learningPlans.userId, input.userId))
     .orderBy(asc(learningPlans.createdAt), asc(learningPlans.id));
@@ -106,6 +110,17 @@ export async function getItemPlacementCatalog(
         id: learningPlan.id as LearningPlanId,
         name: learningPlan.name,
       };
+      if (learningPlan.archivedAt) {
+        return {
+          kind: "archived",
+          learningPlan: learningPlanIdentity,
+          placement: placed
+            ? { id: placed.id as StageId, name: placed.name }
+            : placement?.nodeId
+              ? "direct"
+              : null,
+        };
+      }
       if (placed) {
         return {
           kind: "placed",

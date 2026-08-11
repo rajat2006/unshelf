@@ -207,6 +207,30 @@ export async function updateLearningPlan(
   );
 }
 
+/** Retire a Learning Plan from structural editing while preserving its view. */
+export async function archiveLearningPlan(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+): Promise<LearningPlan> {
+  return requestJson<LearningPlan>(
+    user,
+    `/api/learning-plans/${learningPlanId}/archive`,
+    { method: "POST" },
+  );
+}
+
+/** Return an archived Learning Plan to active structural editing. */
+export async function restoreLearningPlan(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+): Promise<LearningPlan> {
+  return requestJson<LearningPlan>(
+    user,
+    `/api/learning-plans/${learningPlanId}/restore`,
+    { method: "POST" },
+  );
+}
+
 /** Every Stage belonging to the current User. */
 export async function fetchStages(user: CurrentUser): Promise<Stage[]> {
   return requestJson<Stage[]>(user, "/api/stages");

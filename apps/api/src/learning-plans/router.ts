@@ -120,6 +120,32 @@ export function createLearningPlansRouter(
     },
   );
 
+  for (const [path, changeLifecycle] of [
+    ["/:learningPlanId/archive", learningPlansService.archiveLearningPlan],
+    ["/:learningPlanId/restore", learningPlansService.restoreLearningPlan],
+  ] as const) {
+    router.post(
+      path,
+      validateRequest(
+        { params: { learningPlanId: learningPlanIdSchema } },
+        "invalid_learning_plan_name",
+      ),
+      async (req, res) => {
+        const { params } = res.locals.validated;
+        const learningPlan = await changeLifecycle({
+          db,
+          userId: req.user!.id,
+          learningPlanId: params.learningPlanId,
+        });
+        if (!learningPlan) {
+          res.status(404).json({ error: "learning plan not found" });
+          return;
+        }
+        res.json(learningPlan);
+      },
+    );
+  }
+
   router.post(
     "/:learningPlanId/stages",
     validateRequest(

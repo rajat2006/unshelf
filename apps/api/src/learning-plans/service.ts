@@ -63,6 +63,30 @@ export const updateLearningPlan = ({
     request,
   );
 
+export const archiveLearningPlan = ({
+  db,
+  userId,
+  learningPlanId,
+}: OwnedLearningPlanInput) =>
+  learningPlansRepository.setLearningPlanArchived({
+    db,
+    userId,
+    learningPlanId,
+    archived: true,
+  });
+
+export const restoreLearningPlan = ({
+  db,
+  userId,
+  learningPlanId,
+}: OwnedLearningPlanInput) =>
+  learningPlansRepository.setLearningPlanArchived({
+    db,
+    userId,
+    learningPlanId,
+    archived: false,
+  });
+
 export const createStage = ({
   db,
   userId,

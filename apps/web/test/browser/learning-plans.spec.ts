@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { testAppUrl } from "./test-helpers";
+import type { Item, LearningPlan } from "@unshelf/shared";
+import { testApi, testAppUrl } from "./test-helpers";
 
 /**
  * The Learning Plans index at Home (#93, design spec §2/§6, ADR-0014). Home is Learning Plans-only:
@@ -92,4 +93,66 @@ test("a User's Learning Plans are private to them", async ({
   await expect(
     page.getByRole("link", { name: new RegExp(ownerName) }),
   ).toHaveCount(0);
+});
+
+test("a User archives a read-only Learning Plan, sees live progress, and restores it", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-learning-plan-lifecycle`;
+  const plan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Lifecycle plan",
+    })
+  ).json()) as LearningPlan;
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Shared progress item",
+      type: "book",
+    })
+  ).json()) as Item;
+  await testApi(page, user, `/api/learning-plans/${plan.id}/items`, "POST", {
+    itemId: item.id,
+  });
+
+  await page.goto(appUrl(testInfo, "/plans", user));
+  await page.getByRole("button", { name: "Archive Lifecycle plan" }).click();
+  const archivedPlans = page.getByRole("region", { name: "Archived Plans" });
+  await expect(archivedPlans.getByText("Lifecycle plan")).toBeVisible();
+
+  await archivedPlans.getByRole("link", { name: /Lifecycle plan/ }).click();
+  await expect(page.getByText("Archived · read-only")).toBeVisible();
+  await expect(page.getByLabel("Rename Learning Plan")).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: "Library placement drawer" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^(Link from|Disconnect) / }),
+  ).toHaveCount(0);
+
+  await page.goto(appUrl(testInfo, `/items/${item.id}`, user));
+  await expect(page.getByText("Lifecycle plan · Archived")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Remove from Lifecycle plan" }),
+  ).toHaveCount(0);
+
+  await testApi(page, user, `/api/items/${item.id}/status`, "PATCH", {
+    status: "done",
+  });
+  await page.goto(appUrl(testInfo, "/plans", user));
+  await expect(
+    page
+      .getByRole("region", { name: "Archived Plans" })
+      .getByText("1 of 1 done"),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Restore Lifecycle plan" }).click();
+  const activePlans = page.getByRole("region", { name: "Active Plans" });
+  await expect(activePlans.getByText("Lifecycle plan")).toBeVisible();
+  await activePlans.getByRole("link", { name: /Lifecycle plan/ }).click();
+  await expect(page.getByLabel("Rename Learning Plan")).toBeVisible();
+  if (testInfo.project.name !== "phone") {
+    await expect(
+      page.getByRole("complementary", { name: "Library placement drawer" }),
+    ).toBeVisible();
+  }
 });

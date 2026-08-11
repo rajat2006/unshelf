@@ -16,6 +16,7 @@ interface StageSidebarProps {
   user: CurrentUser;
   onClose: () => void;
   onLearningPlanChanged: () => Promise<void>;
+  structuralReadOnly?: boolean;
 }
 
 /** Route-owned Stage detail, kept separate from the live LearningPlan beside it. */
@@ -25,6 +26,7 @@ export function StageSidebar({
   user,
   onClose,
   onLearningPlanChanged,
+  structuralReadOnly = false,
 }: StageSidebarProps) {
   const [stage, setStage] = useState<StageDetail | null>(null);
   const [name, setName] = useState("");
@@ -125,17 +127,19 @@ export function StageSidebar({
       )}
       {stage && (
         <>
-          <form onSubmit={(event) => void rename(event)}>
-            <label htmlFor="rename-stage">Rename Stage</label>
-            <input
-              id="rename-stage"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <button type="submit" disabled={!name.trim() || renaming}>
-              Rename Stage
-            </button>
-          </form>
+          {!structuralReadOnly && (
+            <form onSubmit={(event) => void rename(event)}>
+              <label htmlFor="rename-stage">Rename Stage</label>
+              <input
+                id="rename-stage"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <button type="submit" disabled={!name.trim() || renaming}>
+                Rename Stage
+              </button>
+            </form>
+          )}
           <StageView
             stage={stage}
             user={user}
@@ -147,39 +151,45 @@ export function StageSidebar({
             onClose={onClose}
             closeLabel="Close details"
             headingLevel={2}
+            structuralReadOnly={structuralReadOnly}
           />
-          <section aria-label="Remove Stage">
-            {confirmingRemoval ? (
-              <>
-                <p>Choose what happens to the Items in this Stage.</p>
+          {!structuralReadOnly && (
+            <section aria-label="Remove Stage">
+              {confirmingRemoval ? (
+                <>
+                  <p>Choose what happens to the Items in this Stage.</p>
+                  <button
+                    type="button"
+                    disabled={removing}
+                    onClick={() => void remove("place_directly")}
+                  >
+                    Keep Items directly in plan
+                  </button>
+                  <button
+                    type="button"
+                    disabled={removing}
+                    onClick={() => void remove("remove_from_plan")}
+                  >
+                    Remove Items from plan
+                  </button>
+                  <button
+                    type="button"
+                    disabled={removing}
+                    onClick={() => setConfirmingRemoval(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  disabled={removing}
-                  onClick={() => void remove("place_directly")}
+                  onClick={() => setConfirmingRemoval(true)}
                 >
-                  Keep Items directly in plan
+                  Remove Stage
                 </button>
-                <button
-                  type="button"
-                  disabled={removing}
-                  onClick={() => void remove("remove_from_plan")}
-                >
-                  Remove Items from plan
-                </button>
-                <button
-                  type="button"
-                  disabled={removing}
-                  onClick={() => setConfirmingRemoval(false)}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button type="button" onClick={() => setConfirmingRemoval(true)}>
-                Remove Stage
-              </button>
-            )}
-          </section>
+              )}
+            </section>
+          )}
         </>
       )}
     </aside>

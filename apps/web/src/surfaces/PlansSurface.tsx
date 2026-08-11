@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { createLearningPlan, fetchLearningPlans } from "../api";
+import {
+  archiveLearningPlan,
+  createLearningPlan,
+  fetchLearningPlans,
+  restoreLearningPlan,
+} from "../api";
+import type { LearningPlan } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import {
   LearningPlansIndex,
@@ -56,6 +62,25 @@ export function PlansSurface() {
     [user],
   );
 
+  const changeLifecycle = useCallback(
+    async (learningPlan: LearningPlan, archived: boolean) => {
+      const changed = archived
+        ? await archiveLearningPlan(user, learningPlan.id)
+        : await restoreLearningPlan(user, learningPlan.id);
+      setState((current) =>
+        current.status === "ready"
+          ? {
+              status: "ready",
+              learningPlans: current.learningPlans.map((candidate) =>
+                candidate.id === changed.id ? changed : candidate,
+              ),
+            }
+          : current,
+      );
+    },
+    [user],
+  );
+
   return (
     <section aria-labelledby="home-heading">
       <h1 id="home-heading">Learning Plans</h1>
@@ -63,6 +88,8 @@ export function PlansSurface() {
         state={state}
         creating={creating}
         onCreate={create}
+        onArchive={(learningPlan) => changeLifecycle(learningPlan, true)}
+        onRestore={(learningPlan) => changeLifecycle(learningPlan, false)}
         onRetry={() => void refresh()}
       />
     </section>

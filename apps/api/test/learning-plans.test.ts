@@ -225,6 +225,189 @@ describe("LearningPlans at the HTTP boundary", () => {
     expect(read.total).toBe(2);
     expect(read.done).toBe(1);
   });
+
+  it("archives and restores a Learning Plan while deriving live progress from every placement", async () => {
+    const user = "learning-plans-lifecycle-user";
+    const learningPlan = (
+      await createLearningPlan(user, { name: "Lifecycle journey" })
+    ).body as LearningPlan;
+    const stage = (
+      await request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Grouped work" })
+    ).body as Stage;
+    const groupedItem = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Grouped Item", type: "article" })
+    ).body as { id: string };
+    const directItem = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Direct Item", type: "book" })
+    ).body as { id: string };
+    await addItemToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      itemId: groupedItem.id,
+    });
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/items`)
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: directItem.id });
+
+    const archived = await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, user);
+
+    expect(archived.status).toBe(200);
+    expect((archived.body as LearningPlan).archivedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T/,
+    );
+    expect(archived.body).toMatchObject({ done: 0, total: 2 });
+
+    await request(app)
+      .patch(`/api/items/${directItem.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" })
+      .expect(200);
+    const liveArchived = (
+      await getLearningPlan({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+      })
+    ).body as LearningPlan;
+    expect(liveArchived).toMatchObject({ done: 1, total: 2 });
+    expect(liveArchived.archivedAt).not.toBeNull();
+
+    await request(app)
+      .patch(`/api/items/${groupedItem.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" })
+      .expect(200);
+    const archivedTopology = (
+      await request(app)
+        .get(`/api/learning-plans/${learningPlan.id}/topology`)
+        .set(TEST_USER_HEADER, user)
+    ).body as LearningPlanView;
+    expect(archivedTopology.nodes).toContainEqual(
+      expect.objectContaining({ id: stage.id, done: 1, total: 1 }),
+    );
+    expect(
+      (
+        await getLearningPlan({
+          clerkUserId: user,
+          learningPlanId: learningPlan.id,
+        })
+      ).body,
+    ).toMatchObject({ done: 2, total: 2 });
+
+    const restored = await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/restore`)
+      .set(TEST_USER_HEADER, user);
+    expect(restored.status).toBe(200);
+    expect((restored.body as LearningPlan).archivedAt).toBeNull();
+  });
+
+  it("treats foreign and stale lifecycle requests as unavailable", async () => {
+    const owner = "learning-plans-lifecycle-owner";
+    const intruder = "learning-plans-lifecycle-intruder";
+    const learningPlan = (
+      await createLearningPlan(owner, { name: "Private lifecycle" })
+    ).body as LearningPlan;
+
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, intruder)
+      .expect(404);
+    await request(app)
+      .post("/api/learning-plans/00000000-0000-0000-0000-000000000000/restore")
+      .set(TEST_USER_HEADER, owner)
+      .expect(404);
+  });
+
+  it("refuses structural edits to an archived Learning Plan at the API and database boundaries", async () => {
+    const user = "learning-plans-archive-protection-user";
+    const learningPlan = (
+      await createLearningPlan(user, { name: "Protected journey" })
+    ).body as LearningPlan;
+    const firstStage = (
+      await request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "First Stage" })
+    ).body as Stage;
+    const secondStage = (
+      await request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Second Stage" })
+    ).body as Stage;
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Still shared", type: "course" })
+    ).body as { id: string };
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/edges`)
+      .set(TEST_USER_HEADER, user)
+      .send({ fromNodeId: firstStage.id, toNodeId: secondStage.id })
+      .expect(201);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+
+    const attempts = await Promise.all([
+      request(app)
+        .patch(`/api/learning-plans/${learningPlan.id}`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Changed" }),
+      request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Third Stage" }),
+      request(app)
+        .patch(`/api/stages/${firstStage.id}`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Changed Stage" }),
+      request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/items`)
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: item.id }),
+      request(app)
+        .delete(
+          `/api/learning-plans/${learningPlan.id}/edges/${firstStage.id}/${secondStage.id}`,
+        )
+        .set(TEST_USER_HEADER, user),
+    ]);
+    expect(attempts.map(({ status }) => status)).toEqual([
+      409, 409, 409, 409, 409,
+    ]);
+    for (const attempt of attempts) {
+      expect(attempt.body).toEqual({ error: "learning plan is archived" });
+    }
+
+    await expect(
+      harness.pool.query(`UPDATE stages SET name = 'Bypass' WHERE id = $1`, [
+        firstStage.id,
+      ]),
+    ).rejects.toThrow(/archived Learning Plan structure is read-only/);
+
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/restore`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+    await request(app)
+      .patch(`/api/learning-plans/${learningPlan.id}`)
+      .set(TEST_USER_HEADER, user)
+      .send({ name: "Changed after restore" })
+      .expect(200);
+  });
 });
 
 describe("a Stage belongs to exactly one LearningPlan (#94)", () => {

@@ -14,16 +14,19 @@ const learningPlan = ({
   name,
   done,
   total,
+  archivedAt = null,
 }: {
   id: string;
   name: string;
   done: number;
   total: number;
+  archivedAt?: string | null;
 }): LearningPlan => ({
   id: id as LearningPlanId,
   userId,
   name,
   createdAt: "2026-07-01T00:00:00.000Z",
+  archivedAt,
   done,
   total,
 });
@@ -35,6 +38,8 @@ const render = (state: LearningPlansIndexState) =>
         state={state}
         creating={false}
         onCreate={async () => undefined}
+        onArchive={async () => undefined}
+        onRestore={async () => undefined}
         onRetry={() => undefined}
       />
     </MemoryRouter>,
@@ -76,6 +81,33 @@ describe("Learning Plans index surface states", () => {
 
     expect(markup).toContain("No Learning Plans yet");
     expect(markup).toContain("Start a Learning Plan");
+  });
+
+  it("separates active and archived Learning Plans with explicit lifecycle actions", () => {
+    const markup = render({
+      status: "ready",
+      learningPlans: [
+        learningPlan({
+          id: "11111111-1111-1111-1111-111111111111",
+          name: "Active journey",
+          done: 1,
+          total: 2,
+        }),
+        learningPlan({
+          id: "22222222-2222-2222-2222-222222222222",
+          name: "Archived journey",
+          done: 0,
+          total: 0,
+          archivedAt: "2026-08-11T12:00:00.000Z",
+        }),
+      ],
+    });
+
+    expect(markup).toContain("Active Plans");
+    expect(markup).toContain("Archived Plans");
+    expect(markup).toContain("Archive Active journey");
+    expect(markup).toContain("Restore Archived journey");
+    expect(markup).toContain("No items added yet");
   });
 
   it("shows card-shaped skeletons while loading, not a spinner", () => {
