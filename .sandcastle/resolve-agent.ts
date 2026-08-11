@@ -157,8 +157,9 @@ const CAPABILITY_POLICY: Record<Capability, CapabilityPolicy> = {
 
 /**
  * Idle watchdog for every capability that sets one, nested inside the
- * workflow's outer 60-minute job timeout: fail the run if the agent produces no
- * output for 20 minutes. Raised from 600 alongside the Think-tier adoption of
+ * workflow's outer job timeout (60 minutes normally, 120 for PRD slices): fail
+ * the run if the agent produces no output for 20 minutes. Raised from 600
+ * alongside the Think-tier adoption of
  * `claude-fable-5` (#88), whose single turns can run for many minutes — one
  * knob here rather than a literal per runner.
  */
