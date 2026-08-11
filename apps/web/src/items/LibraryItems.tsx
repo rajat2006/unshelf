@@ -12,7 +12,7 @@ interface LibraryItemsProps {
 
 /**
  * The Library's triage-focused Item list. Placement lives in URL-owned Item and
- * Stop detail surfaces rather than competing with Status, Target date, and Labels.
+ * Stage detail surfaces rather than competing with Status, Target date, and Labels.
  */
 export function LibraryItems({
   items,

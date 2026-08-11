@@ -1,25 +1,27 @@
 import type {
-  AddStopItemRequest,
-  ConnectStopsRequest,
+  AddStageItemRequest,
+  ConnectLearningPlanNodesRequest,
   CreateItemRequest,
-  CreateStopRequest,
-  CreateStopWithItemRequest,
-  CreateTrailRequest,
+  CreateStageRequest,
+  CreateStageWithItemRequest,
+  CreateLearningPlanRequest,
   Item,
   ItemId,
   ItemPlacementCatalog,
   Label,
   LabelId,
   Status,
-  Stop,
-  StopDetail,
-  StopId,
-  StopItemCandidate,
-  Trail,
-  TrailId,
-  TrailView,
+  Stage,
+  StageDetail,
+  StageId,
+  StageItemCandidate,
+  LearningPlan,
+  LearningPlanId,
+  LearningPlanView,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
+  UpdateLearningPlanRequest,
+  UpdateStageRequest,
 } from "@unshelf/shared";
 import type { CurrentUser } from "./application-auth/types";
 
@@ -56,7 +58,7 @@ export async function fetchItem(
   return requestJson<Item>(user, `/api/items/${itemId}`);
 }
 
-/** Every Trail represented once for placement from one Item's sidebar. */
+/** Every LearningPlan represented once for placement from one Item's sidebar. */
 export async function fetchItemPlacements(
   user: CurrentUser,
   itemId: ItemId,
@@ -67,13 +69,13 @@ export async function fetchItemPlacements(
   );
 }
 
-/** Atomically create a loose Stop on a Trail with this Item as its first member. */
-export async function createStopWithItem(
+/** Atomically create a loose Stage on a LearningPlan with this Item as its first member. */
+export async function createStageWithItem(
   user: CurrentUser,
   itemId: ItemId,
-  input: CreateStopWithItemRequest,
-): Promise<StopDetail> {
-  return requestJson<StopDetail>(user, `/api/items/${itemId}/placements`, {
+  input: CreateStageWithItemRequest,
+): Promise<StageDetail> {
+  return requestJson<StageDetail>(user, `/api/items/${itemId}/placements`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -151,159 +153,217 @@ export async function removeLabelFromItem(
 }
 
 /**
- * Every Trail the current User owns, each with derived progress (ADR-0014). The
- * Trails index lists these; the layout is the api's, the order oldest-first.
+ * Every LearningPlan the current User owns, each with derived progress (ADR-0014). The
+ * Learning Plans index lists these; the layout is the api's, the order oldest-first.
  */
-export async function fetchTrails(user: CurrentUser): Promise<Trail[]> {
-  return requestJson<Trail[]>(user, "/api/trails");
+export async function fetchLearningPlans(
+  user: CurrentUser,
+): Promise<LearningPlan[]> {
+  return requestJson<LearningPlan[]>(user, "/api/learning-plans");
 }
 
-/** Create a Trail. It starts with no Stops, so it reads back at 0/0 progress. */
-export async function createTrail(
+/** Create a LearningPlan. It starts with no Stages, so it reads back at 0/0 progress. */
+export async function createLearningPlan(
   user: CurrentUser,
-  input: CreateTrailRequest,
-): Promise<Trail> {
-  return requestJson<Trail>(user, "/api/trails", {
+  input: CreateLearningPlanRequest,
+): Promise<LearningPlan> {
+  return requestJson<LearningPlan>(user, "/api/learning-plans", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-/** Every Stop belonging to the current User. */
-export async function fetchStops(user: CurrentUser): Promise<Stop[]> {
-  return requestJson<Stop[]>(user, "/api/stops");
+/** Read one Learning Plan's durable identity and name. */
+export async function fetchLearningPlanRecord(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+): Promise<LearningPlan> {
+  return requestJson<LearningPlan>(
+    user,
+    `/api/learning-plans/${learningPlanId}`,
+  );
+}
+
+/** Rename a Learning Plan without changing its identity or topology. */
+export async function updateLearningPlan(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+  input: UpdateLearningPlanRequest,
+): Promise<LearningPlan> {
+  return requestJson<LearningPlan>(
+    user,
+    `/api/learning-plans/${learningPlanId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Every Stage belonging to the current User. */
+export async function fetchStages(user: CurrentUser): Promise<Stage[]> {
+  return requestJson<Stage[]>(user, "/api/stages");
 }
 
 /**
- * Create a Stop on one Trail — a Stop belongs to exactly one Trail (ADR-0014,
- * #94), so creation names the Trail it lands on. It starts empty; Items are
+ * Create a Stage on one LearningPlan — a Stage belongs to exactly one LearningPlan (ADR-0014,
+ * #94), so creation names the LearningPlan it lands on. It starts empty; Items are
  * pulled into it from the Library.
  */
-export async function createStop(
+export async function createStage(
   user: CurrentUser,
-  trailId: TrailId,
-  input: CreateStopRequest,
-): Promise<Stop> {
-  return requestJson<Stop>(user, `/api/trails/${trailId}/stops`, {
-    method: "POST",
+  learningPlanId: LearningPlanId,
+  input: CreateStageRequest,
+): Promise<Stage> {
+  return requestJson<Stage>(
+    user,
+    `/api/learning-plans/${learningPlanId}/stages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** One Stage with its Items, each carrying the Status every view of it shares. */
+export async function fetchStage(
+  user: CurrentUser,
+  stageId: StageId,
+): Promise<StageDetail> {
+  return requestJson<StageDetail>(user, `/api/stages/${stageId}`);
+}
+
+/** Rename a Stage without changing its node identity or ordered Items. */
+export async function updateStage(
+  user: CurrentUser,
+  stageId: StageId,
+  input: UpdateStageRequest,
+): Promise<StageDetail> {
+  return requestJson<StageDetail>(user, `/api/stages/${stageId}`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-/** One Stop with its Items, each carrying the Status every view of it shares. */
-export async function fetchStop(
+/** Read a Stage only in the LearningPlan context named by its detail URL. */
+export async function fetchLearningPlanStage(
   user: CurrentUser,
-  stopId: StopId,
-): Promise<StopDetail> {
-  return requestJson<StopDetail>(user, `/api/stops/${stopId}`);
-}
-
-/** Read a Stop only in the Trail context named by its detail URL. */
-export async function fetchTrailStop(
-  user: CurrentUser,
-  trailId: TrailId,
-  stopId: StopId,
-): Promise<StopDetail> {
-  return requestJson<StopDetail>(
+  learningPlanId: LearningPlanId,
+  stageId: StageId,
+): Promise<StageDetail> {
+  return requestJson<StageDetail>(
     user,
-    `/api/trails/${trailId}/stops/${stopId}`,
+    `/api/learning-plans/${learningPlanId}/stages/${stageId}`,
   );
 }
 
 /**
- * Place an Item into a Stop — a reference, never a copy, so the Item stays in
- * the Library. It may appear on several Trails, but only once on each Trail.
+ * Place an Item into a Stage — a reference, never a copy, so the Item stays in
+ * the Library. It may appear on several LearningPlans, but only once on each LearningPlan.
  */
-export async function addItemToStop(
+export async function addItemToStage(
   user: CurrentUser,
-  stopId: StopId,
+  stageId: StageId,
   itemId: ItemId,
-): Promise<StopDetail> {
-  const body: AddStopItemRequest = { itemId };
-  return requestJson<StopDetail>(user, `/api/stops/${stopId}/items`, {
+): Promise<StageDetail> {
+  const body: AddStageItemRequest = { itemId };
+  return requestJson<StageDetail>(user, `/api/stages/${stageId}/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-/** Search the compact Library intake beneath one open Stop. */
-export async function fetchStopItemCandidates(
+/** Search the compact Library intake beneath one open Stage. */
+export async function fetchStageItemCandidates(
   user: CurrentUser,
-  stopId: StopId,
+  stageId: StageId,
   query: string,
-): Promise<StopItemCandidate[]> {
+): Promise<StageItemCandidate[]> {
   const search = new URLSearchParams();
   if (query) search.set("query", query);
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return requestJson<StopItemCandidate[]>(
+  return requestJson<StageItemCandidate[]>(
     user,
-    `/api/stops/${stopId}/items${suffix}`,
+    `/api/stages/${stageId}/items${suffix}`,
   );
 }
 
 /**
- * Take an Item out of a Stop. Only the membership goes — the Item itself, its
- * Status, and its other Stops are untouched. Returns the Stop's new contents.
+ * Take an Item out of a Stage. Only the membership goes — the Item itself, its
+ * Status, and its other Stages are untouched. Returns the Stage's new contents.
  */
-export async function removeItemFromStop(
+export async function removeItemFromStage(
   user: CurrentUser,
-  stopId: StopId,
+  stageId: StageId,
   itemId: ItemId,
-): Promise<StopDetail> {
-  return requestJson<StopDetail>(user, `/api/stops/${stopId}/items/${itemId}`, {
-    method: "DELETE",
-  });
+): Promise<StageDetail> {
+  return requestJson<StageDetail>(
+    user,
+    `/api/stages/${stageId}/items/${itemId}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 /**
- * One Trail's topology — its Stops as nodes with derived progress, and every
- * Stop-to-Stop edge between them (ADR-0010, scoped per Trail by #94). The client
- * derives the layout from the edges, since the Trail stores no position.
+ * One LearningPlan's topology — its Stages as nodes with derived progress, and every
+ * Stage-to-Stage edge between them (ADR-0010, scoped per LearningPlan by #94). The client
+ * derives the layout from the edges, since the LearningPlan stores no position.
  */
-export async function fetchTrail(
+export async function fetchLearningPlan(
   user: CurrentUser,
-  trailId: TrailId,
-): Promise<TrailView> {
-  return requestJson<TrailView>(user, `/api/trails/${trailId}/topology`);
+  learningPlanId: LearningPlanId,
+): Promise<LearningPlanView> {
+  return requestJson<LearningPlanView>(
+    user,
+    `/api/learning-plans/${learningPlanId}/topology`,
+  );
 }
 
 /**
- * Draw one edge on a Trail — place `fromStopId` ahead of `toStopId`. The api
- * refuses a link that would close a cycle (409) or touch a foreign, cross-Trail,
- * or unknown Stop (404); on success it returns the Trail's new topology. Adding an
+ * Draw one edge on a LearningPlan — place `fromNodeId` ahead of `toNodeId`. The api
+ * refuses a link that would close a cycle (409) or touch a foreign, cross-LearningPlan,
+ * or unknown Stage (404); on success it returns the LearningPlan's new topology. Adding an
  * edge that already exists changes nothing.
  */
-export async function connectStops(
+export async function connectLearningPlanNodes(
   user: CurrentUser,
-  trailId: TrailId,
-  fromStopId: StopId,
-  toStopId: StopId,
-): Promise<TrailView> {
-  const body: ConnectStopsRequest = { fromStopId, toStopId };
-  return requestJson<TrailView>(user, `/api/trails/${trailId}/edges`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  learningPlanId: LearningPlanId,
+  fromNodeId: StageId,
+  toNodeId: StageId,
+): Promise<LearningPlanView> {
+  const body: ConnectLearningPlanNodesRequest = { fromNodeId, toNodeId };
+  return requestJson<LearningPlanView>(
+    user,
+    `/api/learning-plans/${learningPlanId}/edges`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 /**
- * Erase one edge on a Trail, returning its new topology. Only the link goes —
- * both Stops keep their place and every other edge — which is what makes rewiring
- * free: moving a Stop is an erase and a redraw.
+ * Erase one edge on a LearningPlan, returning its new topology. Only the link goes —
+ * both Stages keep their place and every other edge — which is what makes rewiring
+ * free: moving a Stage is an erase and a redraw.
  */
-export async function disconnectStops(
+export async function disconnectLearningPlanNodes(
   user: CurrentUser,
-  trailId: TrailId,
-  fromStopId: StopId,
-  toStopId: StopId,
-): Promise<TrailView> {
-  return requestJson<TrailView>(
+  learningPlanId: LearningPlanId,
+  fromNodeId: StageId,
+  toNodeId: StageId,
+): Promise<LearningPlanView> {
+  return requestJson<LearningPlanView>(
     user,
-    `/api/trails/${trailId}/edges/${fromStopId}/${toStopId}`,
+    `/api/learning-plans/${learningPlanId}/edges/${fromNodeId}/${toNodeId}`,
     { method: "DELETE" },
   );
 }

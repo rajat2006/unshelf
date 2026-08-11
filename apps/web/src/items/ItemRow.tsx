@@ -13,8 +13,8 @@ interface ItemRowProps {
   user: CurrentUser;
   onChanged: (item: Item) => void;
   /**
-   * What this particular list does with the Item — pull it into a Stop in Library,
-   * take it out again inside a Stop. The only part of a row that varies.
+   * What this particular list does with the Item — pull it into a Stage in Library,
+   * take it out again inside a Stage. The only part of a row that varies.
    */
   children?: ReactNode;
 }
@@ -22,11 +22,11 @@ interface ItemRowProps {
 /**
  * One Item, rendered the same way everywhere it appears.
  *
- * This exists because an Item in a Stop and an Item in Library are the *same record*
+ * This exists because an Item in a Stage and an Item in Library are the *same record*
  * seen twice, not two records (ADR-0003, ADR-0004) — so showing it two different
  * ways would be the UI quietly disagreeing with the model. One component makes
  * that structural: the Status and the Target date are shared facts about the
- * Item, and a Stop cannot render a partial Item by omission, because there is
+ * Item, and a Stage cannot render a partial Item by omission, because there is
  * nowhere left to omit them from.
  */
 export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
@@ -36,11 +36,11 @@ export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
     location.pathname.startsWith("/items/") && preservedBackground
       ? preservedBackground
       : location;
-  const trailPath = originLocation.pathname.match(
-    /^(\/trails\/[^/]+)\/stops\/[^/]+$/,
+  const learningPlanPath = originLocation.pathname.match(
+    /^(\/plans\/[^/]+)\/stages\/[^/]+$/,
   )?.[1];
-  const backgroundLocation = trailPath
-    ? { ...originLocation, pathname: trailPath, search: "", hash: "" }
+  const backgroundLocation = learningPlanPath
+    ? { ...originLocation, pathname: learningPlanPath, search: "", hash: "" }
     : originLocation;
 
   return (

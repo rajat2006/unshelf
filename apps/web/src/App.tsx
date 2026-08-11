@@ -13,10 +13,10 @@ import { AuthPlaceholder } from "./shell/AuthPlaceholder";
 import { NotFound } from "./shell/NotFound";
 import { Shell } from "./shell/Shell";
 import { SignInScreen } from "./shell/SignInScreen";
-import { HomeSurface } from "./surfaces/HomeSurface";
+import { PlansSurface } from "./surfaces/PlansSurface";
 import { ItemSurface } from "./surfaces/ItemSurface";
 import { LibrarySurface } from "./surfaces/LibrarySurface";
-import { TrailSurface } from "./surfaces/TrailSurface";
+import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
 
 /**
  * The routed Unshelf shell (design spec §3–§5, ADR-0013).
@@ -40,15 +40,19 @@ export function App() {
       <Route path="/sign-in" element={<SignInRoute />} />
       <Route element={<RequireAuth />}>
         <Route element={<Shell />}>
-          <Route index element={<HomeSurface />} />
+          <Route index element={<Navigate to="/plans" replace />} />
+          <Route path="plans" element={<PlansSurface />} />
           <Route
             path="library"
             element={<LibrarySurface labelFilterEnabled />}
           />
-          <Route path="trails/:trailId" element={<TrailSurface />} />
           <Route
-            path="trails/:trailId/stops/:stopId"
-            element={<TrailSurface />}
+            path="plans/:learningPlanId"
+            element={<LearningPlanSurface />}
+          />
+          <Route
+            path="plans/:learningPlanId/stages/:stageId"
+            element={<LearningPlanSurface />}
           />
           <Route path="items/:itemId" element={<ItemSurface />} />
           <Route path="*" element={<NotFound />} />
@@ -84,7 +88,7 @@ function SignInRoute() {
   const intended = (location.state as { from?: Location } | null)?.from;
   const destination = intended
     ? `${intended.pathname}${intended.search}${intended.hash}`
-    : "/";
+    : "/plans";
 
   useEffect(() => {
     if (status === "signed-in") {

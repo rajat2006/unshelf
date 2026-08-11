@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  addStopItemRequestSchema,
-  connectStopsRequestSchema,
+  addStageItemRequestSchema,
+  connectLearningPlanNodesRequestSchema,
   createItemRequestSchema,
   createLabelRequestSchema,
-  createStopRequestSchema,
-  createTrailRequestSchema,
+  createLearningPlanRequestSchema,
+  createStageRequestSchema,
   itemIdSchema,
   labelIdSchema,
-  stopIdSchema,
-  trailIdSchema,
+  learningPlanIdSchema,
+  stageIdSchema,
   updateItemStatusRequestSchema,
   updateItemTargetDateRequestSchema,
   userIdSchema,
@@ -20,8 +20,8 @@ const uuid = "123e4567-e89b-42d3-a456-426614174000";
 describe("named record request schemas", () => {
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("normalizes a %s name at the contract boundary", (_record, schema) => {
     expect(schema.parse({ name: "  Learn   CSS  " })).toEqual({
       name: "Learn   CSS",
@@ -30,16 +30,16 @@ describe("named record request schemas", () => {
 
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("rejects a blank %s name", (_record, schema) => {
     expect(schema.safeParse({ name: " \t " }).success).toBe(false);
   });
 
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("rejects undeclared %s fields", (_record, schema) => {
     expect(schema.safeParse({ name: "CSS", typo: true }).success).toBe(false);
   });
@@ -162,8 +162,8 @@ describe("identifier schemas", () => {
   it.each([
     ["User", userIdSchema],
     ["Item", itemIdSchema],
-    ["Stop", stopIdSchema],
-    ["Trail", trailIdSchema],
+    ["Stage", stageIdSchema],
+    ["Learning Plan", learningPlanIdSchema],
     ["Label", labelIdSchema],
   ])("returns a validated %s identifier", (_identifier, schema) => {
     expect(schema.parse(uuid)).toBe(uuid);
@@ -172,46 +172,50 @@ describe("identifier schemas", () => {
 });
 
 describe("identifier-bearing request schemas", () => {
-  it("returns a validated Item before it can be added to a Stop", () => {
-    expect(addStopItemRequestSchema.parse({ itemId: uuid })).toEqual({
+  it("returns a validated Item before it can be added to a Stage", () => {
+    expect(addStageItemRequestSchema.parse({ itemId: uuid })).toEqual({
       itemId: uuid,
     });
   });
 
-  it("rejects a malformed Item before adding it to a Stop", () => {
+  it("rejects a malformed Item before adding it to a Stage", () => {
     expect(
-      addStopItemRequestSchema.safeParse({ itemId: "not-a-uuid" }).success,
+      addStageItemRequestSchema.safeParse({ itemId: "not-a-uuid" }).success,
     ).toBe(false);
   });
 
-  it("rejects undeclared add-to-Stop fields", () => {
+  it("rejects undeclared add-to-Stage fields", () => {
     expect(
-      addStopItemRequestSchema.safeParse({ itemId: uuid, position: 1 }).success,
+      addStageItemRequestSchema.safeParse({ itemId: uuid, position: 1 })
+        .success,
     ).toBe(false);
   });
 
-  it("returns both validated ends of a Trail edge", () => {
-    const toStopId = "123e4567-e89b-42d3-a456-426614174001";
+  it("returns both validated ends of a Learning Plan edge", () => {
+    const toNodeId = "123e4567-e89b-42d3-a456-426614174001";
     expect(
-      connectStopsRequestSchema.parse({ fromStopId: uuid, toStopId }),
-    ).toEqual({ fromStopId: uuid, toStopId });
+      connectLearningPlanNodesRequestSchema.parse({
+        fromNodeId: uuid,
+        toNodeId,
+      }),
+    ).toEqual({ fromNodeId: uuid, toNodeId });
   });
 
-  it("rejects a malformed Trail edge end", () => {
+  it("rejects a malformed Learning Plan edge end", () => {
     expect(
-      connectStopsRequestSchema.safeParse({
-        fromStopId: uuid,
-        toStopId: "not-a-uuid",
+      connectLearningPlanNodesRequestSchema.safeParse({
+        fromNodeId: uuid,
+        toNodeId: "not-a-uuid",
       }).success,
     ).toBe(false);
   });
 
-  it("rejects undeclared Trail edge fields", () => {
-    const toStopId = "123e4567-e89b-42d3-a456-426614174001";
+  it("rejects undeclared Learning Plan edge fields", () => {
+    const toNodeId = "123e4567-e89b-42d3-a456-426614174001";
     expect(
-      connectStopsRequestSchema.safeParse({
-        fromStopId: uuid,
-        toStopId,
+      connectLearningPlanNodesRequestSchema.safeParse({
+        fromNodeId: uuid,
+        toNodeId,
         position: 1,
       }).success,
     ).toBe(false);

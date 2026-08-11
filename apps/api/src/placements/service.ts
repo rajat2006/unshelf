@@ -2,29 +2,29 @@ import { and, asc, eq, ilike, inArray, notExists, sql } from "drizzle-orm";
 import type {
   ItemId,
   ItemPlacementCatalog,
-  ItemPlacementTrail,
-  StopItemCandidate,
-  StopDetail,
-  StopId,
-  TrailId,
+  ItemPlacementLearningPlan,
+  StageItemCandidate,
+  StageDetail,
+  StageId,
+  LearningPlanId,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
-import { items, stopItems, stops, trails } from "../schema";
-import { getStop } from "../stops/repository";
+import { items, stageItems, stages, learningPlans } from "../schema";
+import { getStage } from "../stages/repository";
 
 export {
-  createStopWithItem,
-  type CreateStopWithItemResult,
-} from "./create-stop-with-item";
+  createStageWithItem,
+  type CreateStageWithItemResult,
+} from "./create-stage-with-item";
 
-export type PlaceItemInStopResult =
-  | { ok: true; stop: StopDetail }
+export type PlaceItemInStageResult =
+  | { ok: true; stage: StageDetail }
   | { ok: false; error: "not_found" | "conflict" };
 
-interface PlaceItemInStopInput {
+interface PlaceItemInStageInput {
   userId: UserId;
-  stopId: StopId;
+  stageId: StageId;
   itemId: ItemId;
 }
 
@@ -32,10 +32,10 @@ const escapeLikePattern = (value: string) =>
   value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
 /**
- * Read every owned Trail exactly once for one owned Item.
+ * Read every owned LearningPlan exactly once for one owned Item.
  *
- * A Trail already containing the Item is mutually exclusive with its destination
- * list, while every other Trail remains available even when it has no Stops yet.
+ * A LearningPlan already containing the Item is mutually exclusive with its destination
+ * list, while every other LearningPlan remains available even when it has no Stages yet.
  */
 export async function getItemPlacementCatalog(
   db: Database,
@@ -48,80 +48,83 @@ export async function getItemPlacementCatalog(
     .limit(1);
   if (!ownedItem) return null;
 
-  const trailRows = await db
-    .select({ id: trails.id, name: trails.name })
-    .from(trails)
-    .where(eq(trails.userId, input.userId))
-    .orderBy(asc(trails.createdAt), asc(trails.id));
-  const stopRows = await db
+  const learningPlanRows = await db
+    .select({ id: learningPlans.id, name: learningPlans.name })
+    .from(learningPlans)
+    .where(eq(learningPlans.userId, input.userId))
+    .orderBy(asc(learningPlans.createdAt), asc(learningPlans.id));
+  const stageRows = await db
     .select({
-      id: stops.id,
-      name: stops.name,
-      trailId: stops.trailId,
+      id: stages.id,
+      name: stages.name,
+      learningPlanId: stages.learningPlanId,
       placed: sql<boolean>`exists (
         select 1
-        from ${stopItems}
-        where ${stopItems.stopId} = ${stops.id}
-          and ${stopItems.itemId} = ${input.itemId}
-          and ${stopItems.userId} = ${input.userId}
+        from ${stageItems}
+        where ${stageItems.stageId} = ${stages.id}
+          and ${stageItems.itemId} = ${input.itemId}
+          and ${stageItems.userId} = ${input.userId}
       )`,
     })
-    .from(stops)
-    .where(eq(stops.userId, input.userId))
-    .orderBy(asc(stops.name), asc(stops.id));
+    .from(stages)
+    .where(eq(stages.userId, input.userId))
+    .orderBy(asc(stages.name), asc(stages.id));
 
-  const catalogTrails: ItemPlacementTrail[] = trailRows.map((trail) => {
-    const trailStops = stopRows.filter((stop) => stop.trailId === trail.id);
-    const placed = trailStops.find((stop) => stop.placed);
-    const trailIdentity = {
-      id: trail.id as TrailId,
-      name: trail.name,
-    };
-    if (placed) {
-      return {
-        kind: "placed",
-        trail: trailIdentity,
-        stop: { id: placed.id as StopId, name: placed.name },
+  const catalogLearningPlans: ItemPlacementLearningPlan[] =
+    learningPlanRows.map((learningPlan) => {
+      const learningPlanStages = stageRows.filter(
+        (stage) => stage.learningPlanId === learningPlan.id,
+      );
+      const placed = learningPlanStages.find((stage) => stage.placed);
+      const learningPlanIdentity = {
+        id: learningPlan.id as LearningPlanId,
+        name: learningPlan.name,
       };
-    }
-    return {
-      kind: "available",
-      trail: trailIdentity,
-      stops: trailStops.map((stop) => ({
-        id: stop.id as StopId,
-        name: stop.name,
-      })),
-    };
-  });
+      if (placed) {
+        return {
+          kind: "placed",
+          learningPlan: learningPlanIdentity,
+          stage: { id: placed.id as StageId, name: placed.name },
+        };
+      }
+      return {
+        kind: "available",
+        learningPlan: learningPlanIdentity,
+        stages: learningPlanStages.map((stage) => ({
+          id: stage.id as StageId,
+          name: stage.name,
+        })),
+      };
+    });
 
-  return { itemId: input.itemId, trails: catalogTrails };
+  return { itemId: input.itemId, learningPlans: catalogLearningPlans };
 }
 
 /**
- * Search the owned Library beneath one owned Stop.
+ * Search the owned Library beneath one owned Stage.
  *
- * Current members are absent because the Stop renders them above this intake.
+ * Current members are absent because the Stage renders them above this intake.
  * The capped result is presentation-ordered by title and stable Item identity.
  */
-export async function searchStopItemCandidates(
+export async function searchStageItemCandidates(
   db: Database,
-  input: { userId: UserId; stopId: StopId; query: string },
-): Promise<StopItemCandidate[] | null> {
+  input: { userId: UserId; stageId: StageId; query: string },
+): Promise<StageItemCandidate[] | null> {
   const [destination] = await db
-    .select({ trailId: stops.trailId })
-    .from(stops)
-    .where(and(eq(stops.id, input.stopId), eq(stops.userId, input.userId)))
+    .select({ learningPlanId: stages.learningPlanId })
+    .from(stages)
+    .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
     .limit(1);
   if (!destination) return null;
 
   const currentMembership = db
-    .select({ itemId: stopItems.itemId })
-    .from(stopItems)
+    .select({ itemId: stageItems.itemId })
+    .from(stageItems)
     .where(
       and(
-        eq(stopItems.stopId, input.stopId),
-        eq(stopItems.itemId, items.id),
-        eq(stopItems.userId, input.userId),
+        eq(stageItems.stageId, input.stageId),
+        eq(stageItems.itemId, items.id),
+        eq(stageItems.userId, input.userId),
       ),
     );
   const predicates = [
@@ -142,18 +145,18 @@ export async function searchStopItemCandidates(
 
   const conflicts = await db
     .select({
-      itemId: stopItems.itemId,
-      stopId: stops.id,
-      stopName: stops.name,
+      itemId: stageItems.itemId,
+      stageId: stages.id,
+      stageName: stages.name,
     })
-    .from(stopItems)
-    .innerJoin(stops, eq(stops.id, stopItems.stopId))
+    .from(stageItems)
+    .innerJoin(stages, eq(stages.id, stageItems.stageId))
     .where(
       and(
-        eq(stopItems.userId, input.userId),
-        eq(stopItems.trailId, destination.trailId),
+        eq(stageItems.userId, input.userId),
+        eq(stageItems.learningPlanId, destination.learningPlanId),
         inArray(
-          stopItems.itemId,
+          stageItems.itemId,
           candidates.map(({ id }) => id),
         ),
       ),
@@ -169,9 +172,9 @@ export async function searchStopItemCandidates(
           kind: "conflict",
           ...candidate,
           id: candidate.id as ItemId,
-          stop: {
-            id: conflict.stopId as StopId,
-            name: conflict.stopName,
+          stage: {
+            id: conflict.stageId as StageId,
+            name: conflict.stageName,
           },
         }
       : {
@@ -183,91 +186,96 @@ export async function searchStopItemCandidates(
 }
 
 /**
- * Place one owned Item into one owned Stop.
+ * Place one owned Item into one owned Stage.
  *
- * An Item can appear on several Trails, but only once on any one Trail. A repeat
- * placement into the same Stop is idempotent; another Stop on that Trail is a
+ * An Item can appear on several LearningPlans, but only once on any one LearningPlan. A repeat
+ * placement into the same Stage is idempotent; another Stage on that LearningPlan is a
  * conflict that leaves the first membership untouched.
  */
-export async function placeItemInStop(
+export async function placeItemInStage(
   db: Database,
-  input: PlaceItemInStopInput,
-): Promise<PlaceItemInStopResult> {
+  input: PlaceItemInStageInput,
+): Promise<PlaceItemInStageResult> {
   const [destination] = await db
-    .select({ trailId: stops.trailId })
-    .from(stops)
+    .select({ learningPlanId: stages.learningPlanId })
+    .from(stages)
     .innerJoin(
       items,
       and(eq(items.id, input.itemId), eq(items.userId, input.userId)),
     )
-    .where(and(eq(stops.id, input.stopId), eq(stops.userId, input.userId)))
+    .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
     .limit(1);
   if (!destination) return { ok: false, error: "not_found" };
 
   const [existing] = await db
-    .select({ stopId: stopItems.stopId })
-    .from(stopItems)
+    .select({ stageId: stageItems.stageId })
+    .from(stageItems)
     .where(
       and(
-        eq(stopItems.itemId, input.itemId),
-        eq(stopItems.userId, input.userId),
-        eq(stopItems.trailId, destination.trailId),
+        eq(stageItems.itemId, input.itemId),
+        eq(stageItems.userId, input.userId),
+        eq(stageItems.learningPlanId, destination.learningPlanId),
       ),
     )
     .limit(1);
 
-  if (existing && existing.stopId !== input.stopId) {
+  if (existing && existing.stageId !== input.stageId) {
     return { ok: false, error: "conflict" };
   }
 
   if (!existing) {
     await db
-      .insert(stopItems)
+      .insert(stageItems)
       .values({
         userId: input.userId,
-        stopId: input.stopId,
+        stageId: input.stageId,
         itemId: input.itemId,
-        trailId: destination.trailId,
+        learningPlanId: destination.learningPlanId,
+        position: sql<number>`coalesce((
+          select max(${stageItems.position})
+          from ${stageItems}
+          where ${stageItems.stageId} = ${input.stageId}
+        ), -1) + 1`,
       })
       .onConflictDoNothing();
 
     const [settled] = await db
-      .select({ stopId: stopItems.stopId })
-      .from(stopItems)
+      .select({ stageId: stageItems.stageId })
+      .from(stageItems)
       .where(
         and(
-          eq(stopItems.itemId, input.itemId),
-          eq(stopItems.userId, input.userId),
-          eq(stopItems.trailId, destination.trailId),
+          eq(stageItems.itemId, input.itemId),
+          eq(stageItems.userId, input.userId),
+          eq(stageItems.learningPlanId, destination.learningPlanId),
         ),
       )
       .limit(1);
-    if (settled?.stopId !== input.stopId) {
+    if (settled?.stageId !== input.stageId) {
       return { ok: false, error: "conflict" };
     }
   }
 
-  const stop = await getStop(db, input.userId, input.stopId);
-  return stop ? { ok: true, stop } : { ok: false, error: "not_found" };
+  const stage = await getStage(db, input.userId, input.stageId);
+  return stage ? { ok: true, stage } : { ok: false, error: "not_found" };
 }
 
 /**
- * Remove one Item–Stop membership without changing the Item or its placements on
- * other Trails. Repeating removal is idempotent; only a missing or foreign Stop
+ * Remove one Item–Stage membership without changing the Item or its placements on
+ * other LearningPlans. Repeating removal is idempotent; only a missing or foreign Stage
  * fails the private boundary.
  */
-export async function removeItemFromStop(
+export async function removeItemFromStage(
   db: Database,
-  input: { userId: UserId; stopId: StopId; itemId: ItemId },
-): Promise<StopDetail | null> {
+  input: { userId: UserId; stageId: StageId; itemId: ItemId },
+): Promise<StageDetail | null> {
   await db
-    .delete(stopItems)
+    .delete(stageItems)
     .where(
       and(
-        eq(stopItems.stopId, input.stopId),
-        eq(stopItems.itemId, input.itemId),
-        eq(stopItems.userId, input.userId),
+        eq(stageItems.stageId, input.stageId),
+        eq(stageItems.itemId, input.itemId),
+        eq(stageItems.userId, input.userId),
       ),
     );
-  return getStop(db, input.userId, input.stopId);
+  return getStage(db, input.userId, input.stageId);
 }

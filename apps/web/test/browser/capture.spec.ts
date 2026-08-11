@@ -29,9 +29,9 @@ function composer(page: Page) {
 // Every signed-in surface carries the same global Capture action, and opening it
 // never changes the route — it opens over wherever the User already was.
 for (const surface of [
-  { name: "Trails index", path: "/" },
+  { name: "Learning Plans index", path: "/plans" },
   { name: "Library", path: "/library" },
-  { name: "a Trail", path: "/trails/trail-1" },
+  { name: "a LearningPlan", path: "/plans/learning-plan-1" },
   { name: "an Item", path: "/items/item-1" },
 ]) {
   test(`Capture opens over ${surface.name} without changing the URL`, async ({
@@ -44,7 +44,7 @@ for (const surface of [
     await expect(composer(page)).toBeVisible();
     expect(page.url()).toBe(urlBefore);
 
-    // The composer names its destination: intake lands in the Library, not a Trail.
+    // The composer names its destination: intake lands in the Library, not a LearningPlan.
     await expect(
       composer(page).getByText(/land in your Library/),
     ).toBeVisible();
@@ -59,7 +59,7 @@ for (const surface of [
 test("Command/Ctrl+K opens Capture when focus is not in an editable control", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await expect(composer(page)).toBeHidden();
 
   await page.keyboard.press("Control+k");
@@ -69,7 +69,7 @@ test("Command/Ctrl+K opens Capture when focus is not in an editable control", as
 test("the c shortcut opens Capture when focus is not in an editable control", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await expect(composer(page)).toBeHidden();
 
   await page.keyboard.press("c");
@@ -79,9 +79,9 @@ test("the c shortcut opens Capture when focus is not in an editable control", as
 test("shortcuts are suppressed while focus is in an editable control", async ({
   page,
 }, testInfo) => {
-  // Home carries an editable field (the Trail-name composer); focus it.
-  await page.goto(appUrl(testInfo, "/"));
-  const field = page.getByLabel("Trail name");
+  // Home carries an editable field (the LearningPlan-name composer); focus it.
+  await page.goto(appUrl(testInfo, "/plans"));
+  const field = page.getByLabel("Learning Plan name");
   await field.click();
   await page.keyboard.press("c");
   await expect(composer(page)).toBeHidden();
@@ -139,7 +139,7 @@ test("Capture preserves Source verbatim and allows duplicate Sources", async ({
 test("validation keeps an incomplete capture inside the overlay", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await captureButton(page).click();
   const dialog = composer(page);
 

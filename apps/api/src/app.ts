@@ -5,8 +5,8 @@ import type { Database } from "./db";
 import { healthCheck } from "./schema";
 import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
-import { createStopsRouter } from "./stops/router";
-import { createTrailsRouter } from "./trails/router";
+import { createStagesRouter } from "./stages/router";
+import { createLearningPlansRouter } from "./learning-plans/router";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -77,8 +77,12 @@ export function createApp(
 
   app.use("/api/items", captureRouteMount, createItemsRouter(db, auth));
   app.use("/api/labels", captureRouteMount, createLabelsRouter(db, auth));
-  app.use("/api/stops", captureRouteMount, createStopsRouter(db, auth));
-  app.use("/api/trails", captureRouteMount, createTrailsRouter(db, auth));
+  app.use("/api/stages", captureRouteMount, createStagesRouter(db, auth));
+  app.use(
+    "/api/learning-plans",
+    captureRouteMount,
+    createLearningPlansRouter(db, auth),
+  );
   app.use(markRoutingResolved);
   app.use(
     createApiErrorHandler({

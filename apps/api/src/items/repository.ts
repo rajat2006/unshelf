@@ -28,8 +28,8 @@ export interface ItemRow {
 /**
  * Every read of an Item goes through this one projection, so *past target* is
  * computed the same way everywhere and can never disagree with itself. Reading an
- * Item inside a Stop is the same read as reading it in All — the Stop repository
- * imports this rather than writing its own, so a Stop can never show a User an
+ * Item inside a Stage is the same read as reading it in All — the Stage repository
+ * imports this rather than writing its own, so a Stage can never show a User an
  * Item that disagrees with All about its own state.
  *
  * It is derived here, in the read, rather than stored (ADR-0005): the state is a
@@ -38,7 +38,7 @@ export interface ItemRow {
  * stale. `COALESCE` makes a missing date simply not past, rather than unknown.
  * "Today" is the database's, the single clock all Users are compared against.
  *
- * Columns are qualified against `items`; Stop and Label membership stay in
+ * Columns are qualified against `items`; Stage and Label membership stay in
  * subqueries so this projection still reads the same shared Item at every seam.
  */
 export const ITEM_PROJECTION = {

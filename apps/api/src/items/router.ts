@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import {
   createItemRequestSchema,
-  createStopWithItemRequestSchema,
+  createStageWithItemRequestSchema,
   itemIdSchema,
   labelIdSchema,
   updateItemStatusRequestSchema,
@@ -11,7 +11,7 @@ import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
 import { respondToPlacementFailure } from "../placements/http";
 import {
-  createStopWithItem,
+  createStageWithItem,
   getItemPlacementCatalog,
 } from "../placements/service";
 import {
@@ -68,14 +68,14 @@ export function createItemsRouter(
     "/:itemId/placements",
     validateRequest(
       {
-        body: createStopWithItemRequestSchema,
+        body: createStageWithItemRequestSchema,
         params: { itemId: itemIdSchema },
       },
-      "invalid_stop_name",
+      "invalid_stage_name",
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const result = await createStopWithItem(db, {
+      const result = await createStageWithItem(db, {
         userId: req.user!.id,
         itemId: params.itemId,
         placement: body,
@@ -84,11 +84,11 @@ export function createItemsRouter(
         respondToPlacementFailure({
           response: res,
           failure: result,
-          notFoundMessage: "item or trail not found",
+          notFoundMessage: "item or learning plan not found",
         });
         return;
       }
-      res.status(201).json(result.stop);
+      res.status(201).json(result.stage);
     },
   );
 

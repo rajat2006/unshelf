@@ -7,40 +7,63 @@ async function expectNoAccessibilityViolations(page: Page): Promise<void> {
   expect(results.violations).toEqual([]);
 }
 
-async function startTrail(page: Page, user: string): Promise<void> {
-  await page.goto(testAppUrl("/", user));
-  await page.getByLabel("Trail name").fill("Quiet Focus journey");
-  await page.getByRole("button", { name: "Start a Trail" }).click();
+async function startLearningPlan(page: Page, user: string): Promise<void> {
+  await page.goto(testAppUrl("/plans", user));
+  await page.getByLabel("Learning Plan name").fill("Quiet Focus journey");
+  await page.getByRole("button", { name: "Start a Learning Plan" }).click();
   await page.getByRole("link", { name: /Quiet Focus journey/ }).click();
 }
 
-async function addStop(page: Page, name: string, first = false): Promise<void> {
+async function addStage(
+  page: Page,
+  name: string,
+  first = false,
+): Promise<void> {
   if (first) {
-    await page.getByRole("button", { name: /Start your trail/ }).click();
+    await page
+      .getByRole("button", { name: /Start your Learning Plan/ })
+      .click();
   } else {
-    await page.getByRole("button", { name: "Add next Stop" }).last().click();
+    await page.getByRole("button", { name: "Add next Stage" }).last().click();
   }
   const input = page.getByPlaceholder(
-    first ? "Name your first stop" : "Name the new stop",
+    first ? "Name your first stage" : "Name the new stage",
   );
   await input.fill(name);
   await input.press("Enter");
+  if (first) {
+    await page.getByRole("button", { name: "＋ Add another Stage" }).click();
+    const next = page.getByPlaceholder("Name another stage");
+    await next.fill(`${name} continuation`);
+    await next.press("Enter");
+    const looseStage = page
+      .getByRole("complementary", { name: /Unsequenced/ })
+      .getByRole("listitem")
+      .filter({ hasText: `${name} continuation` });
+    await looseStage
+      .getByRole("button", { name: "Sequence this Stage" })
+      .click();
+    await looseStage.getByLabel("Follows").selectOption({ label: name });
+    await looseStage
+      .getByRole("button", { name: "Sequence", exact: true })
+      .click();
+  }
   await expect(
-    page.getByRole("button", { name: `Open ${name}` }),
+    page.getByRole("button", { name: `Open ${name}`, exact: true }),
   ).toBeVisible();
 }
 
-test("the Trail uses Quiet Focus in both color schemes and exposes non-color state cues", async ({
+test("the LearningPlan uses Quiet Focus in both color schemes and exposes non-color state cues", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name === "phone", "desktop creates the topology");
   const user = `${testInfo.project.name}-quiet-focus-theme`;
 
   await page.emulateMedia({ colorScheme: "light" });
-  await startTrail(page, user);
-  await addStop(page, "Begin here", true);
+  await startLearningPlan(page, user);
+  await addStage(page, "Begin here", true);
 
-  const canvas = page.getByRole("region", { name: "Trail canvas" });
+  const canvas = page.getByRole("region", { name: "Learning Plan canvas" });
   await expect(canvas).toHaveCSS("background-color", "rgb(244, 245, 247)");
   await expect(page.getByText("You are here", { exact: true })).toBeVisible();
   await expect(
@@ -60,12 +83,12 @@ test("the shipped surfaces pass automated accessibility checks", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-quiet-focus-a11y`;
-  await page.goto(testAppUrl("/", user));
+  await page.goto(testAppUrl("/plans", user));
 
   await expectNoAccessibilityViolations(page);
 });
 
-test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
+test("completed Stages, overlays, rows, and sidebars remain accessible", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -73,15 +96,21 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
     "one representative accessibility pass",
   );
   const user = `${testInfo.project.name}-quiet-focus-complete`;
-  const trail = (await (
-    await testApi(page, user, "/api/trails", "POST", {
-      name: "Accessible Trail",
+  const learningPlan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Accessible LearningPlan",
     })
   ).json()) as { id: string };
-  const stop = (await (
-    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
-      name: "Complete Stop",
-    })
+  const stage = (await (
+    await testApi(
+      page,
+      user,
+      `/api/learning-plans/${learningPlan.id}/stages`,
+      "POST",
+      {
+        name: "Complete Stage",
+      },
+    )
   ).json()) as { id: string };
   const item = (await (
     await testApi(page, user, "/api/items", "POST", {
@@ -90,16 +119,16 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
       source: "",
     })
   ).json()) as { id: string };
-  await testApi(page, user, `/api/stops/${stop.id}/items`, "POST", {
+  await testApi(page, user, `/api/stages/${stage.id}/items`, "POST", {
     itemId: item.id,
   });
   await testApi(page, user, `/api/items/${item.id}/status`, "PATCH", {
     status: "done",
   });
 
-  await page.goto(testAppUrl(`/trails/${trail.id}`, user));
+  await page.goto(testAppUrl(`/plans/${learningPlan.id}`, user));
   await expect(
-    page.getByText("Completed stop", { exact: true }).first(),
+    page.getByText(/Completed stage/).first(),
   ).toBeAttached();
   await expectNoAccessibilityViolations(page);
 
@@ -118,50 +147,56 @@ test("completed Stops, overlays, rows, and sidebars remain accessible", async ({
   ).toBeVisible();
   await expectNoAccessibilityViolations(page);
 
-  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await page.goto(
+    testAppUrl(`/plans/${learningPlan.id}/stages/${stage.id}`, user),
+  );
   await expect(
-    page.getByRole("complementary", { name: /Complete Stop details/ }),
+    page.getByRole("complementary", { name: /Complete Stage details/ }),
   ).toBeVisible();
   await expectNoAccessibilityViolations(page);
 });
 
-test("reduced motion removes Trail progress transitions", async ({
+test("reduced motion removes LearningPlan progress transitions", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name === "phone", "covered once at desktop width");
   const user = `${testInfo.project.name}-quiet-focus-motion`;
 
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await startTrail(page, user);
-  await addStop(page, "Motionless stop", true);
+  await startLearningPlan(page, user);
+  await addStage(page, "Motionless stage", true);
 
   expect(
     await page
       .locator(".progress-ring__value")
+      .first()
       .evaluate((element) =>
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThanOrEqual(0.00001);
 });
 
-test("a phone pans only inside its view-only Trail canvas", async ({
+test("a phone pans only inside its view-only Learning Plan canvas", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "phone", "phone reflow behavior");
   const user = `${testInfo.project.name}-quiet-focus-pan`;
 
   await page.setViewportSize({ width: 1024, height: 800 });
-  await startTrail(page, user);
-  await addStop(page, "One", true);
-  await addStop(page, "Two");
-  await addStop(page, "Three");
-  await addStop(page, "Four");
+  await startLearningPlan(page, user);
+  const learningPlanPath = new URL(page.url()).pathname.replace(
+    "/test/browser",
+    "",
+  );
+  await addStage(page, "One", true);
+  await addStage(page, "Two");
+  await addStage(page, "Three");
+  await addStage(page, "Four");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const trailPath = new URL(page.url()).pathname.replace("/test/browser", "");
-  await page.goto(testAppUrl(trailPath, user));
+  await page.goto(testAppUrl(learningPlanPath, user));
 
-  const canvas = page.getByRole("region", { name: "Trail canvas" });
+  const canvas = page.getByRole("region", { name: "Learning Plan canvas" });
   await expect(canvas).toHaveCSS("overflow-x", "auto");
   expect(
     await canvas.evaluate(
@@ -175,9 +210,9 @@ test("a phone pans only inside its view-only Trail canvas", async ({
         document.documentElement.clientWidth,
     ),
   ).toBe(true);
-  await expect(page.getByRole("button", { name: "Add next Stop" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Add next Stage" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Remove this link" }),
   ).toHaveCount(0);

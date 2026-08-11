@@ -12,7 +12,12 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { ITEM_STATUSES, ITEM_TYPES, Status } from "@unshelf/shared";
+import {
+  ITEM_STATUSES,
+  ITEM_TYPES,
+  PLAN_NODE_KINDS,
+  Status,
+} from "@unshelf/shared";
 
 /**
  * The database schema, in TypeScript. `drizzle-kit generate` diffs this against
@@ -123,7 +128,7 @@ export const labels = pgTable(
 );
 
 /**
- * Label membership is a bare many-to-many set independent of Stop placement.
+ * Label membership is a bare many-to-many set independent of Stage placement.
  * The repeated User anchor plus paired owner foreign keys make it impossible to
  * categorise one User's Item with another User's Label at the database boundary.
  */
@@ -153,15 +158,15 @@ export const itemLabels = pgTable(
 );
 
 /**
- * trails: the Trail promoted to a first-class, User-owned record (ADR-0014).
+ * learningPlans: the LearningPlan promoted to a first-class, User-owned record (ADR-0014).
  * The journey has an identity of its own: an opaque `id` that a URL carries and
  * that survives a rename, a `name`, and `created_at` (the stable order the index
- * lists in). There is deliberately no progress column — a Trail's progress is
- * *derived* on read from its Stops' Items (like the derived `past_target`,
+ * lists in). There is deliberately no progress column — a LearningPlan's progress is
+ * *derived* on read from its Stages' Items (like the derived `past_target`,
  * ADR-0005), never stored.
  */
-export const trails = pgTable(
-  "trails",
+export const learningPlans = pgTable(
+  "learning_plans",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id")
@@ -173,169 +178,231 @@ export const trails = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("trails_user_id_idx").on(table.userId),
-    // Expose the owner beside the id, as items and stops do, so a Stop can prove
+    index("learning_plans_user_id_idx").on(table.userId),
+    // Expose the owner beside the id, as items and stages do, so a Stage can prove
     // both ends belong to the same User.
-    unique("trails_id_user_id_idx").on(table.id, table.userId),
+    unique("learning_plans_id_user_id_idx").on(table.id, table.userId),
   ],
 );
 
 /**
- * Stops: the single organising primitive (ADR-0004), scoped to a User like every
- * other domain table. There is deliberately no `kind` column — one uniform Stop
+ * The topology boundary for a Learning Plan. In this migration every node is a
+ * Stage; the explicit node record lets the next slice add direct Item nodes
+ * without manufacturing a Stage or changing edge identity.
+ */
+export const learningPlanNodes = pgTable(
+  "learning_plan_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    learningPlanId: uuid("learning_plan_id").notNull(),
+    kind: text("kind", { enum: nonEmpty(PLAN_NODE_KINDS) }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: "learning_plan_nodes_plan_owner_fk",
+      columns: [table.learningPlanId, table.userId],
+      foreignColumns: [learningPlans.id, learningPlans.userId],
+    }).onDelete("cascade"),
+    unique("learning_plan_nodes_id_user_id_idx").on(table.id, table.userId),
+    unique("learning_plan_nodes_id_plan_id_idx").on(
+      table.id,
+      table.learningPlanId,
+    ),
+    unique("learning_plan_nodes_identity_idx").on(
+      table.id,
+      table.userId,
+      table.learningPlanId,
+    ),
+    index("learning_plan_nodes_plan_id_idx").on(
+      table.userId,
+      table.learningPlanId,
+    ),
+    check(
+      "learning_plan_nodes_kind_check",
+      sql`${table.kind} in ${enumList(PLAN_NODE_KINDS)}`,
+    ),
+  ],
+);
+
+/**
+ * Stages: the single organising primitive (ADR-0004), scoped to a User like every
+ * other domain table. There is deliberately no `kind` column — one uniform Stage
  * serves both a topic to learn and a project to build, because v1 makes the two
- * behave identically. Names are not unique: two Stops may share one, since a
- * Stop is identified by its id and the User is free to name their space as they
+ * behave identically. Names are not unique: two Stages may share one, since a
+ * Stage is identified by its id and the User is free to name their space as they
  * like.
  *
- * A Stop belongs to exactly one Trail (ADR-0014, Stop-as-waypoint). The
- * composite owner foreign key keeps a Stop and its Trail owned by the same User
- * — an edge this table can never cross even when `trail_id` is set by a write
+ * A Stage belongs to exactly one LearningPlan (ADR-0014, Stage-as-waypoint). The
+ * composite owner foreign key keeps a Stage and its LearningPlan owned by the same User
+ * — an edge this table can never cross even when `learningPlan_id` is set by a write
  * that bypasses the repository.
  */
-export const stops = pgTable(
-  "stops",
+export const stages = pgTable(
+  "stages",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
     name: text("name").notNull(),
-    trailId: uuid("trail_id").notNull(),
+    learningPlanId: uuid("learning_plan_id").notNull(),
   },
   (table) => [
     foreignKey({
-      name: "stops_trail_owner_fk",
-      columns: [table.trailId, table.userId],
-      foreignColumns: [trails.id, trails.userId],
+      name: "stages_plan_owner_fk",
+      columns: [table.learningPlanId, table.userId],
+      foreignColumns: [learningPlans.id, learningPlans.userId],
     }).onDelete("cascade"),
-    index("stops_user_id_idx").on(table.userId),
-    // As for Items, expose the owner beside the id so StopItem can prove both
+    foreignKey({
+      name: "stages_node_identity_fk",
+      columns: [table.id, table.userId, table.learningPlanId],
+      foreignColumns: [
+        learningPlanNodes.id,
+        learningPlanNodes.userId,
+        learningPlanNodes.learningPlanId,
+      ],
+    }).onDelete("cascade"),
+    index("stages_user_id_idx").on(table.userId),
+    // As for Items, expose the owner beside the id so StageItem can prove both
     // ends belong to the User recorded on the membership.
-    unique("stops_id_user_id_idx").on(table.id, table.userId),
-    // The same shape for the Trail, so an edge can prove both of its endpoints
-    // sit on the Trail it names.
-    unique("stops_id_trail_id_idx").on(table.id, table.trailId),
-    index("stops_trail_id_idx").on(table.trailId),
+    unique("stages_id_user_id_idx").on(table.id, table.userId),
+    // The same shape for the LearningPlan, so an edge can prove both of its endpoints
+    // sit on the LearningPlan it names.
+    unique("stages_id_plan_id_idx").on(table.id, table.learningPlanId),
+    index("stages_plan_id_idx").on(table.learningPlanId),
   ],
 );
 
 /**
- * StopItem: membership plus its mandatory User and Trail invariant anchors
+ * StageItem: membership plus its mandatory User and LearningPlan invariant anchors
  * (ADR-0001, ADR-0004, ADR-0009). The composite primary key makes the two ends
- * the membership identity and a Stop's contents a set, so the same Item cannot
- * be held twice however it is added. Repeating `trail_id` lets PostgreSQL
- * enforce that an Item appears in at most one Stop on a Trail. There is no
- * `position` (a Stop is unordered; sequencing lives on the Trail) and no
- * `status` (one Status lives on the Item, shared by every Stop holding it) —
- * either column would be a second place to keep the same domain fact true.
+ * the membership identity, so the same Item cannot be held twice however it is
+ * added. Repeating `learning_plan_id` lets PostgreSQL enforce that an Item appears
+ * in at most one Stage on a Learning Plan. `position` stores the Stage-local Item
+ * order; there is no `status`, because one Status lives on the Item and is shared
+ * by every Stage holding it.
  *
- * user_id and trail_id are deliberately repeated as constraints: the foreign
+ * user_id and learningPlan_id are deliberately repeated as constraints: the foreign
  * keys below make disagreement impossible at the database boundary, even for a
  * write that bypasses the repository. Every domain table therefore points at our
  * User anchor, as ADR-0009 requires.
  */
-export const stopItems = pgTable(
-  "stop_items",
+export const stageItems = pgTable(
+  "stage_items",
   {
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
-    stopId: uuid("stop_id")
+    stageId: uuid("stage_id")
       .notNull()
-      .references(() => stops.id, { onDelete: "cascade" }),
+      .references(() => stages.id, { onDelete: "cascade" }),
     itemId: uuid("item_id")
       .notNull()
       .references(() => items.id, { onDelete: "cascade" }),
-    trailId: uuid("trail_id").notNull(),
+    learningPlanId: uuid("learning_plan_id").notNull(),
+    position: integer("position").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.stopId, table.itemId] }),
+    primaryKey({ columns: [table.stageId, table.itemId] }),
     foreignKey({
-      name: "stop_items_stop_owner_fk",
-      columns: [table.stopId, table.userId],
-      foreignColumns: [stops.id, stops.userId],
+      name: "stage_items_stage_owner_fk",
+      columns: [table.stageId, table.userId],
+      foreignColumns: [stages.id, stages.userId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "stop_items_item_owner_fk",
+      name: "stage_items_item_owner_fk",
       columns: [table.itemId, table.userId],
       foreignColumns: [items.id, items.userId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "stop_items_stop_trail_fk",
-      columns: [table.stopId, table.trailId],
-      foreignColumns: [stops.id, stops.trailId],
+      name: "stage_items_stage_plan_fk",
+      columns: [table.stageId, table.learningPlanId],
+      foreignColumns: [stages.id, stages.learningPlanId],
     }).onDelete("cascade"),
-    unique("stop_items_item_trail_unique").on(table.itemId, table.trailId),
-    // The primary key already indexes stop_id (a Stop's contents); this covers
-    // the other direction — every Stop holding a given Item.
-    index("stop_items_item_id_idx").on(table.itemId),
+    unique("stage_items_item_plan_unique").on(
+      table.itemId,
+      table.learningPlanId,
+    ),
+    unique("stage_items_stage_position_unique").on(
+      table.stageId,
+      table.position,
+    ),
+    // The primary key already indexes stage_id (a Stage's contents); this covers
+    // the other direction — every Stage holding a given Item.
+    index("stage_items_item_id_idx").on(table.itemId),
   ],
 );
 
 /**
- * trail_edges: the Trail's adjacency edge list (ADR-0010, #94). One row per
- * directed Stop-to-Stop edge, scoped to a User *and* to the one Trail it belongs
+ * learning_plan_edges: the Learning Plan's adjacency edge list (ADR-0010, ADR-0018).
+ * One row per directed Plan-Node edge, scoped to a User and its Learning Plan
  * to. There is deliberately no `position` and no `x`/`y`: parallel forks are
  * unordered and canvas layout is derived from topology on read (like the derived
- * `past_target`), so the Trail stays a lightweight topology and there is no
+ * `past_target`), so the LearningPlan stays a lightweight topology and there is no
  * second place for the plan to drift.
  *
- * Composite owner foreign keys run in two directions. `(from_stop_id, user_id)`
- * and `(to_stop_id, user_id)` into `stops (id, user_id)` mean an edge can only
- * ever join two of the *same* User's Stops; `(from_stop_id, trail_id)` and
- * `(to_stop_id, trail_id)` into `stops (id, trail_id)` mean it can only join two
- * Stops that share its Trail. All four cascade, so deleting a Stop takes every
- * edge touching it with it. The primary key makes the edge set a set (no
+ * Composite owner and plan foreign keys run in both directions through
+ * `learning_plan_nodes`, so an edge can only join nodes owned by the same User and
+ * belonging to the Learning Plan it names. All four cascade, so deleting a node
+ * takes every edge touching it with it. The primary key makes the edge set a set (no
  * duplicate edge), and the CHECK forbids a self-loop at the database.
  * Acyclicity is the one invariant the schema cannot cheaply declare, so the
  * repository owns it at the API write seam.
  */
-export const trailEdges = pgTable(
-  "trail_edges",
+export const learningPlanEdges = pgTable(
+  "learning_plan_edges",
   {
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
-    fromStopId: uuid("from_stop_id").notNull(),
-    toStopId: uuid("to_stop_id").notNull(),
-    trailId: uuid("trail_id").notNull(),
+    fromNodeId: uuid("from_node_id").notNull(),
+    toNodeId: uuid("to_node_id").notNull(),
+    learningPlanId: uuid("learning_plan_id").notNull(),
   },
   (table) => [
     primaryKey({
-      columns: [table.userId, table.fromStopId, table.toStopId],
+      columns: [table.userId, table.fromNodeId, table.toNodeId],
     }),
     check(
-      "trail_edges_no_self_loop",
-      sql`${table.fromStopId} <> ${table.toStopId}`,
+      "learning_plan_edges_no_self_loop",
+      sql`${table.fromNodeId} <> ${table.toNodeId}`,
     ),
     foreignKey({
-      name: "trail_edges_from_owner_fk",
-      columns: [table.fromStopId, table.userId],
-      foreignColumns: [stops.id, stops.userId],
+      name: "learning_plan_edges_from_owner_fk",
+      columns: [table.fromNodeId, table.userId],
+      foreignColumns: [learningPlanNodes.id, learningPlanNodes.userId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "trail_edges_to_owner_fk",
-      columns: [table.toStopId, table.userId],
-      foreignColumns: [stops.id, stops.userId],
+      name: "learning_plan_edges_to_owner_fk",
+      columns: [table.toNodeId, table.userId],
+      foreignColumns: [learningPlanNodes.id, learningPlanNodes.userId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "trail_edges_from_trail_fk",
-      columns: [table.fromStopId, table.trailId],
-      foreignColumns: [stops.id, stops.trailId],
+      name: "learning_plan_edges_from_plan_fk",
+      columns: [table.fromNodeId, table.learningPlanId],
+      foreignColumns: [learningPlanNodes.id, learningPlanNodes.learningPlanId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "trail_edges_to_trail_fk",
-      columns: [table.toStopId, table.trailId],
-      foreignColumns: [stops.id, stops.trailId],
+      name: "learning_plan_edges_to_plan_fk",
+      columns: [table.toNodeId, table.learningPlanId],
+      foreignColumns: [learningPlanNodes.id, learningPlanNodes.learningPlanId],
     }).onDelete("cascade"),
-    // The primary key indexes out-edges (a Stop's successors, keyed from the
+    // The primary key indexes out-edges (a node's successors, keyed from the
     // front); this covers the other direction — every edge leading into a given
-    // Stop, which the layout's longest-path layering walks.
-    index("trail_edges_to_stop_id_idx").on(table.userId, table.toStopId),
-    // Reading and rewiring a Trail always scopes by `(user_id, trail_id)`, so
-    // index the Trail an edge belongs to.
-    index("trail_edges_trail_id_idx").on(table.userId, table.trailId),
+    // node, which the layout's longest-path layering walks.
+    index("learning_plan_edges_to_node_id_idx").on(
+      table.userId,
+      table.toNodeId,
+    ),
+    // Reading and rewiring a LearningPlan always scopes by `(user_id, learningPlan_id)`, so
+    // index the LearningPlan an edge belongs to.
+    index("learning_plan_edges_plan_id_idx").on(
+      table.userId,
+      table.learningPlanId,
+    ),
   ],
 );
 

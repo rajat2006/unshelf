@@ -64,10 +64,10 @@ vite.middlewares.stack.unshift({
 
 await vite.listen();
 
-let stopping = false;
+let stageping = false;
 async function stop() {
-  if (stopping) return;
-  stopping = true;
+  if (stageping) return;
+  stageping = true;
   await vite.close();
   await new Promise<void>((resolve, reject) => {
     apiServer.close((error) => (error ? reject(error) : resolve()));

@@ -12,8 +12,8 @@ export function NotFound() {
       <p className="quiet-copy">
         The link may be stale or the page may have moved.
       </p>
-      <Link to="/" className="quiet-link">
-        Go to Trails
+      <Link to="/plans" className="quiet-link">
+        Go to Learning Plans
       </Link>
     </section>
   );

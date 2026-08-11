@@ -24,9 +24,9 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_target_date",
   "invalid_label_name",
   "missing_item_id",
-  "invalid_trail_name",
-  "invalid_stop_name",
-  "invalid_stop_item_search",
+  "invalid_learning_plan_name",
+  "invalid_stage_name",
+  "invalid_stage_item_search",
   "invalid_edge_endpoints",
   "self_edge",
 ] as const;

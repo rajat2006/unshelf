@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { sql } from "drizzle-orm";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
@@ -66,6 +67,35 @@ describe("migration CLI", () => {
         db: "up",
         message: "unshelf api is alive",
       });
+
+      const planTables = await db.execute(sql`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN (
+            'learning_plans',
+            'learning_plan_nodes',
+            'stages',
+            'stage_items',
+            'learning_plan_edges'
+          )
+        ORDER BY table_name
+      `);
+      expect(planTables.rows.map(({ table_name }) => table_name)).toEqual([
+        "learning_plan_edges",
+        "learning_plan_nodes",
+        "learning_plans",
+        "stage_items",
+        "stages",
+      ]);
+
+      const retiredTables = await db.execute(sql`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN ('trails', 'stops', 'stop_items', 'trail_edges')
+      `);
+      expect(retiredTables.rows).toEqual([]);
 
       await db.$client.query(
         "CREATE ROLE migration_verifier LOGIN PASSWORD 'verification-only-test-password'",

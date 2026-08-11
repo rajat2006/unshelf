@@ -23,17 +23,20 @@ async function pageHasNoHorizontalOverflow(page: Page): Promise<boolean> {
   });
 }
 
-test("the top bar carries the Trails and Library doors on every signed-in surface", async ({
+test("the top bar carries the Learning Plans and Library doors on every signed-in surface", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
 
-  const trailsDoor = page.getByRole("link", { name: "Trails", exact: true });
+  const learningPlansDoor = page.getByRole("link", {
+    name: "Learning Plans",
+    exact: true,
+  });
   const libraryDoor = page.getByRole("link", { name: "Library", exact: true });
-  await expect(trailsDoor).toBeVisible();
+  await expect(learningPlansDoor).toBeVisible();
   await expect(libraryDoor).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trails" }),
+    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
   ).toBeVisible();
 
   await libraryDoor.click();
@@ -44,30 +47,34 @@ test("the top bar carries the Trails and Library doors on every signed-in surfac
   // The active destination is apparent, not conveyed by colour alone.
   await expect(libraryDoor).toHaveAttribute("aria-current", "page");
   // The doors persist across the surface change.
-  await expect(trailsDoor).toBeVisible();
+  await expect(learningPlansDoor).toBeVisible();
 
-  await page.getByRole("link", { name: "Unshelf — go to Trails" }).click();
-  await expect(page).toHaveURL(/\/test\/browser\/?$/);
+  await page
+    .getByRole("link", { name: "Unshelf — go to Learning Plans" })
+    .click();
+  await expect(page).toHaveURL(/\/test\/browser\/plans$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trails" }),
+    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
   ).toBeVisible();
 });
 
-test("the route table recognizes the Trail, Stop, and canonical Item routes", async ({
+test("the route table recognizes the Learning Plan, Stage, and canonical Item routes", async ({
   page,
 }, testInfo) => {
-  // An unknown Trail id resolves the Trail route and surface (its landmark), then
+  // An unknown LearningPlan id resolves the LearningPlan route and surface (its landmark), then
   // reports the miss inline without leaving the surface — the id is opaque, so a
   // stale link is contained here, not a crash.
-  await page.goto(appUrl(testInfo, "/trails/trail-xyz"));
+  await page.goto(appUrl(testInfo, "/plans/learning-plan-xyz"));
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trail" }),
+    page.getByRole("heading", { level: 1, name: "Learning Plan" }),
   ).toBeVisible();
   await expect(page.getByRole("alert")).toBeVisible();
 
-  await page.goto(appUrl(testInfo, "/trails/trail-xyz/stops/stop-abc"));
+  await page.goto(
+    appUrl(testInfo, "/plans/learning-plan-xyz/stages/stage-abc"),
+  );
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trail" }),
+    page.getByRole("heading", { level: 1, name: "Learning Plan" }),
   ).toBeVisible();
 
   await page.goto(appUrl(testInfo, "/items/item-123"));
@@ -87,10 +94,12 @@ test("an unknown route recovers to Home", async ({ page }, testInfo) => {
     page.getByRole("heading", { name: "This page doesn't exist" }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Go to Trails", exact: true }).click();
-  await expect(page).toHaveURL(/\/test\/browser\/?$/);
+  await page
+    .getByRole("link", { name: "Go to Learning Plans", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/test\/browser\/plans$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trails" }),
+    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
   ).toBeVisible();
 });
 
@@ -146,18 +155,18 @@ test("the system colour scheme resolves to the locked Quiet Focus page colour", 
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   expect(await pageBackground()).toBe("rgb(250, 250, 251)"); // #FAFAFB
 
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   expect(await pageBackground()).toBe("rgb(14, 15, 19)"); // #0E0F13
 });
 
 test("keyboard focus reaches the top bar with a visible focus ring", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await page.keyboard.press("Tab");
 
   const focused = page.locator(":focus-visible");
@@ -171,7 +180,7 @@ test("keyboard focus reaches the top bar with a visible focus ring", async ({
 test("the shell reflows with no page-level horizontal scroll", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
 
   await page.goto(appUrl(testInfo, "/library"));

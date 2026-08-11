@@ -5,7 +5,7 @@ import { Wordmark } from "./Wordmark";
 
 /**
  * The slim two-door top bar (design spec §3), present on every signed-in surface.
- * Left: the Unshelf mark (= Trails / home) and the two named doors, Trails and
+ * Left: the Unshelf mark (= Learning Plans / home) and the two named doors, Learning Plans and
  * Library — the two organising axes, named so neither reads as filtering the
  * other. Right: the global Capture action and the account control (ADR-0014).
  * Capture opens a non-navigating overlay, so intake is available from every
@@ -20,21 +20,26 @@ export function TopBar() {
   const location = useLocation();
   const libraryActive =
     location.pathname === "/library" || location.pathname.startsWith("/items/");
+  const plansActive = location.pathname.startsWith("/plans");
 
   return (
     <header className="top-bar">
       <NavLink
-        to="/"
-        aria-label="Unshelf — go to Trails"
+        to="/plans"
+        aria-label="Unshelf — go to Learning Plans"
         className="top-bar__home"
         end
       >
         <Wordmark />
       </NavLink>
       <nav aria-label="Primary" className="top-bar__nav">
-        <NavLink to="/" end className="top-bar__door">
-          Trails
-        </NavLink>
+        <Link
+          to="/plans"
+          className={`top-bar__door${plansActive ? " active" : ""}`}
+          aria-current={plansActive ? "page" : undefined}
+        >
+          Learning Plans
+        </Link>
         <Link
           to="/library"
           className={`top-bar__door${libraryActive ? " active" : ""}`}
