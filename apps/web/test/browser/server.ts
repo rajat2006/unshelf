@@ -1,7 +1,10 @@
 import { createServer as createHttpServer } from "node:http";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createServer as createViteServer } from "vite";
-import { startTestApp } from "../../../api/test/harness";
+import {
+  seedLegacyLearningPlanFixture,
+  startTestAppWithLegacyFixture,
+} from "../../../api/test/harness";
 import {
   BROWSER_HARNESS_API_ORIGIN,
   BROWSER_HARNESS_API_PORT,
@@ -10,11 +13,15 @@ import {
   BROWSER_HARNESS_WEB_PORT,
   testUserFromAuthorization,
 } from "./harness";
+import { LEGACY_LEARNING_PLAN_FIXTURE as legacy } from "./legacy-learning-plan-fixture";
 
-const testApp = await startTestApp((req) => {
-  const userId = testUserFromAuthorization(req.header("authorization"));
-  return userId ? (userId as unknown as ClerkUserId) : null;
-});
+const testApp = await startTestAppWithLegacyFixture(
+  (req) => {
+    const userId = testUserFromAuthorization(req.header("authorization"));
+    return userId ? (userId as unknown as ClerkUserId) : null;
+  },
+  (db) => seedLegacyLearningPlanFixture(db, legacy),
+);
 const apiServer = createHttpServer(testApp.app);
 
 await new Promise<void>((resolve, reject) => {

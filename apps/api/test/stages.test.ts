@@ -18,7 +18,15 @@ let app: Express;
 const capture = (clerkUserId: string, body: object) =>
   request(app).post("/api/items").set(TEST_USER_HEADER, clerkUserId).send(body);
 
-const setStatus = (clerkUserId: string, itemId: string, status: string) =>
+const setStatus = ({
+  clerkUserId,
+  itemId,
+  status,
+}: {
+  clerkUserId: string;
+  itemId: string;
+  status: string;
+}) =>
   request(app)
     .patch(`/api/items/${itemId}/status`)
     .set(TEST_USER_HEADER, clerkUserId)
@@ -80,39 +88,65 @@ const createStageOn = ({
 const listStages = (clerkUserId: string) =>
   request(app).get("/api/stages").set(TEST_USER_HEADER, clerkUserId);
 
-const viewStage = (clerkUserId: string, stageId: string) =>
+const viewStage = ({
+  clerkUserId,
+  stageId,
+}: {
+  clerkUserId: string;
+  stageId: string;
+}) =>
   request(app).get(`/api/stages/${stageId}`).set(TEST_USER_HEADER, clerkUserId);
 
-const viewLearningPlanStage = (
-  clerkUserId: string,
-  learningPlanId: string,
-  stageId: string,
-) =>
+const viewLearningPlanStage = ({
+  clerkUserId,
+  learningPlanId,
+  stageId,
+}: {
+  clerkUserId: string;
+  learningPlanId: string;
+  stageId: string;
+}) =>
   request(app)
     .get(`/api/learning-plans/${learningPlanId}/stages/${stageId}`)
     .set(TEST_USER_HEADER, clerkUserId);
 
-const addToStage = (clerkUserId: string, stageId: string, body: object) =>
+const addToStage = ({
+  clerkUserId,
+  stageId,
+  body,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  body: object;
+}) =>
   request(app)
     .post(`/api/stages/${stageId}/items`)
     .set(TEST_USER_HEADER, clerkUserId)
     .send(body);
 
-const removeFromStage = (
-  clerkUserId: string,
-  stageId: string,
-  itemId: string,
-) =>
+const removeFromStage = ({
+  clerkUserId,
+  stageId,
+  itemId,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  itemId: string;
+}) =>
   request(app)
     .delete(`/api/stages/${stageId}/items/${itemId}`)
     .set(TEST_USER_HEADER, clerkUserId);
 
 /** Capture an Item and create a Stage for one User — the setup most tests need. */
-const givenItemAndStage = async (
-  clerkUserId: string,
+const givenItemAndStage = async ({
+  clerkUserId,
   title = "An item",
   name = "A stage",
-): Promise<{ item: Item; stage: Stage }> => ({
+}: {
+  clerkUserId: string;
+  title?: string;
+  name?: string;
+}): Promise<{ item: Item; stage: Stage }> => ({
   item: (await capture(clerkUserId, { title, type: "article" })).body as Item,
   stage: (await createStage(clerkUserId, { name })).body as Stage,
 });
@@ -140,7 +174,14 @@ describe("POST /api/stages — create a Stage", () => {
     expect(stage.userId).not.toBe("clerk_stage_create"); // our anchor id, not Clerk's
 
     expect(
-      titlesIn((await viewStage("clerk_stage_create", stage.id)).body),
+      titlesIn(
+        (
+          await viewStage({
+            clerkUserId: "clerk_stage_create",
+            stageId: stage.id,
+          })
+        ).body,
+      ),
     ).toEqual([]);
   });
 
@@ -167,8 +208,12 @@ describe("POST /api/stages — create a Stage", () => {
 
   it("renames an owned Stage without changing its identity or contents", async () => {
     const user = "clerk-stage-rename";
-    const { item, stage } = await givenItemAndStage(user);
-    await addToStage(user, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({ clerkUserId: user });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     const renamed = await request(app)
       .patch(`/api/stages/${stage.id}`)
@@ -236,27 +281,37 @@ describe("GET /api/stages — list Stages", () => {
 describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage", () => {
   it("adds an Item from All to a Stage", async () => {
     const clerkUserId = "clerk_stage_add";
-    const { item, stage } = await givenItemAndStage(
+    const { item, stage } = await givenItemAndStage({
       clerkUserId,
-      "Flexbox guide",
-    );
+      title: "Flexbox guide",
+    });
 
-    const res = await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    const res = await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     expect(res.status).toBe(200);
     expect(titlesIn(res.body as StageDetail)).toEqual(["Flexbox guide"]);
-    expect(titlesIn((await viewStage(clerkUserId, stage.id)).body)).toEqual([
-      "Flexbox guide",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Flexbox guide"]);
   });
 
   it("references the Item rather than copying it — it stays in All", async () => {
     const clerkUserId = "clerk_stage_reference";
-    const { item, stage } = await givenItemAndStage(
+    const { item, stage } = await givenItemAndStage({
       clerkUserId,
-      "Still in All",
-    );
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+      title: "Still in All",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     const all = (
       await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
@@ -264,17 +319,29 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
 
     expect(all.map((listed) => listed.id)).toEqual([item.id]);
     const inStage = (
-      (await viewStage(clerkUserId, stage.id)).body as StageDetail
+      (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id }))
+        .body as StageDetail
     ).items[0];
     expect(inStage.id).toBe(item.id); // the same record, not a copy
   });
 
   it("holds Items as a set — adding the same Item twice is not a duplicate", async () => {
     const clerkUserId = "clerk_stage_set";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Added twice");
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Added twice",
+    });
 
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
-    const again = await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
+    const again = await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     expect(again.status).toBe(200);
     expect(titlesIn(again.body as StageDetail)).toEqual(["Added twice"]);
@@ -290,13 +357,22 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
       await capture(user, { title: "Alpha second", type: "article" })
     ).body as Item;
 
-    await addToStage(user, stage.id, { itemId: zulu.id });
-    await addToStage(user, stage.id, { itemId: alpha.id });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: zulu.id },
+    });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: alpha.id },
+    });
 
-    expect(titlesIn((await viewStage(user, stage.id)).body)).toEqual([
-      "Zulu first",
-      "Alpha second",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Zulu first", "Alpha second"]);
   });
 
   it("rejects placing an Item into a second Stage on the same LearningPlan", async () => {
@@ -310,10 +386,20 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
       .body as Stage;
 
     expect(
-      (await addToStage(clerkUserId, css.id, { itemId: item.id })).status,
+      (
+        await addToStage({
+          clerkUserId: clerkUserId,
+          stageId: css.id,
+          body: { itemId: item.id },
+        })
+      ).status,
     ).toBe(200);
-    const conflict = await addToStage(clerkUserId, api.id, {
-      itemId: item.id,
+    const conflict = await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: api.id,
+      body: {
+        itemId: item.id,
+      },
     });
 
     expect(conflict.status).toBe(409);
@@ -321,12 +407,16 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
       error: "item already placed on this learning plan",
     });
     expect(
-      ((await viewStage(clerkUserId, css.id)).body as StageDetail).items.map(
-        (member) => member.id,
-      ),
+      (
+        (await viewStage({ clerkUserId: clerkUserId, stageId: css.id }))
+          .body as StageDetail
+      ).items.map((member) => member.id),
     ).toEqual([item.id]);
     expect(
-      ((await viewStage(clerkUserId, api.id)).body as StageDetail).items,
+      (
+        (await viewStage({ clerkUserId: clerkUserId, stageId: api.id }))
+          .body as StageDetail
+      ).items,
     ).toEqual([]);
   });
 
@@ -365,32 +455,63 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
       })
     ).body as Stage;
 
-    expect((await addToStage(user, first.id, { itemId: item.id })).status).toBe(
-      200,
-    );
     expect(
-      (await addToStage(user, second.id, { itemId: item.id })).status,
+      (
+        await addToStage({
+          clerkUserId: user,
+          stageId: first.id,
+          body: { itemId: item.id },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await addToStage({
+          clerkUserId: user,
+          stageId: second.id,
+          body: { itemId: item.id },
+        })
+      ).status,
     ).toBe(200);
     for (const stage of [first, second]) {
       expect(
-        ((await viewStage(user, stage.id)).body as StageDetail).items.map(
-          (member) => member.id,
-        ),
+        (
+          (await viewStage({ clerkUserId: user, stageId: stage.id }))
+            .body as StageDetail
+        ).items.map((member) => member.id),
       ).toEqual([item.id]);
     }
   });
 
   it("rejects an add with no valid itemId", async () => {
     const clerkUserId = "clerk_stage_add_bad";
-    const { stage } = await givenItemAndStage(clerkUserId);
+    const { stage } = await givenItemAndStage({ clerkUserId: clerkUserId });
 
-    expect((await addToStage(clerkUserId, stage.id, {})).status).toBe(400);
     expect(
-      (await addToStage(clerkUserId, stage.id, { itemId: 42 })).status,
+      (
+        await addToStage({
+          clerkUserId: clerkUserId,
+          stageId: stage.id,
+          body: {},
+        })
+      ).status,
     ).toBe(400);
-    const unknown = await addToStage(clerkUserId, stage.id, {
-      itemId: "00000000-0000-0000-0000-000000000000",
-      extra: "not reflected",
+    expect(
+      (
+        await addToStage({
+          clerkUserId: clerkUserId,
+          stageId: stage.id,
+          body: { itemId: 42 },
+        })
+      ).status,
+    ).toBe(400);
+    const unknown = await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: {
+        itemId: "00000000-0000-0000-0000-000000000000",
+        extra: "not reflected",
+      },
     });
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
@@ -402,22 +523,31 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
         },
       ],
     });
-    expect((await viewStage(clerkUserId, stage.id)).body.items).toEqual([]);
+    expect(
+      (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body
+        .items,
+    ).toEqual([]);
   });
 
   it("cannot add an Item that does not exist", async () => {
     const clerkUserId = "clerk_stage_add_missing";
-    const { stage } = await givenItemAndStage(clerkUserId);
+    const { stage } = await givenItemAndStage({ clerkUserId: clerkUserId });
 
-    const res = await addToStage(clerkUserId, stage.id, {
-      itemId: "00000000-0000-0000-0000-000000000000",
+    const res = await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: {
+        itemId: "00000000-0000-0000-0000-000000000000",
+      },
     });
 
     expect(res.status).toBe(404);
   });
 
   it("refuses an unauthenticated add", async () => {
-    const { item, stage } = await givenItemAndStage("clerk_stage_add_anon");
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: "clerk_stage_add_anon",
+    });
 
     const res = await request(app)
       .post(`/api/stages/${stage.id}/items`)
@@ -430,23 +560,53 @@ describe("POST /api/stages/:stageId/items — pull an Item from All into a Stage
 describe("DELETE /api/stages/:stageId/items/:itemId — remove an Item from a Stage", () => {
   it("removes the Item from the Stage", async () => {
     const clerkUserId = "clerk_stage_remove";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Remove me");
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Remove me",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
-    const res = await removeFromStage(clerkUserId, stage.id, item.id);
+    const res = await removeFromStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      itemId: item.id,
+    });
 
     expect(res.status).toBe(200);
     expect(titlesIn(res.body as StageDetail)).toEqual([]);
-    expect(titlesIn((await viewStage(clerkUserId, stage.id)).body)).toEqual([]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body,
+      ),
+    ).toEqual([]);
   });
 
   it("leaves the Item itself in All — removal unfiles, it does not delete", async () => {
     const clerkUserId = "clerk_stage_remove_keeps_item";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Survivor");
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
-    await setStatus(clerkUserId, item.id, "in_progress");
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Survivor",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
+    await setStatus({
+      clerkUserId: clerkUserId,
+      itemId: item.id,
+      status: "in_progress",
+    });
 
-    await removeFromStage(clerkUserId, stage.id, item.id);
+    await removeFromStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      itemId: item.id,
+    });
 
     const all = (
       await request(app).get("/api/items").set(TEST_USER_HEADER, clerkUserId)
@@ -472,15 +632,34 @@ describe("DELETE /api/stages/:stageId/items/:itemId — remove an Item from a St
         body: { name: "Second" },
       })
     ).body as Stage;
-    await addToStage(clerkUserId, first.id, { itemId: item.id });
-    await addToStage(clerkUserId, second.id, { itemId: item.id });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: first.id,
+      body: { itemId: item.id },
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: second.id,
+      body: { itemId: item.id },
+    });
 
-    await removeFromStage(clerkUserId, first.id, item.id);
+    await removeFromStage({
+      clerkUserId: clerkUserId,
+      stageId: first.id,
+      itemId: item.id,
+    });
 
-    expect(titlesIn((await viewStage(clerkUserId, first.id)).body)).toEqual([]);
-    expect(titlesIn((await viewStage(clerkUserId, second.id)).body)).toEqual([
-      "In two",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: first.id })).body,
+      ),
+    ).toEqual([]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: second.id }))
+          .body,
+      ),
+    ).toEqual(["In two"]);
   });
 
   it("removes only the named Item, leaving the Stage's other Items", async () => {
@@ -492,46 +671,82 @@ describe("DELETE /api/stages/:stageId/items/:itemId — remove an Item from a St
     const stays = (
       await capture(clerkUserId, { title: "Stays", type: "video" })
     ).body as Item;
-    await addToStage(clerkUserId, stage.id, { itemId: goes.id });
-    await addToStage(clerkUserId, stage.id, { itemId: stays.id });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: goes.id },
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: stays.id },
+    });
 
-    await removeFromStage(clerkUserId, stage.id, goes.id);
+    await removeFromStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      itemId: goes.id,
+    });
 
-    expect(titlesIn((await viewStage(clerkUserId, stage.id)).body)).toEqual([
-      "Stays",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Stays"]);
   });
 
   it("refuses an unauthenticated removal", async () => {
     const clerkUserId = "clerk_stage_remove_anon";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Anon remove");
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Anon remove",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     const res = await request(app).delete(
       `/api/stages/${stage.id}/items/${item.id}`,
     );
 
     expect(res.status).toBe(401);
-    expect(titlesIn((await viewStage(clerkUserId, stage.id)).body)).toEqual([
-      "Anon remove",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Anon remove"]);
   });
 
   it("rejects malformed identifiers without removing the membership", async () => {
     const user = "clerk_stage_remove_invalid";
-    const { item, stage } = await givenItemAndStage(user, "Still here");
-    await addToStage(user, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: user,
+      title: "Still here",
+    });
+    await addToStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
-    const res = await removeFromStage(user, stage.id, "not-an-item-id");
+    const res = await removeFromStage({
+      clerkUserId: user,
+      stageId: stage.id,
+      itemId: "not-an-item-id",
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
       error: "invalid_request",
       issues: [{ path: "path.itemId", message: "Must be a valid UUID" }],
     });
-    expect(titlesIn((await viewStage(user, stage.id)).body)).toEqual([
-      "Still here",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: user, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Still here"]);
   });
 });
 
@@ -546,11 +761,25 @@ describe("GET /api/stages/:stageId — view a Stage's contents", () => {
     const fresh = (
       await capture(clerkUserId, { title: "Fresh", type: "article" })
     ).body as Item;
-    await addToStage(clerkUserId, stage.id, { itemId: started.id });
-    await addToStage(clerkUserId, stage.id, { itemId: fresh.id });
-    await setStatus(clerkUserId, started.id, "in_progress");
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: started.id },
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: fresh.id },
+    });
+    await setStatus({
+      clerkUserId: clerkUserId,
+      itemId: started.id,
+      status: "in_progress",
+    });
 
-    const detail = (await viewStage(clerkUserId, stage.id)).body as StageDetail;
+    const detail = (
+      await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })
+    ).body as StageDetail;
 
     const statusOf = (title: string) =>
       detail.items.find((item) => item.title === title)?.status;
@@ -560,30 +789,42 @@ describe("GET /api/stages/:stageId — view a Stage's contents", () => {
 
   it("shows an Item's derived past target inside a Stage, exactly as All does", async () => {
     const clerkUserId = "clerk_stage_view_past_target";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Slipped");
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Slipped",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
     await request(app)
       .patch(`/api/items/${item.id}/target-date`)
       .set(TEST_USER_HEADER, clerkUserId)
       .send({ targetDate: "2000-01-01" });
 
-    const detail = (await viewStage(clerkUserId, stage.id)).body as StageDetail;
+    const detail = (
+      await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })
+    ).body as StageDetail;
 
     expect(detail.items[0].targetDate).toBe("2000-01-01");
     expect(detail.items[0].pastTarget).toBe(true);
   });
 
   it("404s on a Stage that does not exist", async () => {
-    const res = await viewStage(
-      "clerk_stage_view_missing",
-      "00000000-0000-0000-0000-000000000000",
-    );
+    const res = await viewStage({
+      clerkUserId: "clerk_stage_view_missing",
+      stageId: "00000000-0000-0000-0000-000000000000",
+    });
 
     expect(res.status).toBe(404);
   });
 
   it("rejects a malformed Stage id before repository work", async () => {
-    const res = await viewStage("clerk_stage_read_invalid", "not-a-stage-id");
+    const res = await viewStage({
+      clerkUserId: "clerk_stage_read_invalid",
+      stageId: "not-a-stage-id",
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
@@ -593,7 +834,9 @@ describe("GET /api/stages/:stageId — view a Stage's contents", () => {
   });
 
   it("refuses an unauthenticated view", async () => {
-    const { stage } = await givenItemAndStage("clerk_stage_view_anon");
+    const { stage } = await givenItemAndStage({
+      clerkUserId: "clerk_stage_view_anon",
+    });
 
     expect((await request(app).get(`/api/stages/${stage.id}`)).status).toBe(
       401,
@@ -615,18 +858,28 @@ describe("GET /api/learning-plans/:learningPlanId/stages/:stageId — view a Sta
     ).body.id as string;
 
     expect(
-      (await viewLearningPlanStage(owner, owningLearningPlanId, stage.id))
-        .status,
+      (
+        await viewLearningPlanStage({
+          clerkUserId: owner,
+          learningPlanId: owningLearningPlanId,
+          stageId: stage.id,
+        })
+      ).status,
     ).toBe(200);
     expect(
-      (await viewLearningPlanStage(owner, otherLearningPlanId, stage.id))
-        .status,
+      (
+        await viewLearningPlanStage({
+          clerkUserId: owner,
+          learningPlanId: otherLearningPlanId,
+          stageId: stage.id,
+        })
+      ).status,
     ).toBe(404);
-    const malformed = await viewLearningPlanStage(
-      owner,
-      owningLearningPlanId,
-      "not-a-stage-id",
-    );
+    const malformed = await viewLearningPlanStage({
+      clerkUserId: owner,
+      learningPlanId: owningLearningPlanId,
+      stageId: "not-a-stage-id",
+    });
     expect(malformed.status).toBe(400);
     expect(malformed.body).toEqual({
       error: "invalid_request",
@@ -634,11 +887,11 @@ describe("GET /api/learning-plans/:learningPlanId/stages/:stageId — view a Sta
     });
     expect(
       (
-        await viewLearningPlanStage(
-          "clerk_stage_route_context_intruder",
-          owningLearningPlanId,
-          stage.id,
-        )
+        await viewLearningPlanStage({
+          clerkUserId: "clerk_stage_route_context_intruder",
+          learningPlanId: owningLearningPlanId,
+          stageId: stage.id,
+        })
       ).status,
     ).toBe(404);
   });
@@ -648,11 +901,11 @@ describe("GET /api/learning-plans/:learningPlanId/stages/:stageId — view a Sta
     const stage = (await createStage(user, { name: "Valid Stage" }))
       .body as Stage;
 
-    const res = await viewLearningPlanStage(
-      user,
-      "not-a-learningPlan-id",
-      stage.id,
-    );
+    const res = await viewLearningPlanStage({
+      clerkUserId: user,
+      learningPlanId: "not-a-learningPlan-id",
+      stageId: stage.id,
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
@@ -682,17 +935,26 @@ describe("one Status, read through every Stage that holds the Item", () => {
           body: { name },
         })
       ).body as Stage;
-      await addToStage(clerkUserId, stage.id, { itemId: item.id });
+      await addToStage({
+        clerkUserId: clerkUserId,
+        stageId: stage.id,
+        body: { itemId: item.id },
+      });
       stages.push(stage);
     }
 
     // Changed once, on the Item — not per Stage, because there is nowhere else
     // for a Status to live (ADR-0004: the membership carries none).
-    await setStatus(clerkUserId, item.id, "done");
+    await setStatus({
+      clerkUserId: clerkUserId,
+      itemId: item.id,
+      status: "done",
+    });
 
     for (const stage of stages) {
-      const detail = (await viewStage(clerkUserId, stage.id))
-        .body as StageDetail;
+      const detail = (
+        await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })
+      ).body as StageDetail;
       expect(detail.items[0].status, `Status in ${stage.name}`).toBe("done");
     }
     const all = (
@@ -721,8 +983,15 @@ describe("StageItem — membership with database invariant anchors", () => {
 
   it("cannot hold the same Item in the same Stage twice, at the database", async () => {
     const clerkUserId = "clerk_stage_item_unique";
-    const { item, stage } = await givenItemAndStage(clerkUserId, "Only once");
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+    const { item, stage } = await givenItemAndStage({
+      clerkUserId: clerkUserId,
+      title: "Only once",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
     // Set semantics are the schema's guarantee, not just the route's.
     await expect(
@@ -737,13 +1006,17 @@ describe("StageItem — membership with database invariant anchors", () => {
 
   it("cannot place one Item into two Stages on the same LearningPlan at the database", async () => {
     const user = "clerk_stage_item_learningPlan_unique";
-    const { item, stage: first } = await givenItemAndStage(
-      user,
-      "One place per LearningPlan",
-      "First",
-    );
+    const { item, stage: first } = await givenItemAndStage({
+      clerkUserId: user,
+      title: "One place per LearningPlan",
+      name: "First",
+    });
     const second = (await createStage(user, { name: "Second" })).body as Stage;
-    await addToStage(user, first.id, { itemId: item.id });
+    await addToStage({
+      clerkUserId: user,
+      stageId: first.id,
+      body: { itemId: item.id },
+    });
 
     await expect(
       harness.pool.query(
@@ -756,16 +1029,16 @@ describe("StageItem — membership with database invariant anchors", () => {
   });
 
   it("rejects a cross-User membership at the database boundary", async () => {
-    const alice = await givenItemAndStage(
-      "clerk_stage_item_tenant_alice",
-      "Alice's item",
-      "Alice's stage",
-    );
-    const bob = await givenItemAndStage(
-      "clerk_stage_item_tenant_bob",
-      "Bob's item",
-      "Bob's stage",
-    );
+    const alice = await givenItemAndStage({
+      clerkUserId: "clerk_stage_item_tenant_alice",
+      title: "Alice's item",
+      name: "Alice's stage",
+    });
+    const bob = await givenItemAndStage({
+      clerkUserId: "clerk_stage_item_tenant_bob",
+      title: "Bob's item",
+      name: "Bob's stage",
+    });
 
     await expect(
       harness.pool.query(
@@ -793,15 +1066,22 @@ describe("per-User isolation", () => {
   });
 
   it("cannot view another User's Stage", async () => {
-    const { stage } = await givenItemAndStage("clerk_stage_iso_view_owner");
+    const { stage } = await givenItemAndStage({
+      clerkUserId: "clerk_stage_iso_view_owner",
+    });
 
-    const res = await viewStage("clerk_stage_iso_view_intruder", stage.id);
+    const res = await viewStage({
+      clerkUserId: "clerk_stage_iso_view_intruder",
+      stageId: stage.id,
+    });
 
     expect(res.status).toBe(404);
   });
 
   it("cannot add an Item to another User's Stage", async () => {
-    const { stage } = await givenItemAndStage("clerk_stage_iso_add_owner");
+    const { stage } = await givenItemAndStage({
+      clerkUserId: "clerk_stage_iso_add_owner",
+    });
     const intruderItem = (
       await capture("clerk_stage_iso_add_intruder", {
         title: "Intruder's item",
@@ -809,13 +1089,24 @@ describe("per-User isolation", () => {
       })
     ).body as Item;
 
-    const res = await addToStage("clerk_stage_iso_add_intruder", stage.id, {
-      itemId: intruderItem.id,
+    const res = await addToStage({
+      clerkUserId: "clerk_stage_iso_add_intruder",
+      stageId: stage.id,
+      body: {
+        itemId: intruderItem.id,
+      },
     });
 
     expect(res.status).toBe(404);
     expect(
-      titlesIn((await viewStage("clerk_stage_iso_add_owner", stage.id)).body),
+      titlesIn(
+        (
+          await viewStage({
+            clerkUserId: "clerk_stage_iso_add_owner",
+            stageId: stage.id,
+          })
+        ).body,
+      ),
     ).toEqual([]);
   });
 
@@ -830,33 +1121,50 @@ describe("per-User isolation", () => {
       await createStage("clerk_stage_iso_item_taker", { name: "My stage" })
     ).body as Stage;
 
-    const res = await addToStage("clerk_stage_iso_item_taker", stage.id, {
-      itemId: ownerItem.id,
+    const res = await addToStage({
+      clerkUserId: "clerk_stage_iso_item_taker",
+      stageId: stage.id,
+      body: {
+        itemId: ownerItem.id,
+      },
     });
 
     expect(res.status).toBe(404);
     expect(
-      titlesIn((await viewStage("clerk_stage_iso_item_taker", stage.id)).body),
+      titlesIn(
+        (
+          await viewStage({
+            clerkUserId: "clerk_stage_iso_item_taker",
+            stageId: stage.id,
+          })
+        ).body,
+      ),
     ).toEqual([]);
   });
 
   it("cannot remove an Item from another User's Stage", async () => {
     const clerkUserId = "clerk_stage_iso_remove_owner";
-    const { item, stage } = await givenItemAndStage(
+    const { item, stage } = await givenItemAndStage({
       clerkUserId,
-      "Owner's only",
-    );
-    await addToStage(clerkUserId, stage.id, { itemId: item.id });
+      title: "Owner's only",
+    });
+    await addToStage({
+      clerkUserId: clerkUserId,
+      stageId: stage.id,
+      body: { itemId: item.id },
+    });
 
-    const res = await removeFromStage(
-      "clerk_stage_iso_remove_intruder",
-      stage.id,
-      item.id,
-    );
+    const res = await removeFromStage({
+      clerkUserId: "clerk_stage_iso_remove_intruder",
+      stageId: stage.id,
+      itemId: item.id,
+    });
 
     expect(res.status).toBe(404);
-    expect(titlesIn((await viewStage(clerkUserId, stage.id)).body)).toEqual([
-      "Owner's only",
-    ]);
+    expect(
+      titlesIn(
+        (await viewStage({ clerkUserId: clerkUserId, stageId: stage.id })).body,
+      ),
+    ).toEqual(["Owner's only"]);
   });
 });

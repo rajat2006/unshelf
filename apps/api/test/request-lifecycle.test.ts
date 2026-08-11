@@ -220,7 +220,7 @@ describe("API request lifecycle", () => {
     expect(JSON.stringify(logger.records)).not.toContain("sentinel");
   });
 
-  it("does not add a learningPlaning slash to a mounted router root", async () => {
+  it("does not add a trailing slash to a mounted router root", async () => {
     const logger = createCollectingLogger();
     const app = createApp(healthyDatabase(), [passThroughAuth], {
       logger,

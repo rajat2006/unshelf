@@ -41,7 +41,13 @@ const learningPlanFor = (clerkUserId: string): Promise<string> => {
   return existing;
 };
 
-const createStage = async (clerkUserId: string, name: string) => {
+const createStage = async ({
+  clerkUserId,
+  name,
+}: {
+  clerkUserId: string;
+  name: string;
+}) => {
   const learningPlanId = await learningPlanFor(clerkUserId);
   return request(app)
     .post(`/api/learning-plans/${learningPlanId}/stages`)
@@ -57,11 +63,15 @@ const connect = async (clerkUserId: string, body: object) => {
     .send(body);
 };
 
-const disconnect = async (
-  clerkUserId: string,
-  fromNodeId: string,
-  toNodeId: string,
-) => {
+const disconnect = async ({
+  clerkUserId,
+  fromNodeId,
+  toNodeId,
+}: {
+  clerkUserId: string;
+  fromNodeId: string;
+  toNodeId: string;
+}) => {
   const learningPlanId = await learningPlanFor(clerkUserId);
   return request(app)
     .delete(
@@ -77,19 +87,41 @@ const getLearningPlan = async (clerkUserId: string) => {
     .set(TEST_USER_HEADER, clerkUserId);
 };
 
-const capture = (clerkUserId: string, title: string) =>
+const capture = ({
+  clerkUserId,
+  title,
+}: {
+  clerkUserId: string;
+  title: string;
+}) =>
   request(app)
     .post("/api/items")
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ title, type: "article" });
 
-const addToStage = (clerkUserId: string, stageId: string, itemId: string) =>
+const addToStage = ({
+  clerkUserId,
+  stageId,
+  itemId,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  itemId: string;
+}) =>
   request(app)
     .post(`/api/stages/${stageId}/items`)
     .set(TEST_USER_HEADER, clerkUserId)
     .send({ itemId });
 
-const setStatus = (clerkUserId: string, itemId: string, status: string) =>
+const setStatus = ({
+  clerkUserId,
+  itemId,
+  status,
+}: {
+  clerkUserId: string;
+  itemId: string;
+  status: string;
+}) =>
   request(app)
     .patch(`/api/items/${itemId}/status`)
     .set(TEST_USER_HEADER, clerkUserId)
@@ -109,7 +141,8 @@ const givenStages = async (
 ): Promise<string[]> => {
   const ids: string[] = [];
   for (let i = 0; i < count; i += 1) {
-    const stage = (await createStage(clerkUserId, `Stage ${i}`)).body as Stage;
+    const stage = (await createStage({ clerkUserId, name: `Stage ${i}` }))
+      .body as Stage;
     ids.push(stage.id);
   }
   return ids;
@@ -175,8 +208,8 @@ describe("GET /api/learning-plans/:learningPlanId/topology — read a LearningPl
 describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived progress", () => {
   it("returns every Stage on the LearningPlan as a node, even one with no edges", async () => {
     const clerkUserId = "clerk_learningPlan_nodes";
-    await createStage(clerkUserId, "Alpha");
-    await createStage(clerkUserId, "Beta");
+    await createStage({ clerkUserId, name: "Alpha" });
+    await createStage({ clerkUserId, name: "Beta" });
 
     const view = (await getLearningPlan(clerkUserId)).body as LearningPlanView;
 
@@ -186,12 +219,13 @@ describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived p
 
   it("derives each node's done/total from its Items' Status, never storing it", async () => {
     const clerkUserId = "clerk_learningPlan_progress";
-    const stage = (await createStage(clerkUserId, "React")).body as Stage;
-    const a = (await capture(clerkUserId, "Hooks")).body as Item;
-    const b = (await capture(clerkUserId, "Router")).body as Item;
-    const c = (await capture(clerkUserId, "Suspense")).body as Item;
+    const stage = (await createStage({ clerkUserId, name: "React" }))
+      .body as Stage;
+    const a = (await capture({ clerkUserId, title: "Hooks" })).body as Item;
+    const b = (await capture({ clerkUserId, title: "Router" })).body as Item;
+    const c = (await capture({ clerkUserId, title: "Suspense" })).body as Item;
     for (const item of [a, b, c])
-      await addToStage(clerkUserId, stage.id, item.id);
+      await addToStage({ clerkUserId, stageId: stage.id, itemId: item.id });
 
     // Freshly captured Items are not started: 0 of 3 done.
     expect(
@@ -201,7 +235,7 @@ describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived p
       total: 3,
     });
 
-    await setStatus(clerkUserId, a.id, "done");
+    await setStatus({ clerkUserId, itemId: a.id, status: "done" });
 
     // The same derived count the Stage itself would show — 1 of 3, no stored flag.
     expect(
@@ -214,7 +248,7 @@ describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived p
 
   it("reads an empty Stage as 0 of 0", async () => {
     const clerkUserId = "clerk_learningPlan_empty_stage";
-    await createStage(clerkUserId, "Untouched");
+    await createStage({ clerkUserId, name: "Untouched" });
 
     expect(
       nodeNamed((await getLearningPlan(clerkUserId)).body, "Untouched"),
@@ -225,7 +259,10 @@ describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived p
   });
 
   it("shows a User only their own LearningPlan's Stages as nodes", async () => {
-    await createStage("clerk_learningPlan_nodes_owner", "Owner's stage");
+    await createStage({
+      clerkUserId: "clerk_learningPlan_nodes_owner",
+      name: "Owner's stage",
+    });
     const view = (await getLearningPlan("clerk_learningPlan_nodes_intruder"))
       .body as LearningPlanView;
     expect(view.nodes).toEqual([]);
@@ -517,7 +554,7 @@ describe("DELETE /api/learning-plans/:learningPlanId/edges — erase an edge and
     const [a, b] = await givenStages(clerkUserId, 2);
     await connect(clerkUserId, { fromNodeId: a, toNodeId: b });
 
-    const res = await disconnect(clerkUserId, a, b);
+    const res = await disconnect({ clerkUserId, fromNodeId: a, toNodeId: b });
 
     expect(res.status).toBe(200);
     expect(edgePairs(res.body as LearningPlanView)).toEqual([]);
@@ -531,7 +568,7 @@ describe("DELETE /api/learning-plans/:learningPlanId/edges — erase an edge and
     await connect(clerkUserId, { fromNodeId: a, toNodeId: b });
     await connect(clerkUserId, { fromNodeId: b, toNodeId: c });
 
-    await disconnect(clerkUserId, b, c);
+    await disconnect({ clerkUserId, fromNodeId: b, toNodeId: c });
     await connect(clerkUserId, { fromNodeId: a, toNodeId: c });
 
     expect(edgePairs((await getLearningPlan(clerkUserId)).body)).toEqual(
@@ -543,7 +580,7 @@ describe("DELETE /api/learning-plans/:learningPlanId/edges — erase an edge and
     const clerkUserId = "clerk_learningPlan_remove_absent";
     const [a, b] = await givenStages(clerkUserId, 2);
 
-    const res = await disconnect(clerkUserId, a, b);
+    const res = await disconnect({ clerkUserId, fromNodeId: a, toNodeId: b });
 
     expect(res.status).toBe(200);
     expect(edgePairs(res.body as LearningPlanView)).toEqual([]);
@@ -570,7 +607,11 @@ describe("DELETE /api/learning-plans/:learningPlanId/edges — erase an edge and
     const [a, b] = await givenStages(user, 2);
     await connect(user, { fromNodeId: a, toNodeId: b });
 
-    const res = await disconnect(user, "not-a-stage-id", b);
+    const res = await disconnect({
+      clerkUserId: user,
+      fromNodeId: "not-a-stage-id",
+      toNodeId: b,
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
@@ -622,8 +663,12 @@ describe("learning_plan_edges — an adjacency list scoped to one Learning Plan"
   it("forbids a self-loop at the database", async () => {
     // Set semantics and the DAG floor are the schema's guarantee, not just the
     // route's: even a write that bypasses the repository cannot loop a Stage.
-    const owner = (await createStage("clerk_learningPlan_db_self", "Owned"))
-      .body as Stage;
+    const owner = (
+      await createStage({
+        clerkUserId: "clerk_learningPlan_db_self",
+        name: "Owned",
+      })
+    ).body as Stage;
 
     await expect(
       harness.pool.query(
@@ -638,7 +683,7 @@ describe("learning_plan_edges — an adjacency list scoped to one Learning Plan"
   it("requires every edge to carry its LearningPlan anchor", async () => {
     const clerkUserId = "clerk_learningPlan_db_anchor";
     const [from, to] = await givenStages(clerkUserId, 2);
-    const owner = (await createStage(clerkUserId, "Owner anchor"))
+    const owner = (await createStage({ clerkUserId, name: "Owner anchor" }))
       .body as Stage;
 
     await expect(
@@ -652,10 +697,17 @@ describe("learning_plan_edges — an adjacency list scoped to one Learning Plan"
 
   it("rejects a cross-User edge at the database boundary", async () => {
     const aliceOwner = (
-      await createStage("clerk_learningPlan_db_alice", "Alice")
+      await createStage({
+        clerkUserId: "clerk_learningPlan_db_alice",
+        name: "Alice",
+      })
     ).body as Stage;
-    const bobStage = (await createStage("clerk_learningPlan_db_bob", "Bob"))
-      .body as Stage;
+    const bobStage = (
+      await createStage({
+        clerkUserId: "clerk_learningPlan_db_bob",
+        name: "Bob",
+      })
+    ).body as Stage;
 
     await expect(
       harness.pool.query(

@@ -8,18 +8,7 @@ import {
   updateLearningPlanRequestSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
-import { createStage, getStageOnLearningPlan } from "../stages/repository";
-import {
-  connectLearningPlanNodes,
-  disconnectLearningPlanNodes,
-  getLearningPlan as getLearningPlanTopology,
-} from "../learning-plan/repository";
-import {
-  createLearningPlan,
-  getLearningPlan,
-  listLearningPlans,
-  updateLearningPlan,
-} from "./repository";
+import * as learningPlansService from "./service";
 import {
   recordValidationFailure,
   validateRequest,
@@ -52,7 +41,12 @@ export function createLearningPlansRouter(
   router.use(...auth);
 
   router.get("/", async (req, res) => {
-    res.json(await listLearningPlans(db, req.user!.id));
+    res.json(
+      await learningPlansService.listLearningPlans({
+        db,
+        userId: req.user!.id,
+      }),
+    );
   });
 
   router.post(
@@ -63,7 +57,13 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { body } = res.locals.validated;
-      res.status(201).json(await createLearningPlan(db, req.user!.id, body));
+      res.status(201).json(
+        await learningPlansService.createLearningPlan({
+          db,
+          userId: req.user!.id,
+          request: body,
+        }),
+      );
     },
   );
 
@@ -77,13 +77,13 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const learningPlan = await getLearningPlan(
+      const learningPlan = await learningPlansService.getLearningPlan({
         db,
-        req.user!.id,
-        params.learningPlanId,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+      });
       if (!learningPlan) {
-        res.status(404).json({ error: "learningPlan not found" });
+        res.status(404).json({ error: "learning plan not found" });
         return;
       }
       res.json(learningPlan);
@@ -101,12 +101,12 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const learningPlan = await updateLearningPlan(
+      const learningPlan = await learningPlansService.updateLearningPlan({
         db,
-        req.user!.id,
-        params.learningPlanId,
-        body,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        request: body,
+      });
       if (!learningPlan) {
         res.status(404).json({ error: "learning plan not found" });
         return;
@@ -126,14 +126,14 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const stage = await createStage(
+      const stage = await learningPlansService.createStage({
         db,
-        req.user!.id,
-        params.learningPlanId,
-        body,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        request: body,
+      });
       if (!stage) {
-        res.status(404).json({ error: "learningPlan not found" });
+        res.status(404).json({ error: "learning plan not found" });
         return;
       }
       res.status(201).json(stage);
@@ -153,12 +153,12 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const stage = await getStageOnLearningPlan(
+      const stage = await learningPlansService.getStage({
         db,
-        req.user!.id,
-        params.learningPlanId,
-        params.stageId,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        stageId: params.stageId,
+      });
       if (!stage) {
         res.status(404).json({ error: "stage not found" });
         return;
@@ -177,13 +177,13 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const topology = await getLearningPlanTopology(
+      const topology = await learningPlansService.getTopology({
         db,
-        req.user!.id,
-        params.learningPlanId,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+      });
       if (!topology) {
-        res.status(404).json({ error: "learningPlan not found" });
+        res.status(404).json({ error: "learning plan not found" });
         return;
       }
       res.json(topology);
@@ -201,34 +201,29 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      if (body.fromNodeId === body.toNodeId) {
-        recordValidationFailure(req, "self_edge");
-        res.status(400).json({ error: "a stage cannot link to itself" });
-        return;
-      }
-
-      const result = await connectLearningPlanNodes(
+      const result = await learningPlansService.connectNodes({
         db,
-        req.user!.id,
-        params.learningPlanId,
-        body.fromNodeId,
-        body.toNodeId,
-      );
-      switch (result.kind) {
-        case "not_found":
-          res.status(404).json({ error: "stage not found" });
-          return;
-        case "cycle":
-          res
-            .status(409)
-            .json({
-              error: "that link would create a cycle in the learningPlan",
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        endpoints: body,
+      });
+      if (!result.ok) {
+        switch (result.error) {
+          case "self_edge":
+            recordValidationFailure(req, "self_edge");
+            res.status(400).json({ error: "a stage cannot link to itself" });
+            return;
+          case "not_found":
+            res.status(404).json({ error: "stage not found" });
+            return;
+          case "cycle":
+            res.status(409).json({
+              error: "that link would create a cycle in the learning plan",
             });
-          return;
-        case "ok":
-          res.status(201).json(result.learningPlan);
-          return;
+            return;
+        }
       }
+      res.status(201).json(result.learningPlan);
     },
   );
 
@@ -246,15 +241,17 @@ export function createLearningPlansRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const topology = await disconnectLearningPlanNodes(
+      const topology = await learningPlansService.disconnectNodes({
         db,
-        req.user!.id,
-        params.learningPlanId,
-        params.fromNodeId,
-        params.toNodeId,
-      );
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        endpoints: {
+          fromNodeId: params.fromNodeId,
+          toNodeId: params.toNodeId,
+        },
+      });
       if (!topology) {
-        res.status(404).json({ error: "learningPlan not found" });
+        res.status(404).json({ error: "learning plan not found" });
         return;
       }
       res.json(topology);

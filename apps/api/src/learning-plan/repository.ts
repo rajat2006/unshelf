@@ -6,6 +6,7 @@ import type {
   LearningPlanId,
   LearningPlanNode,
   LearningPlanView,
+  ConnectLearningPlanNodesRequest,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
@@ -194,9 +195,9 @@ export async function connectLearningPlanNodes(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  endpoints: ConnectLearningPlanNodesRequest,
 ): Promise<ConnectResult> {
+  const { fromNodeId, toNodeId } = endpoints;
   return db.transaction(async (tx) => {
     // Serialise this User's connects: the cycle check and the insert below must
     // see a consistent edge set, and this lock releases automatically on commit.
@@ -205,26 +206,12 @@ export async function connectLearningPlanNodes(
     `);
 
     if (
-      !(await bothStagesOnLearningPlan(
-        tx,
-        userId,
-        learningPlanId,
-        fromNodeId,
-        toNodeId,
-      ))
+      !(await bothStagesOnLearningPlan(tx, userId, learningPlanId, endpoints))
     ) {
       return { kind: "not_found" };
     }
 
-    if (
-      await targetReachesSource(
-        tx,
-        userId,
-        learningPlanId,
-        fromNodeId,
-        toNodeId,
-      )
-    ) {
+    if (await targetReachesSource(tx, userId, learningPlanId, endpoints)) {
       return { kind: "cycle" };
     }
 
@@ -248,8 +235,7 @@ async function bothStagesOnLearningPlan(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  { fromNodeId, toNodeId }: ConnectLearningPlanNodesRequest,
 ): Promise<boolean> {
   const rows = await db
     .select({ count: count().mapWith(Number) })
@@ -273,8 +259,7 @@ async function targetReachesSource(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  { fromNodeId, toNodeId }: ConnectLearningPlanNodesRequest,
 ): Promise<boolean> {
   const { rows } = await db.execute(sql`
     WITH RECURSIVE reachable(node) AS (
@@ -303,8 +288,7 @@ export async function disconnectLearningPlanNodes(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  { fromNodeId, toNodeId }: ConnectLearningPlanNodesRequest,
 ): Promise<LearningPlanView | null> {
   if (!(await learningPlanBelongsToUser(db, userId, learningPlanId)))
     return null;

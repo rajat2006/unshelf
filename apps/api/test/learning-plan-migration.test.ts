@@ -56,21 +56,57 @@ describe("Learning Plan migration", () => {
           learning_plan_id: IDS.plan,
           name: "Practice",
         },
+        {
+          id: IDS.stageC,
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          name: "Parallel practice",
+        },
+        {
+          id: IDS.stageD,
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          name: "Rejoin",
+        },
+        {
+          id: IDS.stageE,
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          name: "Disconnected reference",
+        },
       ]);
 
+      const nodes = await db.execute(sql`
+        SELECT id, user_id, learning_plan_id, kind
+        FROM learning_plan_nodes
+        ORDER BY id
+      `);
+      expect(nodes.rows).toEqual(
+        [IDS.stageA, IDS.stageB, IDS.stageC, IDS.stageD, IDS.stageE].map(
+          (id) => ({
+            id,
+            user_id: IDS.user,
+            learning_plan_id: IDS.plan,
+            kind: "stage",
+          }),
+        ),
+      );
+
       const placements = await db.execute(sql`
-        SELECT learning_plan_id, stage_id, item_id, position
+        SELECT user_id, learning_plan_id, stage_id, item_id, position
         FROM stage_items
         ORDER BY stage_id, position
       `);
       expect(placements.rows).toEqual([
         {
+          user_id: IDS.user,
           learning_plan_id: IDS.plan,
           stage_id: IDS.stageA,
           item_id: IDS.itemA,
           position: 0,
         },
         {
+          user_id: IDS.user,
           learning_plan_id: IDS.plan,
           stage_id: IDS.stageA,
           item_id: IDS.itemB,
@@ -79,14 +115,34 @@ describe("Learning Plan migration", () => {
       ]);
 
       const edges = await db.execute(sql`
-        SELECT learning_plan_id, from_node_id, to_node_id
+        SELECT user_id, learning_plan_id, from_node_id, to_node_id
         FROM learning_plan_edges
+        ORDER BY from_node_id, to_node_id
       `);
       expect(edges.rows).toEqual([
         {
+          user_id: IDS.user,
           learning_plan_id: IDS.plan,
           from_node_id: IDS.stageA,
           to_node_id: IDS.stageB,
+        },
+        {
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          from_node_id: IDS.stageA,
+          to_node_id: IDS.stageC,
+        },
+        {
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          from_node_id: IDS.stageB,
+          to_node_id: IDS.stageD,
+        },
+        {
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          from_node_id: IDS.stageC,
+          to_node_id: IDS.stageD,
         },
       ]);
 
@@ -124,6 +180,13 @@ describe("Learning Plan migration", () => {
       expect(labels.rows).toEqual([
         { item_id: IDS.itemA, label_id: IDS.label },
       ]);
+
+      const labelFacts = await db.execute(sql`
+        SELECT id, user_id, name FROM labels
+      `);
+      expect(labelFacts.rows).toEqual([
+        { id: IDS.label, user_id: IDS.user, name: "Core" },
+      ]);
     } finally {
       await db.$client.end();
       await container.stop();
@@ -151,6 +214,9 @@ const IDS = {
   plan: "20000000-0000-0000-0000-000000000000",
   stageA: "30000000-0000-0000-0000-000000000000",
   stageB: "30000000-0000-0000-0000-000000000001",
+  stageC: "30000000-0000-0000-0000-000000000002",
+  stageD: "30000000-0000-0000-0000-000000000003",
+  stageE: "30000000-0000-0000-0000-000000000004",
   itemA: "40000000-0000-0000-0000-000000000000",
   itemB: "40000000-0000-0000-0000-000000000001",
   label: "50000000-0000-0000-0000-000000000000",
@@ -174,7 +240,10 @@ async function seedLegacyTrail(db: Database): Promise<void> {
     INSERT INTO stops (id, user_id, name, trail_id)
     VALUES
       (${IDS.stageA}, ${IDS.user}, 'Foundations', ${IDS.plan}),
-      (${IDS.stageB}, ${IDS.user}, 'Practice', ${IDS.plan})
+      (${IDS.stageB}, ${IDS.user}, 'Practice', ${IDS.plan}),
+      (${IDS.stageC}, ${IDS.user}, 'Parallel practice', ${IDS.plan}),
+      (${IDS.stageD}, ${IDS.user}, 'Rejoin', ${IDS.plan}),
+      (${IDS.stageE}, ${IDS.user}, 'Disconnected reference', ${IDS.plan})
   `);
   await db.execute(sql`
     INSERT INTO items (
@@ -217,7 +286,11 @@ async function seedLegacyTrail(db: Database): Promise<void> {
   `);
   await db.execute(sql`
     INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
-    VALUES (${IDS.user}, ${IDS.plan}, ${IDS.stageA}, ${IDS.stageB})
+    VALUES
+      (${IDS.user}, ${IDS.plan}, ${IDS.stageA}, ${IDS.stageB}),
+      (${IDS.user}, ${IDS.plan}, ${IDS.stageA}, ${IDS.stageC}),
+      (${IDS.user}, ${IDS.plan}, ${IDS.stageB}, ${IDS.stageD}),
+      (${IDS.user}, ${IDS.plan}, ${IDS.stageC}, ${IDS.stageD})
   `);
   await db.execute(sql`
     INSERT INTO labels (id, user_id, name)

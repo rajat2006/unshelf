@@ -3,6 +3,8 @@ import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
+import { sql } from "drizzle-orm";
+import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Express } from "express";
 import type { Pool } from "pg";
@@ -10,7 +12,11 @@ import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
 import type { Identify } from "../src/middleware/auth";
-import { createDatabase, type Database } from "../src/db";
+import {
+  createDatabase,
+  type Database,
+  type DatabaseWithClient,
+} from "../src/db";
 import {
   createCollectingLogger,
   type CollectingLogger,
@@ -50,6 +56,80 @@ export interface TestApp {
   stop: () => Promise<void>;
 }
 
+export interface LegacyLearningPlanFixture {
+  clerkUserId: string;
+  userId: string;
+  learningPlanId: string;
+  firstStageId: string;
+  secondStageId: string;
+  itemId: string;
+  learningPlanName: string;
+  firstStageName: string;
+  secondStageName: string;
+  itemTitle: string;
+}
+
+export async function seedLegacyLearningPlanFixture(
+  db: Database,
+  fixture: LegacyLearningPlanFixture,
+): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO users (id, clerk_user_id)
+    VALUES (${fixture.userId}, ${fixture.clerkUserId})
+  `);
+  await db.execute(sql`
+    INSERT INTO trails (id, user_id, name)
+    VALUES (
+      ${fixture.learningPlanId},
+      ${fixture.userId},
+      ${fixture.learningPlanName}
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO stops (id, user_id, trail_id, name)
+    VALUES
+      (
+        ${fixture.firstStageId},
+        ${fixture.userId},
+        ${fixture.learningPlanId},
+        ${fixture.firstStageName}
+      ),
+      (
+        ${fixture.secondStageId},
+        ${fixture.userId},
+        ${fixture.learningPlanId},
+        ${fixture.secondStageName}
+      )
+  `);
+  await db.execute(sql`
+    INSERT INTO items (id, user_id, title, type)
+    VALUES (
+      ${fixture.itemId},
+      ${fixture.userId},
+      ${fixture.itemTitle},
+      'article'
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO stop_items (user_id, stop_id, item_id, trail_id)
+    VALUES (
+      ${fixture.userId},
+      ${fixture.firstStageId},
+      ${fixture.itemId},
+      ${fixture.learningPlanId}
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO trail_edges (user_id, trail_id, from_stop_id, to_stop_id)
+    VALUES (
+      ${fixture.userId},
+      ${fixture.learningPlanId},
+      ${fixture.firstStageId},
+      ${fixture.secondStageId}
+    )
+  `);
+}
+
 export async function startTestApp(
   identify: Identify = identifyFromTestHeader,
 ): Promise<TestApp> {
@@ -59,6 +139,64 @@ export async function startTestApp(
   const db = createDatabase(container.getConnectionUri());
   await migrateTestDatabase(db);
 
+  return runningTestApp({ container, db, identify });
+}
+
+/**
+ * Start the real app after inserting a fixture immediately before the committed
+ * Trail-to-Learning-Plan migration. Browser coverage uses this to exercise
+ * legacy rows through that migration, every later migration, and then the normal
+ * HTTP/UI seams.
+ */
+export async function startTestAppWithLegacyFixture(
+  identify: Identify,
+  seedLegacyDatabase: (db: Database) => Promise<void>,
+): Promise<TestApp> {
+  const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
+    "postgres:16-alpine",
+  ).start();
+  const db = createDatabase(container.getConnectionUri());
+  const migrations = readMigrationFiles({
+    migrationsFolder: MIGRATIONS_FOLDER,
+  });
+  const learningPlanMigrationIndex = migrations.findIndex((migration) =>
+    migration.sql.some((statement) =>
+      statement.includes('ALTER TABLE "trails" RENAME TO "learning_plans"'),
+    ),
+  );
+  if (learningPlanMigrationIndex < 0) {
+    throw new Error("Learning Plan migration is required");
+  }
+
+  await applyMigrationFiles(
+    db,
+    migrations.slice(0, learningPlanMigrationIndex),
+  );
+  await seedLegacyDatabase(db);
+  await applyMigrationFiles(db, migrations.slice(learningPlanMigrationIndex));
+  return runningTestApp({ container, db, identify });
+}
+
+async function applyMigrationFiles(
+  db: Database,
+  migrations: MigrationMeta[],
+): Promise<void> {
+  for (const migration of migrations) {
+    for (const statement of migration.sql) {
+      await db.execute(sql.raw(statement));
+    }
+  }
+}
+
+function runningTestApp({
+  container,
+  db,
+  identify,
+}: {
+  container: StartedPostgreSqlContainer;
+  db: DatabaseWithClient;
+  identify: Identify;
+}): TestApp {
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
   const app = createApp(db, [auth], { logger });

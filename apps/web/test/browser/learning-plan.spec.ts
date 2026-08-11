@@ -24,11 +24,15 @@ function defaultUser(testInfo: TestInfoLike): string {
  * `testUser` query, so this hands back a deep link that keeps it — the way to
  * reload or share the LearningPlan's URL in a test.
  */
-async function startAndOpenLearningPlan(
-  page: Page,
-  name: string,
-  user: string,
-): Promise<{ learningPlanId: string; deepLink: string }> {
+async function startAndOpenLearningPlan({
+  page,
+  name,
+  user,
+}: {
+  page: Page;
+  name: string;
+  user: string;
+}): Promise<{ learningPlanId: string; deepLink: string }> {
   await page.getByLabel("Learning Plan name").fill(name);
   await page.getByRole("button", { name: "Start a Learning Plan" }).click();
   const card = page.getByRole("link", { name: new RegExp(name) });
@@ -48,16 +52,18 @@ async function addFirstStage(page: Page, name: string): Promise<void> {
   const field = page.getByPlaceholder("Name your first stage");
   await field.fill(name);
   await field.press("Enter");
-  await expect(
-    page.getByRole("button", { name, exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 }
 
-async function addAndSequenceStage(
-  page: Page,
-  name: string,
-  predecessorName: string,
-): Promise<void> {
+async function addAndSequenceStage({
+  page,
+  name,
+  predecessorName,
+}: {
+  page: Page;
+  name: string;
+  predecessorName: string;
+}): Promise<void> {
   await page.getByRole("button", { name: "＋ Add another Stage" }).click();
   const field = page.getByPlaceholder("Name another stage");
   await field.fill(name);
@@ -89,17 +95,21 @@ test("a desktop User adds the first Stage, extends the sequence, and it persists
   const user = defaultUser(testInfo);
 
   await page.goto(testAppUrl("/plans", user));
-  const { deepLink } = await startAndOpenLearningPlan(
+  const { deepLink } = await startAndOpenLearningPlan({
     page,
-    `${testInfo.project.name} authoring journey`,
+    name: `${testInfo.project.name} authoring journey`,
     user,
-  );
+  });
 
   // The empty LearningPlan invites the first Stage; adding it draws a waypoint.
   await addFirstStage(page, "Learn the basics");
 
   // Add another loose Stage, then explicitly place it after the first.
-  await addAndSequenceStage(page, "Build something", "Learn the basics");
+  await addAndSequenceStage({
+    page,
+    name: "Build something",
+    predecessorName: "Learn the basics",
+  });
   await expect(
     page.getByRole("button", { name: "Open Build something", exact: true }),
   ).toBeVisible();
@@ -141,11 +151,11 @@ test("a LearningPlan's Stages are private to its owner", async ({
 
   const owner = `${testInfo.project.name}-learning-plan-owner`;
   await page.goto(testAppUrl("/plans", owner));
-  const { learningPlanId } = await startAndOpenLearningPlan(
+  const { learningPlanId } = await startAndOpenLearningPlan({
     page,
-    `${testInfo.project.name} private topology`,
-    owner,
-  );
+    name: `${testInfo.project.name} private topology`,
+    user: owner,
+  });
   await addFirstStage(page, "Owner only");
 
   // A different User opening the very same LearningPlan URL is refused it — the topology
@@ -169,13 +179,17 @@ test("a desktop User forks and rejoins the LearningPlan through its authoring co
   const user = `${testInfo.project.name}-learning-plan-fork-rejoin`;
 
   await page.goto(testAppUrl("/plans", user));
-  const { deepLink } = await startAndOpenLearningPlan(
+  const { deepLink } = await startAndOpenLearningPlan({
     page,
-    "Forking journey",
+    name: "Forking journey",
     user,
-  );
+  });
   await addFirstStage(page, "Foundation");
-  await addAndSequenceStage(page, "Main branch", "Foundation");
+  await addAndSequenceStage({
+    page,
+    name: "Main branch",
+    predecessorName: "Foundation",
+  });
 
   const foundation = page.getByRole("group", { name: /^Foundation:/ });
   await foundation
@@ -210,11 +224,11 @@ test("at phone width the LearningPlan is viewed, not authored", async ({
   const user = defaultUser(testInfo);
 
   await page.goto(testAppUrl("/plans", user));
-  await startAndOpenLearningPlan(
+  await startAndOpenLearningPlan({
     page,
-    `${testInfo.project.name} view-only journey`,
+    name: `${testInfo.project.name} view-only journey`,
     user,
-  );
+  });
 
   // The empty LearningPlan offers no authoring on a phone — only guidance to a wider
   // screen — so unsupported touch editing is never presented as available.

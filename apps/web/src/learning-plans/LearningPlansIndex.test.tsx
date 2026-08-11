@@ -9,12 +9,17 @@ import {
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 
-const learningPlan = (
-  id: string,
-  name: string,
-  done: number,
-  total: number,
-): LearningPlan => ({
+const learningPlan = ({
+  id,
+  name,
+  done,
+  total,
+}: {
+  id: string;
+  name: string;
+  done: number;
+  total: number;
+}): LearningPlan => ({
   id: id as LearningPlanId,
   userId,
   name,
@@ -40,18 +45,18 @@ describe("Learning Plans index surface states", () => {
     const markup = render({
       status: "ready",
       learningPlans: [
-        learningPlan(
-          "11111111-1111-1111-1111-111111111111",
-          "Learn Rust",
-          2,
-          5,
-        ),
-        learningPlan(
-          "22222222-2222-2222-2222-222222222222",
-          "Empty journey",
-          0,
-          0,
-        ),
+        learningPlan({
+          id: "11111111-1111-1111-1111-111111111111",
+          name: "Learn Rust",
+          done: 2,
+          total: 5,
+        }),
+        learningPlan({
+          id: "22222222-2222-2222-2222-222222222222",
+          name: "Empty journey",
+          done: 0,
+          total: 0,
+        }),
       ],
     });
 

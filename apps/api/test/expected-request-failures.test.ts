@@ -329,7 +329,7 @@ describe("expected API request failures", () => {
       .expect(409);
 
     expect(response.body).toEqual({
-      error: "that link would create a cycle in the learningPlan",
+      error: "that link would create a cycle in the learning plan",
     });
     expect(
       logger.records.find(

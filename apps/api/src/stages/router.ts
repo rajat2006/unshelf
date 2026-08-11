@@ -9,12 +9,7 @@ import {
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
 import { respondToPlacementFailure } from "../placements/http";
-import {
-  placeItemInStage,
-  removeItemFromStage,
-  searchStageItemCandidates,
-} from "../placements/service";
-import { getStage, listStages, updateStage } from "./repository";
+import * as stagesService from "./service";
 
 /**
  * Mount the authenticated Stage HTTP interface at `/api/stages`.
@@ -44,7 +39,7 @@ export function createStagesRouter(
   router.use(...auth);
 
   router.get("/", async (req, res) => {
-    res.json(await listStages(db, req.user!.id));
+    res.json(await stagesService.listStages({ db, userId: req.user!.id }));
   });
 
   router.get(
@@ -57,7 +52,11 @@ export function createStagesRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const stage = await getStage(db, req.user!.id, params.stageId);
+      const stage = await stagesService.getStage({
+        db,
+        userId: req.user!.id,
+        stageId: params.stageId,
+      });
       if (!stage) {
         res.status(404).json({ error: "stage not found" });
         return;
@@ -77,7 +76,12 @@ export function createStagesRouter(
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const stage = await updateStage(db, req.user!.id, params.stageId, body);
+      const stage = await stagesService.updateStage({
+        db,
+        userId: req.user!.id,
+        stageId: params.stageId,
+        request: body,
+      });
       if (!stage) {
         res.status(404).json({ error: "stage not found" });
         return;
@@ -97,10 +101,11 @@ export function createStagesRouter(
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const result = await placeItemInStage(db, {
+      const result = await stagesService.addItem({
+        db,
         userId: req.user!.id,
         stageId: params.stageId,
-        itemId: body.itemId,
+        request: body,
       });
       if (!result.ok) {
         respondToPlacementFailure({
@@ -125,7 +130,8 @@ export function createStagesRouter(
     ),
     async (req, res) => {
       const { params, query } = res.locals.validated;
-      const results = await searchStageItemCandidates(db, {
+      const results = await stagesService.searchItemCandidates({
+        db,
         userId: req.user!.id,
         stageId: params.stageId,
         query: query.query ?? "",
@@ -148,7 +154,8 @@ export function createStagesRouter(
     ),
     async (req, res) => {
       const { params } = res.locals.validated;
-      const stage = await removeItemFromStage(db, {
+      const stage = await stagesService.removeItem({
+        db,
         userId: req.user!.id,
         stageId: params.stageId,
         itemId: params.itemId,

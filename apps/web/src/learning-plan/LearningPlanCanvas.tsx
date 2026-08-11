@@ -143,7 +143,10 @@ export function LearningPlanCanvas({
     try {
       const stage = await createStage(user, learningPlanId, { name });
       if (from)
-        await connectLearningPlanNodes(user, learningPlanId, from, stage.id);
+        await connectLearningPlanNodes(user, learningPlanId, {
+          fromNodeId: from,
+          toNodeId: stage.id,
+        });
       setDraft(null);
       await onRefresh();
       onOpenStage(stage.id);
@@ -157,14 +160,25 @@ export function LearningPlanCanvas({
   const link = (to: StageId) => {
     if (linkingFrom)
       void run(() =>
-        connectLearningPlanNodes(user, learningPlanId, linkingFrom, to),
+        connectLearningPlanNodes(user, learningPlanId, {
+          fromNodeId: linkingFrom,
+          toNodeId: to,
+        }),
       );
   };
-  const unlink = (from: StageId, to: StageId) =>
-    void run(() => disconnectLearningPlanNodes(user, learningPlanId, from, to));
+  const unlink = ({ from, to }: { from: StageId; to: StageId }) =>
+    void run(() =>
+      disconnectLearningPlanNodes(user, learningPlanId, {
+        fromNodeId: from,
+        toNodeId: to,
+      }),
+    );
   const sequence = ({ stageId, predecessorId }: SequenceStageInput) =>
     void run(() =>
-      connectLearningPlanNodes(user, learningPlanId, predecessorId, stageId),
+      connectLearningPlanNodes(user, learningPlanId, {
+        fromNodeId: predecessorId,
+        toNodeId: stageId,
+      }),
     );
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
@@ -419,7 +433,9 @@ export function LearningPlanCanvas({
                     aria-label="Remove this link"
                     disabled={busy}
                     onPointerDown={(ev) => ev.stopPropagation()}
-                    onClick={() => unlink(e.fromNodeId, e.toNodeId)}
+                    onClick={() =>
+                      unlink({ from: e.fromNodeId, to: e.toNodeId })
+                    }
                     className="learning-plan-edge-remove"
                     style={
                       {

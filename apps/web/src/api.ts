@@ -335,17 +335,15 @@ export async function fetchLearningPlan(
 export async function connectLearningPlanNodes(
   user: CurrentUser,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  endpoints: ConnectLearningPlanNodesRequest,
 ): Promise<LearningPlanView> {
-  const body: ConnectLearningPlanNodesRequest = { fromNodeId, toNodeId };
   return requestJson<LearningPlanView>(
     user,
     `/api/learning-plans/${learningPlanId}/edges`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(endpoints),
     },
   );
 }
@@ -358,8 +356,7 @@ export async function connectLearningPlanNodes(
 export async function disconnectLearningPlanNodes(
   user: CurrentUser,
   learningPlanId: LearningPlanId,
-  fromNodeId: StageId,
-  toNodeId: StageId,
+  { fromNodeId, toNodeId }: ConnectLearningPlanNodesRequest,
 ): Promise<LearningPlanView> {
   return requestJson<LearningPlanView>(
     user,

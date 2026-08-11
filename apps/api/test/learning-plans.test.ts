@@ -24,7 +24,13 @@ const createLearningPlan = (clerkUserId: string, body: object) =>
 const listLearningPlans = (clerkUserId: string) =>
   request(app).get("/api/learning-plans").set(TEST_USER_HEADER, clerkUserId);
 
-const getLearningPlan = (clerkUserId: string, learningPlanId: string) =>
+const getLearningPlan = ({
+  clerkUserId,
+  learningPlanId,
+}: {
+  clerkUserId: string;
+  learningPlanId: string;
+}) =>
   request(app)
     .get(`/api/learning-plans/${learningPlanId}`)
     .set(TEST_USER_HEADER, clerkUserId);
@@ -51,7 +57,10 @@ describe("LearningPlans at the HTTP boundary", () => {
     expect(learningPlan.total).toBe(0);
 
     // The id is the LearningPlan's identity: reading it back returns the same record.
-    const read = await getLearningPlan(user, learningPlan.id);
+    const read = await getLearningPlan({
+      clerkUserId: user,
+      learningPlanId: learningPlan.id,
+    });
     expect(read.status).toBe(200);
     expect((read.body as LearningPlan).id).toBe(learningPlan.id);
     expect((read.body as LearningPlan).name).toBe("Learn Rust");
@@ -81,7 +90,10 @@ describe("LearningPlans at the HTTP boundary", () => {
       id: created.id,
       name: "New   outcome",
     });
-    expect((await getLearningPlan(user, created.id)).body).toMatchObject({
+    expect(
+      (await getLearningPlan({ clerkUserId: user, learningPlanId: created.id }))
+        .body,
+    ).toMatchObject({
       id: created.id,
       name: "New   outcome",
     });
@@ -122,19 +134,30 @@ describe("LearningPlans at the HTTP boundary", () => {
     ).body as LearningPlan;
 
     // A foreign id answers exactly as an unknown one does — 404, never 403.
-    expect((await getLearningPlan(intruder, learningPlan.id)).status).toBe(404);
     expect(
-      (await getLearningPlan(owner, "00000000-0000-0000-0000-000000000000"))
-        .status,
+      (
+        await getLearningPlan({
+          clerkUserId: intruder,
+          learningPlanId: learningPlan.id,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await getLearningPlan({
+          clerkUserId: owner,
+          learningPlanId: "00000000-0000-0000-0000-000000000000",
+        })
+      ).status,
     ).toBe(404);
     expect((await listLearningPlans(intruder)).body).toEqual([]);
   });
 
   it("rejects malformed LearningPlan ids with the shared request contract", async () => {
-    const res = await getLearningPlan(
-      "learningPlans-malformed-user",
-      "not-a-learningPlan-id",
-    );
+    const res = await getLearningPlan({
+      clerkUserId: "learningPlans-malformed-user",
+      learningPlanId: "not-a-learningPlan-id",
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
@@ -178,32 +201,54 @@ describe("LearningPlans at the HTTP boundary", () => {
         .send({ title: "Open thing", type: "article" })
     ).body as { id: string };
 
-    await addItemToStage(user, stageA.id, doneItem.id);
-    await addItemToStage(user, stageB.id, openItem.id);
+    await addItemToStage({
+      clerkUserId: user,
+      stageId: stageA.id,
+      itemId: doneItem.id,
+    });
+    await addItemToStage({
+      clerkUserId: user,
+      stageId: stageB.id,
+      itemId: openItem.id,
+    });
     await request(app)
       .patch(`/api/items/${doneItem.id}/status`)
       .set(TEST_USER_HEADER, user)
       .send({ status: "done" });
 
-    const read = (await getLearningPlan(user, learningPlan.id))
-      .body as LearningPlan;
+    const read = (
+      await getLearningPlan({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+      })
+    ).body as LearningPlan;
     expect(read.total).toBe(2);
     expect(read.done).toBe(1);
   });
 });
 
 describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
-  const createStageOn = (
-    clerkUserId: string,
-    learningPlanId: string,
-    name: string,
-  ) =>
+  const createStageOn = ({
+    clerkUserId,
+    learningPlanId,
+    name,
+  }: {
+    clerkUserId: string;
+    learningPlanId: string;
+    name: string;
+  }) =>
     request(app)
       .post(`/api/learning-plans/${learningPlanId}/stages`)
       .set(TEST_USER_HEADER, clerkUserId)
       .send({ name });
 
-  const topologyOf = (clerkUserId: string, learningPlanId: string) =>
+  const topologyOf = ({
+    clerkUserId,
+    learningPlanId,
+  }: {
+    clerkUserId: string;
+    learningPlanId: string;
+  }) =>
     request(app)
       .get(`/api/learning-plans/${learningPlanId}/topology`)
       .set(TEST_USER_HEADER, clerkUserId);
@@ -215,18 +260,24 @@ describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
     const elsewhere = (await createLearningPlan(user, { name: "Elsewhere" }))
       .body as LearningPlan;
 
-    const created = await createStageOn(user, here.id, "A waypoint");
+    const created = await createStageOn({
+      clerkUserId: user,
+      learningPlanId: here.id,
+      name: "A waypoint",
+    });
     expect(created.status).toBe(201);
     const stage = created.body as Stage;
 
     // It is a node on its own LearningPlan…
     const hereNodes = (
-      (await topologyOf(user, here.id)).body as LearningPlanView
+      (await topologyOf({ clerkUserId: user, learningPlanId: here.id }))
+        .body as LearningPlanView
     ).nodes;
     expect(hereNodes.map((n) => n.id)).toEqual([stage.id]);
     // …and nowhere on another LearningPlan of the same User.
     const elsewhereNodes = (
-      (await topologyOf(user, elsewhere.id)).body as LearningPlanView
+      (await topologyOf({ clerkUserId: user, learningPlanId: elsewhere.id }))
+        .body as LearningPlanView
     ).nodes;
     expect(elsewhereNodes).toEqual([]);
   });
@@ -238,19 +289,32 @@ describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
       await createLearningPlan(owner, { name: "Owner's LearningPlan" })
     ).body as LearningPlan;
 
-    const res = await createStageOn(intruder, learningPlan.id, "Trespasser");
+    const res = await createStageOn({
+      clerkUserId: intruder,
+      learningPlanId: learningPlan.id,
+      name: "Trespasser",
+    });
     expect(res.status).toBe(404);
 
     // The Stage landed on no LearningPlan — the owner's LearningPlan is still empty.
     const ownerNodes = (
-      (await topologyOf(owner, learningPlan.id)).body as LearningPlanView
+      (
+        await topologyOf({
+          clerkUserId: owner,
+          learningPlanId: learningPlan.id,
+        })
+      ).body as LearningPlanView
     ).nodes;
     expect(ownerNodes).toEqual([]);
   });
 
   it("rejects a malformed parent LearningPlan id without creating a Stage", async () => {
     const user = "learningPlan-stage-invalid-parent";
-    const res = await createStageOn(user, "not-a-learningPlan-id", "Nowhere");
+    const res = await createStageOn({
+      clerkUserId: user,
+      learningPlanId: "not-a-learningPlan-id",
+      name: "Nowhere",
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
@@ -270,7 +334,11 @@ describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
     const learningPlan = (await createLearningPlan(user, { name: "Anchored" }))
       .body as LearningPlan;
     const stage = (
-      await createStageOn(user, learningPlan.id, "On the LearningPlan")
+      await createStageOn({
+        clerkUserId: user,
+        learningPlanId: learningPlan.id,
+        name: "On the LearningPlan",
+      })
     ).body as Stage;
 
     await expect(
@@ -286,10 +354,24 @@ describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
     const learningPlan = (await createLearningPlan(user, { name: "Named" }))
       .body as LearningPlan;
 
-    expect((await createStageOn(user, learningPlan.id, "")).status).toBe(400);
-    expect((await createStageOn(user, learningPlan.id, "   ")).status).toBe(
-      400,
-    );
+    expect(
+      (
+        await createStageOn({
+          clerkUserId: user,
+          learningPlanId: learningPlan.id,
+          name: "",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await createStageOn({
+          clerkUserId: user,
+          learningPlanId: learningPlan.id,
+          name: "   ",
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("trims only the Stage name boundary", async () => {
@@ -297,18 +379,26 @@ describe("a Stage belongs to exactly one LearningPlan (#94)", () => {
     const learningPlan = (await createLearningPlan(user, { name: "Named" }))
       .body as LearningPlan;
 
-    const res = await createStageOn(user, learningPlan.id, "  A   waypoint  ");
+    const res = await createStageOn({
+      clerkUserId: user,
+      learningPlanId: learningPlan.id,
+      name: "  A   waypoint  ",
+    });
 
     expect(res.status).toBe(201);
     expect((res.body as Stage).name).toBe("A   waypoint");
   });
 });
 
-async function addItemToStage(
-  clerkUserId: string,
-  stageId: string,
-  itemId: string,
-): Promise<void> {
+async function addItemToStage({
+  clerkUserId,
+  stageId,
+  itemId,
+}: {
+  clerkUserId: string;
+  stageId: string;
+  itemId: string;
+}): Promise<void> {
   await request(app)
     .post(`/api/stages/${stageId}/items`)
     .set(TEST_USER_HEADER, clerkUserId)
