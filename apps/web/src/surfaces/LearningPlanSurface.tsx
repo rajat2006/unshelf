@@ -4,8 +4,10 @@ import type {
   LearningPlan,
   LearningPlanId,
   LearningPlanView,
+  StageLearningPlanNode,
   StageId,
 } from "@unshelf/shared";
+import { PlanNodeKind } from "@unshelf/shared";
 import {
   fetchLearningPlan,
   fetchLearningPlanRecord,
@@ -13,6 +15,7 @@ import {
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LearningPlanCanvas } from "../learning-plan/LearningPlanCanvas";
+import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
 import { usePhoneViewport } from "../learning-plan/usePhoneViewport";
 import { StageSidebar } from "../stages/StageSidebar";
 
@@ -148,24 +151,35 @@ export function LearningPlanSurface({
             >
               <span>Open Stage</span>
               <strong>
-                {learningPlan.nodes.find((node) => node.id === stageId)?.name ??
-                  "Stage details"}
+                {learningPlan.nodes.find(
+                  (node): node is StageLearningPlanNode =>
+                    node.kind === PlanNodeKind.Stage && node.id === stageId,
+                )?.name ?? "Stage details"}
               </strong>
             </div>
           ) : (
-            <LearningPlanCanvas
-              learningPlanId={learningPlanId as LearningPlanId}
-              learningPlan={learningPlan}
-              user={user}
-              onLearningPlanChanged={setLearningPlan}
-              onRefresh={refresh}
-              onOpenStage={(selectedStageId) => {
-                void navigate(
-                  `/plans/${learningPlanId}/stages/${selectedStageId}`,
-                );
-              }}
-              readOnly={readOnly}
-            />
+            <div className="learning-plan-studio">
+              {!readOnly && (
+                <PlanLibraryDrawer
+                  learningPlanId={learningPlanId as LearningPlanId}
+                  user={user}
+                  onLearningPlanChanged={setLearningPlan}
+                />
+              )}
+              <LearningPlanCanvas
+                learningPlanId={learningPlanId as LearningPlanId}
+                learningPlan={learningPlan}
+                user={user}
+                onLearningPlanChanged={setLearningPlan}
+                onRefresh={refresh}
+                onOpenStage={(selectedStageId) => {
+                  void navigate(
+                    `/plans/${learningPlanId}/stages/${selectedStageId}`,
+                  );
+                }}
+                readOnly={readOnly}
+              />
+            </div>
           ))}
       </section>
       {stageId && learningPlanId && (

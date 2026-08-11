@@ -20,7 +20,13 @@ const user: CurrentUser = { getToken: async () => null };
 // A → B, where A is fully done (its ground is "walked") and B is underway.
 const learningPlan: LearningPlanView = {
   nodes: [
-    { kind: PlanNodeKind.Stage, id: a, name: "Learn CSS", done: 4, total: 4 },
+    {
+      kind: PlanNodeKind.Stage,
+      id: a,
+      name: "Learn CSS",
+      done: 4,
+      total: 4,
+    },
     {
       kind: PlanNodeKind.Stage,
       id: b,

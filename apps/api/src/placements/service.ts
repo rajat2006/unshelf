@@ -10,8 +10,15 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
-import { items, stageItems, stages, learningPlans } from "../schema";
+import {
+  items,
+  learningPlanItemPlacements,
+  stageItems,
+  stages,
+  learningPlans,
+} from "../schema";
 import { getStage } from "../stages/repository";
+import { isUniqueConstraintViolation } from "./postgres";
 
 export {
   createStageWithItem,
@@ -58,24 +65,35 @@ export async function getItemPlacementCatalog(
       id: stages.id,
       name: stages.name,
       learningPlanId: stages.learningPlanId,
-      placed: sql<boolean>`exists (
-        select 1
-        from ${stageItems}
-        where ${stageItems.stageId} = ${stages.id}
-          and ${stageItems.itemId} = ${input.itemId}
-          and ${stageItems.userId} = ${input.userId}
-      )`,
     })
     .from(stages)
     .where(eq(stages.userId, input.userId))
     .orderBy(asc(stages.name), asc(stages.id));
+  const placementRows = await db
+    .select({
+      learningPlanId: learningPlanItemPlacements.learningPlanId,
+      nodeId: learningPlanItemPlacements.nodeId,
+      stageId: learningPlanItemPlacements.stageId,
+    })
+    .from(learningPlanItemPlacements)
+    .where(
+      and(
+        eq(learningPlanItemPlacements.userId, input.userId),
+        eq(learningPlanItemPlacements.itemId, input.itemId),
+      ),
+    );
 
   const catalogLearningPlans: ItemPlacementLearningPlan[] =
     learningPlanRows.map((learningPlan) => {
       const learningPlanStages = stageRows.filter(
         (stage) => stage.learningPlanId === learningPlan.id,
       );
-      const placed = learningPlanStages.find((stage) => stage.placed);
+      const placement = placementRows.find(
+        (candidate) => candidate.learningPlanId === learningPlan.id,
+      );
+      const placed = placement?.stageId
+        ? learningPlanStages.find((stage) => stage.id === placement.stageId)
+        : undefined;
       const learningPlanIdentity = {
         id: learningPlan.id as LearningPlanId,
         name: learningPlan.name,
@@ -85,6 +103,12 @@ export async function getItemPlacementCatalog(
           kind: "placed",
           learningPlan: learningPlanIdentity,
           stage: { id: placed.id as StageId, name: placed.name },
+        };
+      }
+      if (placement?.nodeId) {
+        return {
+          kind: "placed_direct",
+          learningPlan: learningPlanIdentity,
         };
       }
       return {
@@ -118,13 +142,13 @@ export async function searchStageItemCandidates(
   if (!destination) return null;
 
   const currentMembership = db
-    .select({ itemId: stageItems.itemId })
-    .from(stageItems)
+    .select({ itemId: learningPlanItemPlacements.itemId })
+    .from(learningPlanItemPlacements)
     .where(
       and(
-        eq(stageItems.stageId, input.stageId),
-        eq(stageItems.itemId, items.id),
-        eq(stageItems.userId, input.userId),
+        eq(learningPlanItemPlacements.stageId, input.stageId),
+        eq(learningPlanItemPlacements.itemId, items.id),
+        eq(learningPlanItemPlacements.userId, input.userId),
       ),
     );
   const predicates = [
@@ -145,18 +169,21 @@ export async function searchStageItemCandidates(
 
   const conflicts = await db
     .select({
-      itemId: stageItems.itemId,
+      itemId: learningPlanItemPlacements.itemId,
       stageId: stages.id,
       stageName: stages.name,
     })
-    .from(stageItems)
-    .innerJoin(stages, eq(stages.id, stageItems.stageId))
+    .from(learningPlanItemPlacements)
+    .innerJoin(stages, eq(stages.id, learningPlanItemPlacements.stageId))
     .where(
       and(
-        eq(stageItems.userId, input.userId),
-        eq(stageItems.learningPlanId, destination.learningPlanId),
+        eq(learningPlanItemPlacements.userId, input.userId),
+        eq(
+          learningPlanItemPlacements.learningPlanId,
+          destination.learningPlanId,
+        ),
         inArray(
-          stageItems.itemId,
+          learningPlanItemPlacements.itemId,
           candidates.map(({ id }) => id),
         ),
       ),
@@ -208,13 +235,16 @@ export async function placeItemInStage(
   if (!destination) return { ok: false, error: "not_found" };
 
   const [existing] = await db
-    .select({ stageId: stageItems.stageId })
-    .from(stageItems)
+    .select({ stageId: learningPlanItemPlacements.stageId })
+    .from(learningPlanItemPlacements)
     .where(
       and(
-        eq(stageItems.itemId, input.itemId),
-        eq(stageItems.userId, input.userId),
-        eq(stageItems.learningPlanId, destination.learningPlanId),
+        eq(learningPlanItemPlacements.itemId, input.itemId),
+        eq(learningPlanItemPlacements.userId, input.userId),
+        eq(
+          learningPlanItemPlacements.learningPlanId,
+          destination.learningPlanId,
+        ),
       ),
     )
     .limit(1);
@@ -224,29 +254,56 @@ export async function placeItemInStage(
   }
 
   if (!existing) {
-    await db
-      .insert(stageItems)
-      .values({
-        userId: input.userId,
-        stageId: input.stageId,
-        itemId: input.itemId,
-        learningPlanId: destination.learningPlanId,
-        position: sql<number>`coalesce((
-          select max(${stageItems.position})
-          from ${stageItems}
-          where ${stageItems.stageId} = ${input.stageId}
-        ), -1) + 1`,
-      })
-      .onConflictDoNothing();
+    try {
+      await db.transaction(async (tx) => {
+        const [placement] = await tx
+          .insert(learningPlanItemPlacements)
+          .values({
+            userId: input.userId,
+            learningPlanId: destination.learningPlanId,
+            itemId: input.itemId,
+            stageId: input.stageId,
+          })
+          .returning({ id: learningPlanItemPlacements.id });
+        if (!placement)
+          throw new Error("Stage placement insert returned no record");
+
+        await tx.insert(stageItems).values({
+          placementId: placement.id,
+          userId: input.userId,
+          stageId: input.stageId,
+          itemId: input.itemId,
+          learningPlanId: destination.learningPlanId,
+          position: sql<number>`coalesce((
+            select max(${stageItems.position})
+            from ${stageItems}
+            where ${stageItems.stageId} = ${input.stageId}
+          ), -1) + 1`,
+        });
+      });
+    } catch (error: unknown) {
+      if (
+        isUniqueConstraintViolation(
+          error,
+          "learning_plan_item_placements_item_plan_unique",
+        )
+      ) {
+        return { ok: false, error: "conflict" };
+      }
+      throw error;
+    }
 
     const [settled] = await db
-      .select({ stageId: stageItems.stageId })
-      .from(stageItems)
+      .select({ stageId: learningPlanItemPlacements.stageId })
+      .from(learningPlanItemPlacements)
       .where(
         and(
-          eq(stageItems.itemId, input.itemId),
-          eq(stageItems.userId, input.userId),
-          eq(stageItems.learningPlanId, destination.learningPlanId),
+          eq(learningPlanItemPlacements.itemId, input.itemId),
+          eq(learningPlanItemPlacements.userId, input.userId),
+          eq(
+            learningPlanItemPlacements.learningPlanId,
+            destination.learningPlanId,
+          ),
         ),
       )
       .limit(1);
@@ -269,12 +326,12 @@ export async function removeItemFromStage(
   input: { userId: UserId; stageId: StageId; itemId: ItemId },
 ): Promise<StageDetail | null> {
   await db
-    .delete(stageItems)
+    .delete(learningPlanItemPlacements)
     .where(
       and(
-        eq(stageItems.stageId, input.stageId),
-        eq(stageItems.itemId, input.itemId),
-        eq(stageItems.userId, input.userId),
+        eq(learningPlanItemPlacements.stageId, input.stageId),
+        eq(learningPlanItemPlacements.itemId, input.itemId),
+        eq(learningPlanItemPlacements.userId, input.userId),
       ),
     );
   return getStage(db, input.userId, input.stageId);

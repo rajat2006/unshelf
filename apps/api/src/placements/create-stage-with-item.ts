@@ -10,12 +10,14 @@ import type {
 import type { Database } from "../db";
 import {
   items,
+  learningPlanItemPlacements,
   learningPlanNodes,
   learningPlans,
   stageItems,
   stages,
 } from "../schema";
 import { getStage } from "../stages/repository";
+import { isUniqueConstraintViolation } from "./postgres";
 
 export type CreateStageWithItemResult =
   | { ok: true; stage: StageDetail }
@@ -88,7 +90,20 @@ export async function createStageWithItem(
         .returning({ id: stages.id });
       if (!created) throw new Error("Stage insert returned no record");
 
+      const [placement] = await tx
+        .insert(learningPlanItemPlacements)
+        .values({
+          userId: input.userId,
+          learningPlanId: input.placement.learningPlanId,
+          itemId: input.itemId,
+          stageId: created.id,
+        })
+        .returning({ id: learningPlanItemPlacements.id });
+      if (!placement)
+        throw new Error("Stage placement insert returned no record");
+
       await tx.insert(stageItems).values({
+        placementId: placement.id,
         userId: input.userId,
         stageId: created.id,
         itemId: input.itemId,
@@ -101,21 +116,14 @@ export async function createStageWithItem(
       return { ok: true, stage };
     });
   } catch (error: unknown) {
-    if (isSameLearningPlanMembershipConflict(error)) {
+    if (
+      isUniqueConstraintViolation(
+        error,
+        "learning_plan_item_placements_item_plan_unique",
+      )
+    ) {
       return { ok: false, error: "conflict" };
     }
     throw error;
   }
-}
-
-function isSameLearningPlanMembershipConflict(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const postgresError = error as Error & {
-    code?: unknown;
-    constraint?: unknown;
-  };
-  return (
-    postgresError.code === "23505" &&
-    postgresError.constraint === "stage_items_item_plan_unique"
-  );
 }

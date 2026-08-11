@@ -8,6 +8,7 @@ import type {
   LearningPlanNode,
   LearningPlanView,
 } from "@unshelf/shared";
+import { PlanNodeKind } from "@unshelf/shared";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 /**
@@ -132,7 +133,9 @@ const nodeNamed = (
   view: LearningPlanView,
   name: string,
 ): LearningPlanNode | undefined =>
-  view.nodes.find((node) => node.name === name);
+  view.nodes.find(
+    (node) => node.kind === PlanNodeKind.Stage && node.name === name,
+  );
 
 /** Create `count` freshly-named Stages for a User and hand back their ids. */
 const givenStages = async (
@@ -213,7 +216,11 @@ describe("the LearningPlan's nodes are the LearningPlan's Stages, with derived p
 
     const view = (await getLearningPlan(clerkUserId)).body as LearningPlanView;
 
-    expect(view.nodes.map((n) => n.name)).toEqual(["Alpha", "Beta"]);
+    expect(
+      view.nodes.map((node) =>
+        node.kind === PlanNodeKind.Stage ? node.name : node.item.title,
+      ),
+    ).toEqual(["Alpha", "Beta"]);
     expect(view.edges).toEqual([]); // a node needs no edge to exist
   });
 

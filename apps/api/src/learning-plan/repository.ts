@@ -1,17 +1,22 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { PlanNodeKind } from "@unshelf/shared";
 import type {
-  StageId,
   LearningPlanEdge,
   LearningPlanId,
   LearningPlanNode,
   LearningPlanView,
   ConnectLearningPlanNodesRequest,
+  DirectItemPlacementId,
+  PlanNodeId,
+  StageId,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
 import {
   items,
+  learningPlanItemPlacements,
+  learningPlanNodes,
   stageItems,
   stages,
   learningPlanEdges,
@@ -21,7 +26,7 @@ import {
 /**
  * LearningPlan topology storage (ADR-0010, scoped per LearningPlan by ADR-0014). The LearningPlan's
  * shape is still the adjacency edge list — it is not a table of its own but a
- * derived view whose nodes are the LearningPlan's Stages and whose edges are
+ * derived view whose nodes are direct Item placements or Stages and whose edges are
  * `learningPlan_edges` rows — but now every read and write names *one* LearningPlan, not the
  * whole User. So there is nothing to create or name here: a LearningPlan's topology
  * exists the moment it has Stages, and this module only draws and erases the edges
@@ -42,8 +47,8 @@ interface EdgeRow {
 
 const toEdge = (row: EdgeRow): LearningPlanEdge => ({
   userId: row.user_id as UserId,
-  fromNodeId: row.from_node_id as StageId,
-  toNodeId: row.to_node_id as StageId,
+  fromNodeId: row.from_node_id as PlanNodeId,
+  toNodeId: row.to_node_id as PlanNodeId,
 });
 
 interface NodeRow {
@@ -89,9 +94,8 @@ async function learningPlanBelongsToUser(
  * so `connectLearningPlanNodes` can re-read inside its own transaction (seeing the
  * just-inserted edge) without a second connection or adapter type.
  *
- * The nodes are the *LearningPlan's* Stages — those whose `learningPlan_id` is this LearningPlan — each
- * carrying *derived* progress read exactly the way All derives `pastTarget`
- * (ADR-0005), never stored. An empty Stage reads as 0/0. The Stages and the edges
+ * Stage nodes carry derived progress, while direct nodes read the current shared
+ * Item projection. An empty Stage reads as 0/0. The nodes and edges
  * are both scoped to the one LearningPlan, so what a Stage shows on this LearningPlan can never
  * include another LearningPlan's waypoints or links.
  */
@@ -100,7 +104,7 @@ async function selectLearningPlan(
   userId: UserId,
   learningPlanId: LearningPlanId,
 ): Promise<LearningPlanView> {
-  const nodes: NodeRow[] = await db
+  const stageNodes: NodeRow[] = await db
     .select({
       id: stages.id,
       name: stages.name,
@@ -126,6 +130,24 @@ async function selectLearningPlan(
     )
     .groupBy(stages.id, stages.name)
     .orderBy(asc(stages.name));
+  const directItemRows: Array<ItemRow & { node_id: string | null }> = await db
+    .select({ node_id: learningPlanItemPlacements.nodeId, ...ITEM_PROJECTION })
+    .from(learningPlanItemPlacements)
+    .innerJoin(
+      items,
+      and(
+        eq(items.id, learningPlanItemPlacements.itemId),
+        eq(items.userId, learningPlanItemPlacements.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(learningPlanItemPlacements.userId, userId),
+        eq(learningPlanItemPlacements.learningPlanId, learningPlanId),
+        isNotNull(learningPlanItemPlacements.nodeId),
+      ),
+    )
+    .orderBy(asc(items.title), asc(items.id));
   const edges: EdgeRow[] = await db
     .select({
       user_id: learningPlanEdges.userId,
@@ -143,11 +165,22 @@ async function selectLearningPlan(
       asc(learningPlanEdges.fromNodeId),
       asc(learningPlanEdges.toNodeId),
     );
-  return { nodes: nodes.map(toNode), edges: edges.map(toEdge) };
+  const directItemNodes: LearningPlanNode[] = directItemRows.map((row) => {
+    if (!row.node_id) throw new Error("Direct placement has no Plan Node");
+    return {
+      kind: PlanNodeKind.Item,
+      id: row.node_id as DirectItemPlacementId,
+      item: toItem(row),
+    };
+  });
+  return {
+    nodes: [...stageNodes.map(toNode), ...directItemNodes],
+    edges: edges.map(toEdge),
+  };
 }
 
 /**
- * One LearningPlan's whole topology: its Stages as nodes (with derived progress) and the
+ * One LearningPlan's whole topology: its direct Items and Stages as nodes and the
  * edges between them, and only if the LearningPlan is this User's — a foreign or unknown
  * LearningPlan reads back as null, never a confirmation the id is real. The client
  * derives the layout from the edges; this hands back the topology, never a
@@ -165,7 +198,7 @@ export async function getLearningPlan(
 
 /**
  * The outcome of a `connect`. Every failure is a distinct, nameable reason so the
- * router can answer each one honestly: a Stage that is not on this LearningPlan (whether
+ * router can answer each one honestly: a Plan Node that is not on this Learning Plan (whether
  * foreign, cross-LearningPlan, or unknown) is a 404, a link that would close a cycle is a
  * 409, and success hands back the new LearningPlan.
  */
@@ -183,7 +216,7 @@ export type ConnectResult =
  * connects, so the reachability read the insert depends on cannot go stale under a
  * concurrent writer; other Users are unaffected.
  *
- * Both ends are proven to be Stages *on this LearningPlan* inside the transaction, so a
+ * Both ends are proven to be Plan Nodes on this Learning Plan inside the transaction, so a
  * foreign, cross-LearningPlan, or unknown endpoint is a `not_found`; the database's
  * same-LearningPlan foreign keys are the backstage. A duplicate edge is a no-op
  * (`ON CONFLICT DO NOTHING`), because the edge set is a set and drawing an edge
@@ -206,7 +239,7 @@ export async function connectLearningPlanNodes(
     `);
 
     if (
-      !(await bothStagesOnLearningPlan(tx, userId, learningPlanId, endpoints))
+      !(await bothNodesOnLearningPlan(tx, userId, learningPlanId, endpoints))
     ) {
       return { kind: "not_found" };
     }
@@ -226,12 +259,11 @@ export async function connectLearningPlanNodes(
 }
 
 /**
- * Both ids name a Stage the User owns *and that sits on this LearningPlan*. Scoping by
- * `learningPlan_id` is what refuses a cross-LearningPlan link — a Stage on another of the User's
- * LearningPlans is not found here, exactly as a foreign Stage is not. Distinctness is the
+ * Both ids name a Plan Node the User owns on this Learning Plan. Scoping by
+ * `learning_plan_id` refuses a cross-Plan link exactly as it refuses a foreign node. Distinctness is the
  * caller's to enforce.
  */
-async function bothStagesOnLearningPlan(
+async function bothNodesOnLearningPlan(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
@@ -239,12 +271,12 @@ async function bothStagesOnLearningPlan(
 ): Promise<boolean> {
   const rows = await db
     .select({ count: count().mapWith(Number) })
-    .from(stages)
+    .from(learningPlanNodes)
     .where(
       and(
-        eq(stages.userId, userId),
-        eq(stages.learningPlanId, learningPlanId),
-        inArray(stages.id, [fromNodeId, toNodeId]),
+        eq(learningPlanNodes.userId, userId),
+        eq(learningPlanNodes.learningPlanId, learningPlanId),
+        inArray(learningPlanNodes.id, [fromNodeId, toNodeId]),
       ),
     );
   return Number(rows[0]?.count) === 2;

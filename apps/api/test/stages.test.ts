@@ -975,6 +975,7 @@ describe("StageItem — membership with database invariant anchors", () => {
     expect(columns).toEqual([
       "item_id",
       "learning_plan_id",
+      "placement_id",
       "position",
       "stage_id",
       "user_id",
@@ -997,8 +998,10 @@ describe("StageItem — membership with database invariant anchors", () => {
     await expect(
       harness.pool.query(
         `INSERT INTO stage_items
-           (user_id, stage_id, item_id, learning_plan_id, position)
-         SELECT $1, $2, $3, learning_plan_id, 0 FROM stages WHERE id = $2`,
+           (placement_id, user_id, stage_id, item_id, learning_plan_id, position)
+         SELECT id, user_id, stage_id, item_id, learning_plan_id, 0
+         FROM learning_plan_item_placements
+         WHERE stage_id = $2 AND item_id = $3`,
         [stage.userId, stage.id, item.id],
       ),
     ).rejects.toThrow();
@@ -1020,12 +1023,12 @@ describe("StageItem — membership with database invariant anchors", () => {
 
     await expect(
       harness.pool.query(
-        `INSERT INTO stage_items
-           (user_id, stage_id, item_id, learning_plan_id, position)
-         SELECT $1, $2, $3, learning_plan_id, 0 FROM stages WHERE id = $2`,
+        `INSERT INTO learning_plan_item_placements
+           (user_id, learning_plan_id, item_id, stage_id)
+         SELECT $1, learning_plan_id, $3, $2 FROM stages WHERE id = $2`,
         [first.userId, second.id, item.id],
       ),
-    ).rejects.toThrow(/stage_items_item_plan_unique/);
+    ).rejects.toThrow(/learning_plan_item_placements_item_plan_unique/);
   });
 
   it("rejects a cross-User membership at the database boundary", async () => {
@@ -1042,12 +1045,12 @@ describe("StageItem — membership with database invariant anchors", () => {
 
     await expect(
       harness.pool.query(
-        `INSERT INTO stage_items
-           (user_id, stage_id, item_id, learning_plan_id, position)
-         SELECT $1, $2, $3, learning_plan_id, 0 FROM stages WHERE id = $2`,
+        `INSERT INTO learning_plan_item_placements
+           (user_id, learning_plan_id, item_id, stage_id)
+         SELECT $1, learning_plan_id, $3, $2 FROM stages WHERE id = $2`,
         [alice.stage.userId, alice.stage.id, bob.item.id],
       ),
-    ).rejects.toThrow(/stage_items_item_owner_fk/);
+    ).rejects.toThrow(/learning_plan_item_placements_item_owner_fk/);
   });
 });
 

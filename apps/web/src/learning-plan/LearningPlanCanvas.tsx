@@ -4,7 +4,10 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { Link } from "react-router";
+import { PlanNodeKind, Status } from "@unshelf/shared";
 import type {
+  PlanNodeId,
   StageId,
   LearningPlanId,
   LearningPlanNode,
@@ -45,10 +48,26 @@ const LANE_H = 150;
 const PAD = 76;
 const R = 29;
 
-const isDone = (n: LearningPlanNode) => n.total > 0 && n.done >= n.total;
-const isUnderway = (n: LearningPlanNode) => n.done > 0 && n.done < n.total;
+const isDone = (node: LearningPlanNode) =>
+  node.kind === PlanNodeKind.Item
+    ? node.item.status === Status.Done
+    : node.total > 0 && node.done >= node.total;
+const isUnderway = (node: LearningPlanNode) =>
+  node.kind === PlanNodeKind.Item
+    ? node.item.status === Status.InProgress
+    : node.done > 0 && node.done < node.total;
 const progressOf = (n: LearningPlanNode) =>
-  n.total > 0 ? n.done / n.total : 0;
+  n.kind === PlanNodeKind.Item
+    ? n.item.status === Status.Done
+      ? 1
+      : n.item.status === Status.InProgress
+        ? 0.5
+        : 0
+    : n.total > 0
+      ? n.done / n.total
+      : 0;
+const nodeName = (node: LearningPlanNode) =>
+  node.kind === PlanNodeKind.Item ? node.item.title : node.name;
 
 interface LearningPlanCanvasProps {
   /** The LearningPlan being authored — every Stage and edge is scoped to it (#94). */
@@ -157,7 +176,7 @@ export function LearningPlanCanvas({
     }
   }
 
-  const link = (to: StageId) => {
+  const link = (to: PlanNodeId) => {
     if (linkingFrom)
       void run(() =>
         connectLearningPlanNodes(user, learningPlanId, {
@@ -166,7 +185,7 @@ export function LearningPlanCanvas({
         }),
       );
   };
-  const unlink = ({ from, to }: { from: StageId; to: StageId }) =>
+  const unlink = ({ from, to }: { from: PlanNodeId; to: PlanNodeId }) =>
     void run(() =>
       disconnectLearningPlanNodes(user, learningPlanId, {
         fromNodeId: from,
@@ -408,13 +427,31 @@ export function LearningPlanCanvas({
                   }
                   linking={linkingFrom !== null}
                   onPointerDown={(e) => startNodeDrag(n.id, e)}
-                  onOpen={() => onOpenStage(n.id)}
-                  onNext={() => setDraft({ from: n.id, mode: "next" })}
-                  onFork={() => setDraft({ from: n.id, mode: "fork" })}
-                  onStartLink={() => setLinkingFrom(n.id)}
+                  onOpen={() =>
+                    n.kind === PlanNodeKind.Item ? undefined : onOpenStage(n.id)
+                  }
+                  onNext={() =>
+                    n.kind === PlanNodeKind.Stage
+                      ? setDraft({ from: n.id, mode: "next" })
+                      : undefined
+                  }
+                  onFork={() =>
+                    n.kind === PlanNodeKind.Stage
+                      ? setDraft({ from: n.id, mode: "fork" })
+                      : undefined
+                  }
+                  onStartLink={() =>
+                    n.kind === PlanNodeKind.Stage
+                      ? setLinkingFrom(n.id)
+                      : undefined
+                  }
                   onCancelLink={() => setLinkingFrom(null)}
                   onLinkHere={() => link(n.id)}
-                  onDraftSubmit={(name) => void createAndLink(name, n.id)}
+                  onDraftSubmit={(name) =>
+                    n.kind === PlanNodeKind.Stage
+                      ? void createAndLink(name, n.id)
+                      : undefined
+                  }
                   onDraftCancel={() => setDraft(null)}
                 />
               );
@@ -516,8 +553,24 @@ function LooseStageRail({
       ) : (
         <ul>
           {nodes.map((node) => {
+            if (node.kind === PlanNodeKind.Item) {
+              return (
+                <li key={node.id}>
+                  <Link
+                    to={`/items/${node.item.id}`}
+                    aria-label={`Open ${node.item.title}`}
+                    className="unsequenced-rail__stage"
+                  >
+                    {node.item.title}
+                  </Link>
+                  <span>{node.item.status.replace("_", " ")}</span>
+                </li>
+              );
+            }
             const candidates = allNodes.filter(
-              (candidate) => candidate.id !== node.id,
+              (candidate) =>
+                candidate.kind === PlanNodeKind.Stage &&
+                candidate.id !== node.id,
             );
             return (
               <li key={node.id}>
@@ -558,7 +611,7 @@ function LooseStageRail({
                         </option>
                         {candidates.map((candidate) => (
                           <option key={candidate.id} value={candidate.id}>
-                            {candidate.name}
+                            {nodeName(candidate)}
                           </option>
                         ))}
                       </select>
@@ -654,10 +707,15 @@ function Waypoint({
 }: WaypointProps) {
   const done = isDone(node);
   const underway = isUnderway(node);
+  const name = nodeName(node);
+  const progressLabel =
+    node.kind === PlanNodeKind.Item
+      ? node.item.status.replace("_", " ")
+      : `${node.done} of ${node.total} items done`;
   return (
     <div
       role="group"
-      aria-label={`${node.name}: ${node.done} of ${node.total} items done`}
+      aria-label={`${name}: ${progressLabel}`}
       onPointerDown={(e) => {
         e.stopPropagation();
         onPointerDown(e);
@@ -674,44 +732,42 @@ function Waypoint({
         <div className="learning-plan-waypoint__frontier">You are here</div>
       )}
 
-      <button
-        type="button"
-        className="learning-plan-stage-link"
-        aria-label={`Open ${node.name}`}
-        title={`${node.done} of ${node.total} items done`}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={onOpen}
-      >
-        <span className="learning-plan-medallion">
-          {done ? (
-            <Seal />
-          ) : (
-            <span
-              className={`learning-plan-medallion__ring${isFrontier ? " is-frontier" : ""}`}
-            >
-              <ProgressRing
-                size={R * 2 - 8}
-                stroke={5}
-                progress={progressOf(node)}
-                track="var(--field-line)"
-                fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
-                center={
-                  <span className="learning-plan-progress-label">
-                    {node.total === 0 ? "＋" : `${node.done}/${node.total}`}
-                  </span>
-                }
-              />
-            </span>
-          )}
-        </span>
-        <span
-          className={`learning-plan-waypoint__name${done ? " is-done" : ""}`}
+      {node.kind === PlanNodeKind.Item ? (
+        <Link
+          to={`/items/${node.item.id}`}
+          className="learning-plan-stage-link"
+          aria-label={`Open ${name}`}
+          title={progressLabel}
+          onPointerDown={(event) => event.stopPropagation()}
         >
-          {node.name}
-        </span>
-      </button>
+          <WaypointContents
+            node={node}
+            name={name}
+            done={done}
+            isFrontier={isFrontier}
+            underway={underway}
+          />
+        </Link>
+      ) : (
+        <button
+          type="button"
+          className="learning-plan-stage-link"
+          aria-label={`Open ${name}`}
+          title={progressLabel}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onOpen}
+        >
+          <WaypointContents
+            node={node}
+            name={name}
+            done={done}
+            isFrontier={isFrontier}
+            underway={underway}
+          />
+        </button>
+      )}
 
-      {!readOnly && (
+      {!readOnly && node.kind === PlanNodeKind.Stage && (
         <div onPointerDown={(e) => e.stopPropagation()}>
           {isDrafting ? (
             <DraftForm
@@ -755,6 +811,61 @@ function Waypoint({
         </div>
       )}
     </div>
+  );
+}
+
+function WaypointContents({
+  node,
+  name,
+  done,
+  isFrontier,
+  underway,
+}: {
+  node: LearningPlanNode;
+  name: string;
+  done: boolean;
+  isFrontier: boolean;
+  underway: boolean;
+}) {
+  const emptyStage = node.kind === PlanNodeKind.Stage && node.total === 0;
+  const progressText =
+    node.kind === PlanNodeKind.Item
+      ? node.item.status === Status.Done
+        ? "✓"
+        : node.item.status === Status.InProgress
+          ? "½"
+          : "○"
+      : emptyStage
+        ? "＋"
+        : `${node.done}/${node.total}`;
+  return (
+    <>
+      <span className="learning-plan-medallion">
+        {done ? (
+          <Seal />
+        ) : (
+          <span
+            className={`learning-plan-medallion__ring${isFrontier ? " is-frontier" : ""}`}
+          >
+            <ProgressRing
+              size={R * 2 - 8}
+              stroke={5}
+              progress={progressOf(node)}
+              track="var(--field-line)"
+              fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
+              center={
+                <span className="learning-plan-progress-label">
+                  {progressText}
+                </span>
+              }
+            />
+          </span>
+        )}
+      </span>
+      <span className={`learning-plan-waypoint__name${done ? " is-done" : ""}`}>
+        {name}
+      </span>
+    </>
   );
 }
 

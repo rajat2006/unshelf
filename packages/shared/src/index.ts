@@ -37,6 +37,7 @@ export const ITEM_STATUSES = Object.values(Status);
 
 /** The internal topology-node variants currently supported by Learning Plans. */
 export enum PlanNodeKind {
+  Item = "item",
   Stage = "stage",
 }
 
@@ -60,8 +61,13 @@ export type StageId = string & {
   readonly [identifierBrand]: "StageId";
 };
 
-/** Opaque topology identity; every #304 node is the corresponding Stage id. */
-export type PlanNodeId = StageId;
+/** Stable identity of a direct Item placement in one Learning Plan. */
+export type DirectItemPlacementId = string & {
+  readonly [identifierBrand]: "DirectItemPlacementId";
+};
+
+/** Opaque topology identity shared by Stage and direct-Item node variants. */
+export type PlanNodeId = StageId | DirectItemPlacementId;
 
 export type LearningPlanId = string & {
   readonly [identifierBrand]: "LearningPlanId";
@@ -83,6 +89,7 @@ export type {
   CreateStageRequest,
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
+  PlaceLearningPlanItemRequest,
   UpdateLearningPlanRequest,
   UpdateStageRequest,
   UpdateItemStatusRequest,
@@ -212,6 +219,10 @@ export type ItemPlacementLearningPlan =
       kind: "placed";
       learningPlan: PlacementLearningPlan;
       stage: PlacementStage;
+    }
+  | {
+      kind: "placed_direct";
+      learningPlan: PlacementLearningPlan;
     };
 
 /** Every LearningPlan the User owns, represented once for one Item. */
@@ -235,6 +246,12 @@ export type StageItemCandidate = StageItemCandidateFacts &
         stage: PlacementStage;
       }
   );
+
+/** One Library result in a Learning Plan's placement drawer. */
+export type LearningPlanItemCandidate =
+  | { kind: "available"; item: Item }
+  | { kind: "direct"; item: Item }
+  | { kind: "stage"; item: Item; stage: PlacementStage };
 
 /**
  * A first-class LearningPlan — one User's learning journey, owning a canvas of Stages and
@@ -266,11 +283,10 @@ export interface LearningPlan {
 }
 
 /**
- * A directed Stage-to-Stage edge — one row of the LearningPlan's adjacency edge list
+ * A directed Plan-Node edge — one row of the Learning Plan's adjacency edge list
  * (ADR-0010). The LearningPlan *is* this edge set scoped to a User: its nodes are the
- * User's Stages (every Stage is already "what appears as a node on the LearningPlan",
- * CONTEXT.md *Stage*), its edges are these rows. A fork is a Stage with several
- * out-edges; a join is a Stage with several in-edges; the whole is a DAG.
+ * direct Item placements and Stages, while its edges are these rows. A fork has
+ * several out-edges; a join has several in-edges; the whole is a DAG.
  *
  * It carries no `x`/`y` and no order among sibling forks: canvas position is
  * *derived* on read by longest-path layering, never stored (ADR-0010), the same
@@ -295,8 +311,7 @@ export interface LearningPlanEdge {
  * ADR-0005), never stored on the LearningPlan; it is what lets the canvas read a thread
  * as ground already walked versus still ahead.
  */
-export interface LearningPlanNode {
-  /** #304 migrates only Stage nodes; later slices may add other variants. */
+export interface StageLearningPlanNode {
   kind: PlanNodeKind.Stage;
   /** The Stage's id — the node's identity, and the endpoint edges reference. */
   id: StageId;
@@ -308,6 +323,18 @@ export interface LearningPlanNode {
   total: number;
 }
 
+/** One direct reference to the shared Library Item, without a manufactured Stage. */
+export interface ItemLearningPlanNode {
+  kind: PlanNodeKind.Item;
+  /** Stable identity of this placement in the Learning Plan topology. */
+  id: DirectItemPlacementId;
+  /** The single shared Item record; Status changes are visible on every fresh read. */
+  item: Item;
+}
+
+/** The two first-class node variants a Learning Plan can arrange. */
+export type LearningPlanNode = StageLearningPlanNode | ItemLearningPlanNode;
+
 /**
  * The whole LearningPlan as it reads back (ADR-0010): the node set — the User's Stages,
  * each with derived progress — and the edge set between them. The LearningPlan is not a
@@ -316,9 +343,9 @@ export interface LearningPlanNode {
  * from the edges on the client, never stored.
  */
 export interface LearningPlanView {
-  /** Every Stage, as a LearningPlan node with derived progress. */
+  /** Every direct Item placement and Stage as a first-class Plan Node. */
   nodes: LearningPlanNode[];
-  /** Every Stage-to-Stage edge belonging to the User. */
+  /** Every Plan-Node edge belonging to the User. */
   edges: LearningPlanEdge[];
 }
 

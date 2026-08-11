@@ -75,6 +75,7 @@ describe("migration CLI", () => {
           AND table_name IN (
             'learning_plans',
             'learning_plan_nodes',
+            'learning_plan_item_placements',
             'stages',
             'stage_items',
             'learning_plan_edges'
@@ -83,6 +84,7 @@ describe("migration CLI", () => {
       `);
       expect(planTables.rows.map(({ table_name }) => table_name)).toEqual([
         "learning_plan_edges",
+        "learning_plan_item_placements",
         "learning_plan_nodes",
         "learning_plans",
         "stage_items",

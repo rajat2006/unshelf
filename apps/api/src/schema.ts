@@ -216,6 +216,12 @@ export const learningPlanNodes = pgTable(
       table.userId,
       table.learningPlanId,
     ),
+    unique("learning_plan_nodes_typed_identity_idx").on(
+      table.id,
+      table.userId,
+      table.learningPlanId,
+      table.kind,
+    ),
     index("learning_plan_nodes_plan_id_idx").on(
       table.userId,
       table.learningPlanId,
@@ -272,7 +278,90 @@ export const stages = pgTable(
     // The same shape for the LearningPlan, so an edge can prove both of its endpoints
     // sit on the LearningPlan it names.
     unique("stages_id_plan_id_idx").on(table.id, table.learningPlanId),
+    unique("stages_identity_idx").on(
+      table.id,
+      table.userId,
+      table.learningPlanId,
+    ),
     index("stages_plan_id_idx").on(table.learningPlanId),
+  ],
+);
+
+/**
+ * The one placement registry for direct Items and Items grouped in Stages.
+ * Its plan-scoped Item uniqueness spans both variants, while the nullable
+ * variant anchors are constrained so each row is exactly one of them.
+ */
+export const learningPlanItemPlacements = pgTable(
+  "learning_plan_item_placements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    learningPlanId: uuid("learning_plan_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    stageId: uuid("stage_id"),
+    nodeId: uuid("node_id"),
+    nodeKind: text("node_kind", { enum: nonEmpty(PLAN_NODE_KINDS) }),
+  },
+  (table) => [
+    foreignKey({
+      name: "learning_plan_item_placements_plan_owner_fk",
+      columns: [table.learningPlanId, table.userId],
+      foreignColumns: [learningPlans.id, learningPlans.userId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "learning_plan_item_placements_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "learning_plan_item_placements_stage_fk",
+      columns: [table.stageId, table.userId, table.learningPlanId],
+      foreignColumns: [stages.id, stages.userId, stages.learningPlanId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "learning_plan_item_placements_node_fk",
+      columns: [
+        table.nodeId,
+        table.userId,
+        table.learningPlanId,
+        table.nodeKind,
+      ],
+      foreignColumns: [
+        learningPlanNodes.id,
+        learningPlanNodes.userId,
+        learningPlanNodes.learningPlanId,
+        learningPlanNodes.kind,
+      ],
+    }).onDelete("cascade"),
+    unique("learning_plan_item_placements_item_plan_unique").on(
+      table.itemId,
+      table.learningPlanId,
+    ),
+    unique("learning_plan_item_placements_id_identity_idx").on(
+      table.id,
+      table.userId,
+      table.learningPlanId,
+    ),
+    unique("learning_plan_item_placements_node_unique").on(table.nodeId),
+    index("learning_plan_item_placements_plan_idx").on(
+      table.userId,
+      table.learningPlanId,
+    ),
+    check(
+      "learning_plan_item_placements_variant_check",
+      sql`(
+        ${table.stageId} is not null
+        and ${table.nodeId} is null
+        and ${table.nodeKind} is null
+      ) or (
+        ${table.stageId} is null
+        and ${table.nodeId} is not null
+        and ${table.nodeKind} = 'item'
+      )`,
+    ),
   ],
 );
 
@@ -293,6 +382,7 @@ export const stages = pgTable(
 export const stageItems = pgTable(
   "stage_items",
   {
+    placementId: uuid("placement_id").notNull(),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
@@ -307,6 +397,15 @@ export const stageItems = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.stageId, table.itemId] }),
+    foreignKey({
+      name: "stage_items_placement_fk",
+      columns: [table.placementId, table.userId, table.learningPlanId],
+      foreignColumns: [
+        learningPlanItemPlacements.id,
+        learningPlanItemPlacements.userId,
+        learningPlanItemPlacements.learningPlanId,
+      ],
+    }).onDelete("cascade"),
     foreignKey({
       name: "stage_items_stage_owner_fk",
       columns: [table.stageId, table.userId],
@@ -330,6 +429,7 @@ export const stageItems = pgTable(
       table.stageId,
       table.position,
     ),
+    unique("stage_items_placement_unique").on(table.placementId),
     // The primary key already indexes stage_id (a Stage's contents); this covers
     // the other direction — every Stage holding a given Item.
     index("stage_items_item_id_idx").on(table.itemId),

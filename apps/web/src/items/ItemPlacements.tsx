@@ -11,6 +11,7 @@ import {
   addItemToStage,
   createStageWithItem,
   fetchItemPlacements,
+  removeDirectItemFromLearningPlan,
   removeItemFromStage,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
@@ -105,6 +106,12 @@ export function ItemPlacements({
       await load();
       onChanged?.();
     });
+  const removeDirect = (learningPlanId: LearningPlanId) =>
+    runPlacementMutation(async () => {
+      await removeDirectItemFromLearningPlan(user, learningPlanId, itemId);
+      await load();
+      onChanged?.();
+    });
   const create = (learningPlanId: LearningPlanId, name: string) =>
     runPlacementMutation(
       async () => {
@@ -177,7 +184,8 @@ export function ItemPlacements({
   }
 
   const placed = catalog.learningPlans.filter(
-    (learningPlan) => learningPlan.kind === "placed",
+    (learningPlan) =>
+      learningPlan.kind === "placed" || learningPlan.kind === "placed_direct",
   );
 
   return (
@@ -190,23 +198,35 @@ export function ItemPlacements({
         <p>Not on a Learning Plan</p>
       ) : (
         <ul aria-label="Current Learning Plan placements">
-          {placed.map(({ learningPlan, stage }) => (
-            <li key={learningPlan.id}>
+          {placed.map((state) => (
+            <li key={state.learningPlan.id}>
               <span>
-                {learningPlan.name} · {stage.name}
+                {state.learningPlan.name}
+                {state.kind === "placed" ? ` · ${state.stage.name}` : ""}
               </span>
               <span className="item-placement-actions">
-                {lastCreated?.learningPlanId === learningPlan.id &&
-                  lastCreated.stage.id === stage.id && (
-                    <Link to={`/plans/${learningPlan.id}/stages/${stage.id}`}>
+                {state.kind === "placed" &&
+                  lastCreated?.learningPlanId === state.learningPlan.id &&
+                  lastCreated.stage.id === state.stage.id && (
+                    <Link
+                      to={`/plans/${state.learningPlan.id}/stages/${state.stage.id}`}
+                    >
                       Open Stage
                     </Link>
                   )}
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void remove(stage.id)}
-                  aria-label={`Remove from ${learningPlan.name} · ${stage.name}`}
+                  onClick={() =>
+                    state.kind === "placed"
+                      ? void remove(state.stage.id)
+                      : void removeDirect(state.learningPlan.id)
+                  }
+                  aria-label={
+                    state.kind === "placed"
+                      ? `Remove from ${state.learningPlan.name} · ${state.stage.name}`
+                      : `Remove from ${state.learningPlan.name}`
+                  }
                 >
                   Remove
                 </button>
@@ -230,6 +250,8 @@ export function ItemPlacements({
                 <strong>{state.learningPlan.name}</strong>
                 {state.kind === "placed" ? (
                   <span>Already in {state.stage.name}</span>
+                ) : state.kind === "placed_direct" ? (
+                  <span>Already placed directly</span>
                 ) : (
                   <div className="item-placement-choice">
                     {state.stages.length > 0 && (

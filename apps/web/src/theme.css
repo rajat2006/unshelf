@@ -570,6 +570,53 @@ body {
   align-items: start;
 }
 
+.learning-plan-studio {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.plan-library-drawer {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 42rem;
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+
+.plan-library-drawer h2,
+.plan-library-drawer p {
+  margin: 0;
+}
+
+.plan-library-drawer label,
+.plan-library-drawer li {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.plan-library-drawer input,
+.plan-library-drawer button {
+  min-height: 44px;
+}
+
+.plan-library-drawer ul {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.plan-library-drawer li {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
 .unsequenced-rail {
   max-height: 35rem;
   padding: var(--space-3);
@@ -1412,6 +1459,10 @@ body {
   }
 
   .learning-plan-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-plan-studio {
     grid-template-columns: minmax(0, 1fr);
   }
 

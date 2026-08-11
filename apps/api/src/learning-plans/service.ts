@@ -2,6 +2,7 @@ import type {
   ConnectLearningPlanNodesRequest,
   CreateLearningPlanRequest,
   CreateStageRequest,
+  ItemId,
   LearningPlanId,
   StageId,
   UpdateLearningPlanRequest,
@@ -9,6 +10,7 @@ import type {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import * as topologyRepository from "../learning-plan/repository";
+import * as itemPlacementsRepository from "./item-placements-repository";
 import * as stagesRepository from "../stages/repository";
 import * as learningPlansRepository from "./repository";
 
@@ -23,6 +25,10 @@ interface OwnedLearningPlanInput extends OwnedLearningPlansInput {
 
 interface OwnedStageInput extends OwnedLearningPlanInput {
   stageId: StageId;
+}
+
+interface OwnedItemInput extends OwnedLearningPlanInput {
+  itemId: ItemId;
 }
 
 export const listLearningPlans = ({ db, userId }: OwnedLearningPlansInput) =>
@@ -77,6 +83,45 @@ export const getTopology = ({
   learningPlanId,
 }: OwnedLearningPlanInput) =>
   topologyRepository.getLearningPlan(db, userId, learningPlanId);
+
+export const placeDirectItem = ({
+  db,
+  userId,
+  learningPlanId,
+  itemId,
+}: OwnedItemInput) =>
+  itemPlacementsRepository.placeDirectItem({
+    db,
+    userId,
+    learningPlanId,
+    itemId,
+  });
+
+export const searchItemCandidates = ({
+  db,
+  userId,
+  learningPlanId,
+  query,
+}: OwnedLearningPlanInput & { query: string }) =>
+  itemPlacementsRepository.searchItemCandidates({
+    db,
+    userId,
+    learningPlanId,
+    query,
+  });
+
+export const removeDirectItem = ({
+  db,
+  userId,
+  learningPlanId,
+  itemId,
+}: OwnedItemInput) =>
+  itemPlacementsRepository.removeDirectItem({
+    db,
+    userId,
+    learningPlanId,
+    itemId,
+  });
 
 export type ConnectLearningPlanResult =
   | {

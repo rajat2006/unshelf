@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { testAppUrl } from "./test-helpers";
+import type { Item, LearningPlan } from "@unshelf/shared";
+import { testApi, testAppUrl } from "./test-helpers";
 
 /**
  * Authoring one LearningPlan through the application seam (#94, ADR-0010/0014). A LearningPlan
@@ -236,4 +237,93 @@ test("at phone width the LearningPlan is viewed, not authored", async ({
   await expect(
     page.getByRole("button", { name: /Start your Learning Plan/ }),
   ).toHaveCount(0);
+});
+
+test("a desktop User places and removes a shared Library Item directly", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "placing Plan structure is desktop authoring",
+  );
+  const user = `${testInfo.project.name}-direct-plan-item`;
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Designing Data-Intensive Applications",
+      type: "book",
+    })
+  ).json()) as Item;
+
+  await page.goto(testAppUrl("/plans", user));
+  const { deepLink } = await startAndOpenLearningPlan({
+    page,
+    name: "Distributed systems",
+    user,
+  });
+
+  const drawer = page.getByRole("complementary", {
+    name: "Library placement drawer",
+  });
+  await drawer.getByLabel("Search Library").fill("data-intensive");
+  const result = drawer.getByRole("listitem").filter({
+    hasText: "Designing Data-Intensive Applications",
+  });
+  await result.getByRole("button", { name: "Place directly" }).click();
+  await expect(
+    page.getByRole("link", {
+      name: "Open Designing Data-Intensive Applications",
+    }),
+  ).toBeVisible();
+
+  await page.goto(deepLink);
+  const itemLink = page.getByRole("link", {
+    name: "Open Designing Data-Intensive Applications",
+  });
+  await expect(itemLink).toBeVisible();
+  await itemLink.click();
+  await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
+
+  await page.goto(deepLink);
+  await drawer.getByLabel("Search Library").fill("data-intensive");
+  await drawer
+    .getByRole("button", {
+      name: "Remove Designing Data-Intensive Applications from this Learning Plan",
+    })
+    .click();
+  await expect(
+    page.getByRole("link", {
+      name: "Open Designing Data-Intensive Applications",
+    }),
+  ).toHaveCount(0);
+  expect((await testApi(page, user, `/api/items/${item.id}`)).ok()).toBe(true);
+});
+
+test("a phone User views a direct placement and opens the shared Item", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone", "phone consultation flow");
+  const user = `${testInfo.project.name}-direct-plan-item-view`;
+  const plan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Systems reading",
+    })
+  ).json()) as LearningPlan;
+  const item = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Database Internals",
+      type: "book",
+    })
+  ).json()) as Item;
+  await testApi(page, user, `/api/learning-plans/${plan.id}/items`, "POST", {
+    itemId: item.id,
+  });
+
+  await page.goto(testAppUrl(`/plans/${plan.id}`, user));
+  const itemLink = page.getByRole("link", { name: "Open Database Internals" });
+  await expect(itemLink).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Library placement drawer" }),
+  ).toHaveCount(0);
+  await itemLink.click();
+  await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
 });

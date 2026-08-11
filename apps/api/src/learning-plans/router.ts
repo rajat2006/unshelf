@@ -3,6 +3,10 @@ import {
   connectLearningPlanNodesRequestSchema,
   createStageRequestSchema,
   createLearningPlanRequestSchema,
+  itemIdSchema,
+  placeLearningPlanItemRequestSchema,
+  planNodeIdSchema,
+  stageItemSearchQuerySchema,
   stageIdSchema,
   learningPlanIdSchema,
   updateLearningPlanRequestSchema,
@@ -191,6 +195,93 @@ export function createLearningPlansRouter(
   );
 
   router.post(
+    "/:learningPlanId/items",
+    validateRequest(
+      {
+        body: placeLearningPlanItemRequestSchema,
+        params: { learningPlanId: learningPlanIdSchema },
+      },
+      "missing_item_id",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await learningPlansService.placeDirectItem({
+        db,
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        itemId: body.itemId,
+      });
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          res.status(404).json({ error: "learning plan or item not found" });
+        } else {
+          res
+            .status(409)
+            .json({ error: "item already placed on this learning plan" });
+        }
+        return;
+      }
+      res.status(201).json(result.learningPlan);
+    },
+  );
+
+  router.get(
+    "/:learningPlanId/items",
+    validateRequest(
+      {
+        params: { learningPlanId: learningPlanIdSchema },
+        query: stageItemSearchQuerySchema,
+      },
+      "invalid_stage_item_search",
+    ),
+    async (req, res) => {
+      const { params, query } = res.locals.validated;
+      const candidates = await learningPlansService.searchItemCandidates({
+        db,
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        query: query.query ?? "",
+      });
+      if (!candidates) {
+        res.status(404).json({ error: "learning plan not found" });
+        return;
+      }
+      res.json(candidates);
+    },
+  );
+
+  router.delete(
+    "/:learningPlanId/items/:itemId",
+    validateRequest(
+      {
+        params: {
+          learningPlanId: learningPlanIdSchema,
+          itemId: itemIdSchema,
+        },
+      },
+      "missing_item_id",
+    ),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const result = await learningPlansService.removeDirectItem({
+        db,
+        userId: req.user!.id,
+        learningPlanId: params.learningPlanId,
+        itemId: params.itemId,
+      });
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          res.status(404).json({ error: "learning plan or item not found" });
+        } else {
+          res.status(409).json({ error: "item is placed inside a stage" });
+        }
+        return;
+      }
+      res.json(result.learningPlan);
+    },
+  );
+
+  router.post(
     "/:learningPlanId/edges",
     validateRequest(
       {
@@ -233,8 +324,8 @@ export function createLearningPlansRouter(
       {
         params: {
           learningPlanId: learningPlanIdSchema,
-          fromNodeId: stageIdSchema,
-          toNodeId: stageIdSchema,
+          fromNodeId: planNodeIdSchema,
+          toNodeId: planNodeIdSchema,
         },
       },
       "invalid_edge_endpoints",

@@ -114,6 +114,32 @@ describe("Learning Plan migration", () => {
         },
       ]);
 
+      const directPlacementMigration = migrations[3];
+      expect(directPlacementMigration).toBeDefined();
+      await applyMigrations(db, [directPlacementMigration]);
+
+      const unifiedPlacements = await db.execute(sql`
+        SELECT user_id, learning_plan_id, item_id, stage_id, node_id
+        FROM learning_plan_item_placements
+        ORDER BY stage_id, item_id
+      `);
+      expect(unifiedPlacements.rows).toEqual([
+        {
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          item_id: IDS.itemA,
+          stage_id: IDS.stageA,
+          node_id: null,
+        },
+        {
+          user_id: IDS.user,
+          learning_plan_id: IDS.plan,
+          item_id: IDS.itemB,
+          stage_id: IDS.stageA,
+          node_id: null,
+        },
+      ]);
+
       const edges = await db.execute(sql`
         SELECT user_id, learning_plan_id, from_node_id, to_node_id
         FROM learning_plan_edges

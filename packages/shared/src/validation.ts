@@ -60,6 +60,8 @@ export const addStageItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
+export const placeLearningPlanItemRequestSchema = addStageItemRequestSchema;
+
 export const stageItemSearchQuerySchema = z.strictObject({
   query: z.string().optional(),
 });
@@ -91,6 +93,9 @@ export type UpdateLearningPlanRequest = z.infer<
   typeof updateLearningPlanRequestSchema
 >;
 export type AddStageItemRequest = z.infer<typeof addStageItemRequestSchema>;
+export type PlaceLearningPlanItemRequest = z.infer<
+  typeof placeLearningPlanItemRequestSchema
+>;
 export type StageItemSearchQuery = z.infer<typeof stageItemSearchQuerySchema>;
 export type CreateStageWithItemRequest = z.infer<
   typeof createStageWithItemRequestSchema

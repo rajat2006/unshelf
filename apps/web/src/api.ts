@@ -17,7 +17,9 @@ import type {
   StageItemCandidate,
   LearningPlan,
   LearningPlanId,
+  LearningPlanItemCandidate,
   LearningPlanView,
+  PlaceLearningPlanItemRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
   UpdateLearningPlanRequest,
@@ -323,6 +325,52 @@ export async function fetchLearningPlan(
   return requestJson<LearningPlanView>(
     user,
     `/api/learning-plans/${learningPlanId}/topology`,
+  );
+}
+
+/** Search one Learning Plan's Library placement drawer. */
+export async function fetchLearningPlanItemCandidates(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+  query: string,
+): Promise<LearningPlanItemCandidate[]> {
+  const search = new URLSearchParams();
+  if (query) search.set("query", query);
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return requestJson<LearningPlanItemCandidate[]>(
+    user,
+    `/api/learning-plans/${learningPlanId}/items${suffix}`,
+  );
+}
+
+/** Place one existing Library Item directly as a first-class Plan Node. */
+export async function placeItemDirectly(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+  itemId: ItemId,
+): Promise<LearningPlanView> {
+  const body: PlaceLearningPlanItemRequest = { itemId };
+  return requestJson<LearningPlanView>(
+    user,
+    `/api/learning-plans/${learningPlanId}/items`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** Remove only a direct placement; the shared Library Item remains. */
+export async function removeDirectItemFromLearningPlan(
+  user: CurrentUser,
+  learningPlanId: LearningPlanId,
+  itemId: ItemId,
+): Promise<LearningPlanView> {
+  return requestJson<LearningPlanView>(
+    user,
+    `/api/learning-plans/${learningPlanId}/items/${itemId}`,
+    { method: "DELETE" },
   );
 }
 
