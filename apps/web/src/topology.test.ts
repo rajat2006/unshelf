@@ -9,7 +9,13 @@ import {
 type OpaqueNodeId = string & { readonly opaqueNodeId: unique symbol };
 
 const nodeId = (value: string) => value as OpaqueNodeId;
-const edge = (from: string, to: string): TopologyEdge<OpaqueNodeId> => ({
+const edge = ({
+  from,
+  to,
+}: {
+  from: string;
+  to: string;
+}): TopologyEdge<OpaqueNodeId> => ({
   from: nodeId(from),
   to: nodeId(to),
 });
@@ -23,7 +29,7 @@ describe("topology layout", () => {
   it("lays a sequence out from left to right", () => {
     const layout = deriveTopologyLayout({
       nodeIds: [nodeId("a"), nodeId("b"), nodeId("c")],
-      edges: [edge("a", "b"), edge("b", "c")],
+      edges: [edge({ from: "a", to: "b" }), edge({ from: "b", to: "c" })],
     });
 
     expect(placementOf(layout, "a")).toEqual({ depth: 0, lane: 0 });
@@ -52,10 +58,10 @@ describe("topology layout", () => {
         nodeId("joined"),
       ],
       edges: [
-        edge("root", "left"),
-        edge("root", "right"),
-        edge("left", "joined"),
-        edge("right", "joined"),
+        edge({ from: "root", to: "left" }),
+        edge({ from: "root", to: "right" }),
+        edge({ from: "left", to: "joined" }),
+        edge({ from: "right", to: "joined" }),
       ],
     });
 
@@ -67,7 +73,7 @@ describe("topology layout", () => {
 });
 
 describe("topology validation", () => {
-  const edges = [edge("a", "b"), edge("b", "c")];
+  const edges = [edge({ from: "a", to: "b" }), edge({ from: "b", to: "c" })];
 
   it("finds transitive reachability", () => {
     expect(reaches({ edges, from: nodeId("a"), to: nodeId("c") })).toBe(true);

@@ -24,17 +24,21 @@ interface Topology<NodeId extends string> {
   edges: readonly TopologyEdge<NodeId>[];
 }
 
-interface Path<NodeId extends string> {
+interface TopologyTraversal<NodeId extends string> {
   edges: readonly TopologyEdge<NodeId>[];
   from: NodeId;
   to: NodeId;
 }
 
-const push = <NodeId extends string>(
-  map: Map<NodeId, NodeId[]>,
-  key: NodeId,
-  value: NodeId,
-) => {
+const appendMapValue = <NodeId extends string>({
+  map,
+  key,
+  value,
+}: {
+  map: Map<NodeId, NodeId[]>;
+  key: NodeId;
+  value: NodeId;
+}) => {
   const list = map.get(key);
   if (list) list.push(value);
   else map.set(key, [value]);
@@ -46,8 +50,8 @@ const adjacency = <NodeId extends string>(
   const out = new Map<NodeId, NodeId[]>();
   const incoming = new Map<NodeId, NodeId[]>();
   for (const edge of edges) {
-    push(out, edge.from, edge.to);
-    push(incoming, edge.to, edge.from);
+    appendMapValue({ map: out, key: edge.from, value: edge.to });
+    appendMapValue({ map: incoming, key: edge.to, value: edge.from });
   }
   return { out, incoming };
 };
@@ -57,7 +61,7 @@ export function reaches<NodeId extends string>({
   edges,
   from,
   to,
-}: Path<NodeId>): boolean {
+}: TopologyTraversal<NodeId>): boolean {
   const { out } = adjacency(edges);
   const seen = new Set<NodeId>();
   const stack: NodeId[] = [from];
@@ -76,7 +80,7 @@ export function canConnect<NodeId extends string>({
   edges,
   from,
   to,
-}: Path<NodeId>): boolean {
+}: TopologyTraversal<NodeId>): boolean {
   if (from === to) return false;
   if (edges.some((edge) => edge.from === from && edge.to === to)) return false;
   return !reaches({ edges, from: to, to: from });
@@ -119,7 +123,13 @@ export function deriveTopologyLayout<NodeId extends string>({
 
   const laneById = new Map<NodeId, number>();
   const usedLanesByDepth = new Map<number, Set<number>>();
-  const takeLane = (depth: number, preferred: number): number => {
+  const takeLane = ({
+    depth,
+    preferred,
+  }: {
+    depth: number;
+    preferred: number;
+  }): number => {
     const used = usedLanesByDepth.get(depth) ?? new Set<number>();
     let lane = preferred;
     while (used.has(lane)) lane += 1;
@@ -134,7 +144,7 @@ export function deriveTopologyLayout<NodeId extends string>({
       const preferred = parents.length
         ? Math.min(...parents.map((parent) => laneById.get(parent) ?? 0))
         : 0;
-      laneById.set(id, takeLane(depth, preferred));
+      laneById.set(id, takeLane({ depth, preferred }));
     }
   });
 
