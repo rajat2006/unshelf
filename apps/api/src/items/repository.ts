@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type {
   CreateItemRequest,
   Item,
@@ -17,6 +17,7 @@ export interface ItemRow {
   user_id: string;
   title: string;
   source: string | null;
+  created_at: Date;
   type: Type;
   status: Status;
   target_date: string | null;
@@ -46,6 +47,7 @@ export const ITEM_PROJECTION = {
   user_id: items.userId,
   title: items.title,
   source: items.source,
+  created_at: items.createdAt,
   type: items.type,
   status: items.status,
   target_date: sql<string | null>`${items.targetDate}::text`,
@@ -74,6 +76,7 @@ export const toItem = (row: ItemRow): Item => ({
   userId: row.user_id as UserId,
   title: row.title,
   source: row.source,
+  createdAt: row.created_at.toISOString(),
   type: row.type,
   status: row.status,
   targetDate: row.target_date,
@@ -105,12 +108,13 @@ export async function createItem(
   return (await getItem(db, userId, rows[0].id as ItemId))!;
 }
 
-/** All for a User: every Item where `user_id = me`, and only that User's. */
+/** The User's Library, ordered as deterministic recently captured material. */
 export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   const rows = await db
     .select(ITEM_PROJECTION)
     .from(items)
-    .where(eq(items.userId, userId));
+    .where(eq(items.userId, userId))
+    .orderBy(desc(items.createdAt), asc(items.id));
   return rows.map(toItem);
 }
 

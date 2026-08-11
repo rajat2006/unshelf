@@ -205,6 +205,106 @@ test("selecting and clearing a Label filter updates the URL and visible Library 
   ).toHaveCount(0);
 });
 
+test("Library search retrieves recognisable Item facts and composes with a private Label filter", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-library-search`;
+  const systems = (await (
+    await testApi(page, user, "/api/labels", "POST", { name: "Systems" })
+  ).json()) as { id: string };
+  const distributed = (await (
+    await testApi(page, user, "/api/labels", "POST", {
+      name: "Distributed Systems",
+    })
+  ).json()) as { id: string };
+  const titleMatch = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Recognisable Handbook",
+      type: "book",
+    })
+  ).json()) as { id: string };
+  const sourceMatch = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Conference talk",
+      type: "video",
+      source: "https://Video.Example/Watch",
+    })
+  ).json()) as { id: string };
+  await testApi(page, user, "/api/items", "POST", {
+    title: "Other talk",
+    type: "video",
+    source: "https://video.example/other",
+  });
+  const labelMatch = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Course notes",
+      type: "other",
+    })
+  ).json()) as { id: string };
+  await testApi(
+    page,
+    user,
+    `/api/items/${titleMatch.id}/labels/${systems.id}`,
+    "POST",
+  );
+  await testApi(
+    page,
+    user,
+    `/api/items/${sourceMatch.id}/labels/${systems.id}`,
+    "POST",
+  );
+  await testApi(
+    page,
+    user,
+    `/api/items/${labelMatch.id}/labels/${distributed.id}`,
+    "POST",
+  );
+
+  await page.goto(testAppUrl("/library", user));
+  const search = page.getByRole("searchbox", { name: "Search Library" });
+
+  await search.fill("RECOGNISABLE");
+  await expect(page).toHaveURL(/[?&]q=RECOGNISABLE(?:&|$)/);
+  await expect(
+    page.getByText("Recognisable Handbook", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Conference talk", { exact: true })).toHaveCount(
+    0,
+  );
+
+  await search.fill("video.example");
+  await expect(
+    page.getByText("Conference talk", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Other talk", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Filter by Systems" }).click();
+  await expect(
+    page.getByText("Conference talk", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Other talk", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show all Items" }).click();
+  await search.fill("DISTRIBUTED SYSTEMS");
+  await expect(page.getByText("Course notes", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Recognisable Handbook", { exact: true }),
+  ).toHaveCount(0);
+
+  await page.reload();
+  await expect(search).toHaveValue("DISTRIBUTED SYSTEMS");
+  await expect(page.getByText("Course notes", { exact: true })).toBeVisible();
+
+  await search.fill("nothing matches this");
+  await expect(
+    page.getByText('No Items match "nothing matches this"', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page).not.toHaveURL(/[?&]q=/);
+  await expect(
+    page.getByText("Recognisable Handbook", { exact: true }),
+  ).toBeVisible();
+});
+
 test("a bookmarked Label filter survives refresh and follows browser history", async ({
   page,
 }, testInfo) => {

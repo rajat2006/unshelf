@@ -83,13 +83,15 @@ export function LibrarySurface({
 
   const displayedState = itemOverrides.reduce(replaceItemInLibraryState, state);
   const activeLabelId = labelFilterEnabled ? searchParams.get("label") : null;
+  const rawQuery = labelFilterEnabled ? (searchParams.get("q") ?? "") : "";
+  const query = rawQuery.trim().toLocaleLowerCase();
   const activeLabel =
     displayedState.status === "ready"
       ? displayedState.labels.find((label) => label.id === activeLabelId)
       : undefined;
   const hasUnknownLabel =
     displayedState.status === "ready" && activeLabelId !== null && !activeLabel;
-  const visibleItems =
+  const labelFilteredItems =
     displayedState.status !== "ready" || hasUnknownLabel
       ? []
       : activeLabel
@@ -97,12 +99,22 @@ export function LibrarySurface({
             item.labels.some((label) => label.id === activeLabel.id),
           )
         : displayedState.items;
+  const visibleItems =
+    query.length === 0
+      ? labelFilteredItems
+      : labelFilteredItems.filter((item) => matchesLibraryQuery(item, query));
   const filteredEmptyMessage =
     displayedState.status === "ready" && displayedState.items.length > 0
       ? hasUnknownLabel
         ? "Label unavailable"
-        : activeLabel && visibleItems.length === 0
-          ? `No Items match "${activeLabel.name}"`
+        : visibleItems.length === 0
+          ? query.length > 0
+            ? activeLabel
+              ? `No Items match "${rawQuery.trim()}" with "${activeLabel.name}"`
+              : `No Items match "${rawQuery.trim()}"`
+            : activeLabel
+              ? `No Items match "${activeLabel.name}"`
+              : null
           : null
       : null;
 
@@ -113,6 +125,17 @@ export function LibrarySurface({
       else next.delete("label");
       if (onLabelFilterChange) onLabelFilterChange(next);
       else setRouteSearchParams(next);
+    },
+    [onLabelFilterChange, searchParams, setRouteSearchParams],
+  );
+
+  const searchLibrary = useCallback(
+    (value: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (value.length > 0) next.set("q", value);
+      else next.delete("q");
+      if (onLabelFilterChange) onLabelFilterChange(next);
+      else setRouteSearchParams(next, { replace: true });
     },
     [onLabelFilterChange, searchParams, setRouteSearchParams],
   );
@@ -129,6 +152,19 @@ export function LibrarySurface({
           </button>
         </div>
       )}
+      {displayedState.status === "ready" &&
+        labelFilterEnabled &&
+        displayedState.items.length > 0 && (
+          <label className="library-search">
+            <span>Search Library</span>
+            <input
+              type="search"
+              value={rawQuery}
+              onChange={(event) => searchLibrary(event.target.value)}
+              placeholder="Title, Source, or Label"
+            />
+          </label>
+        )}
       {displayedState.status === "ready" &&
         labelFilterEnabled &&
         (displayedState.labels.length > 0 || hasUnknownLabel) && (
@@ -167,21 +203,38 @@ export function LibrarySurface({
       {filteredEmptyMessage && (
         <div className="library-empty">
           <p>{filteredEmptyMessage}</p>
-          <button type="button" onClick={() => selectLabel(null)}>
-            Clear Label filter
-          </button>
+          {query.length > 0 ? (
+            <button type="button" onClick={() => searchLibrary("")}>
+              Clear search
+            </button>
+          ) : (
+            <button type="button" onClick={() => selectLabel(null)}>
+              Clear Label filter
+            </button>
+          )}
         </div>
       )}
       {displayedState.status === "ready" && visibleItems.length > 0 && (
-        <LibraryItems
-          items={visibleItems}
-          labels={displayedState.labels}
-          user={user}
-          onItemChanged={replaceItem}
-        />
+        <section aria-labelledby="library-results-heading">
+          <h2 id="library-results-heading">
+            {query.length > 0 ? "Search results" : "Recently captured"}
+          </h2>
+          <LibraryItems
+            items={visibleItems}
+            labels={displayedState.labels}
+            user={user}
+            onItemChanged={replaceItem}
+          />
+        </section>
       )}
     </section>
   );
+}
+
+function matchesLibraryQuery(item: Item, query: string): boolean {
+  return [item.title, item.source, ...item.labels.map((label) => label.name)]
+    .filter((value): value is string => value !== null)
+    .some((value) => value.toLocaleLowerCase().includes(query));
 }
 
 function replaceItemIn(items: Item[], changed: Item): Item[] {

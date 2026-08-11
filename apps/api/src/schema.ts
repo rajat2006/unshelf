@@ -85,6 +85,9 @@ export const items = pgTable(
       .references(() => users.id),
     title: text("title").notNull(),
     source: text("source"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     type: text("type", { enum: nonEmpty(ITEM_TYPES) }).notNull(),
     status: text("status", { enum: nonEmpty(ITEM_STATUSES) })
       .notNull()

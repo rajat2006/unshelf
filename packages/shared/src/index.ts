@@ -124,6 +124,8 @@ export interface Item {
   title: string;
   /** Optional link to where the Item lives; verbatim, unvalidated (ADR-0007). */
   source: string | null;
+  /** When Capture created the Item, as a database-owned ISO-8601 timestamp. */
+  createdAt: string;
   /** The kind of material, chosen at capture. */
   type: Type;
   /** Item-level progress; a fresh capture is *not started*. */

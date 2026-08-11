@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { testAppUrl } from "./test-helpers";
+import { testApi, testAppUrl } from "./test-helpers";
 
 /**
  * Capture as a global chrome action (#92, design spec §3, ADR-0014). Capture is a
@@ -110,6 +110,44 @@ test("a successful capture lands the Item in the Library and leaves the User on 
 
   // It entered the store — the Library, where every capture lands — and shows there.
   await expect(page.getByText(title, { exact: true })).toBeVisible();
+});
+
+test("an offline Capture from a Learning Plan stays uncommitted and preserves Plan context", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-capture-from-plan`;
+  const learningPlan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Systems path",
+    })
+  ).json()) as { id: string };
+  const planUrl = appUrl(testInfo, `/plans/${learningPlan.id}`, user);
+  await page.goto(planUrl);
+
+  await captureButton(page).click();
+  const dialog = composer(page);
+  await dialog.getByLabel("Title").fill("Offline systems book");
+  await dialog.getByLabel("Type").selectOption("book");
+  await dialog.getByRole("button", { name: "Add to Library" }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(`${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe(
+    planUrl,
+  );
+  const items = (await (
+    await testApi(page, user, "/api/items")
+  ).json()) as Array<{ id: string; source: string | null; labels: unknown[] }>;
+  expect(items).toEqual([
+    expect.objectContaining({ source: null, labels: [] }),
+  ]);
+  const placements = (await (
+    await testApi(page, user, `/api/items/${items[0].id}/placements`)
+  ).json()) as {
+    learningPlans: Array<{ kind: string }>;
+  };
+  expect(placements.learningPlans).toEqual([
+    expect.objectContaining({ kind: "available" }),
+  ]);
 });
 
 test("Capture preserves Source verbatim and allows duplicate Sources", async ({

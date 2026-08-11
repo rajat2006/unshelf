@@ -213,6 +213,33 @@ describe("Learning Plan migration", () => {
       expect(labelFacts.rows).toEqual([
         { id: IDS.label, user_id: IDS.user, name: "Core" },
       ]);
+
+      const itemCreationMigrationIndex = migrations.findIndex((migration) =>
+        migration.sql.some((statement) =>
+          statement.includes('ALTER TABLE "items" ADD COLUMN "created_at"'),
+        ),
+      );
+      expect(itemCreationMigrationIndex).toBeGreaterThanOrEqual(4);
+      await applyMigrations(
+        db,
+        migrations.slice(4, itemCreationMigrationIndex + 1),
+      );
+
+      const itemCreationFacts = await db.execute(sql`
+        SELECT id, created_at
+        FROM items
+        ORDER BY id
+      `);
+      expect(itemCreationFacts.rows).toEqual([
+        {
+          id: IDS.itemA,
+          created_at: "2025-12-31 23:00:00+00",
+        },
+        {
+          id: IDS.itemB,
+          created_at: "2025-12-31 23:00:00+00",
+        },
+      ]);
     } finally {
       await db.$client.end();
       await container.stop();
@@ -250,8 +277,8 @@ const IDS = {
 
 async function seedLegacyTrail(db: Database): Promise<void> {
   await db.execute(sql`
-    INSERT INTO users (id, clerk_user_id)
-    VALUES (${IDS.user}, 'legacy-user')
+    INSERT INTO users (id, clerk_user_id, created_at)
+    VALUES (${IDS.user}, 'legacy-user', '2025-12-31T23:00:00.000Z')
   `);
   await db.execute(sql`
     INSERT INTO trails (id, user_id, name, created_at)

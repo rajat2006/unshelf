@@ -38,6 +38,7 @@ const item: Item = {
   userId,
   title: "Responsive layouts",
   source: "https://example.com/layouts",
+  createdAt: "2026-07-01T00:00:00.000Z",
   type: Type.Article,
   status: Status.InProgress,
   targetDate: "2026-08-01",

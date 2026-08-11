@@ -21,7 +21,7 @@ export function LibraryItems({
   onItemChanged,
 }: LibraryItemsProps) {
   return (
-    <ul className="library-list">
+    <ul className="library-list" aria-label="Library Items, newest first">
       {items.map((item) => (
         <ItemRow
           key={item.id}

@@ -77,7 +77,10 @@ function CaptureComposer({
     setSaving(true);
     setError(null);
     try {
-      await captureItem(user, { title, type, source });
+      await captureItem(
+        user,
+        source.length === 0 ? { title, type } : { title, type, source },
+      );
       onCaptured();
       onClose();
     } catch (caught: unknown) {

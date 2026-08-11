@@ -962,6 +962,29 @@ body {
   min-width: 0;
 }
 
+.library-search {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-5);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.library-search input {
+  width: min(100%, 32rem);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-3);
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.library-surface h2 {
+  margin: var(--space-6) 0 0;
+}
+
 .library-list {
   display: grid;
   gap: var(--space-3);
