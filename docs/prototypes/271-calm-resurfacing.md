@@ -2,6 +2,8 @@
 
 Issue: [Prototype calm resurfacing for dormant learning material](https://github.com/rajat2006/unshelf/issues/271)
 
+Executable snapshot: [Library B + Daily Planning D](https://github.com/rajat2006/unshelf/tree/d39e4e91e1984995d31ac652aad67503e7cf1727/apps/web/src/prototype)
+
 ## Selected designs
 
 - **Library B — faceted catalog.** The Library stays a passive, searchable store: Views and Labels narrow a dense Item list, while selection opens Item detail. It does not become an obligation queue.
@@ -21,4 +23,4 @@ Resurfacing does **not** earn a persisted domain concept. It remains a projectio
 
 ## Placement
 
-Daily Planning is a full page inside the existing app shell. The central agenda receives most of the content width; the subordinate sidecar remains narrow. This branch is a throwaway decision artifact, not production-ready code and not intended for merge.
+Daily Planning is a full page inside the existing app shell. The central agenda receives most of the content width; the subordinate sidecar remains narrow. The executable was a throwaway prototype, not production-ready code and not intended for merge.
