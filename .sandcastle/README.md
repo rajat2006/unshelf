@@ -185,7 +185,10 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
 - **`implement-prd/`** — the PRD variant of the spine (workflow
   `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
   sub-issue per run on the resumed accumulating branch, with coordinates + provider
-  from `loadPrdImplementContext`. A **two-phase** capability
+  from `loadPrdImplementContext`. Its job has a 120-minute outer timeout because a
+  complete vertical slice can include implementation, browser verification, and
+  review; the shared idle watchdog still catches a non-responsive agent earlier. A
+  **two-phase** capability
   ({@link runWithExtraction}): the produce pass implements the sub-issue passed via
   `SUB_ISSUE_NUMBER` (reasoning in prose, committing its work); the resumed
   extraction pass emits an explicit `outcome` — `completed` | `already-satisfied` |

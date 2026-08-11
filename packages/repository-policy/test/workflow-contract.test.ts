@@ -9,6 +9,13 @@ const releasePolicyWorkflow = readFileSync(
   new URL("../../../.github/workflows/release-policy.yml", import.meta.url),
   "utf8",
 );
+const agentImplementPrdWorkflow = readFileSync(
+  new URL(
+    "../../../.github/workflows/agent-implement-prd.yml",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("repository delivery workflows", () => {
   it("keeps Product CI available to forks without privileged authority", () => {
@@ -34,5 +41,9 @@ describe("repository delivery workflows", () => {
     expect(releasePolicyWorkflow).not.toMatch(/^\s+environment:/m);
     expect(releasePolicyWorkflow).not.toMatch(/^\s+packages: write/m);
     expect(releasePolicyWorkflow).not.toMatch(/DOKPLOY|CLERK|DATABASE_URL|R2_/);
+  });
+
+  it("allows PRD implementation slices to complete full verification", () => {
+    expect(agentImplementPrdWorkflow).toContain("timeout-minutes: 120");
   });
 });
