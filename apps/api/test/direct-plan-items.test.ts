@@ -161,6 +161,40 @@ describe("direct Learning Plan Item placements", () => {
     expect((secondPlacement.body as LearningPlanView).nodes).toHaveLength(1);
   });
 
+  it("does not offer a directly placed Item to a Stage on the same Learning Plan", async () => {
+    const api = asUser("direct-placement-stage-search-owner");
+    const plan = (await api.post("/api/learning-plans", { name: "One Plan" }))
+      .body as LearningPlan;
+    const stage = (
+      await api.post(`/api/learning-plans/${plan.id}/stages`, {
+        name: "Optional Stage",
+      })
+    ).body as Stage;
+    const item = (
+      await api.post("/api/items", {
+        title: "Already direct",
+        type: "article",
+      })
+    ).body as Item;
+    await api.post(`/api/learning-plans/${plan.id}/items`, {
+      itemId: item.id,
+    });
+
+    const candidates = await api.get(
+      `/api/stages/${stage.id}/items?query=already`,
+    );
+
+    expect(candidates.status).toBe(200);
+    expect(candidates.body).toEqual([
+      {
+        kind: "direct_conflict",
+        id: item.id,
+        title: item.title,
+        type: item.type,
+      },
+    ]);
+  });
+
   it("keeps unknown and foreign placement destinations private", async () => {
     const ownerApi = asUser("direct-placement-private-owner");
     const intruderApi = asUser("direct-placement-private-intruder");
@@ -266,5 +300,44 @@ describe("direct Learning Plan Item placements", () => {
         [firstPlan.userId, firstPlan.id, intruderItem.id, node.rows[0]?.id],
       ),
     ).rejects.toThrow(/learning_plan_item_placements_item_owner_fk/);
+
+    const firstStage = (
+      await ownerApi.post(`/api/learning-plans/${firstPlan.id}/stages`, {
+        name: "First Stage",
+      })
+    ).body as Stage;
+    const secondStage = (
+      await ownerApi.post(`/api/learning-plans/${firstPlan.id}/stages`, {
+        name: "Second Stage",
+      })
+    ).body as Stage;
+    const stagedItem = (
+      await ownerApi.post("/api/items", {
+        title: "Staged Item",
+        type: "book",
+      })
+    ).body as Item;
+    const differentItem = (
+      await ownerApi.post("/api/items", {
+        title: "Different Item",
+        type: "book",
+      })
+    ).body as Item;
+    await ownerApi.post(`/api/stages/${firstStage.id}/items`, {
+      itemId: stagedItem.id,
+    });
+
+    await expect(
+      harness.pool.query(
+        `UPDATE stage_items SET item_id = $1 WHERE stage_id = $2`,
+        [differentItem.id, firstStage.id],
+      ),
+    ).rejects.toThrow(/stage_items_placement_fk/);
+    await expect(
+      harness.pool.query(
+        `UPDATE stage_items SET stage_id = $1 WHERE stage_id = $2`,
+        [secondStage.id, firstStage.id],
+      ),
+    ).rejects.toThrow(/stage_items_placement_fk/);
   });
 });

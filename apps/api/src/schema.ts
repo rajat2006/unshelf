@@ -345,6 +345,13 @@ export const learningPlanItemPlacements = pgTable(
       table.userId,
       table.learningPlanId,
     ),
+    unique("learning_plan_item_placements_stage_identity_idx").on(
+      table.id,
+      table.userId,
+      table.learningPlanId,
+      table.itemId,
+      table.stageId,
+    ),
     unique("learning_plan_item_placements_node_unique").on(table.nodeId),
     index("learning_plan_item_placements_plan_idx").on(
       table.userId,
@@ -399,11 +406,19 @@ export const stageItems = pgTable(
     primaryKey({ columns: [table.stageId, table.itemId] }),
     foreignKey({
       name: "stage_items_placement_fk",
-      columns: [table.placementId, table.userId, table.learningPlanId],
+      columns: [
+        table.placementId,
+        table.userId,
+        table.learningPlanId,
+        table.itemId,
+        table.stageId,
+      ],
       foreignColumns: [
         learningPlanItemPlacements.id,
         learningPlanItemPlacements.userId,
         learningPlanItemPlacements.learningPlanId,
+        learningPlanItemPlacements.itemId,
+        learningPlanItemPlacements.stageId,
       ],
     }).onDelete("cascade"),
     foreignKey({

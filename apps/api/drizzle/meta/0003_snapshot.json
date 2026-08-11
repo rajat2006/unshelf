@@ -649,6 +649,17 @@
             "learning_plan_id"
           ]
         },
+        "learning_plan_item_placements_stage_identity_idx": {
+          "name": "learning_plan_item_placements_stage_identity_idx",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "user_id",
+            "learning_plan_id",
+            "item_id",
+            "stage_id"
+          ]
+        },
         "learning_plan_item_placements_node_unique": {
           "name": "learning_plan_item_placements_node_unique",
           "nullsNotDistinct": false,
@@ -979,12 +990,16 @@
           "columnsFrom": [
             "placement_id",
             "user_id",
-            "learning_plan_id"
+            "learning_plan_id",
+            "item_id",
+            "stage_id"
           ],
           "columnsTo": [
             "id",
             "user_id",
-            "learning_plan_id"
+            "learning_plan_id",
+            "item_id",
+            "stage_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

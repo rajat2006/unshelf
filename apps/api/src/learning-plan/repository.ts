@@ -6,7 +6,7 @@ import type {
   LearningPlanNode,
   LearningPlanView,
   ConnectLearningPlanNodesRequest,
-  DirectItemPlacementId,
+  DirectItemNodeId,
   PlanNodeId,
   StageId,
   UserId,
@@ -169,7 +169,7 @@ async function selectLearningPlan(
     if (!row.node_id) throw new Error("Direct placement has no Plan Node");
     return {
       kind: PlanNodeKind.Item,
-      id: row.node_id as DirectItemPlacementId,
+      id: row.node_id as DirectItemNodeId,
       item: toItem(row),
     };
   });

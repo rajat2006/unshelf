@@ -181,6 +181,10 @@ export function StageItemIntake({
                   <span className="stage-intake__conflict">
                     Already in {candidate.stage.name}
                   </span>
+                ) : candidate.kind === "direct_conflict" ? (
+                  <span className="stage-intake__conflict">
+                    Already placed directly on this Learning Plan
+                  </span>
                 ) : (
                   <span className="stage-intake__result-action">
                     <button

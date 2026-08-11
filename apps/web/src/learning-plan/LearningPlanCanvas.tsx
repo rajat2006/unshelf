@@ -95,11 +95,11 @@ export function LearningPlanCanvas({
   readOnly,
 }: LearningPlanCanvasProps) {
   const { nodes, edges } = learningPlan;
-  const connectedStageIds = new Set(
+  const connectedNodeIds = new Set(
     edges.flatMap((edge) => [edge.fromNodeId, edge.toNodeId]),
   );
-  const looseNodes = nodes.filter((node) => !connectedStageIds.has(node.id));
-  const sequencedNodes = nodes.filter((node) => connectedStageIds.has(node.id));
+  const looseNodes = nodes.filter((node) => !connectedNodeIds.has(node.id));
+  const sequencedNodes = nodes.filter((node) => connectedNodeIds.has(node.id));
   const topologyEdges = edges.map((edge) => ({
     from: edge.fromNodeId,
     to: edge.toNodeId,
@@ -310,7 +310,7 @@ export function LearningPlanCanvas({
   return (
     <section aria-label="Learning Plan journey">
       <div className="learning-plan-workbench">
-        <LooseStageRail
+        <LooseNodeRail
           nodes={looseNodes}
           allNodes={nodes}
           busy={busy}
@@ -427,32 +427,21 @@ export function LearningPlanCanvas({
                   }
                   linking={linkingFrom !== null}
                   onPointerDown={(e) => startNodeDrag(n.id, e)}
-                  onOpen={() =>
-                    n.kind === PlanNodeKind.Item ? undefined : onOpenStage(n.id)
-                  }
-                  onNext={() =>
+                  stageControls={
                     n.kind === PlanNodeKind.Stage
-                      ? setDraft({ from: n.id, mode: "next" })
+                      ? {
+                          onOpen: () => onOpenStage(n.id),
+                          onNext: () => setDraft({ from: n.id, mode: "next" }),
+                          onFork: () => setDraft({ from: n.id, mode: "fork" }),
+                          onStartLink: () => setLinkingFrom(n.id),
+                          onCancelLink: () => setLinkingFrom(null),
+                          onLinkHere: () => link(n.id),
+                          onDraftSubmit: (name) =>
+                            void createAndLink(name, n.id),
+                          onDraftCancel: () => setDraft(null),
+                        }
                       : undefined
                   }
-                  onFork={() =>
-                    n.kind === PlanNodeKind.Stage
-                      ? setDraft({ from: n.id, mode: "fork" })
-                      : undefined
-                  }
-                  onStartLink={() =>
-                    n.kind === PlanNodeKind.Stage
-                      ? setLinkingFrom(n.id)
-                      : undefined
-                  }
-                  onCancelLink={() => setLinkingFrom(null)}
-                  onLinkHere={() => link(n.id)}
-                  onDraftSubmit={(name) =>
-                    n.kind === PlanNodeKind.Stage
-                      ? void createAndLink(name, n.id)
-                      : undefined
-                  }
-                  onDraftCancel={() => setDraft(null)}
                 />
               );
             })}
@@ -523,7 +512,7 @@ interface SequenceStageInput {
   predecessorId: StageId;
 }
 
-function LooseStageRail({
+function LooseNodeRail({
   nodes,
   allNodes,
   busy,
@@ -549,7 +538,7 @@ function LooseStageRail({
         Unsequenced <span>{nodes.length}</span>
       </h2>
       {nodes.length === 0 ? (
-        <p>Loose Stages will wait here.</p>
+        <p>Loose Items and Stages will wait here.</p>
       ) : (
         <ul>
           {nodes.map((node) => {
@@ -667,6 +656,10 @@ interface WaypointProps {
   isLinkTarget: boolean;
   linking: boolean;
   onPointerDown: (e: ReactPointerEvent) => void;
+  stageControls?: StageWaypointControls;
+}
+
+interface StageWaypointControls {
   onOpen: () => void;
   onNext: () => void;
   onFork: () => void;
@@ -678,11 +671,11 @@ interface WaypointProps {
 }
 
 /**
- * One Stage as a waypoint: its medallion (sealed green when done, a filling ring
- * while underway, a hollow ring when not started), its name, and — on desktop —
- * the control that fits the moment: the ＋/⑃/⇢ authoring row when idle, a target
- * prompt while a link is being drawn, or the inline name field while a new Stage
- * is being added from here.
+ * One Plan Node as a waypoint: its medallion (sealed green when done, a filling
+ * ring while underway, a hollow ring when not started), its name, and — for a
+ * Stage on desktop — the control that fits the moment: the ＋/⑃/⇢ authoring row
+ * when idle, a target prompt while a link is being drawn, or the inline name
+ * field while a new Stage is being added from here.
  */
 function Waypoint({
   node,
@@ -696,14 +689,7 @@ function Waypoint({
   isLinkTarget,
   linking,
   onPointerDown,
-  onOpen,
-  onNext,
-  onFork,
-  onStartLink,
-  onCancelLink,
-  onLinkHere,
-  onDraftSubmit,
-  onDraftCancel,
+  stageControls,
 }: WaypointProps) {
   const done = isDone(node);
   const underway = isUnderway(node);
@@ -755,7 +741,7 @@ function Waypoint({
           aria-label={`Open ${name}`}
           title={progressLabel}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={onOpen}
+          onClick={stageControls?.onOpen}
         >
           <WaypointContents
             node={node}
@@ -767,26 +753,34 @@ function Waypoint({
         </button>
       )}
 
-      {!readOnly && node.kind === PlanNodeKind.Stage && (
+      {!readOnly && node.kind === PlanNodeKind.Stage && stageControls && (
         <div onPointerDown={(e) => e.stopPropagation()}>
           {isDrafting ? (
             <DraftForm
               busy={busy}
               placeholder="Name the new stage"
-              onCancel={onDraftCancel}
-              onSubmit={onDraftSubmit}
+              onCancel={stageControls.onDraftCancel}
+              onSubmit={stageControls.onDraftSubmit}
             />
           ) : isLinkSource ? (
-            <RowButton label="Cancel" onClick={onCancelLink} busy={busy} />
+            <RowButton
+              label="Cancel"
+              onClick={stageControls.onCancelLink}
+              busy={busy}
+            />
           ) : isLinkTarget ? (
-            <RowButton label="⇢ link here" onClick={onLinkHere} busy={busy} />
+            <RowButton
+              label="⇢ link here"
+              onClick={stageControls.onLinkHere}
+              busy={busy}
+            />
           ) : linking ? null : (
             <div className="learning-plan-authoring-row">
               <Tip label="Add the next stage in sequence">
                 <IconButton
                   label="＋"
                   accessibleLabel="Add next Stage"
-                  onClick={onNext}
+                  onClick={stageControls.onNext}
                   busy={busy}
                 />
               </Tip>
@@ -794,7 +788,7 @@ function Waypoint({
                 <IconButton
                   label="⑃"
                   accessibleLabel="Fork a parallel branch"
-                  onClick={onFork}
+                  onClick={stageControls.onFork}
                   busy={busy}
                 />
               </Tip>
@@ -802,7 +796,7 @@ function Waypoint({
                 <IconButton
                   label="⇢"
                   accessibleLabel="Link to an existing Stage"
-                  onClick={onStartLink}
+                  onClick={stageControls.onStartLink}
                   busy={busy}
                 />
               </Tip>

@@ -170,11 +170,12 @@ export async function searchStageItemCandidates(
   const conflicts = await db
     .select({
       itemId: learningPlanItemPlacements.itemId,
-      stageId: stages.id,
+      nodeId: learningPlanItemPlacements.nodeId,
+      stageId: learningPlanItemPlacements.stageId,
       stageName: stages.name,
     })
     .from(learningPlanItemPlacements)
-    .innerJoin(stages, eq(stages.id, learningPlanItemPlacements.stageId))
+    .leftJoin(stages, eq(stages.id, learningPlanItemPlacements.stageId))
     .where(
       and(
         eq(learningPlanItemPlacements.userId, input.userId),
@@ -194,7 +195,14 @@ export async function searchStageItemCandidates(
 
   return candidates.map((candidate) => {
     const conflict = conflictByItem.get(candidate.id);
-    return conflict
+    if (conflict?.nodeId) {
+      return {
+        kind: "direct_conflict",
+        ...candidate,
+        id: candidate.id as ItemId,
+      };
+    }
+    return conflict?.stageId && conflict.stageName
       ? {
           kind: "conflict",
           ...candidate,

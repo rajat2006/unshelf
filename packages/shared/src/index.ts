@@ -61,13 +61,13 @@ export type StageId = string & {
   readonly [identifierBrand]: "StageId";
 };
 
-/** Stable identity of a direct Item placement in one Learning Plan. */
-export type DirectItemPlacementId = string & {
-  readonly [identifierBrand]: "DirectItemPlacementId";
+/** Stable topology-node identity of a direct Item placement in one Learning Plan. */
+export type DirectItemNodeId = string & {
+  readonly [identifierBrand]: "DirectItemNodeId";
 };
 
 /** Opaque topology identity shared by Stage and direct-Item node variants. */
-export type PlanNodeId = StageId | DirectItemPlacementId;
+export type PlanNodeId = StageId | DirectItemNodeId;
 
 export type LearningPlanId = string & {
   readonly [identifierBrand]: "LearningPlanId";
@@ -241,6 +241,7 @@ interface StageItemCandidateFacts {
 export type StageItemCandidate = StageItemCandidateFacts &
   (
     | { kind: "available" }
+    | { kind: "direct_conflict" }
     | {
         kind: "conflict";
         stage: PlacementStage;
@@ -327,7 +328,7 @@ export interface StageLearningPlanNode {
 export interface ItemLearningPlanNode {
   kind: PlanNodeKind.Item;
   /** Stable identity of this placement in the Learning Plan topology. */
-  id: DirectItemPlacementId;
+  id: DirectItemNodeId;
   /** The single shared Item record; Status changes are visible on every fresh read. */
   item: Item;
 }
