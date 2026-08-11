@@ -2,7 +2,7 @@
 
 Throwaway prototype for [Prototype radical end-to-end learning workspace models](https://github.com/rajat2006/unshelf/issues/263).
 
-> Three structurally different end-to-end workspace models, switchable via
+> Four structurally different end-to-end workspace models, switchable via
 > `?variant=`, at `/prototype-learning-workspaces.html`.
 
 Run from the repository root:
@@ -46,6 +46,17 @@ process-management board.
 
 Hypothesis: a chosen Learning Plan should anchor the workspace, while discovery,
 the Library, and Daily Focus work as contextual sidecars around the plan.
+
+- Validated if:
+- Falsified if:
+- Steal for the winning direction:
+
+### D — Rooms + plan studio
+
+Hypothesis: A's four lifecycle rooms should govern the product globally, while
+C's plan-centered canvas becomes a local workspace only after the User enters a
+specific Learning Plan. The local drawer may place existing Library Items, but
+Candidate intake remains in Discover.
 
 - Validated if:
 - Falsified if:

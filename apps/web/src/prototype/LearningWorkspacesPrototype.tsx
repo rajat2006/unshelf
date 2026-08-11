@@ -17,6 +17,7 @@ const variants = [
   { key: "A", name: "Rooms" },
   { key: "B", name: "Flow board" },
   { key: "C", name: "Plan cockpit" },
+  { key: "D", name: "Rooms + plan studio" },
 ] as const;
 
 type VariantKey = (typeof variants)[number]["key"];
@@ -302,6 +303,13 @@ export function LearningWorkspacesPrototype() {
       )}
       {currentVariant === "C" && (
         <PlanCockpitVariant
+          state={state}
+          actions={actions}
+          onOpenCapture={() => setCaptureOpen(true)}
+        />
+      )}
+      {currentVariant === "D" && (
+        <RoomsWithPlanStudioVariant
           state={state}
           actions={actions}
           onOpenCapture={() => setCaptureOpen(true)}
@@ -826,6 +834,375 @@ function PlanCockpitVariant({ state, actions, onOpenCapture }: VariantProps) {
           <ItemDetail actions={actions} item={selectedItem(state)} compact />
         </aside>
       </div>
+    </div>
+  );
+}
+
+type HybridRoom = "today" | "discover" | "library" | "plans";
+
+function RoomsWithPlanStudioVariant({
+  state,
+  actions,
+  onOpenCapture,
+}: VariantProps) {
+  const [room, setRoom] = useState<HybridRoom>("plans");
+  const [planOpen, setPlanOpen] = useState(true);
+  const [query, setQuery] = useState("");
+  const planProgress = getPlanProgress(state);
+
+  function chooseRoom(nextRoom: HybridRoom) {
+    setRoom(nextRoom);
+    if (nextRoom === "plans") setPlanOpen(true);
+  }
+
+  return (
+    <div className="hybrid">
+      <header className="hybrid__global-header">
+        <Brand />
+        <nav aria-label="Global workspace rooms">
+          <button
+            aria-current={room === "today" ? "page" : undefined}
+            onClick={() => chooseRoom("today")}
+          >
+            Today <span>{state.dailyPicks.length}</span>
+          </button>
+          <button
+            aria-current={room === "discover" ? "page" : undefined}
+            onClick={() => chooseRoom("discover")}
+          >
+            Discover <span>{unresolvedCandidates(state).length}</span>
+          </button>
+          <button
+            aria-current={room === "library" ? "page" : undefined}
+            onClick={() => chooseRoom("library")}
+          >
+            Library <span>{state.items.length}</span>
+          </button>
+          <button
+            aria-current={room === "plans" ? "page" : undefined}
+            onClick={() => chooseRoom("plans")}
+          >
+            Plans <span>1</span>
+          </button>
+        </nav>
+        <HeaderActions actions={actions} onOpenCapture={onOpenCapture} />
+      </header>
+
+      {room === "today" && (
+        <main className="hybrid-room hybrid-room--today">
+          <header className="hybrid-room__heading">
+            <VariantIntro
+              eyebrow="Variant D · Global room"
+              title="Today"
+              detail="Daily Focus is a dated agenda, not a small Learning Plan."
+            />
+          </header>
+          <div className="hybrid-today-grid">
+            <section className="hybrid-agenda">
+              <SectionHeading
+                eyebrow="Tuesday · 11 August"
+                title="Today's explicit picks"
+              />
+              {state.dailyPicks.map((pick, index) => {
+                const item = findItem(state, pick.itemId);
+                return (
+                  <article key={pick.itemId}>
+                    <span className="hybrid-agenda__number">0{index + 1}</span>
+                    <StatusDot status={item.status} />
+                    <div className="grow">
+                      <button
+                        className="title-button"
+                        onClick={() => actions.selectItem(item.id)}
+                      >
+                        {item.title}
+                      </button>
+                      <small>{pick.origin ?? "From Library"}</small>
+                    </div>
+                    <button onClick={() => actions.toggleItemStatus(item.id)}>
+                      {item.status === "done" ? "Reopen" : "Mark done"}
+                    </button>
+                    <button
+                      className="icon-button"
+                      onClick={() => actions.removeFromToday(item.id)}
+                    >
+                      ×
+                    </button>
+                  </article>
+                );
+              })}
+            </section>
+            <aside className="hybrid-suggestions">
+              <SectionHeading
+                eyebrow="Search + suggestions"
+                title="Add only what fits"
+              />
+              <input aria-label="Search Library" placeholder="Find an Item…" />
+              <p className="sidecar-label">Suggested from active plans</p>
+              {state.items
+                .filter(
+                  (item) =>
+                    planContainsItem({
+                      nodes: state.planNodes,
+                      itemId: item.id,
+                    }) &&
+                    !state.dailyPicks.some((pick) => pick.itemId === item.id),
+                )
+                .slice(0, 4)
+                .map((item) => (
+                  <SuggestionRow
+                    item={item}
+                    key={item.id}
+                    onAdd={() => actions.addToToday(item.id)}
+                    reason="Next in Reliable web systems"
+                  />
+                ))}
+            </aside>
+          </div>
+        </main>
+      )}
+
+      {room === "discover" && (
+        <main className="hybrid-room">
+          <header className="hybrid-room__heading">
+            <VariantIntro
+              eyebrow="Variant D · Global room"
+              title="Discover"
+              detail="Recurring arrivals are decided here before plans enter the picture."
+            />
+          </header>
+          <div className="hybrid-discover-grid">
+            <aside className="hybrid-follows">
+              <span className="sidecar-label">Active Follows</span>
+              <strong>YouTube channels</strong>
+              <button>
+                Jack Herrington <span>1 new</span>
+              </button>
+              <button>
+                ByteByteGo <span>1 new</span>
+              </button>
+              <button>
+                MIT OpenCourseWare <span>1 new</span>
+              </button>
+              <p>
+                Keep creates or links one Library Item. It does not place the
+                Item into a Learning Plan.
+              </p>
+            </aside>
+            <section className="hybrid-candidates">
+              <SectionHeading
+                eyebrow="Candidate intake"
+                title="What is worth preserving?"
+              />
+              {state.candidates.map((candidate) => (
+                <CandidateCard
+                  actions={actions}
+                  candidate={candidate}
+                  key={candidate.id}
+                />
+              ))}
+            </section>
+          </div>
+        </main>
+      )}
+
+      {room === "library" && (
+        <main className="hybrid-room">
+          <header className="hybrid-room__heading">
+            <VariantIntro
+              eyebrow="Variant D · Global room"
+              title="Library"
+              detail="A passive catalog of every Item, whether committed or not."
+            />
+          </header>
+          <div className="hybrid-library-grid">
+            <section className="hybrid-catalog">
+              <div className="hybrid-catalog__toolbar">
+                <input
+                  aria-label="Search Library"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search every Item…"
+                  value={query}
+                />
+                <button className="chip chip--active">All</button>
+                <button className="chip">In progress</button>
+                <button className="chip">Unplanned</button>
+              </div>
+              {state.items
+                .filter((item) =>
+                  item.title.toLowerCase().includes(query.toLowerCase()),
+                )
+                .map((item) => (
+                  <LibraryRow
+                    actions={actions}
+                    item={item}
+                    key={item.id}
+                    selected={state.selectedItemId === item.id}
+                  />
+                ))}
+            </section>
+            <ItemDetail actions={actions} item={selectedItem(state)} />
+          </div>
+        </main>
+      )}
+
+      {room === "plans" && !planOpen && (
+        <main className="hybrid-room">
+          <header className="hybrid-room__heading">
+            <VariantIntro
+              eyebrow="Variant D · Global room"
+              title="Learning Plans"
+              detail="Durable commitments are listed here; no plan is the whole app."
+            />
+          </header>
+          <button
+            className="hybrid-plan-card"
+            onClick={() => setPlanOpen(true)}
+          >
+            <span className="sidecar-label">Active plan</span>
+            <strong>Reliable web systems</strong>
+            <p>Build a mental model from the network edge to durable data.</p>
+            <div className="meter">
+              <i style={{ width: `${planProgress.percent}%` }} />
+            </div>
+            <span>
+              {planProgress.done}/{planProgress.total} Items done →
+            </span>
+          </button>
+        </main>
+      )}
+
+      {room === "plans" && planOpen && (
+        <main className="hybrid-plan-studio">
+          <header className="hybrid-plan-studio__header">
+            <div>
+              <button
+                className="breadcrumb-button"
+                onClick={() => setPlanOpen(false)}
+              >
+                ← All Learning Plans
+              </button>
+              <h1>Reliable web systems</h1>
+              <p>Build a mental model from the network edge to durable data.</p>
+            </div>
+            <div className="hybrid-plan-studio__progress">
+              <strong>{planProgress.percent}%</strong>
+              <span>
+                {planProgress.done} of {planProgress.total} Items done
+              </span>
+              <div className="meter">
+                <i style={{ width: `${planProgress.percent}%` }} />
+              </div>
+            </div>
+          </header>
+
+          <div className="hybrid-plan-studio__body">
+            <aside className="hybrid-placement-drawer">
+              <span className="sidecar-label">Library placement drawer</span>
+              <h2>Add existing Items</h2>
+              <p>
+                Discovery is intentionally absent. Keep happens in the Discover
+                room first.
+              </p>
+              <input
+                aria-label="Find Library Item to place"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Find in Library…"
+                value={query}
+              />
+              <div className="hybrid-placement-drawer__list">
+                {state.items
+                  .filter((item) =>
+                    item.title.toLowerCase().includes(query.toLowerCase()),
+                  )
+                  .map((item) => {
+                    const placed = planContainsItem({
+                      nodes: state.planNodes,
+                      itemId: item.id,
+                    });
+                    return (
+                      <article key={item.id}>
+                        <div className="grow">
+                          <button
+                            className="title-button"
+                            onClick={() => actions.selectItem(item.id)}
+                          >
+                            {item.title}
+                          </button>
+                          <ItemKicker item={item} />
+                        </div>
+                        <button
+                          disabled={placed}
+                          onClick={() => actions.addToPlan(item.id)}
+                        >
+                          {placed ? "Placed" : "+ Plan"}
+                        </button>
+                      </article>
+                    );
+                  })}
+              </div>
+            </aside>
+
+            <section className="hybrid-plan-canvas">
+              <div className="hybrid-local-label">
+                <span>Local workspace</span>
+                <strong>Plan structure</strong>
+              </div>
+              <div className="plan-path">
+                {state.planNodes.map((node, index) => (
+                  <CockpitNode
+                    actions={actions}
+                    index={index}
+                    key={node.id}
+                    node={node}
+                    state={state}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <aside className="hybrid-today-sidecar">
+              <span className="sidecar-label">Global Daily Focus</span>
+              <h2>Today's picks</h2>
+              <p>Picks may come from this plan or directly from the Library.</p>
+              <div className="hybrid-today-sidecar__list">
+                {state.dailyPicks.map((pick) => {
+                  const item = findItem(state, pick.itemId);
+                  return (
+                    <article key={pick.itemId}>
+                      <button
+                        className="check-button"
+                        onClick={() => actions.toggleItemStatus(item.id)}
+                      >
+                        {item.status === "done" ? "✓" : ""}
+                      </button>
+                      <div className="grow">
+                        <button
+                          className="title-button"
+                          onClick={() => actions.selectItem(item.id)}
+                        >
+                          {item.title}
+                        </button>
+                        <small>{pick.origin ?? "From Library"}</small>
+                      </div>
+                      <button
+                        className="icon-button"
+                        onClick={() => actions.removeFromToday(item.id)}
+                      >
+                        ×
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+              <ItemDetail
+                actions={actions}
+                compact
+                item={selectedItem(state)}
+              />
+            </aside>
+          </div>
+        </main>
+      )}
     </div>
   );
 }
