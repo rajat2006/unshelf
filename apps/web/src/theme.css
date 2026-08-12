@@ -7,22 +7,24 @@
 :root {
   color-scheme: light dark;
 
-  /* Warm neutrals and forest-green action colour. */
-  --bg: #f7f6f1;
+  /* White-led warm neutrals with forest green reserved for emphasis. */
+  --bg: #fbfbf9;
   --surface: #ffffff;
-  --ink: #20231f;
-  --muted: #666b64;
-  --line: #d9d9d1;
+  --quiet-surface: #fafaf8;
+  --quiet-surface-strong: #f7f7f5;
+  --ink: #222421;
+  --muted: #686b68;
+  --line: #e3e3de;
   --accent: #334b39;
   --accent-h: #273d2c;
   --on-accent: #ffffff;
   --done: #4d7058;
   --on-done: #ffffff;
-  --past: #6e746d;
+  --past: #747874;
   --field-bg: #ffffff;
-  --field-line: #d5d5cd;
-  --chrome-bg: rgb(255 255 253 / 94%);
-  --learning-plan-bg: #faf9f5;
+  --field-line: #dcdcd6;
+  --chrome-bg: rgb(255 255 255 / 94%);
+  --learning-plan-bg: #fcfcfa;
   --learning-plan-grid: color-mix(in srgb, var(--line) 65%, transparent);
   --shadow: color-mix(in srgb, var(--ink) 14%, transparent);
 
@@ -216,7 +218,7 @@
 
 .today-agenda__list > .item-row:has(> .today-agenda__current) {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
   box-shadow: 0 14px 32px color-mix(in srgb, var(--shadow) 40%, transparent);
 }
 
@@ -249,7 +251,7 @@
   padding: var(--space-5);
   overflow-y: auto;
   border-left: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 78%, var(--surface));
+  background: var(--quiet-surface);
 }
 
 .today-planning h2 {
@@ -346,21 +348,23 @@
 /* Dark is a peer, not an add-on: the same semantic roles, redefined. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171b17;
-    --surface: #202520;
+    --bg: #171817;
+    --surface: #222322;
+    --quiet-surface: #1f201f;
+    --quiet-surface-strong: #1c1d1c;
     --ink: #f3f1e8;
-    --muted: #aab0a7;
-    --line: #3b423b;
+    --muted: #aaaca9;
+    --line: #3d3e3c;
     --accent: #86aa8e;
     --accent-h: #9dbda3;
     --on-accent: #101510;
     --done: #79ad85;
     --on-done: #101510;
     --past: #9aa198;
-    --field-bg: #252b25;
-    --field-line: #465046;
-    --chrome-bg: rgb(32 37 32 / 94%);
-    --learning-plan-bg: #1b201b;
+    --field-bg: #272827;
+    --field-line: #474947;
+    --chrome-bg: rgb(34 35 34 / 94%);
+    --learning-plan-bg: #1a1b1a;
   }
 }
 
@@ -720,7 +724,7 @@ textarea {
   padding: var(--space-5);
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--bg) 78%, var(--surface));
+  background: var(--quiet-surface);
 }
 
 .learning-plans-index__composer h2 {
@@ -1107,7 +1111,7 @@ textarea {
   border: 0;
   border-left: 1px solid var(--line);
   border-radius: 0;
-  background: color-mix(in srgb, var(--bg) 84%, var(--surface));
+  background: var(--quiet-surface-strong);
 }
 
 .plan-today-sidecar h2,
@@ -1144,7 +1148,7 @@ textarea {
   border: 0;
   border-right: 1px solid var(--line);
   border-radius: 0;
-  background: color-mix(in srgb, var(--bg) 84%, var(--surface));
+  background: var(--quiet-surface-strong);
 }
 
 .plan-library-drawer h2,
@@ -1629,7 +1633,7 @@ textarea {
   gap: var(--space-1);
   padding: var(--space-4);
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 82%, var(--surface));
+  background: var(--quiet-surface);
 }
 
 .library-catalog__facets strong {
@@ -2007,7 +2011,7 @@ textarea {
   justify-content: space-between;
   padding: 24px clamp(20px, 3.5vw, 52px);
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 72%, var(--surface));
+  background: var(--quiet-surface);
 }
 
 .learning-plan-studio-header__back {
