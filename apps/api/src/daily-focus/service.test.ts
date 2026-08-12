@@ -158,9 +158,9 @@ describe("Daily Focus service", () => {
     const historicalDate = elapsed.rows[0].date;
 
     await request(app)
-      .patch(`/api/items/${item.id}/parts/${structured.parts[1].id}/completion`)
+      .patch(`/api/items/${item.id}/status`)
       .set(TEST_USER_HEADER, user)
-      .send({ completed: true })
+      .send({ status: "done" })
       .expect(200);
     const history = await request(app)
       .get(`/api/daily-focus/${historicalDate}`)
@@ -208,7 +208,7 @@ describe("Daily Focus service", () => {
       entries: [
         {
           item: { id: item.id, status: "done" },
-          snapshot: { status: "done", partPercentage: 100 },
+          snapshot: { status: "done", partPercentage: 50 },
         },
       ],
     });
