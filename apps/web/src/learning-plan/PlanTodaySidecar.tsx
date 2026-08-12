@@ -98,14 +98,18 @@ export function PlanTodaySidecar({
 
   return (
     <aside className="plan-today-sidecar" aria-label="Today sidecar">
-      <h2>Today</h2>
+      <span className="editorial-eyebrow">Global Daily Focus</span>
+      <h2>Today&apos;s picks</h2>
+      <p className="quiet-copy">
+        Picks may come from this plan or directly from the Library.
+      </p>
       {!focus || !plannedItems ? (
         error ? null : (
           <p role="status">Loading Today…</p>
         )
       ) : (
         <>
-          <p>
+          <p className="visually-hidden">
             {focus.total} {focus.total === 1 ? "Item" : "Items"} in Today
           </p>
           {plannedItems.length === 0 ? (
@@ -121,8 +125,10 @@ export function PlanTodaySidecar({
                 });
                 return (
                   <li key={item.id}>
-                    <span>{item.title}</span>
-                    {stage && <small>{stage.name}</small>}
+                    <div>
+                      <strong>{item.title}</strong>
+                      {stage && <small>{stage.name}</small>}
+                    </div>
                     {selected ? (
                       <>
                         <button

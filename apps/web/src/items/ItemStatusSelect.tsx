@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { ITEM_STATUSES, Status, StatusMode, type Item } from "@unshelf/shared";
-import { updateItemStatus } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { STATUS_LABELS } from "./presentation";
+import { useItemStatusMutation } from "./useItemStatusMutation";
 
 interface ItemStatusSelectProps {
   item: Item;
@@ -18,20 +17,11 @@ export function ItemStatusSelect({
   onChanged,
   structured = false,
 }: ItemStatusSelectProps) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function change(status: Status) {
-    setSaving(true);
-    setError(null);
-    try {
-      onChanged(await updateItemStatus(user, item.id, status));
-    } catch (caught: unknown) {
-      setError(String(caught));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const { changeStatus, error, saving } = useItemStatusMutation({
+    item,
+    user,
+    onChanged,
+  });
 
   return (
     <div className="item-control-row">
@@ -53,7 +43,7 @@ export function ItemStatusSelect({
                 .filter(Boolean)
                 .join(" ")}
               aria-pressed={status === item.status}
-              onClick={() => void change(status)}
+              onClick={() => void changeStatus(status)}
             >
               {STATUS_LABELS[status]}
             </button>

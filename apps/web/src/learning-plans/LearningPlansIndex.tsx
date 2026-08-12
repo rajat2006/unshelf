@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import type { LearningPlan } from "@unshelf/shared";
+import { completionPercentage } from "../presentation/progress";
 
 /**
  * The Learning Plans index in the Plans room. It is Learning Plans-only: the
@@ -49,14 +50,17 @@ export function LearningPlansIndex({
   );
   return (
     <div className="learning-plans-index">
-      <aside className="learning-plans-index__composer">
-        <p className="editorial-eyebrow">Begin a path</p>
-        <h2>Start something worth finishing</h2>
-        <p className="quiet-copy">
-          Name the outcome. Add and arrange material inside the plan studio.
-        </p>
-        <NewLearningPlanForm creating={creating} onCreate={onCreate} />
-      </aside>
+      <details className="learning-plans-index__composer">
+        <summary>＋ New Learning Plan</summary>
+        <div>
+          <p className="editorial-eyebrow">Begin a path</p>
+          <h2>Start something worth finishing</h2>
+          <p className="quiet-copy">
+            Name the outcome. Add and arrange material inside the plan studio.
+          </p>
+          <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+        </div>
+      </details>
       {learningPlans.length === 0 ? (
         <EmptyLearningPlans />
       ) : (
@@ -100,7 +104,12 @@ function LearningPlanGroup({
       className="learning-plan-group"
       aria-labelledby={`${actionLabel}-plans`}
     >
-      <h2 id={`${actionLabel}-plans`}>{heading}</h2>
+      <h2
+        id={`${actionLabel}-plans`}
+        className={actionLabel === "Archive" ? "visually-hidden" : undefined}
+      >
+        {heading}
+      </h2>
       {learningPlans.length === 0 ? (
         <p className="quiet-copy">{emptyMessage}</p>
       ) : (
@@ -138,10 +147,20 @@ function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
         {learningPlan.archivedAt ? "Archived plan" : "Active plan"}
       </span>
       <span className="learning-plan-card__name">{learningPlan.name}</span>
-      <span className="learning-plan-card__progress">
-        {progressLabel(learningPlan)}
+      <span className="learning-plan-card__description">
+        Arrange selected material into a path and choose what belongs in Today.
       </span>
-      <span className="learning-plan-card__open">Open plan →</span>
+      <span className="learning-plan-card__progress">
+        {progressLabel(learningPlan)} →
+      </span>
+      <span className="visually-hidden">Open plan</span>
+      <span className="learning-plan-card__meter" aria-hidden="true">
+        <span
+          style={{
+            width: `${completionPercentage(learningPlan)}%`,
+          }}
+        />
+      </span>
     </Link>
   );
 }

@@ -18,8 +18,13 @@ import {
   suppressDailyPlanningItem,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
-import { ItemRow } from "../items/ItemRow";
-import { planItemBackgroundLocation } from "../items/item-route-state";
+import { completionPercentage } from "../presentation/progress";
+import type { CurrentUser } from "../application-auth/types";
+import {
+  itemDetailRouteState,
+  planItemBackgroundLocation,
+} from "../items/item-route-state";
+import { useItemStatusMutation } from "../items/useItemStatusMutation";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
 type TodayState =
@@ -173,17 +178,14 @@ export function TodaySurface() {
       };
     });
   };
-  const currentItemIndex =
-    state.status === "ready" ? currentDailyFocusIndex(state.focus) : -1;
-
   return (
     <section className="today-surface" aria-labelledby="today-heading">
       <header className="editorial-heading today-surface__heading">
         <div>
-          <p className="editorial-eyebrow">Daily Focus</p>
+          <p className="editorial-eyebrow">Variant D · Global room</p>
           <h1 id="today-heading">Today</h1>
           <p className="editorial-intro">
-            A deliberate working set for what deserves your attention now.
+            Daily Focus is a dated agenda, not a small Learning Plan.
           </p>
         </div>
         {state.status === "ready" && (
@@ -195,7 +197,7 @@ export function TodaySurface() {
             <div aria-hidden="true">
               <span
                 style={{
-                  width: `${state.focus.total === 0 ? 0 : (state.focus.done / state.focus.total) * 100}%`,
+                  width: `${completionPercentage(state.focus)}%`,
                 }}
               />
             </div>
@@ -217,8 +219,8 @@ export function TodaySurface() {
             <section className="today-agenda" aria-label="Today's Daily Focus">
               <div className="today-agenda__heading">
                 <div>
-                  <p className="editorial-eyebrow">Your agenda</p>
-                  <h2>{state.focus.date}</h2>
+                  <p className="editorial-eyebrow">{state.focus.date}</p>
+                  <h2>Today&apos;s explicit picks</h2>
                 </div>
                 <Link
                   className="quiet-link"
@@ -238,44 +240,54 @@ export function TodaySurface() {
               ) : (
                 <ol className="today-agenda__list">
                   {state.focus.entries.map(({ item, origin }, index) => (
-                    <ItemRow
+                    <li
+                      className={`today-agenda-row${item.status === Status.Done ? " is-done" : ""}`}
                       key={item.id}
-                      item={item}
-                      user={user}
-                      onChanged={replaceItem}
-                      detailBackgroundLocation={
-                        origin
-                          ? planItemBackgroundLocation({
-                              learningPlanId: origin.learningPlan.id,
-                              ...(origin.stage
-                                ? { stageId: origin.stage.id }
-                                : {}),
-                            })
-                          : undefined
-                      }
                     >
-                      {index === currentItemIndex && (
-                        <span className="today-agenda__current">
-                          Current focus
-                        </span>
-                      )}
                       <span className="today-agenda__number" aria-hidden="true">
                         {String(index + 1).padStart(2, "0")}
                       </span>
-                      {origin && (
-                        <span className="quiet-copy">
-                          From {origin.learningPlan.name}
-                          {origin.stage ? ` · ${origin.stage.name}` : ""}
-                        </span>
-                      )}
+                      <span
+                        className={`today-agenda-row__status is-${item.status.replace("_", "-")}`}
+                        aria-hidden="true"
+                      />
+                      <div className="today-agenda-row__copy">
+                        <Link
+                          to={`/items/${item.id}`}
+                          state={itemDetailRouteState(
+                            origin
+                              ? planItemBackgroundLocation({
+                                  learningPlanId: origin.learningPlan.id,
+                                  ...(origin.stage
+                                    ? { stageId: origin.stage.id }
+                                    : {}),
+                                })
+                              : location,
+                          )}
+                        >
+                          {item.title}
+                        </Link>
+                        <small>
+                          {origin
+                            ? `${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
+                            : "From Library"}
+                        </small>
+                      </div>
+                      <TodayStatusButton
+                        item={item}
+                        user={user}
+                        onChanged={replaceItem}
+                      />
                       <button
                         type="button"
+                        className="today-agenda-row__remove"
                         onClick={() => void remove(state.focus, item)}
                         aria-label={`Remove ${item.title} from Today`}
+                        title="Remove from Today"
                       >
-                        Remove
+                        ×
                       </button>
-                    </ItemRow>
+                    </li>
                   ))}
                 </ol>
               )}
@@ -284,8 +296,8 @@ export function TodaySurface() {
               className="today-planning"
               aria-labelledby="today-planning-heading"
             >
-              <p className="editorial-eyebrow">Shape your day</p>
-              <h2 id="today-planning-heading">Plan Today</h2>
+              <p className="editorial-eyebrow">Search + suggestions</p>
+              <h2 id="today-planning-heading">Add only what fits</h2>
               <p className="today-planning__intro">
                 Search the Library or describe your intention. Only Add changes
                 Today.
@@ -298,35 +310,38 @@ export function TodaySurface() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </label>
-              <label>
-                <span>Learning intention</span>
-                <input
-                  type="text"
-                  value={intention}
-                  onChange={(event) => setIntention(event.target.value)}
-                  placeholder="What do you want to learn?"
-                />
-              </label>
-              <label>
-                <span>Learning Plan lens</span>
-                <select
-                  value={learningPlanId ?? ""}
-                  onChange={(event) =>
-                    setLearningPlanId(
-                      event.target.value
-                        ? (event.target.value as LearningPlanId)
-                        : undefined,
-                    )
-                  }
-                >
-                  <option value="">All Learning Plans</option>
-                  {state.plans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <details className="today-planning__refine">
+                <summary>Refine suggestions</summary>
+                <label>
+                  <span>Learning intention</span>
+                  <input
+                    type="text"
+                    value={intention}
+                    onChange={(event) => setIntention(event.target.value)}
+                    placeholder="What do you want to learn?"
+                  />
+                </label>
+                <label>
+                  <span>Learning Plan lens</span>
+                  <select
+                    value={learningPlanId ?? ""}
+                    onChange={(event) =>
+                      setLearningPlanId(
+                        event.target.value
+                          ? (event.target.value as LearningPlanId)
+                          : undefined,
+                      )
+                    }
+                  >
+                    <option value="">All Learning Plans</option>
+                    {state.plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </details>
               {query.trim() && state.planning.searchResults.length === 0 ? (
                 <p className="quiet-copy">No unselected Items match.</p>
               ) : null}
@@ -348,90 +363,53 @@ export function TodaySurface() {
                   </ul>
                 </section>
               )}
-              <section aria-label="Recently added">
+              <section aria-label="Suggestions">
                 <div className="today-planning__section-heading">
-                  <h3>Recently added</h3>
-                  <span>Newest uncommitted Items</span>
+                  <h3>Suggested from active plans</h3>
                 </div>
-                {recentPlanningSuggestions(state.planning).length === 0 ? (
-                  <p className="quiet-copy">No recent Items to suggest.</p>
+                {planningSuggestions(state.planning).length === 0 ? (
+                  <p className="quiet-copy">No suggestions for these inputs.</p>
                 ) : (
                   <ul className="today-planning__results">
-                    {recentPlanningSuggestions(state.planning).map(
-                      (suggestion) => (
-                        <li key={suggestion.item.id}>
-                          <div>
-                            <strong>{suggestion.item.title}</strong>
-                            <p className="quiet-copy">
-                              {suggestion.explanation}
-                            </p>
-                          </div>
+                    {planningSuggestions(state.planning).map((suggestion) => (
+                      <li key={suggestion.item.id}>
+                        <div>
+                          <strong>{suggestion.item.title}</strong>
+                          <p className="quiet-copy">{suggestion.explanation}</p>
+                        </div>
+                        <div className="today-planning__actions">
                           <button
                             type="button"
-                            onClick={() => void add(suggestion.item)}
+                            onClick={() =>
+                              void add(
+                                suggestion.item,
+                                suggestion.origin
+                                  ? {
+                                      learningPlanId:
+                                        suggestion.origin.learningPlan.id,
+                                      ...(suggestion.origin.stage
+                                        ? {
+                                            stageId: suggestion.origin.stage.id,
+                                          }
+                                        : {}),
+                                    }
+                                  : undefined,
+                              )
+                            }
                             aria-label={`Add ${suggestion.item.title} to Today`}
                           >
                             Add
                           </button>
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                )}
-              </section>
-              <section aria-label="Suggestions">
-                <div className="today-planning__section-heading">
-                  <h3>Suggested for you</h3>
-                  <span>Explained, never automatic</span>
-                </div>
-                {generalPlanningSuggestions(state.planning).length === 0 ? (
-                  <p className="quiet-copy">No suggestions for these inputs.</p>
-                ) : (
-                  <ul className="today-planning__results">
-                    {generalPlanningSuggestions(state.planning).map(
-                      (suggestion) => (
-                        <li key={suggestion.item.id}>
-                          <div>
-                            <strong>{suggestion.item.title}</strong>
-                            <p className="quiet-copy">
-                              {suggestion.explanation}
-                            </p>
-                          </div>
-                          <div className="today-planning__actions">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void add(
-                                  suggestion.item,
-                                  suggestion.origin
-                                    ? {
-                                        learningPlanId:
-                                          suggestion.origin.learningPlan.id,
-                                        ...(suggestion.origin.stage
-                                          ? {
-                                              stageId:
-                                                suggestion.origin.stage.id,
-                                            }
-                                          : {}),
-                                      }
-                                    : undefined,
-                                )
-                              }
-                              aria-label={`Add ${suggestion.item.title} to Today`}
-                            >
-                              Add
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void suppress(suggestion.item)}
-                              aria-label={`Not today for ${suggestion.item.title}`}
-                            >
-                              Not today
-                            </button>
-                          </div>
-                        </li>
-                      ),
-                    )}
+                          <button
+                            type="button"
+                            onClick={() => void suppress(suggestion.item)}
+                            aria-label={`Not today for ${suggestion.item.title}`}
+                          >
+                            Not today
+                          </button>
+                        </div>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </section>
@@ -443,6 +421,41 @@ export function TodaySurface() {
         </>
       )}
     </section>
+  );
+}
+
+function TodayStatusButton({
+  item,
+  user,
+  onChanged,
+}: {
+  item: Item;
+  user: CurrentUser;
+  onChanged: (item: Item) => void;
+}) {
+  const nextStatus =
+    item.status === Status.Done ? Status.NotStarted : Status.Done;
+  const { changeStatus, error, saving } = useItemStatusMutation({
+    item,
+    user,
+    onChanged,
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void changeStatus(nextStatus)}
+      >
+        {item.status === Status.Done ? "Reopen" : "Mark done"}
+      </button>
+      {error && (
+        <span className="visually-hidden" role="alert">
+          Couldn&apos;t update Item status.
+        </span>
+      )}
+    </>
   );
 }
 
@@ -470,32 +483,12 @@ function removePlanningSuggestion(
   };
 }
 
-function recentPlanningSuggestions(planning: DailyPlanning) {
-  return planning.suggestions.filter(
-    (suggestion) => suggestion.signal === "recently_captured_uncommitted",
-  );
-}
-
-function generalPlanningSuggestions(planning: DailyPlanning) {
-  const recentIds = new Set(
-    recentPlanningSuggestions(planning).map((suggestion) => suggestion.item.id),
-  );
-  return planning.suggestions.filter(
-    (suggestion) => !recentIds.has(suggestion.item.id),
-  );
+function planningSuggestions(planning: DailyPlanning) {
+  return planning.suggestions.filter((suggestion) => suggestion.origin);
 }
 
 function previousCalendarDate(date: string): string {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() - 1);
   return value.toISOString().slice(0, 10);
-}
-
-function currentDailyFocusIndex(focus: DailyFocus): number {
-  const inProgress = focus.entries.findIndex(
-    ({ item }) => item.status === Status.InProgress,
-  );
-  return inProgress >= 0
-    ? inProgress
-    : focus.entries.findIndex(({ item }) => item.status !== Status.Done);
 }

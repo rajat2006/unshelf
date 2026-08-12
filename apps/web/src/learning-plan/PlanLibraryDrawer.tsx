@@ -73,13 +73,18 @@ export function PlanLibraryDrawer({
       aria-label="Library placement drawer"
       className="plan-library-drawer"
     >
-      <h2>Library</h2>
+      <span className="editorial-eyebrow">Library placement drawer</span>
+      <h2>Add existing Items</h2>
+      <p className="quiet-copy">
+        Draw from material you already kept. Capture stays in the global bar.
+      </p>
       <label>
-        Search Library
+        <span className="visually-hidden">Find in Library</span>
         <input
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by title…"
         />
       </label>
       {candidates === null && !error ? <p role="status">Loading…</p> : null}
@@ -90,8 +95,10 @@ export function PlanLibraryDrawer({
         <ul>
           {candidates.map((candidate) => (
             <li key={candidate.item.id}>
-              <strong>{candidate.item.title}</strong>
-              <span>{candidate.item.status.replace("_", " ")}</span>
+              <div>
+                <strong>{candidate.item.title}</strong>
+                <span>{candidate.item.status.replace("_", " ")}</span>
+              </div>
               {candidate.kind === "available" ? (
                 <button
                   type="button"

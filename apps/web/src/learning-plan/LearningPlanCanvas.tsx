@@ -620,7 +620,11 @@ function LooseNodeRail({
   return (
     <aside className="unsequenced-rail" aria-labelledby="unsequenced-title">
       <h2 id="unsequenced-title">
-        Unsequenced <span>{nodes.length}</span>
+        <span>Local workspace</span>
+        <strong>Plan structure</strong>
+        <small>
+          Unsequenced <b>{nodes.length}</b>
+        </small>
       </h2>
       {nodes.length === 0 ? (
         <p>Loose Items and Stages will wait here.</p>

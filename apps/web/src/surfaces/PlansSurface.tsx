@@ -86,10 +86,10 @@ export function PlansSurface() {
     <section className="plans-surface" aria-labelledby="home-heading">
       <header className="editorial-heading plans-surface__heading">
         <div>
-          <p className="editorial-eyebrow">Durable commitments</p>
+          <p className="editorial-eyebrow">Variant D · Global room</p>
           <h1 id="home-heading">Learning Plans</h1>
           <p className="editorial-intro">
-            Shape selected material into a path toward something meaningful.
+            Durable commitments are listed here; no plan is the whole app.
           </p>
         </div>
       </header>

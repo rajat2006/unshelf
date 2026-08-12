@@ -14,6 +14,7 @@ import {
   updateLearningPlan,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
+import { completionPercentage } from "../presentation/progress";
 import { LearningPlanCanvas } from "../learning-plan/LearningPlanCanvas";
 import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
 import { PlanTodaySidecar } from "../learning-plan/PlanTodaySidecar";
@@ -113,7 +114,6 @@ export function LearningPlanSurface({
             <Link to="/plans" className="learning-plan-studio-header__back">
               ← All Learning Plans
             </Link>
-            <p className="editorial-eyebrow">Plan studio</p>
             <h1 id="learning-plan-heading">
               {record?.name ?? "Learning Plan"}
             </h1>
@@ -122,6 +122,24 @@ export function LearningPlanSurface({
                 ? "Archived · read-only"
                 : "Arrange the path, draw from the Library, and choose what belongs in Today."}
             </p>
+            {record && !archived && (
+              <details className="learning-plan-rename">
+                <summary>Rename</summary>
+                <form onSubmit={(event) => void rename(event)}>
+                  <label htmlFor="rename-learning-plan">
+                    Learning Plan name
+                  </label>
+                  <input
+                    id="rename-learning-plan"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                  <button type="submit" disabled={!name.trim() || renaming}>
+                    Save name
+                  </button>
+                </form>
+              </details>
+            )}
           </div>
           {record && (
             <div className="learning-plan-studio-header__progress">
@@ -136,29 +154,13 @@ export function LearningPlanSurface({
               <div aria-hidden="true">
                 <span
                   style={{
-                    width: `${record.total === 0 ? 0 : (record.done / record.total) * 100}%`,
+                    width: `${completionPercentage(record)}%`,
                   }}
                 />
               </div>
             </div>
           )}
         </header>
-        {record && !archived && (
-          <form
-            className="learning-plan-rename"
-            onSubmit={(event) => void rename(event)}
-          >
-            <label htmlFor="rename-learning-plan">Rename Learning Plan</label>
-            <input
-              id="rename-learning-plan"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <button type="submit" disabled={!name.trim() || renaming}>
-              Rename Learning Plan
-            </button>
-          </form>
-        )}
         {error && (
           <div role="alert">
             <p className="quiet-copy">

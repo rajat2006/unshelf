@@ -1,15 +1,10 @@
-import type { Item, Label } from "@unshelf/shared";
-import type { CurrentUser } from "../application-auth/types";
-import { ItemRow } from "./ItemRow";
-import { ItemLabels } from "./ItemLabels";
+import type { Item } from "@unshelf/shared";
+import { STATUS_LABELS, TYPE_LABELS } from "./presentation";
 
 interface LibraryItemsProps {
   items: Item[];
-  labels: Label[];
-  user: CurrentUser;
-  onItemChanged: (item: Item) => void;
   selectedItemId?: Item["id"];
-  onPreview?: (item: Item) => void;
+  onPreview: (item: Item) => void;
 }
 
 /**
@@ -18,38 +13,29 @@ interface LibraryItemsProps {
  */
 export function LibraryItems({
   items,
-  labels,
-  user,
-  onItemChanged,
   selectedItemId,
   onPreview,
 }: LibraryItemsProps) {
   return (
     <ul className="library-list" aria-label="Library Items, newest first">
       {items.map((item) => (
-        <ItemRow
-          key={item.id}
-          item={item}
-          user={user}
-          onChanged={onItemChanged}
-        >
-          {onPreview && (
-            <button
-              type="button"
-              className="library-item-preview"
-              aria-pressed={selectedItemId === item.id}
-              onClick={() => onPreview(item)}
-            >
-              Preview
-            </button>
-          )}
-          <ItemLabels
-            item={item}
-            labels={labels}
-            user={user}
-            onItemChanged={onItemChanged}
-          />
-        </ItemRow>
+        <li key={item.id}>
+          <button
+            type="button"
+            className="library-catalog-row"
+            aria-pressed={selectedItemId === item.id}
+            onClick={() => onPreview(item)}
+            aria-label={`Preview ${item.title}`}
+          >
+            <span>{TYPE_LABELS[item.type]}</span>
+            <strong>{item.title}</strong>
+            <span>
+              {item.labels.map((label) => label.name).join(" · ") ||
+                "Unlabelled"}
+            </span>
+            <span>{STATUS_LABELS[item.status]}</span>
+          </button>
+        </li>
       ))}
     </ul>
   );

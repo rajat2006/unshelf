@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Status,
-  Type,
-  type Item,
-  type Label,
-  type LabelId,
-} from "@unshelf/shared";
+import { Status, type Item, type Label, type LabelId } from "@unshelf/shared";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
+import { ItemLabels } from "../items/ItemLabels";
+import { ItemSource } from "../items/ItemSource";
+import { ItemStatusSelect } from "../items/ItemStatusSelect";
+import { ItemTargetDate } from "../items/ItemTargetDate";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
 import { useCapture } from "../shell/useCapture";
@@ -25,11 +23,9 @@ type LibraryState =
     };
 
 const LIBRARY_VIEWS = [
-  { id: "all", label: "All Items" },
+  { id: "all", label: "All" },
   { id: "in-progress", label: "In progress" },
-  { id: "books", label: "Books" },
-  { id: "articles", label: "Articles" },
-  { id: "unlabelled", label: "Unlabelled" },
+  { id: "unplanned", label: "Unplanned" },
 ] as const;
 
 type LibraryViewId = (typeof LIBRARY_VIEWS)[number]["id"];
@@ -188,26 +184,12 @@ export function LibrarySurface({
     <section className="library-surface" aria-labelledby="library-heading">
       <header className="editorial-heading library-surface__heading">
         <div>
-          <p className="editorial-eyebrow">Your collected material</p>
+          <p className="editorial-eyebrow">Variant D · Global room</p>
           <h1 id="library-heading">Library</h1>
           <p className="editorial-intro">
-            A passive catalog of every Item—not a queue of unfinished work.
+            A passive catalog of every Item, whether committed or not.
           </p>
         </div>
-        {displayedState.status === "ready" &&
-          labelFilterEnabled &&
-          displayedState.items.length > 0 && (
-            <label className="library-search">
-              <span className="visually-hidden">Search Library</span>
-              <input
-                type="search"
-                value={rawQuery}
-                onChange={(event) => searchLibrary(event.target.value)}
-                placeholder={`Search ${displayedState.items.length} Items`}
-                aria-label="Search Library"
-              />
-            </label>
-          )}
       </header>
       {displayedState.status === "loading" && <LibrarySkeleton />}
       {displayedState.status === "error" && (
@@ -228,72 +210,66 @@ export function LibrarySurface({
           </div>
         )}
       {displayedState.status === "ready" && displayedState.items.length > 0 && (
-        <div
-          className={`library-catalog${labelFilterEnabled ? "" : " library-catalog--without-facets"}`}
-        >
-          {labelFilterEnabled && (
-            <aside
-              className="library-catalog__facets"
-              aria-label="Library filters"
-            >
-              <strong>Views</strong>
-              {LIBRARY_VIEWS.map((view) => (
-                <button
-                  type="button"
-                  key={view.id}
-                  aria-label={`Show ${view.label}`}
-                  aria-pressed={
-                    activeLabelId === null && activeView === view.id
-                  }
-                  onClick={() => selectView(view.id)}
-                >
-                  <span>{view.label}</span>
-                  <small>
-                    {
-                      displayedState.items.filter((item) =>
-                        matchesLibraryView(item, view.id),
-                      ).length
-                    }
-                  </small>
-                </button>
-              ))}
-              {(displayedState.labels.length > 0 || hasUnknownLabel) && (
-                <>
-                  <strong>Labels</strong>
-                  {displayedState.labels.map((label) => (
-                    <button
-                      type="button"
-                      key={label.id}
-                      aria-label={`Filter by ${label.name}`}
-                      aria-pressed={label.id === activeLabel?.id}
-                      onClick={() => selectLabel(label.id)}
-                    >
-                      <span>{label.name}</span>
-                      <small>
-                        {
-                          displayedState.items.filter((item) =>
-                            item.labels.some(({ id }) => id === label.id),
-                          ).length
-                        }
-                      </small>
-                    </button>
-                  ))}
-                </>
-              )}
-            </aside>
-          )}
+        <div className="library-catalog">
           <section
             className="library-catalog__results"
-            aria-labelledby="library-results-heading"
+            aria-label="Library catalog"
           >
-            <div className="library-catalog__results-heading">
-              <h2 id="library-results-heading">
-                {query.length > 0
-                  ? "Search results"
-                  : (activeLabel?.name ?? libraryViewLabel(activeView))}
-              </h2>
-              <span>{visibleItems.length} Items</span>
-            </div>
+            {labelFilterEnabled && (
+              <div className="library-catalog__toolbar">
+                <label>
+                  <span className="visually-hidden">Search Library</span>
+                  <input
+                    type="search"
+                    value={rawQuery}
+                    onChange={(event) => searchLibrary(event.target.value)}
+                    placeholder="Search every Item…"
+                    aria-label="Search Library"
+                  />
+                </label>
+                <div
+                  className="library-catalog__view-chips"
+                  aria-label="Library views"
+                >
+                  {LIBRARY_VIEWS.map((view) => (
+                    <button
+                      type="button"
+                      key={view.id}
+                      aria-label={`Show ${view.label}`}
+                      aria-pressed={
+                        activeLabelId === null && activeView === view.id
+                      }
+                      onClick={() => selectView(view.id)}
+                    >
+                      {view.label}
+                    </button>
+                  ))}
+                </div>
+                {displayedState.labels.length > 0 && (
+                  <details className="library-catalog__label-filters">
+                    <summary>
+                      {activeLabel ? activeLabel.name : "Labels"}
+                    </summary>
+                    <div>
+                      <button type="button" onClick={() => selectLabel(null)}>
+                        All labels
+                      </button>
+                      {displayedState.labels.map((label) => (
+                        <button
+                          type="button"
+                          key={label.id}
+                          aria-label={`Filter by ${label.name}`}
+                          aria-pressed={label.id === activeLabel?.id}
+                          onClick={() => selectLabel(label.id)}
+                        >
+                          {label.name}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
             {filteredEmptyMessage ? (
               <div className="library-empty">
                 <p>{filteredEmptyMessage}</p>
@@ -310,9 +286,6 @@ export function LibrarySurface({
             ) : (
               <LibraryItems
                 items={visibleItems}
-                labels={displayedState.labels}
-                user={user}
-                onItemChanged={replaceItem}
                 selectedItemId={selectedItem?.id}
                 onPreview={(item) => setSelectedItemId(item.id)}
               />
@@ -325,23 +298,45 @@ export function LibrarySurface({
             >
               <span>{TYPE_LABELS[selectedItem.type]}</span>
               <h2>{selectedItem.title}</h2>
-              <p>{STATUS_LABELS[selectedItem.status]}</p>
-              {selectedItem.source && (
-                <p className="library-catalog__preview-source">
-                  {selectedItem.source}
-                </p>
-              )}
-              <div className="library-catalog__preview-labels">
-                {selectedItem.labels.map((label) => (
-                  <span key={label.id}>{label.name}</span>
-                ))}
+              <p className="library-catalog__preview-summary">
+                {STATUS_LABELS[selectedItem.status]}
+                {selectedItem.targetDate
+                  ? ` · Target ${selectedItem.targetDate}`
+                  : ""}
+              </p>
+              <div className="library-catalog__preview-actions">
+                <Link
+                  to={`/items/${selectedItem.id}`}
+                  state={itemDetailRouteState(location)}
+                >
+                  Open Item
+                </Link>
+                <span>{STATUS_LABELS[selectedItem.status]}</span>
               </div>
-              <Link
-                to={`/items/${selectedItem.id}`}
-                state={itemDetailRouteState(location)}
-              >
-                Open Item
-              </Link>
+              <details className="library-catalog__preview-editor">
+                <summary>Edit Item details</summary>
+                <div className="library-catalog__preview-controls">
+                  <ItemStatusSelect
+                    item={selectedItem}
+                    user={user}
+                    onChanged={replaceItem}
+                  />
+                  <ItemTargetDate
+                    item={selectedItem}
+                    user={user}
+                    onChanged={replaceItem}
+                  />
+                  <ItemLabels
+                    item={selectedItem}
+                    labels={displayedState.labels}
+                    user={user}
+                    onItemChanged={replaceItem}
+                  />
+                </div>
+              </details>
+              {selectedItem.source && (
+                <ItemSource source={selectedItem.source} />
+              )}
             </aside>
           )}
         </div>
@@ -362,9 +357,7 @@ function libraryViewLabel(viewId: LibraryViewId): string {
 
 function matchesLibraryView(item: Item, view: LibraryViewId): boolean {
   if (view === "in-progress") return item.status === Status.InProgress;
-  if (view === "books") return item.type === Type.Book;
-  if (view === "articles") return item.type === Type.Article;
-  if (view === "unlabelled") return item.labels.length === 0;
+  if (view === "unplanned") return item.labels.length === 0;
   return true;
 }
 

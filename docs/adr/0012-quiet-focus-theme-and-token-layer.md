@@ -74,11 +74,11 @@ type, and a readable system-ui body face.
 The reviewed prototypes are the normative visual references for this workspace,
 not merely palette inspiration:
 
-- issue #263, snapshot `51c60f6`, Variant D defines the four-room shell, Plans
-  index, and the continuous Library–canvas–Today plan studio;
-- issue #271, snapshot `d39e4e9`, Library B and Daily Planning D define the
-  faceted Library catalog and the agenda-with-planning-sidecar composition used
-  by Today.
+- issue #263, snapshot `51c60f6`, Variant D defines the four-room shell and the
+  composition, hierarchy, and compact density of Plans, Today, Library, and the
+  continuous Library–canvas–Today plan studio. The 2026-08-12 design review
+  confirmed this complete variant as the source of truth; later exploratory
+  alternatives are not normative.
 
 Production code may adapt these references for real data, keyboard and screen
 reader behavior, responsive constraints, and dark mode. It should preserve their
