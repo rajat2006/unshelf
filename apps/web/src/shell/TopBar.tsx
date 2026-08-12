@@ -48,13 +48,7 @@ export function TopBar() {
         <Wordmark />
       </NavLink>
       <nav aria-label="Primary" className="top-bar__nav">
-        <Link
-          to="/today"
-          className={`top-bar__door${todayActive ? " active" : ""}`}
-          aria-current={todayActive ? "page" : undefined}
-        >
-          Today
-        </Link>
+        <RoomLink to="/today" label="Today" active={todayActive} />
         <button
           type="button"
           className="top-bar__door top-bar__door--deferred"
@@ -64,20 +58,8 @@ export function TopBar() {
           <span>Discover</span>
           <small>Coming later</small>
         </button>
-        <Link
-          to="/library"
-          className={`top-bar__door${libraryActive ? " active" : ""}`}
-          aria-current={libraryActive ? "page" : undefined}
-        >
-          Library
-        </Link>
-        <Link
-          to="/plans"
-          className={`top-bar__door${plansActive ? " active" : ""}`}
-          aria-current={plansActive ? "page" : undefined}
-        >
-          Plans
-        </Link>
+        <RoomLink to="/library" label="Library" active={libraryActive} />
+        <RoomLink to="/plans" label="Plans" active={plansActive} />
       </nav>
       <div className="top-bar__actions">
         <button type="button" onClick={open} className="top-bar__capture">
@@ -86,5 +68,25 @@ export function TopBar() {
         <UserButton />
       </div>
     </header>
+  );
+}
+
+function RoomLink({
+  to,
+  label,
+  active,
+}: {
+  to: string;
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      to={to}
+      className={`top-bar__door${active ? " active" : ""}`}
+      aria-current={active ? "page" : undefined}
+    >
+      {label}
+    </Link>
   );
 }

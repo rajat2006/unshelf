@@ -200,6 +200,14 @@ export function LearningPlanCanvas({
     }
   }
 
+  const errorLine = error ? (
+    <ErrorLine
+      error={error}
+      busy={busy}
+      onRetry={() => void retryAfterError()}
+    />
+  ) : null;
+
   const link = (to: PlanNodeId) => {
     if (linkingFrom) {
       const fromName = nodeName(nodeById.get(linkingFrom)!);
@@ -342,13 +350,7 @@ export function LearningPlanCanvas({
             arrange them.
           </p>
         )}
-        {error && (
-          <ErrorLine
-            error={error}
-            busy={busy}
-            onRetry={() => void retryAfterError()}
-          />
-        )}
+        {errorLine}
       </div>
     );
   }
@@ -560,13 +562,7 @@ export function LearningPlanCanvas({
           ? "Drag the map to pan. Open on a wider screen to arrange it."
           : "Drag to pan; ＋ adds the next stage, ⑃ forks a branch, ⇢ links to another, ✕ removes a link."}
       </p>
-      {error && (
-        <ErrorLine
-          error={error}
-          busy={busy}
-          onRetry={() => void retryAfterError()}
-        />
-      )}
+      {errorLine}
       <p role="status" className="visually-hidden">
         {announcement}
       </p>
