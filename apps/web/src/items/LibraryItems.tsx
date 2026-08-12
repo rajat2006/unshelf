@@ -33,7 +33,11 @@ export function LibraryItems({
               {item.labels.map((label) => label.name).join(" · ") ||
                 "Unlabelled"}
             </span>
-            <span>{STATUS_LABELS[item.status]}</span>
+            <span
+              className={`library-catalog-row__status is-${item.status.replace("_", "-")}`}
+            >
+              {STATUS_LABELS[item.status]}
+            </span>
           </button>
         </li>
       ))}

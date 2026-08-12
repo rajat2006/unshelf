@@ -190,10 +190,20 @@ export function TodaySurface() {
         </div>
         {state.status === "ready" && (
           <div className="today-progress" aria-label="Today progress">
-            <strong>
-              {state.focus.done}/{state.focus.total}
-            </strong>
-            <span>Items done</span>
+            <div className="today-progress__summary">
+              <strong>
+                {Math.round(
+                  completionPercentage({
+                    done: state.focus.done,
+                    total: state.focus.total,
+                  }),
+                )}
+                %
+              </strong>
+              <span>
+                {state.focus.done} of {state.focus.total} picks done
+              </span>
+            </div>
             <div aria-hidden="true">
               <span
                 style={{
@@ -201,6 +211,10 @@ export function TodaySurface() {
                 }}
               />
             </div>
+            <small>
+              Derived from each Item&apos;s shared Status; nothing extra is
+              stored on Daily Focus.
+            </small>
           </div>
         )}
       </header>
@@ -303,11 +317,12 @@ export function TodaySurface() {
                 Today.
               </p>
               <label>
-                <span>Find an Item</span>
+                <span className="visually-hidden">Find an Item</span>
                 <input
                   type="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Find an Item…"
                 />
               </label>
               <details className="today-planning__refine">

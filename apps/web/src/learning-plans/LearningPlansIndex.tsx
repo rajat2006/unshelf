@@ -150,9 +150,6 @@ function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
       <span className="learning-plan-card__description">
         Arrange selected material into a path and choose what belongs in Today.
       </span>
-      <span className="learning-plan-card__progress">
-        {progressLabel(learningPlan)} →
-      </span>
       <span className="visually-hidden">Open plan</span>
       <span className="learning-plan-card__meter" aria-hidden="true">
         <span
@@ -160,6 +157,9 @@ function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
             width: `${completionPercentage(learningPlan)}%`,
           }}
         />
+      </span>
+      <span className="learning-plan-card__progress">
+        {progressLabel(learningPlan)} →
       </span>
     </Link>
   );

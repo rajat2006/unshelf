@@ -29,6 +29,7 @@ import {
   itemDetailRouteState,
   planItemBackgroundLocation,
 } from "../items/item-route-state";
+import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
 
 /**
  * The Learning Plan canvas — ADR-0010's topology-as-journey on the warm
@@ -117,6 +118,9 @@ export function LearningPlanCanvas({
     node,
     ...topologyLayout.byId.get(node.id)!,
   }));
+  const orderedSequencedNodes = [...placedNodes]
+    .sort((left, right) => left.depth - right.depth || left.lane - right.lane)
+    .map(({ node }) => node);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
   const [busy, setBusy] = useState(false);
@@ -383,6 +387,19 @@ export function LearningPlanCanvas({
           onSequence={sequence}
           onSequenceBefore={sequenceBefore}
         />
+        {orderedSequencedNodes.length > 0 && (
+          <PlanStructurePath
+            learningPlanId={learningPlanId}
+            nodes={orderedSequencedNodes}
+            frontierId={frontier?.id}
+            onOpenStage={onOpenStage}
+          />
+        )}
+        {orderedSequencedNodes.length > 0 && !readOnly && (
+          <details className="learning-plan-topology-toggle">
+            <summary>Edit connections</summary>
+          </details>
+        )}
         <div
           ref={canvasRef}
           role="region"
@@ -582,6 +599,75 @@ export function LearningPlanCanvas({
 
 // ---------------------------------------------------------------------------
 
+function PlanStructurePath({
+  learningPlanId,
+  nodes,
+  frontierId,
+  onOpenStage,
+}: {
+  learningPlanId: LearningPlanId;
+  nodes: LearningPlanNode[];
+  frontierId?: PlanNodeId;
+  onOpenStage: (stageId: StageId) => void;
+}) {
+  return (
+    <section className="plan-structure-path" aria-label="Plan structure">
+      <header>
+        <span>Local workspace</span>
+        <strong>Plan structure</strong>
+      </header>
+      <ol>
+        {nodes.map((node, index) => (
+          <li
+            key={node.id}
+            className={frontierId === node.id ? "is-current" : undefined}
+          >
+            <span className="plan-structure-path__marker">{index + 1}</span>
+            <article>
+              <span className="plan-structure-path__kind">
+                {node.kind === PlanNodeKind.Stage ? "Stage" : "Direct Item"}
+              </span>
+              {node.kind === PlanNodeKind.Stage ? (
+                <button type="button" onClick={() => onOpenStage(node.id)}>
+                  {node.name}
+                </button>
+              ) : (
+                <div className="plan-structure-path__item">
+                  <span
+                    className={`plan-structure-path__status is-${node.item.status.replace("_", "-")}`}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <Link
+                      to={`/items/${node.item.id}`}
+                      state={itemDetailRouteState(
+                        planItemBackgroundLocation({ learningPlanId }),
+                      )}
+                    >
+                      {node.item.title}
+                    </Link>
+                    <small>
+                      {TYPE_LABELS[node.item.type]} ·{" "}
+                      {STATUS_LABELS[node.item.status]}
+                    </small>
+                  </div>
+                </div>
+              )}
+              {node.kind === PlanNodeKind.Stage ? (
+                <small>
+                  {node.done}/${node.total} Items done
+                </small>
+              ) : null}
+            </article>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 interface SequenceNodeInput {
   nodeId: PlanNodeId;
   predecessorId: PlanNodeId;
@@ -618,7 +704,10 @@ function LooseNodeRail({
   } | null>(null);
 
   return (
-    <aside className="unsequenced-rail" aria-labelledby="unsequenced-title">
+    <aside
+      className={`unsequenced-rail${nodes.length === 0 ? " is-empty" : ""}`}
+      aria-labelledby="unsequenced-title"
+    >
       <h2 id="unsequenced-title">
         <span>Local workspace</span>
         <strong>Plan structure</strong>

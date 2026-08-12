@@ -14,6 +14,7 @@ import {
   itemDetailRouteState,
   planItemBackgroundLocation,
 } from "../items/item-route-state";
+import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
 
 interface PlannedItem {
   item: Item;
@@ -78,6 +79,14 @@ export function PlanTodaySidecar({
     () => new Set(focus?.entries.map((entry) => entry.item.id) ?? []),
     [focus],
   );
+  const previewItem = useMemo(() => {
+    if (!plannedItems) return null;
+    return (
+      plannedItems.find(({ item }) => selectedIds.has(item.id)) ??
+      plannedItems[0] ??
+      null
+    );
+  }, [plannedItems, selectedIds]);
 
   const add = async ({ item, stage }: PlannedItem) => {
     setAddingId(item.id);
@@ -161,6 +170,42 @@ export function PlanTodaySidecar({
               })}
             </ul>
           )}
+          {previewItem ? (
+            <article className="plan-today-sidecar__item-detail">
+              <span className="editorial-eyebrow">
+                {TYPE_LABELS[previewItem.item.type]}
+              </span>
+              <h3>{previewItem.item.title}</h3>
+              <p>{STATUS_LABELS[previewItem.item.status]}</p>
+              <div>
+                {selectedIds.has(previewItem.item.id) ? (
+                  <span>In Today</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={addingId !== null}
+                    onClick={() => void add(previewItem)}
+                  >
+                    + Today
+                  </button>
+                )}
+                <Link
+                  to={`/items/${previewItem.item.id}`}
+                  state={itemDetailRouteState(
+                    planItemBackgroundLocation({
+                      learningPlanId: learningPlan.id,
+                      ...(previewItem.stage
+                        ? { stageId: previewItem.stage.id }
+                        : {}),
+                    }),
+                  )}
+                >
+                  Open Item
+                </Link>
+                <span>{STATUS_LABELS[previewItem.item.status]}</span>
+              </div>
+            </article>
+          ) : null}
         </>
       )}
       {error && (
