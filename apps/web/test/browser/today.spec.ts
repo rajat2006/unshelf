@@ -120,7 +120,11 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
       itemId: item.id,
     })
   ).json()) as { id: string };
-  const historicalDate = await elapseDailyFocus(page, user, focus.id);
+  const historicalDate = await elapseDailyFocus({
+    page,
+    user,
+    dailyFocusId: focus.id,
+  });
   await testApi(
     page,
     user,
@@ -194,7 +198,11 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
       itemId: yesterday.id,
     })
   ).json()) as { id: string };
-  await elapseDailyFocus(page, user, yesterdayFocus.id);
+  await elapseDailyFocus({
+    page,
+    user,
+    dailyFocusId: yesterdayFocus.id,
+  });
   const plan = (await (
     await testApi(page, user, "/api/learning-plans", "POST", {
       name: "Database foundations",

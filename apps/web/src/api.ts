@@ -52,12 +52,21 @@ async function requestJson<ResponseBody>(
   path: string,
   init?: RequestInit,
 ): Promise<ResponseBody> {
+  const response = await authenticatedRequest(user, path, init);
+  return (await response.json()) as ResponseBody;
+}
+
+async function authenticatedRequest(
+  user: CurrentUser,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
   const token = await user.getToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) throw new Error(`api responded ${response.status}`);
-  return (await response.json()) as ResponseBody;
+  return response;
 }
 
 async function requestWithoutBody(
@@ -65,11 +74,7 @@ async function requestWithoutBody(
   path: string,
   init: RequestInit,
 ): Promise<void> {
-  const token = await user.getToken();
-  const headers = new Headers(init.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(path, { ...init, headers });
-  if (!response.ok) throw new Error(`api responded ${response.status}`);
+  await authenticatedRequest(user, path, init);
 }
 
 /** Fetch All — every Item belonging to the current User. */

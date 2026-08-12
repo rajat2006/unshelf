@@ -35,11 +35,15 @@ export async function testApi(
 }
 
 /** Move an owned focus behind the database clock for rollover browser tests. */
-export async function elapseDailyFocus(
-  page: Page,
-  user: string,
-  dailyFocusId: string,
-): Promise<string> {
+export async function elapseDailyFocus({
+  page,
+  user,
+  dailyFocusId,
+}: {
+  page: Page;
+  user: string;
+  dailyFocusId: string;
+}): Promise<string> {
   const response = await page.request.post(
     `${BROWSER_HARNESS_API_ORIGIN}/__test__/daily-focus/${dailyFocusId}/elapse`,
     {

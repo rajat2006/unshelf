@@ -128,9 +128,9 @@ export function LearningPlanCanvas({
   // Pan the whole map (drag background) — a pure viewport offset, no stored state.
   const canvasRef = useRef<HTMLDivElement>(null);
   const [grabbing, setGrabbing] = useState(false);
-  const panFrom = useRef<{
-    sx: number;
-    sy: number;
+  const panStart = useRef<{
+    pointerX: number;
+    pointerY: number;
     scrollLeft: number;
     scrollTop: number;
   } | null>(null);
@@ -139,12 +139,12 @@ export function LearningPlanCanvas({
   const [offsets, setOffsets] = useState<
     Record<string, { dx: number; dy: number }>
   >({});
-  const dragNode = useRef<{
+  const draggedNode = useRef<{
     id: string;
-    sx: number;
-    sy: number;
-    odx: number;
-    ody: number;
+    pointerX: number;
+    pointerY: number;
+    initialOffsetX: number;
+    initialOffsetY: number;
   } | null>(null);
   const moved = useRef(false);
 
@@ -251,15 +251,20 @@ export function LearningPlanCanvas({
     });
 
   // ---- geometry: derived positions, plus the view-only pan/offset overlay ----
-  const wander = (p: TopologyPlacement) =>
-    Math.sin(p.depth * 1.1 + p.lane * 2) * 14;
-  const baseX = (p: TopologyPlacement) => PAD + p.depth * COL_W + R;
-  const baseY = (p: TopologyPlacement) => PAD + p.lane * LANE_H + R + wander(p);
-  const off = (id: string) => offsets[id] ?? { dx: 0, dy: 0 };
-  const pos = new Map<string, { x: number; y: number }>(
-    placedNodes.map((p) => [
-      p.node.id,
-      { x: baseX(p) + off(p.node.id).dx, y: baseY(p) + off(p.node.id).dy },
+  const laneWander = (placement: TopologyPlacement) =>
+    Math.sin(placement.depth * 1.1 + placement.lane * 2) * 14;
+  const baseX = (placement: TopologyPlacement) =>
+    PAD + placement.depth * COL_W + R;
+  const baseY = (placement: TopologyPlacement) =>
+    PAD + placement.lane * LANE_H + R + laneWander(placement);
+  const offsetFor = (id: string) => offsets[id] ?? { dx: 0, dy: 0 };
+  const positions = new Map<string, { x: number; y: number }>(
+    placedNodes.map((placement) => [
+      placement.node.id,
+      {
+        x: baseX(placement) + offsetFor(placement.node.id).dx,
+        y: baseY(placement) + offsetFor(placement.node.id).dy,
+      },
     ]),
   );
   const width = PAD * 2 + topologyLayout.depthCount * COL_W;
@@ -277,9 +282,9 @@ export function LearningPlanCanvas({
   const onPanDown = (e: ReactPointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    panFrom.current = {
-      sx: e.clientX,
-      sy: e.clientY,
+    panStart.current = {
+      pointerX: e.clientX,
+      pointerY: e.clientY,
       scrollLeft: canvas.scrollLeft,
       scrollTop: canvas.scrollTop,
     };
@@ -287,38 +292,41 @@ export function LearningPlanCanvas({
   };
   const startNodeDrag = (id: string, e: ReactPointerEvent) => {
     if (readOnly) return;
-    const o = off(id);
-    dragNode.current = {
+    const initialOffset = offsetFor(id);
+    draggedNode.current = {
       id,
-      sx: e.clientX,
-      sy: e.clientY,
-      odx: o.dx,
-      ody: o.dy,
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      initialOffsetX: initialOffset.dx,
+      initialOffsetY: initialOffset.dy,
     };
     moved.current = false;
     setGrabbing(true);
   };
   const onPanMove = (e: ReactPointerEvent) => {
-    const d = dragNode.current;
-    if (d) {
-      const ddx = e.clientX - d.sx;
-      const ddy = e.clientY - d.sy;
-      if (Math.abs(ddx) > 3 || Math.abs(ddy) > 3) moved.current = true;
+    const dragState = draggedNode.current;
+    if (dragState) {
+      const deltaX = e.clientX - dragState.pointerX;
+      const deltaY = e.clientY - dragState.pointerY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) moved.current = true;
       setOffsets((prev) => ({
         ...prev,
-        [d.id]: { dx: d.odx + ddx, dy: d.ody + ddy },
+        [dragState.id]: {
+          dx: dragState.initialOffsetX + deltaX,
+          dy: dragState.initialOffsetY + deltaY,
+        },
       }));
       return;
     }
-    const f = panFrom.current;
+    const panState = panStart.current;
     const canvas = canvasRef.current;
-    if (!f || !canvas) return;
-    canvas.scrollLeft = f.scrollLeft - (e.clientX - f.sx);
-    canvas.scrollTop = f.scrollTop - (e.clientY - f.sy);
+    if (!panState || !canvas) return;
+    canvas.scrollLeft = panState.scrollLeft - (e.clientX - panState.pointerX);
+    canvas.scrollTop = panState.scrollTop - (e.clientY - panState.pointerY);
   };
   const onPanUp = () => {
-    panFrom.current = null;
-    dragNode.current = null;
+    panStart.current = null;
+    draggedNode.current = null;
     setGrabbing(false);
   };
 
@@ -408,7 +416,7 @@ export function LearningPlanCanvas({
               {edges.map((e) => (
                 <LearningPlanSeg
                   key={`u-${e.fromNodeId}-${e.toNodeId}`}
-                  pos={pos}
+                  positions={positions}
                   from={e.fromNodeId}
                   to={e.toNodeId}
                   stroke="var(--line)"
@@ -421,7 +429,7 @@ export function LearningPlanCanvas({
                 .map((e) => (
                   <LearningPlanSeg
                     key={`w-${e.fromNodeId}-${e.toNodeId}`}
-                    pos={pos}
+                    positions={positions}
                     from={e.fromNodeId}
                     to={e.toNodeId}
                     stroke="var(--done)"
@@ -457,28 +465,28 @@ export function LearningPlanCanvas({
               </div>
             )}
 
-            {placedNodes.map((p) => {
-              const n = p.node;
-              const here = pos.get(n.id)!;
+            {placedNodes.map((placement) => {
+              const node = placement.node;
+              const position = positions.get(node.id)!;
               return (
                 <Waypoint
-                  key={n.id}
-                  node={n}
+                  key={node.id}
+                  node={node}
                   learningPlanId={learningPlanId}
-                  x={here.x}
-                  y={here.y}
-                  isFrontier={frontier?.id === n.id}
+                  x={position.x}
+                  y={position.y}
+                  isFrontier={frontier?.id === node.id}
                   readOnly={readOnly}
                   busy={busy}
-                  isDrafting={draft?.from === n.id}
-                  isLinkSource={linkingFrom === n.id}
+                  isDrafting={draft?.from === node.id}
+                  isLinkSource={linkingFrom === node.id}
                   isLinkTarget={
                     linkingFrom !== null &&
-                    linkingFrom !== n.id &&
+                    linkingFrom !== node.id &&
                     canConnect({
                       edges: topologyEdges,
                       from: linkingFrom,
-                      to: n.id,
+                      to: node.id,
                     })
                   }
                   linking={linkingFrom !== null}
@@ -487,18 +495,18 @@ export function LearningPlanCanvas({
                       ? nodeName(nodeById.get(linkingFrom)!)
                       : undefined
                   }
-                  onPointerDown={(e) => startNodeDrag(n.id, e)}
+                  onPointerDown={(event) => startNodeDrag(node.id, event)}
                   controls={{
                     onOpen:
-                      n.kind === PlanNodeKind.Stage
-                        ? () => onOpenStage(n.id)
+                      node.kind === PlanNodeKind.Stage
+                        ? () => onOpenStage(node.id)
                         : undefined,
-                    onNext: () => setDraft({ from: n.id, mode: "next" }),
-                    onFork: () => setDraft({ from: n.id, mode: "fork" }),
-                    onStartLink: () => setLinkingFrom(n.id),
+                    onNext: () => setDraft({ from: node.id, mode: "next" }),
+                    onFork: () => setDraft({ from: node.id, mode: "fork" }),
+                    onStartLink: () => setLinkingFrom(node.id),
                     onCancelLink: () => setLinkingFrom(null),
-                    onLinkHere: () => link(n.id),
-                    onDraftSubmit: (name) => void createAndLink(name, n.id),
+                    onLinkHere: () => link(node.id),
+                    onDraftSubmit: (name) => void createAndLink(name, node.id),
                     onDraftCancel: () => setDraft(null),
                   }}
                 />
@@ -507,9 +515,9 @@ export function LearningPlanCanvas({
 
             {!readOnly &&
               edges.map((e) => {
-                const a = pos.get(e.fromNodeId);
-                const b = pos.get(e.toNodeId);
-                if (!a || !b) return null;
+                const fromPosition = positions.get(e.fromNodeId);
+                const toPosition = positions.get(e.toNodeId);
+                if (!fromPosition || !toPosition) return null;
                 const fromName = nodeName(nodeById.get(e.fromNodeId)!);
                 const toName = nodeName(nodeById.get(e.toNodeId)!);
                 const accessibleLabel = `Disconnect ${fromName} from ${toName}`;
@@ -527,8 +535,8 @@ export function LearningPlanCanvas({
                     className="learning-plan-edge-remove"
                     style={
                       {
-                        "--learning-plan-x": `${(a.x + b.x) / 2 - 22}px`,
-                        "--learning-plan-y": `${(a.y + b.y) / 2 - 22}px`,
+                        "--learning-plan-x": `${(fromPosition.x + toPosition.x) / 2 - 22}px`,
+                        "--learning-plan-y": `${(fromPosition.y + toPosition.y) / 2 - 22}px`,
                       } as CSSProperties
                     }
                   >
@@ -1054,27 +1062,27 @@ function Seal() {
 }
 
 function LearningPlanSeg({
-  pos,
+  positions,
   from,
   to,
   stroke,
   width,
   dotted,
 }: {
-  pos: Map<string, { x: number; y: number }>;
+  positions: Map<string, { x: number; y: number }>;
   from: string;
   to: string;
   stroke: string;
   width: number;
   dotted?: boolean;
 }) {
-  const a = pos.get(from);
-  const b = pos.get(to);
-  if (!a || !b) return null;
-  const mx = (a.x + b.x) / 2;
+  const fromPosition = positions.get(from);
+  const toPosition = positions.get(to);
+  if (!fromPosition || !toPosition) return null;
+  const midpointX = (fromPosition.x + toPosition.x) / 2;
   return (
     <path
-      d={`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`}
+      d={`M ${fromPosition.x} ${fromPosition.y} C ${midpointX} ${fromPosition.y}, ${midpointX} ${toPosition.y}, ${toPosition.x} ${toPosition.y}`}
       fill="none"
       stroke={stroke}
       strokeWidth={width}
