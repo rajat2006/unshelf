@@ -78,7 +78,7 @@
 }
 
 .editorial-eyebrow {
-  color: var(--accent);
+  color: var(--muted);
   font-size: 0.7rem;
   font-weight: 750;
   letter-spacing: 0.09em;
@@ -209,7 +209,7 @@
 
 .today-agenda__current {
   grid-column: 1 / -1;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 0.65rem;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -217,9 +217,9 @@
 }
 
 .today-agenda__list > .item-row:has(> .today-agenda__current) {
-  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
-  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
-  box-shadow: 0 14px 32px color-mix(in srgb, var(--shadow) 40%, transparent);
+  border-color: var(--field-line);
+  background: var(--quiet-surface);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow) 28%, transparent);
 }
 
 .today-agenda .item-row__title,
@@ -1899,8 +1899,8 @@ textarea {
 }
 
 .status-control__choices button.is-active {
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--ink);
+  color: var(--surface);
 }
 
 .status-control__choices button.is-done.is-active {
