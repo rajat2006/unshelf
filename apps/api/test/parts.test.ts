@@ -287,6 +287,54 @@ describe("Item Parts", () => {
     });
   });
 
+  it("renames and reorders Parts without leaving automatic Status mode", async () => {
+    const user = "parts-edit-automatic";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Automatic outline", type: "course" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["First", "Second"] })
+    ).body as ItemDetail;
+    await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true });
+
+    const renamed = await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[1].id}`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Revised second" });
+    expect(renamed.body).toMatchObject({
+      status: "in_progress",
+      statusMode: "automatic",
+      completedAt: null,
+      partPercentage: 50,
+    });
+
+    const reordered = await request(app)
+      .put(`/api/items/${item.id}/parts/order`)
+      .set(TEST_USER_HEADER, user)
+      .send({
+        partIds: [structured.parts[1].id, structured.parts[0].id],
+      });
+    expect(reordered.body).toMatchObject({
+      status: "in_progress",
+      statusMode: "automatic",
+      completedAt: null,
+      partPercentage: 50,
+      parts: [
+        { id: structured.parts[1].id, title: "Revised second" },
+        { id: structured.parts[0].id, title: "First", completed: true },
+      ],
+    });
+  });
+
   it("derives after membership removal but preserves Status when the final Part is removed", async () => {
     const user = "parts-remove-membership";
     const item = (
