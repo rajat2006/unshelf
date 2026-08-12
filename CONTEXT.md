@@ -13,6 +13,12 @@ In v1 one User is one isolated tenant; there are no teams, and nothing is shared
 between Users.
 _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 
+**Power Learner**:
+A User who learns independently at high volume across many sources and formats,
+repeatedly collecting, choosing, organising, and tracking learning material.
+Defined by learning behaviour rather than profession or subject area.
+_Avoid_: Software engineer, Student, Expert (none defines the audience by itself)
+
 ### Recurring discovery
 
 **Provider**:
