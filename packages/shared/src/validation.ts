@@ -1,5 +1,14 @@
 import { z } from "zod";
-import type { ItemId, LabelId, StopId, TrailId, UserId } from "./index";
+import type {
+  DailyFocusId,
+  ItemId,
+  LabelId,
+  LearningPlanId,
+  PlanNodeId,
+  PartId,
+  StageId,
+  UserId,
+} from "./index";
 import { Status, Type } from "./index";
 
 /** A User-chosen record name, normalized only at its outer boundaries. */
@@ -13,9 +22,12 @@ const identifierSchema = <Identifier extends string>() =>
 
 export const userIdSchema = identifierSchema<UserId>();
 export const itemIdSchema = identifierSchema<ItemId>();
-export const stopIdSchema = identifierSchema<StopId>();
-export const trailIdSchema = identifierSchema<TrailId>();
+export const partIdSchema = identifierSchema<PartId>();
+export const stageIdSchema = identifierSchema<StageId>();
+export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
+export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
+export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -32,32 +44,102 @@ export const targetDateSchema = z.iso
   .date()
   .refine((value) => !value.startsWith("0000-"));
 
+/** A dated Daily Focus path uses the same real calendar-date contract. */
+export const dailyFocusDateSchema = targetDateSchema;
+
 export const updateItemTargetDateRequestSchema = z.strictObject({
   targetDate: targetDateSchema.nullable(),
 });
 
-export const createLabelRequestSchema = z.strictObject({ name: nameSchema });
+export const addDailyFocusItemRequestSchema = z.strictObject({
+  itemId: itemIdSchema,
+  origin: z
+    .strictObject({
+      learningPlanId: learningPlanIdSchema,
+      stageId: stageIdSchema.optional(),
+    })
+    .optional(),
+});
 
-export const createStopRequestSchema = z.strictObject({ name: nameSchema });
+export const dailyPlanningQuerySchema = z.strictObject({
+  query: z.string().trim().optional(),
+  intention: z.string().trim().optional(),
+  learningPlanId: learningPlanIdSchema.optional(),
+});
 
-export const createTrailRequestSchema = z.strictObject({ name: nameSchema });
-
-export const addStopItemRequestSchema = z.strictObject({
+export const suppressDailyPlanningItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
-export const stopItemSearchQuerySchema = z.strictObject({
-  query: z.string().optional(),
+export const createPartsRequestSchema = z.strictObject({
+  titles: z
+    .array(z.string())
+    .transform((titles) => titles.map((title) => title.trim()).filter(Boolean))
+    .refine((titles) => titles.length > 0, {
+      message: "Must contain at least one nonblank title",
+    }),
 });
 
-export const createStopWithItemRequestSchema = z.strictObject({
-  trailId: trailIdSchema,
+export const updatePartRequestSchema = z.strictObject({ title: titleSchema });
+
+export const updatePartCompletionRequestSchema = z.strictObject({
+  completed: z.boolean(),
+});
+
+export const reorderPartsRequestSchema = z.strictObject({
+  partIds: z
+    .array(partIdSchema)
+    .refine((partIds) => new Set(partIds).size === partIds.length, {
+      message: "Part ids must be unique",
+    }),
+});
+
+export const createLabelRequestSchema = z.strictObject({ name: nameSchema });
+
+export const createStageRequestSchema = z.strictObject({ name: nameSchema });
+
+export const updateStageRequestSchema = createStageRequestSchema;
+
+export const createLearningPlanRequestSchema = z.strictObject({
   name: nameSchema,
 });
 
-export const connectStopsRequestSchema = z.strictObject({
-  fromStopId: stopIdSchema,
-  toStopId: stopIdSchema,
+export const updateLearningPlanRequestSchema = createLearningPlanRequestSchema;
+
+export const addStageItemRequestSchema = z.strictObject({
+  itemId: itemIdSchema,
+});
+
+export const reorderStageItemsRequestSchema = z.strictObject({
+  itemIds: z
+    .array(itemIdSchema)
+    .refine((itemIds) => new Set(itemIds).size === itemIds.length, {
+      message: "Item ids must be unique",
+    }),
+});
+
+export const removeStageRequestSchema = z.strictObject({
+  itemDisposition: z.enum(["place_directly", "remove_from_plan"]),
+});
+
+export const placeLearningPlanItemRequestSchema = addStageItemRequestSchema;
+
+export const moveLearningPlanItemRequestSchema = z.strictObject({
+  stageId: stageIdSchema.nullable(),
+});
+
+export const stageItemSearchQuerySchema = z.strictObject({
+  query: z.string().optional(),
+});
+
+export const createStageWithItemRequestSchema = z.strictObject({
+  learningPlanId: learningPlanIdSchema,
+  name: nameSchema,
+});
+
+export const connectLearningPlanNodesRequestSchema = z.strictObject({
+  fromNodeId: planNodeIdSchema,
+  toNodeId: planNodeIdSchema,
 });
 
 export type CreateItemRequest = z.infer<typeof createItemRequestSchema>;
@@ -67,12 +149,44 @@ export type UpdateItemStatusRequest = z.infer<
 export type UpdateItemTargetDateRequest = z.infer<
   typeof updateItemTargetDateRequestSchema
 >;
-export type CreateLabelRequest = z.infer<typeof createLabelRequestSchema>;
-export type CreateStopRequest = z.infer<typeof createStopRequestSchema>;
-export type CreateTrailRequest = z.infer<typeof createTrailRequestSchema>;
-export type AddStopItemRequest = z.infer<typeof addStopItemRequestSchema>;
-export type StopItemSearchQuery = z.infer<typeof stopItemSearchQuerySchema>;
-export type CreateStopWithItemRequest = z.infer<
-  typeof createStopWithItemRequestSchema
+export type AddDailyFocusItemRequest = z.infer<
+  typeof addDailyFocusItemRequestSchema
 >;
-export type ConnectStopsRequest = z.infer<typeof connectStopsRequestSchema>;
+export type DailyPlanningQuery = z.infer<typeof dailyPlanningQuerySchema>;
+export type SuppressDailyPlanningItemRequest = z.infer<
+  typeof suppressDailyPlanningItemRequestSchema
+>;
+export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
+export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
+export type UpdatePartCompletionRequest = z.infer<
+  typeof updatePartCompletionRequestSchema
+>;
+export type ReorderPartsRequest = z.infer<typeof reorderPartsRequestSchema>;
+export type CreateLabelRequest = z.infer<typeof createLabelRequestSchema>;
+export type CreateStageRequest = z.infer<typeof createStageRequestSchema>;
+export type UpdateStageRequest = z.infer<typeof updateStageRequestSchema>;
+export type CreateLearningPlanRequest = z.infer<
+  typeof createLearningPlanRequestSchema
+>;
+export type UpdateLearningPlanRequest = z.infer<
+  typeof updateLearningPlanRequestSchema
+>;
+export type AddStageItemRequest = z.infer<typeof addStageItemRequestSchema>;
+export type ReorderStageItemsRequest = z.infer<
+  typeof reorderStageItemsRequestSchema
+>;
+export type RemoveStageRequest = z.infer<typeof removeStageRequestSchema>;
+export type StageItemDisposition = RemoveStageRequest["itemDisposition"];
+export type PlaceLearningPlanItemRequest = z.infer<
+  typeof placeLearningPlanItemRequestSchema
+>;
+export type MoveLearningPlanItemRequest = z.infer<
+  typeof moveLearningPlanItemRequestSchema
+>;
+export type StageItemSearchQuery = z.infer<typeof stageItemSearchQuerySchema>;
+export type CreateStageWithItemRequest = z.infer<
+  typeof createStageWithItemRequestSchema
+>;
+export type ConnectLearningPlanNodesRequest = z.infer<
+  typeof connectLearningPlanNodesRequestSchema
+>;

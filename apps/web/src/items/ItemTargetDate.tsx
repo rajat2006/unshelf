@@ -16,7 +16,7 @@ interface ItemTargetDateProps {
  * for free); Clear appears only when there is a date to clear. The *past target*
  * state beside it is read from the Item the api just returned — never computed
  * here — so the whole app derives it in exactly one place. It states the fact and
- * stops: no red, no warning icon, no count of days. Unshelf never nags.
+ * stages: no red, no warning icon, no count of days. Unshelf never nags.
  */
 export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
   const [saving, setSaving] = useState(false);

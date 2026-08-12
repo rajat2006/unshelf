@@ -2,13 +2,21 @@ import { expect, test, type Page } from "@playwright/test";
 import { testApi, testAppUrl } from "./test-helpers";
 
 async function seedPlacedItem(page: Page, user: string) {
-  const trail = (await (
-    await testApi(page, user, "/api/trails", "POST", { name: `${user} Trail` })
-  ).json()) as { id: string };
-  const stop = (await (
-    await testApi(page, user, `/api/trails/${trail.id}/stops`, "POST", {
-      name: `${user} Stop`,
+  const learningPlan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: `${user} LearningPlan`,
     })
+  ).json()) as { id: string };
+  const stage = (await (
+    await testApi(
+      page,
+      user,
+      `/api/learning-plans/${learningPlan.id}/stages`,
+      "POST",
+      {
+        name: `${user} Stage`,
+      },
+    )
   ).json()) as { id: string; name: string };
   const item = (await (
     await testApi(page, user, "/api/items", "POST", {
@@ -17,17 +25,17 @@ async function seedPlacedItem(page: Page, user: string) {
       source: "https://example.com/course",
     })
   ).json()) as { id: string; title: string };
-  await testApi(page, user, `/api/stops/${stop.id}/items`, "POST", {
+  await testApi(page, user, `/api/stages/${stage.id}/items`, "POST", {
     itemId: item.id,
   });
-  return { trail, stop, item };
+  return { learningPlan, stage, item };
 }
 
 test("every occurrence of an Item links to its one canonical URL", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-item-canonical-link`;
-  const { trail, stop, item } = await seedPlacedItem(page, user);
+  const { learningPlan, stage, item } = await seedPlacedItem(page, user);
   const canonicalPath = `/test/browser/items/${item.id}`;
 
   await page.goto(testAppUrl("/library", user));
@@ -36,9 +44,11 @@ test("every occurrence of an Item links to its one canonical URL", async ({
     canonicalPath,
   );
 
-  await page.goto(testAppUrl(`/trails/${trail.id}/stops/${stop.id}`, user));
+  await page.goto(
+    testAppUrl(`/plans/${learningPlan.id}/stages/${stage.id}`, user),
+  );
   const sidebar = page.getByRole("complementary", {
-    name: `${stop.name} details`,
+    name: `${stage.name} details`,
   });
   await expect(sidebar.getByRole("link", { name: item.title })).toHaveAttribute(
     "href",
@@ -100,6 +110,76 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
 });
 
+test("an Item can be structured and maintain its ordered Part checklist", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-parts`;
+  const { item } = await seedPlacedItem(page, user);
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+
+  await sidebar.getByLabel("New Part titles").fill(" Introduction \n\nProject");
+  await sidebar.getByRole("button", { name: "Add Parts" }).click();
+  await expect(sidebar.getByText("0% complete")).toBeVisible();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).not.toBeChecked();
+
+  await sidebar.getByRole("checkbox", { name: "Project" }).click();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+  await expect(sidebar.getByText("50% complete")).toBeVisible();
+  await expect(
+    sidebar
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "In progress" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await sidebar
+    .getByRole("group", { name: `Status for ${item.title}` })
+    .getByRole("button", { name: "Done" })
+    .click();
+  await expect(sidebar.getByText("Status set manually")).toBeVisible();
+  await expect(sidebar.getByText("50% complete")).toBeVisible();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+
+  await sidebar.getByLabel("Title for Introduction").fill("Foundations");
+  await sidebar.getByRole("button", { name: "Save Foundations" }).click();
+  await sidebar.getByRole("button", { name: "Move Project up" }).click();
+  await expect(
+    sidebar.getByRole("list", { name: "Parts" }).getByRole("listitem"),
+  ).toHaveText([/Project/, /Foundations/]);
+
+  await page.reload();
+  const refreshed = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  await expect(
+    refreshed.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+  await expect(refreshed.getByText("50% complete")).toBeVisible();
+  await expect(refreshed.getByText("Status set manually")).toBeVisible();
+
+  await refreshed.getByRole("checkbox", { name: "Foundations" }).click();
+  await expect(refreshed.getByText("Status follows Parts")).toBeVisible();
+  await expect(refreshed.getByText("100% complete")).toBeVisible();
+
+  await refreshed.getByRole("button", { name: "Remove Foundations" }).click();
+  await expect(refreshed.getByText("100% complete")).toBeVisible();
+  await refreshed.getByRole("button", { name: "Remove Project" }).click();
+  await expect(refreshed.getByText("No Parts yet")).toBeVisible();
+  await expect(
+    refreshed
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
 test("opening an Item preserves its filtered Library beneath the sidebar", async ({
   page,
 }, testInfo) => {
@@ -128,46 +208,54 @@ test("opening an Item preserves its filtered Library beneath the sidebar", async
   ).toBeVisible();
 });
 
-test("opening an Item from a Stop preserves its Trail and follows browser history", async ({
+test("opening an Item from a Stage preserves its LearningPlan and follows browser history", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name === "phone", "desktop context behavior");
-  const user = `${testInfo.project.name}-item-trail-context`;
-  const { trail, stop, item } = await seedPlacedItem(page, user);
-  const stopPath = `/trails/${trail.id}/stops/${stop.id}`;
+  const user = `${testInfo.project.name}-item-learning-plan-context`;
+  const { learningPlan, stage, item } = await seedPlacedItem(page, user);
+  const stagePath = `/plans/${learningPlan.id}/stages/${stage.id}`;
 
-  await page.goto(testAppUrl(stopPath, user));
-  const stopSidebar = page.getByRole("complementary", {
-    name: `${stop.name} details`,
+  await page.goto(testAppUrl(stagePath, user));
+  const stageSidebar = page.getByRole("complementary", {
+    name: `${stage.name} details`,
   });
-  await stopSidebar.getByRole("link", { name: item.title }).click();
+  await stageSidebar.getByRole("link", { name: item.title }).click();
 
   await expect(page).toHaveURL(new RegExp(`/test/browser/items/${item.id}$`));
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trail" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: `${user} LearningPlan`,
+    }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: `Open ${stop.name}` }),
+    page.getByRole("link", { name: "Plans", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    page.getByRole("button", { name: stage.name, exact: true }),
   ).toBeEnabled();
   await expect(
     page.getByRole("complementary", { name: `${item.title} details` }),
   ).toBeVisible();
-  await expect(stopSidebar).toHaveCount(0);
+  await expect(stageSidebar).toHaveCount(0);
 
   await page
     .getByRole("complementary", { name: `${item.title} details` })
     .getByRole("group", { name: `Status for ${item.title}` })
     .getByRole("button", { name: "Done" })
     .click();
-  await expect(
-    page.getByRole("group", { name: `${stop.name}: 1 of 1 items done` }),
-  ).toBeVisible();
-
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`${stopPath}(\\?|$)`));
+  await expect(page).toHaveURL(new RegExp(`${stagePath}(\\?|$)`));
   await expect(
-    page.getByRole("complementary", { name: `${stop.name} details` }),
+    page.getByRole("complementary", { name: `${stage.name} details` }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary", { name: `${stage.name} details` })
+      .getByRole("group", { name: `Status for ${item.title}` })
+      .getByRole("button", { name: "Done" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await page.goForward();
   await expect(
@@ -176,7 +264,7 @@ test("opening an Item from a Stop preserves its Trail and follows browser histor
 
   // The test harness selects its auth User from this query parameter on boot.
   // Preserve it across the reload without disturbing React Router's history
-  // state, which carries the live Trail origin in production.
+  // state, which carries the live LearningPlan origin in production.
   await page.evaluate((selectedUser) => {
     const url = new URL(window.location.href);
     url.searchParams.set("testUser", selectedUser);
@@ -184,7 +272,10 @@ test("opening an Item from a Stop preserves its Trail and follows browser histor
   }, user);
   await page.reload();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Trail" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: `${user} LearningPlan`,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("complementary", { name: `${item.title} details` }),
@@ -232,7 +323,7 @@ test("Item detail edits synchronize with the same Item in the underlying Library
   await sidebar.getByRole("button", { name: "Close details" }).click();
   await expect(page).toHaveURL(/\/test\/browser\/library$/);
   await expect(
-    page
+    library
       .getByRole("group", { name: `Status for ${item.title}` })
       .getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");

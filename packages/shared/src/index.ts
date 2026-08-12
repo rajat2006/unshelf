@@ -1,8 +1,8 @@
 /**
  * The shared API contract, imported by both `apps/web` and `apps/api` so the two
  * ends can never drift. In v1 this holds the walking-skeleton health contract,
- * the `Item` spine (ADR-0003), the `Stop` / `StopItem` organisation model
- * (ADR-0004) and the `TrailEdge` topology (ADR-0010).
+ * the `Item` spine (ADR-0003), the `Stage` / `StageItem` organisation model
+ * (ADR-0004) and the `LearningPlanEdge` topology (ADR-0010).
  */
 
 /**
@@ -24,7 +24,7 @@ export const ITEM_TYPES = Object.values(Type);
 
 /**
  * An Item's item-level progress (ADR-0003, CONTEXT.md *Status*). One Status per
- * Item, shared across every Stop it appears in. A fresh capture lands *not
+ * Item, shared across every Stage it appears in. A fresh capture lands *not
  * started*; the Status API owns its transitions.
  */
 export enum Status {
@@ -34,6 +34,22 @@ export enum Status {
 }
 
 export const ITEM_STATUSES = Object.values(Status);
+
+/** Whether a Structured Item's Status is chosen or follows its Parts. */
+export enum StatusMode {
+  Manual = "manual",
+  Automatic = "automatic",
+}
+
+export const ITEM_STATUS_MODES = Object.values(StatusMode);
+
+/** The internal topology-node variants currently supported by Learning Plans. */
+export enum PlanNodeKind {
+  Item = "item",
+  Stage = "stage",
+}
+
+export const PLAN_NODE_KINDS = Object.values(PlanNodeKind);
 
 declare const identifierBrand: unique symbol;
 
@@ -49,16 +65,32 @@ export type ItemId = string & {
   readonly [identifierBrand]: "ItemId";
 };
 
-export type StopId = string & {
-  readonly [identifierBrand]: "StopId";
+export type PartId = string & {
+  readonly [identifierBrand]: "PartId";
 };
 
-export type TrailId = string & {
-  readonly [identifierBrand]: "TrailId";
+export type StageId = string & {
+  readonly [identifierBrand]: "StageId";
+};
+
+/** Stable topology-node identity of a direct Item placement in one Learning Plan. */
+export type DirectItemNodeId = string & {
+  readonly [identifierBrand]: "DirectItemNodeId";
+};
+
+/** Opaque topology identity shared by Stage and direct-Item node variants. */
+export type PlanNodeId = StageId | DirectItemNodeId;
+
+export type LearningPlanId = string & {
+  readonly [identifierBrand]: "LearningPlanId";
 };
 
 export type LabelId = string & {
   readonly [identifierBrand]: "LabelId";
+};
+
+export type DailyFocusId = string & {
+  readonly [identifierBrand]: "DailyFocusId";
 };
 
 /**
@@ -66,15 +98,29 @@ export type LabelId = string & {
  * type-only facade keeps existing `@unshelf/shared` consumers runtime-free.
  */
 export type {
-  AddStopItemRequest,
-  ConnectStopsRequest,
+  AddStageItemRequest,
+  CreatePartsRequest,
+  ConnectLearningPlanNodesRequest,
   CreateItemRequest,
   CreateLabelRequest,
-  CreateStopRequest,
-  CreateStopWithItemRequest,
-  CreateTrailRequest,
+  CreateStageRequest,
+  CreateStageWithItemRequest,
+  CreateLearningPlanRequest,
+  PlaceLearningPlanItemRequest,
+  MoveLearningPlanItemRequest,
+  ReorderPartsRequest,
+  ReorderStageItemsRequest,
+  RemoveStageRequest,
+  StageItemDisposition,
+  UpdateLearningPlanRequest,
+  UpdateStageRequest,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
+  UpdatePartCompletionRequest,
+  UpdatePartRequest,
+  AddDailyFocusItemRequest,
+  DailyPlanningQuery,
+  SuppressDailyPlanningItemRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */
@@ -86,7 +132,7 @@ export interface Label {
 
 /**
  * A single captured piece of learning material — the shared spine every later
- * concept (Stop, Trail) references (ADR-0003). Scoped to a User (`userId`,
+ * concept (Stage, Learning Plan) references (ADR-0003). Scoped to a User (`userId`,
  * ADR-0001). `source` is the optional link, stored verbatim and unvalidated
  * (ADR-0007); `targetDate` is the soft "by when" the Target date API owns.
  * `completedAt` is deliberately returned by the API contract for persistence
@@ -101,13 +147,17 @@ export interface Item {
   title: string;
   /** Optional link to where the Item lives; verbatim, unvalidated (ADR-0007). */
   source: string | null;
+  /** When Capture created the Item, as a database-owned ISO-8601 timestamp. */
+  createdAt: string;
   /** The kind of material, chosen at capture. */
   type: Type;
   /** Item-level progress; a fresh capture is *not started*. */
   status: Status;
+  /** Whether Status is manually chosen or automatically derived from Parts. */
+  statusMode: StatusMode;
   /**
    * The User's optional soft "by when" as a calendar date (`YYYY-MM-DD`), or
-   * null. One value per Item, shared across every Stop it appears in.
+   * null. One value per Item, shared across every Stage it appears in.
    */
   targetDate: string | null;
   /**
@@ -124,194 +174,294 @@ export interface Item {
   labels: Label[];
 }
 
-/**
- * A grouping the User forms by pulling Items together — the single organising
- * primitive in v1 (ADR-0004, CONTEXT.md *Stop*). There is deliberately no `kind`
- * or `type`: one uniform Stop serves both "a topic to learn" and "a project to
- * build", because nothing in v1 makes the two behave differently. Scoped to a
- * User like every other domain record (ADR-0001).
- */
-export interface Stop {
-  /** This Stop's id (uuid). */
-  id: StopId;
-  /** The owning User — the tenancy anchor this Stop is scoped to. */
+/** One lightweight checklist entry owned by an Item. */
+export interface Part {
+  id: PartId;
+  itemId: ItemId;
+  title: string;
+  position: number;
+  completed: boolean;
+}
+
+/** Canonical Item detail, including structure that is not a Library row. */
+export interface ItemDetail extends Item {
+  parts: Part[];
+  partPercentage: number | null;
+}
+
+/** Derive completion for any current selection of shared Items. */
+export function deriveItemCompletion(items: readonly Pick<Item, "status">[]): {
+  done: number;
+  total: number;
+} {
+  return {
+    done: items.filter((item) => item.status === Status.Done).length,
+    total: items.length,
+  };
+}
+
+/** The editable selection of whole Items for one server calendar date. */
+export interface DailyFocus {
+  id: DailyFocusId;
   userId: UserId;
-  /** What the User calls this Stop — required and trimmed only at the edges. */
+  date: string;
+  entries: DailyFocusEntry[];
+  done: number;
+  total: number;
+}
+
+/** Optional current Plan placement retained only to navigate from a focus entry. */
+export interface DailyFocusOrigin {
+  learningPlan: PlacementLearningPlan;
+  stage: PlacementStage | null;
+}
+
+/** One whole shared Item selected for a dated Daily Focus. */
+export interface DailyFocusEntry {
+  item: Item;
+  origin: DailyFocusOrigin | null;
+  /** The Item state last visible on this focus's server calendar date. */
+  snapshot: {
+    status: Status;
+    partPercentage: number | null;
+  };
+}
+
+/** The ordered, transparent signals that can place an Item in Daily Planning. */
+export type DailyPlanningSignal =
+  | "unfinished_yesterday"
+  | "selected_plan"
+  | "dormant_in_progress"
+  | "approaching_target"
+  | "recently_captured_uncommitted";
+
+/** One de-duplicated suggestion with the highest-priority reason it appears. */
+export interface DailyPlanningSuggestion {
+  item: Item;
+  signal: DailyPlanningSignal;
+  explanation: string;
+  /** Plan context retained when the selected Plan caused the suggestion. */
+  origin: DailyFocusOrigin | null;
+}
+
+/** A read-only projection used to choose Items for the current Daily Focus. */
+export interface DailyPlanning {
+  searchResults: Item[];
+  suggestions: DailyPlanningSuggestion[];
+}
+
+/**
+ * An optional named grouping within one Learning Plan (ADR-0018, CONTEXT.md
+ * *Stage*). Its identity is also the identity of its current Plan Node. Scoped
+ * to a User like every other domain record (ADR-0001).
+ */
+export interface Stage {
+  /** This Stage's id (uuid). */
+  id: StageId;
+  /** The owning User — the tenancy anchor this Stage is scoped to. */
+  userId: UserId;
+  /** The one Learning Plan this optional Stage belongs to. */
+  learningPlanId: LearningPlanId;
+  /** What the User calls this Stage — required and trimmed only at the edges. */
   name: string;
 }
 
 /**
- * Membership: this User's Item is in that User's Stop. The User anchor keeps the
- * ends in one private space, while the repeated Trail anchor lets PostgreSQL
- * enforce at most one Stop per Item on a Trail.
- *
- * It carries no `position`, because a Stop is an unordered set and all sequencing
- * lives on the Trail; and no `status`, because Status is one value on the Item
- * itself, shared by every Stop that Item appears in. Both are cheap to add later
- * if they ever earn their place; neither can be half-modelled now without giving
- * the User two places to keep the same fact true.
+ * Membership: this User's Item is in that User's Stage. The User anchor keeps the
+ * ends in one private space, while the repeated Learning Plan anchor lets
+ * PostgreSQL enforce at most one Stage per Item on a Learning Plan. `position`
+ * records local order; Status remains on the shared Item itself.
  */
-export interface StopItem {
+export interface StageItem {
   /** The owning User — constrained to be the owner of both membership ends. */
   userId: UserId;
-  /** The Stop end of the membership. */
-  stopId: StopId;
+  /** The Stage end of the membership. */
+  stageId: StageId;
   /** The Item end of the membership. */
   itemId: ItemId;
   /**
-   * The Trail containing the Stop, repeated so PostgreSQL can enforce that this
-   * Item appears at most once on that Trail.
+   * The Learning Plan containing the Stage, repeated so PostgreSQL can enforce
+   * that this Item appears at most once on that Learning Plan.
    */
-  trailId: TrailId;
+  learningPlanId: LearningPlanId;
+  /** Stable zero-based local order within this Stage. */
+  position: number;
 }
 
 /**
- * One Stop with its contents — a flat, unordered set of the Items pulled into it
- * (ADR-0004). Each Item is the single shared record, carrying the one Status and
- * Target date every other view of it reads, so progress shows here without ever
- * being stored on the membership.
+ * One Stage with its locally ordered contents. Each Item is the single shared
+ * record, carrying the one Status and Target date every other view reads.
  */
-export interface StopDetail extends Stop {
+export interface StageDetail extends Stage {
   /**
-   * The Stop's Items. Unordered as a matter of model: any order the api returns
-   * them in is a display convenience the client must not read meaning into.
+   * The Stage's Items in their stable local membership order.
    */
   items: Item[];
 }
 
-/** The minimum Stop identity needed to describe or choose an Item placement. */
-export interface PlacementStop {
-  id: StopId;
+/** The minimum Stage identity needed to describe or choose an Item placement. */
+export interface PlacementStage {
+  id: StageId;
   name: string;
 }
 
-/** The minimum Trail identity needed to qualify an Item placement destination. */
-export interface PlacementTrail {
-  id: TrailId;
+/** The minimum LearningPlan identity needed to qualify an Item placement destination. */
+export interface PlacementLearningPlan {
+  id: LearningPlanId;
   name: string;
 }
 
 /**
- * One Trail's mutually exclusive state for one Item. A placed Trail exposes
- * exactly the Stop already containing the Item; an available Trail exposes its
- * existing Stop destinations.
+ * One LearningPlan's mutually exclusive state for one Item. A placed LearningPlan exposes
+ * exactly the Stage already containing the Item; an available LearningPlan exposes its
+ * existing Stage destinations.
  */
-export type ItemPlacementTrail =
+export type ItemPlacementLearningPlan =
   | {
       kind: "available";
-      trail: PlacementTrail;
-      stops: PlacementStop[];
+      learningPlan: PlacementLearningPlan;
+      stages: PlacementStage[];
     }
   | {
       kind: "placed";
-      trail: PlacementTrail;
-      stop: PlacementStop;
+      learningPlan: PlacementLearningPlan;
+      stage: PlacementStage;
+    }
+  | {
+      kind: "placed_direct";
+      learningPlan: PlacementLearningPlan;
+    }
+  | {
+      kind: "archived";
+      learningPlan: PlacementLearningPlan;
+      placement: "direct" | PlacementStage | null;
     };
 
-/** Every Trail the User owns, represented once for one Item. */
+/** Every LearningPlan the User owns, represented once for one Item. */
 export interface ItemPlacementCatalog {
   itemId: ItemId;
-  trails: ItemPlacementTrail[];
+  learningPlans: ItemPlacementLearningPlan[];
 }
 
-interface StopItemCandidateFacts {
+interface StageItemCandidateFacts {
   id: ItemId;
   title: string;
   type: Type;
 }
 
-/** One compact Library result offered while filling an open Stop. */
-export type StopItemCandidate = StopItemCandidateFacts &
+/** One compact Library result offered while filling an open Stage. */
+export type StageItemCandidate = StageItemCandidateFacts &
   (
     | { kind: "available" }
+    | { kind: "direct_conflict" }
     | {
         kind: "conflict";
-        stop: PlacementStop;
+        stage: PlacementStage;
       }
   );
 
+/** One Library result in a Learning Plan's placement drawer. */
+export type LearningPlanItemCandidate =
+  | { kind: "available"; item: Item }
+  | { kind: "direct"; item: Item }
+  | { kind: "stage"; item: Item; stage: PlacementStage };
+
 /**
- * A first-class Trail — one User's learning journey, owning a canvas of Stops and
- * forks (ADR-0014, CONTEXT.md *Trail*). A User owns *many* Trails, each with an
- * opaque, stable `id` that does not change when the Trail is renamed, so its URL
- * (`/trails/:id`) survives presentation changes. Scoped to a User like every
+ * A first-class LearningPlan — one User's learning journey, owning a canvas of Stages and
+ * forks (ADR-0014, CONTEXT.md *LearningPlan*). A User owns *many* LearningPlans, each with an
+ * opaque, stable `id` that does not change when the LearningPlan is renamed, so its URL
+ * (`/plans/:id`) survives presentation changes. Scoped to a User like every
  * domain record (ADR-0001): listing and reading resolve from the authenticated
- * User, so another User's Trail is indistinguishable from a missing one.
+ * User, so another User's LearningPlan is indistinguishable from a missing one.
  *
- * `done` and `total` are the Trail's *derived* progress — how many of the Items
- * across its Stops are *done* out of how many it holds, counted per distinct Item
- * so an Item pulled into two of the Trail's Stops is not double-counted. Like the
- * per-node progress on `TrailNode` and the derived `pastTarget` (ADR-0005) it is
- * computed on every read, never stored; an empty Trail reads as 0/0.
+ * `done` and `total` are the LearningPlan's *derived* progress — how many of the Items
+ * across its Stages are *done* out of how many it holds, counted per distinct Item
+ * so an Item pulled into two of the LearningPlan's Stages is not double-counted. Like the
+ * per-node progress on `LearningPlanNode` and the derived `pastTarget` (ADR-0005) it is
+ * computed on every read, never stored; an empty LearningPlan reads as 0/0.
  */
-export interface Trail {
-  /** This Trail's opaque, stable id (uuid) — the `:trailId` its URL carries. */
-  id: TrailId;
-  /** The owning User — the tenancy anchor this Trail is scoped to. */
+export interface LearningPlan {
+  /** This LearningPlan's opaque, stable id (uuid) — the `:learningPlanId` its URL carries. */
+  id: LearningPlanId;
+  /** The owning User — the tenancy anchor this LearningPlan is scoped to. */
   userId: UserId;
-  /** What the User calls this Trail — required and trimmed only at the edges. */
+  /** What the User calls this LearningPlan — required and trimmed only at the edges. */
   name: string;
-  /** When this Trail was created, ISO-8601 — the stable order the index lists in. */
+  /** When this LearningPlan was created, ISO-8601 — the stable order the index lists in. */
   createdAt: string;
-  /** How many distinct Items across the Trail's Stops are *done* (0 when none). */
+  /** When this Learning Plan was archived, ISO-8601, or null while active. */
+  archivedAt: string | null;
+  /** How many distinct current Items on the Learning Plan are *done* (0 when none). */
   done: number;
-  /** How many distinct Items the Trail's Stops hold in total. */
+  /** How many distinct current Items the Learning Plan holds in total. */
   total: number;
 }
 
 /**
- * A directed Stop-to-Stop edge — one row of the Trail's adjacency edge list
- * (ADR-0010). The Trail *is* this edge set scoped to a User: its nodes are the
- * User's Stops (every Stop is already "what appears as a node on the Trail",
- * CONTEXT.md *Stop*), its edges are these rows. A fork is a Stop with several
- * out-edges; a join is a Stop with several in-edges; the whole is a DAG.
+ * A directed Plan-Node edge — one row of the Learning Plan's adjacency edge list
+ * (ADR-0010). The LearningPlan *is* this edge set scoped to a User: its nodes are the
+ * direct Item placements and Stages, while its edges are these rows. A fork has
+ * several out-edges; a join has several in-edges; the whole is a DAG.
  *
  * It carries no `x`/`y` and no order among sibling forks: canvas position is
  * *derived* on read by longest-path layering, never stored (ADR-0010), the same
  * discipline as the derived `pastTarget` (ADR-0005). And it carries no date — the
- * Trail is a lightweight topology, never a calendar (ADR-0004).
+ * LearningPlan is a lightweight topology, never a calendar (ADR-0004).
  */
-export interface TrailEdge {
+export interface LearningPlanEdge {
   /** The owning User — constrained to be the owner of both edge ends. */
   userId: UserId;
-  /** The Stop the edge leads out of. */
-  fromStopId: StopId;
-  /** The Stop the edge leads into. */
-  toStopId: StopId;
+  /** The Plan Node the edge leads out of. */
+  fromNodeId: PlanNodeId;
+  /** The Plan Node the edge leads into. */
+  toNodeId: PlanNodeId;
 }
 
 /**
- * A Stop as it appears on the Trail — a node (CONTEXT.md *Stop*: a Stop is what
- * appears as a node on the Trail). The Trail is a derived view over the User's
- * Stops, so this carries what the canvas draws a waypoint from: the Stop's
+ * A Stage as it appears on the LearningPlan — a node (CONTEXT.md *Stage*: a Stage is what
+ * appears as a node on the LearningPlan). The LearningPlan is a derived view over the User's
+ * Stages, so this carries what the canvas draws a waypoint from: the Stage's
  * identity and name, plus its progress — how many of its Items are *done* out of
  * how many it holds. Progress is *derived* on every read (like `pastTarget`,
- * ADR-0005), never stored on the Trail; it is what lets the canvas read a thread
+ * ADR-0005), never stored on the LearningPlan; it is what lets the canvas read a thread
  * as ground already walked versus still ahead.
  */
-export interface TrailNode {
-  /** The Stop's id — the node's identity, and the endpoint edges reference. */
-  id: StopId;
-  /** The Stop's name, drawn as the waypoint label. */
+export interface StageLearningPlanNode {
+  kind: PlanNodeKind.Stage;
+  /** The Stage's id — the node's identity, and the endpoint edges reference. */
+  id: StageId;
+  /** The Stage's name, drawn as the waypoint label. */
   name: string;
-  /** How many of the Stop's Items are *done* (0 when it holds none). */
+  /** How many of the Stage's Items are *done* (0 when it holds none). */
   done: number;
-  /** How many Items the Stop holds in total. */
+  /** How many Items the Stage holds in total. */
   total: number;
 }
 
+/** One direct reference to the shared Library Item, without a manufactured Stage. */
+export interface ItemLearningPlanNode {
+  kind: PlanNodeKind.Item;
+  /** Stable identity of this placement in the Learning Plan topology. */
+  id: DirectItemNodeId;
+  /** The single shared Item record; Status changes are visible on every fresh read. */
+  item: Item;
+}
+
+/** The two first-class node variants a Learning Plan can arrange. */
+export type LearningPlanNode = StageLearningPlanNode | ItemLearningPlanNode;
+
 /**
- * The whole Trail as it reads back (ADR-0010): the node set — the User's Stops,
- * each with derived progress — and the edge set between them. The Trail is not a
- * table but a derived view, so both halves are read fresh; an unconnected Stop is
+ * The whole LearningPlan as it reads back (ADR-0010): the node set — the User's Stages,
+ * each with derived progress — and the edge set between them. The LearningPlan is not a
+ * table but a derived view, so both halves are read fresh; an unconnected Stage is
  * still a node, it simply has no edges yet. The layout is not here: it is derived
  * from the edges on the client, never stored.
  */
-export interface TrailView {
-  /** Every Stop, as a Trail node with derived progress. */
-  nodes: TrailNode[];
-  /** Every Stop-to-Stop edge belonging to the User. */
-  edges: TrailEdge[];
+export interface LearningPlanView {
+  /** Every direct Item placement and Stage as a first-class Plan Node. */
+  nodes: LearningPlanNode[];
+  /** Every Plan-Node edge belonging to the User. */
+  edges: LearningPlanEdge[];
 }
 
 /**

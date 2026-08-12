@@ -1,6 +1,6 @@
 # EMIT THE UPDATE OUTCOME
 
-You have finished trying to merge `main` into the branch. Now emit that outcome
+You have finished trying to merge the base branch into the PR branch. Now emit that outcome
 as **exactly one** `<output>` JSON block, as the last thing in your response. Do
 not merge or change anything further — only serialise what already happened.
 
@@ -23,9 +23,9 @@ The block must match this shape:
 Rules:
 
 - `outcome` — one of:
-  - `"merged"` — you merged `origin/main` in, resolved the conflicts, validated
+  - `"merged"` — you merged the remote base in, resolved the conflicts, validated
     the tree, and **committed** the merge.
-  - `"already-current"` — `git merge origin/main` reported *Already up to date*
+  - `"already-current"` — the base merge reported *Already up to date*
     and you made **no** commit. (Unusual here — the branch was known to conflict.)
   - `"blocked"` — you aborted the merge (`git merge --abort`) because a conflict
     needs a human or the merged tree could not be made to build. The branch is
@@ -40,7 +40,7 @@ Rules:
   otherwise.
 
 Be honest: the runner independently verifies a `merged`/`already-current` claim
-against the real git state (origin/main must be an ancestor of HEAD, no unresolved
+against the real git state (the base must be an ancestor of HEAD, no unresolved
 paths remain, and HEAD must have advanced for `merged`), and fails the run if the
 claim does not hold. A `blocked` outcome is the correct, expected way to hand a
 hard merge back to a human — prefer it to a guessed resolution.

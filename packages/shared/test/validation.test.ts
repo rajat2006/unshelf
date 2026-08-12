@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
-  addStopItemRequestSchema,
-  connectStopsRequestSchema,
+  addDailyFocusItemRequestSchema,
+  addStageItemRequestSchema,
+  connectLearningPlanNodesRequestSchema,
   createItemRequestSchema,
+  createPartsRequestSchema,
   createLabelRequestSchema,
-  createStopRequestSchema,
-  createTrailRequestSchema,
+  createLearningPlanRequestSchema,
+  createStageRequestSchema,
   itemIdSchema,
   labelIdSchema,
-  stopIdSchema,
-  trailIdSchema,
+  learningPlanIdSchema,
+  partIdSchema,
+  reorderPartsRequestSchema,
+  stageIdSchema,
   updateItemStatusRequestSchema,
   updateItemTargetDateRequestSchema,
   userIdSchema,
@@ -20,8 +24,8 @@ const uuid = "123e4567-e89b-42d3-a456-426614174000";
 describe("named record request schemas", () => {
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("normalizes a %s name at the contract boundary", (_record, schema) => {
     expect(schema.parse({ name: "  Learn   CSS  " })).toEqual({
       name: "Learn   CSS",
@@ -30,16 +34,16 @@ describe("named record request schemas", () => {
 
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("rejects a blank %s name", (_record, schema) => {
     expect(schema.safeParse({ name: " \t " }).success).toBe(false);
   });
 
   it.each([
     ["Label", createLabelRequestSchema],
-    ["Stop", createStopRequestSchema],
-    ["Trail", createTrailRequestSchema],
+    ["Stage", createStageRequestSchema],
+    ["Learning Plan", createLearningPlanRequestSchema],
   ])("rejects undeclared %s fields", (_record, schema) => {
     expect(schema.safeParse({ name: "CSS", typo: true }).success).toBe(false);
   });
@@ -158,12 +162,33 @@ describe("Item update request schemas", () => {
   });
 });
 
+describe("Part request schemas", () => {
+  it("normalizes a batch and ignores blank lines", () => {
+    expect(
+      createPartsRequestSchema.parse({ titles: ["  One  ", " ", "Two"] }),
+    ).toEqual({ titles: ["One", "Two"] });
+  });
+
+  it("requires at least one nonblank Part title", () => {
+    expect(
+      createPartsRequestSchema.safeParse({ titles: [" ", "\t"] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects repeated Part identities in a submitted order", () => {
+    expect(
+      reorderPartsRequestSchema.safeParse({ partIds: [uuid, uuid] }).success,
+    ).toBe(false);
+  });
+});
+
 describe("identifier schemas", () => {
   it.each([
     ["User", userIdSchema],
     ["Item", itemIdSchema],
-    ["Stop", stopIdSchema],
-    ["Trail", trailIdSchema],
+    ["Part", partIdSchema],
+    ["Stage", stageIdSchema],
+    ["Learning Plan", learningPlanIdSchema],
     ["Label", labelIdSchema],
   ])("returns a validated %s identifier", (_identifier, schema) => {
     expect(schema.parse(uuid)).toBe(uuid);
@@ -172,46 +197,69 @@ describe("identifier schemas", () => {
 });
 
 describe("identifier-bearing request schemas", () => {
-  it("returns a validated Item before it can be added to a Stop", () => {
-    expect(addStopItemRequestSchema.parse({ itemId: uuid })).toEqual({
+  it("validates optional Learning Plan and Stage origin for a Daily Focus Item", () => {
+    const stageId = "123e4567-e89b-42d3-a456-426614174001";
+    expect(
+      addDailyFocusItemRequestSchema.parse({
+        itemId: uuid,
+        origin: { learningPlanId: uuid, stageId },
+      }),
+    ).toEqual({
       itemId: uuid,
+      origin: { learningPlanId: uuid, stageId },
     });
-  });
-
-  it("rejects a malformed Item before adding it to a Stop", () => {
     expect(
-      addStopItemRequestSchema.safeParse({ itemId: "not-a-uuid" }).success,
-    ).toBe(false);
-  });
-
-  it("rejects undeclared add-to-Stop fields", () => {
-    expect(
-      addStopItemRequestSchema.safeParse({ itemId: uuid, position: 1 }).success,
-    ).toBe(false);
-  });
-
-  it("returns both validated ends of a Trail edge", () => {
-    const toStopId = "123e4567-e89b-42d3-a456-426614174001";
-    expect(
-      connectStopsRequestSchema.parse({ fromStopId: uuid, toStopId }),
-    ).toEqual({ fromStopId: uuid, toStopId });
-  });
-
-  it("rejects a malformed Trail edge end", () => {
-    expect(
-      connectStopsRequestSchema.safeParse({
-        fromStopId: uuid,
-        toStopId: "not-a-uuid",
+      addDailyFocusItemRequestSchema.safeParse({
+        itemId: uuid,
+        origin: { learningPlanId: uuid, stageId: "not-a-uuid" },
       }).success,
     ).toBe(false);
   });
 
-  it("rejects undeclared Trail edge fields", () => {
-    const toStopId = "123e4567-e89b-42d3-a456-426614174001";
+  it("returns a validated Item before it can be added to a Stage", () => {
+    expect(addStageItemRequestSchema.parse({ itemId: uuid })).toEqual({
+      itemId: uuid,
+    });
+  });
+
+  it("rejects a malformed Item before adding it to a Stage", () => {
     expect(
-      connectStopsRequestSchema.safeParse({
-        fromStopId: uuid,
-        toStopId,
+      addStageItemRequestSchema.safeParse({ itemId: "not-a-uuid" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects undeclared add-to-Stage fields", () => {
+    expect(
+      addStageItemRequestSchema.safeParse({ itemId: uuid, position: 1 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("returns both validated ends of a Learning Plan edge", () => {
+    const toNodeId = "123e4567-e89b-42d3-a456-426614174001";
+    expect(
+      connectLearningPlanNodesRequestSchema.parse({
+        fromNodeId: uuid,
+        toNodeId,
+      }),
+    ).toEqual({ fromNodeId: uuid, toNodeId });
+  });
+
+  it("rejects a malformed Learning Plan edge end", () => {
+    expect(
+      connectLearningPlanNodesRequestSchema.safeParse({
+        fromNodeId: uuid,
+        toNodeId: "not-a-uuid",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects undeclared Learning Plan edge fields", () => {
+    const toNodeId = "123e4567-e89b-42d3-a456-426614174001";
+    expect(
+      connectLearningPlanNodesRequestSchema.safeParse({
+        fromNodeId: uuid,
+        toNodeId,
         position: 1,
       }).success,
     ).toBe(false);

@@ -1,0 +1,258 @@
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
+import type { LearningPlan } from "@unshelf/shared";
+import { completionPercentage } from "../presentation/progress";
+
+/**
+ * The Learning Plans index in the Plans room. It is Learning Plans-only: the
+ * User's plans as progress cards, plus one quiet action to start another; no
+ * label filters and no capture line live here (both were tried and dropped —
+ * capture is global chrome, labels live in the Library).
+ *
+ * This is the presentational surface: it is handed the fetched state and renders
+ * each of the surface's own shapes — the card-shaped loading skeleton, the
+ * inline-scoped error with Retry, the empty "No Learning Plans yet" prompt, and the card
+ * grid. The container above owns the fetch and the create call.
+ */
+export type LearningPlansIndexState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; learningPlans: LearningPlan[] };
+
+export function LearningPlansIndex({
+  state,
+  creating,
+  onCreate,
+  onArchive,
+  onRestore,
+  onRetry,
+}: {
+  state: LearningPlansIndexState;
+  creating: boolean;
+  onCreate: (name: string) => Promise<void>;
+  onArchive: (learningPlan: LearningPlan) => Promise<void>;
+  onRestore: (learningPlan: LearningPlan) => Promise<void>;
+  onRetry: () => void;
+}) {
+  if (state.status === "loading") {
+    return <LearningPlansSkeleton />;
+  }
+  if (state.status === "error") {
+    return <LearningPlansError onRetry={onRetry} />;
+  }
+
+  const { learningPlans } = state;
+  const activePlans = learningPlans.filter(
+    (learningPlan) => learningPlan.archivedAt === null,
+  );
+  const archivedPlans = learningPlans.filter(
+    (learningPlan) => learningPlan.archivedAt !== null,
+  );
+  return (
+    <div className="learning-plans-index">
+      <details className="learning-plans-index__composer">
+        <summary>＋ New Learning Plan</summary>
+        <div>
+          <p className="editorial-eyebrow">Begin a path</p>
+          <h2>Start something worth finishing</h2>
+          <p className="quiet-copy">
+            Name the outcome. Add and arrange material inside the plan studio.
+          </p>
+          <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+        </div>
+      </details>
+      {learningPlans.length === 0 ? (
+        <EmptyLearningPlans />
+      ) : (
+        <>
+          <LearningPlanGroup
+            heading="Active Plans"
+            learningPlans={activePlans}
+            emptyMessage="No active Learning Plans."
+            actionLabel="Archive"
+            onAction={onArchive}
+          />
+          {archivedPlans.length > 0 && (
+            <LearningPlanGroup
+              heading="Archived Plans"
+              learningPlans={archivedPlans}
+              actionLabel="Restore"
+              onAction={onRestore}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function LearningPlanGroup({
+  heading,
+  learningPlans,
+  emptyMessage,
+  actionLabel,
+  onAction,
+}: {
+  heading: string;
+  learningPlans: LearningPlan[];
+  emptyMessage?: string;
+  actionLabel: "Archive" | "Restore";
+  onAction: (learningPlan: LearningPlan) => Promise<void>;
+}) {
+  return (
+    <section
+      className="learning-plan-group"
+      aria-labelledby={`${actionLabel}-plans`}
+    >
+      <h2
+        id={`${actionLabel}-plans`}
+        className={actionLabel === "Archive" ? "visually-hidden" : undefined}
+      >
+        {heading}
+      </h2>
+      {learningPlans.length === 0 ? (
+        <p className="quiet-copy">{emptyMessage}</p>
+      ) : (
+        <ul className="learning-plan-card-grid">
+          {learningPlans.map((learningPlan) => (
+            <li key={learningPlan.id} className="learning-plan-card">
+              <LearningPlanCard learningPlan={learningPlan} />
+              <button
+                type="button"
+                className="quiet-button"
+                aria-label={`${actionLabel} ${learningPlan.name}`}
+                onClick={() => void onAction(learningPlan)}
+              >
+                {actionLabel}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** How a LearningPlan's derived progress reads on its card — never a bare 0/0. */
+function progressLabel(learningPlan: LearningPlan): string {
+  if (learningPlan.total === 0) return "No items added yet";
+  return `${learningPlan.done} of ${learningPlan.total} done`;
+}
+
+/** One LearningPlan as a card that opens the LearningPlan at its opaque, stable URL. */
+function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
+  return (
+    <Link to={`/plans/${learningPlan.id}`} className="learning-plan-card__link">
+      <span className="editorial-eyebrow">
+        {learningPlan.archivedAt ? "Archived plan" : "Active plan"}
+      </span>
+      <span className="learning-plan-card__name">{learningPlan.name}</span>
+      <span className="learning-plan-card__description">
+        Arrange selected material into a path and choose what belongs in Today.
+      </span>
+      <span className="visually-hidden">Open plan</span>
+      <span className="learning-plan-card__meter" aria-hidden="true">
+        <span
+          style={{
+            width: `${completionPercentage(learningPlan)}%`,
+          }}
+        />
+      </span>
+      <span className="learning-plan-card__progress">
+        {progressLabel(learningPlan)} →
+      </span>
+    </Link>
+  );
+}
+
+/** The empty index: a quiet prompt whose only action starts the first LearningPlan. */
+function EmptyLearningPlans() {
+  return (
+    <p className="learning-plans-empty">
+      No Learning Plans yet — name one above to start.
+    </p>
+  );
+}
+
+/**
+ * Name and create a LearningPlan. Deliberately not autofocused: the global Capture
+ * shortcuts (`c` / `⌘K`) must keep working on a freshly loaded Plans room, which they
+ * only do while focus is not already in an editable control.
+ */
+function NewLearningPlanForm({
+  creating,
+  onCreate,
+}: {
+  creating: boolean;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const trimmed = name.trim();
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!trimmed || creating) return;
+    await onCreate(trimmed);
+    setName("");
+  }
+
+  return (
+    <form
+      onSubmit={(event) => void submit(event)}
+      className="new-learning-plan-form"
+    >
+      <label htmlFor="new-learning-plan-name">Learning Plan name</label>
+      <div className="new-learning-plan-form__controls">
+        <input
+          id="new-learning-plan-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="e.g. Learn Rust"
+          className="new-learning-plan-form__input"
+        />
+        <button
+          type="submit"
+          disabled={!trimmed || creating}
+          className="quiet-button quiet-button--primary"
+        >
+          Start a Learning Plan
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Card-shaped skeletons, not a spinner (design spec §6): layout stays stable. */
+function LearningPlansSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading Learning Plans"
+      className="learning-plan-card-grid"
+    >
+      {[0, 1, 2].map((key) => (
+        <div
+          key={key}
+          aria-hidden="true"
+          className="learning-plan-card-skeleton"
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The surface-scoped error: it never removes the shell — just the body. */
+function LearningPlansError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div role="alert" className="surface-error-panel">
+      <p>Couldn't load this</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="quiet-button quiet-button--primary"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}

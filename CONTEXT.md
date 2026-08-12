@@ -1,9 +1,9 @@
 # Unshelf
 
 A personal learning organizer: scattered articles, courses, and offline books
-become one place — captured, arranged into a visual Trail of Stops, and tracked
-to completion. A multi-user product where each User's learning space is
-entirely their own.
+become one place — captured into a Library, arranged into Learning Plans,
+brought into Daily Focus, and tracked to completion. A multi-user product where
+each User's learning space is entirely their own.
 
 ## Language
 
@@ -18,9 +18,9 @@ _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 **Item**:
 A single piece of learning material captured into Unshelf — an article, video,
 course, YouTube playlist, or (offline) book — added by hand: paste a link or type
-a title. Referenced, not copied: one Item can appear in many Stops across
-different Trails, but in at most one Stop on any one Trail, and every placement
-points at the single stored record. "Only one of it" is about model identity —
+a title. Referenced, not copied: one Item can be placed in many Learning Plans,
+but at most once in any one Learning Plan, and every placement points at the
+single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capture the same link twice and you
 have two Items (v1 does not dedupe).
 _Avoid_: Bookmark, Link, Resource, Content
@@ -33,17 +33,17 @@ _Avoid_: Kind, Category, Format
 
 **Status**:
 An Item's item-level progress — _not started_, _in progress_, or _done_. There is
-one Status per Item, shared across every Stop the Item appears in; v1 tracks
-progress here and nowhere finer (no chapter or lesson check-off).
+one Status per Item, shared across every place the Item is referenced. Stage and
+Learning Plan progress derive from this value rather than storing another Status.
 _Avoid_: Progress, State
 
 **Target date**:
 The User's optional, soft "by when" for an Item — one nullable date per Item,
-shared across every Stop it appears in (like Status). It is passive: Unshelf never
+shared across every place it appears in (like Status). It is passive: Unshelf never
 reaches out about it. When the date is past and the Item is not yet done, the Item
 shows a derived _past target_ state; once done, that state clears but the date
 stays as history. There is no Timeline or Schedule record — this field plus the
-Trail's ordering are the whole of "when".
+Learning Plan's ordering are the whole of "when".
 _Avoid_: Deadline, Due date, Schedule, Timeline, Overdue, Late (a target is soft
 and never nags; anything that _reaches out_ is a Reminder, deferred with #7)
 
@@ -62,51 +62,48 @@ _Avoid_: Link, URL, Bookmark
 
 **Capture**:
 The act of adding an Item to Unshelf — one uniform manual entry (required title,
-chosen Type, optional Source) landing in **All**. v1 has a single capture: no
+chosen Type, optional Source) landing in the **Library**. v1 has a single capture: no
 metadata is fetched (you type the title), and there is no bulk **import** from
 other tools. Pasting a link and adding an offline book by title are the same
 capture — the link just fills Source, which is stored verbatim and unvalidated.
 _Avoid_: Import, Ingest, Add, Save (Import means a bulk pull from an external
 tool — a deferred sibling of Capture, not a synonym)
 
-**All**:
-The single catch-all folder every captured Item lands in — the raw dump. In v1
-the only folder, as Raindrop has one default collection. Organising happens by
-pulling Items into Stops, not by creating more folders.
-_Redesign note (ADR-0014, map #53):_ the web-UI redesign names this surface
-**Library** in the UI — the model concept (the catch-all every capture lands in) is
-unchanged; only the user-facing name differs. The target model also adds a
-many-to-many **label** axis over it (built downstream, #74).
-_Avoid_: Inbox, All-items, Dump (and — pre-redesign — Library, now the UI name)
+**Library**:
+The durable, flat home of every Item. Membership is inherent in Item existence
+rather than a separate filing relationship; Capture lands there without implying
+categorisation, commitment, or daily priority.
+_Avoid_: All, Folder, Inbox, All-items, Dump
 
-**Stop**:
-A flat grouping the User forms by pulling one or more Items together — the single
-organising concept in v1 (no tags, sub-Stops, or extra folders). Its Items are an
-unordered set; ordering between Stops is expressed on the Trail, not within a Stop.
-An Item may belong to Stops on several Trails, but to at most one Stop on a given
-Trail, so a Trail sequences that shared Item once.
-One uniform kind of Stop serves every purpose: whether it stands for a topic to
-learn ("Learn CSS") or a project to build ("Build the API") is how the User uses
-it, not a type the model distinguishes. A Stop is also what appears as a node on
-the Trail.
-_Avoid_: Group, Collection, Bucket, Milestone, Tag, Topic, Node (a Stop is _shown_ as a node)
+**Stage**:
+An optional, named grouping inside one Learning Plan for Items that share a
+meaningful phase, sub-outcome, prerequisite boundary, or checkpoint. Items may
+also be placed directly in the Learning Plan; a Stage is never a mandatory
+sequencing wrapper. Its Items have a local order, and its progress is derived
+from their shared Statuses rather than stored as a separate state.
+_Avoid_: Stop, Folder, Bucket, mandatory wrapper
 
-**Trail**:
-A visual arrangement of Stops in sequence (Stop 1 → Stop 2 → …) with forks where
-threads run in parallel. It expresses "what to do first / next" as topology; in
-v1 it carries no dates or calendar.
-_Avoid_: Map, Roadmap, Timeline, Schedule, Graph
+**Learning Plan**:
+A durable, User-authored arrangement of shared Library Items toward a learning
+outcome. It expresses commitment and plan-specific role or position without
+duplicating an Item or its shared Status; it owns Item placements directly, may
+group some into optional Stages, and may be active or archived. Its arrangement
+forms a directed acyclic graph—an ordinary sequence is one path and forks express
+parallel study—and its progress is derived from its current unique Items.
+_Avoid_: Trail, Map, Roadmap, Timeline, Schedule, Graph
+
+**Daily Focus**:
+A dated selection of whole Items chosen for current attention from the Library or
+one or more Learning Plans. Selecting an Item changes neither its Library nor plan
+placement; when selected from a Learning Plan, the selection may retain that
+specific placement as origin context. The current day is editable, while a past
+day preserves its membership and each Item's day-end Status as history.
+_Avoid_: Task list, Learning Plan, Status
 
 **Label**:
-A free-text marker a User creates and applies to an Item to categorise it — the
-cross-cutting axis over the store (the **Library**). Many-to-many: an Item can carry
-several Labels and a Label spans many Items. Each User creates and customises their
-own Labels, private to that User like everything else. Distinct from a **Stop**: a Label categorises Items across
-the whole store, whereas a Stop sequences Items within one Trail — the two are
-independent axes. Readmits the "tag" idea ADR-0004 set aside: once the Stop is a
-per-Trail waypoint (ADR-0014) the store needs this cross-cutting grouping. A
-next-gen concept — the model realisation (schema, enforcement) is built downstream
-(#74).
+A free-text marker a User optionally applies to Items as durable, many-to-many
+categorisation across the **Library**. A Label carries no order, commitment,
+Status, progress, or Daily Focus priority; each User owns and customises their own.
 _Avoid_: Tag (the former name — now Label), Category, Bucket, Folder, Topic
 
 ### Reminders (deferred from v1)
@@ -116,7 +113,7 @@ Anything Unshelf sends _out_ to prompt the User — the whole "reaches out" fami
 a due-nudge on a Target date, a backlog/staleness nudge ("untouched for 3 weeks"),
 or a Revision prompt. Deferred entirely from v1 (#7): v1 is passive — the User
 consults Unshelf, never the reverse. A backlog _pile_ needs no term of its own — it
-is simply the _not started_ Items in **All**.
+is simply the _not started_ Items in the **Library**.
 _Avoid_: Notification, Nudge, Alert, Backlog (a backlog nudge is one kind of Reminder)
 
 **Revision**:

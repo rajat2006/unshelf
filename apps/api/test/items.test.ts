@@ -88,7 +88,7 @@ describe("POST /api/items — capture", () => {
     expect(item.targetDate).toBeNull();
     expect(item.pastTarget).toBe(false);
     expect(item.completedAt).toBeNull();
-    expect(item).not.toHaveProperty("createdAt");
+    expect(Number.isNaN(Date.parse(item.createdAt))).toBe(false);
   });
 
   it("adds an offline Item by title alone — source is optional", async () => {
@@ -240,7 +240,7 @@ describe("GET /api/items/:itemId — canonical Item read", () => {
     const res = await readItem("clerk_item_read_owner", item.id);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(item);
+    expect(res.body).toEqual({ ...item, parts: [], partPercentage: null });
   });
 
   it("treats another User's Item as missing", async () => {
@@ -667,6 +667,38 @@ describe("GET /api/items — All", () => {
     const titles = (res.body as Item[]).map((item) => item.title);
     expect(titles).toContain("One");
     expect(titles).toContain("Two");
+  });
+
+  it("lists recently captured Items first with stable identity as the tie-breaker", async () => {
+    const clerkUserId = "clerk_all_recent";
+    const first = (
+      await capture(clerkUserId, { title: "Same-time B", type: "article" })
+    ).body as Item;
+    const second = (
+      await capture(clerkUserId, { title: "Newest", type: "video" })
+    ).body as Item;
+    const third = (
+      await capture(clerkUserId, { title: "Same-time A", type: "book" })
+    ).body as Item;
+    await harness.pool.query(
+      `UPDATE items
+       SET created_at = CASE
+         WHEN id = $1 THEN '2026-01-02T00:00:00.000Z'::timestamptz
+         ELSE '2026-01-01T00:00:00.000Z'::timestamptz
+       END
+       WHERE id = ANY($2::uuid[])`,
+      [second.id, [first.id, second.id, third.id]],
+    );
+
+    const listed = (await listAll(clerkUserId)).body as Item[];
+    const tied = [first, third].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+
+    expect(listed.map((item) => item.id)).toEqual([
+      second.id,
+      ...tied.map((item) => item.id),
+    ]);
   });
 
   it("refuses an unauthenticated read of All", async () => {

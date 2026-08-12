@@ -1,6 +1,6 @@
 # TASK
 
-Survey this repository at its current `main` checkout and find the **single
+Survey this repository at its current `{{BASE_BRANCH}}` checkout and find the **single
 freshest deepening opportunity** — one shallow module that could become a deep
 one — then write it up as a **complete PRD** a maintainer can hand straight to
 `agent:to-issues`. If there is nothing fresh worth proposing, say so and skip.
@@ -23,7 +23,7 @@ an interactive flow.
 
 # CONTEXT
 
-This is a whole-tree sweep on `main`, not a diff review. Orient yourself:
+This is a whole-tree sweep on `{{BASE_BRANCH}}`, not a diff review. Orient yourself:
 
 ```
 git log --oneline -20

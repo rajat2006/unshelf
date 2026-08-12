@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
@@ -29,9 +29,8 @@ import { runWithExtraction } from "../run-with-extraction";
  * runs `gh pr ready`.
  */
 
-const REVIEW_BASE = "origin/main";
-
 const ctx = loadCapabilityContext("review");
+const reviewBase = `origin/${ctx.baseBranch}`;
 logResolvedAgent(ctx);
 
 // Same subscription-seat setup as the other agent phases — a no-op when the run
@@ -57,7 +56,7 @@ const result = await runWithExtraction({
 // HEAD before posting), so its new-side line numbers are the ones an inline
 // review comment must anchor to — GitHub's reviews API rejects the whole review
 // if any comment points off-diff.
-const diff = execSync(`git diff ${REVIEW_BASE}...HEAD`, {
+const diff = execFileSync("git", ["diff", `${reviewBase}...HEAD`], {
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
 });

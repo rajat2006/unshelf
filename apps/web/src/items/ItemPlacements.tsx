@@ -3,15 +3,16 @@ import { Link } from "react-router";
 import type {
   ItemId,
   ItemPlacementCatalog,
-  PlacementStop,
-  StopId,
-  TrailId,
+  PlacementStage,
+  StageId,
+  LearningPlanId,
 } from "@unshelf/shared";
 import {
-  addItemToStop,
-  createStopWithItem,
+  addItemToStage,
+  createStageWithItem,
   fetchItemPlacements,
-  removeItemFromStop,
+  removeDirectItemFromLearningPlan,
+  removeItemFromStage,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 
@@ -23,7 +24,7 @@ interface ItemPlacementsProps {
 }
 
 /**
- * One Item's Trail-qualified placement state and existing-Stop destinations.
+ * One Item's LearningPlan-qualified placement state and existing-Stage destinations.
  * The catalog is refreshed after every write, so a conflict or removal is
  * reconciled without leaving the route-owned sidebar.
  */
@@ -39,11 +40,11 @@ export function ItemPlacements({
   const [retryAction, setRetryAction] = useState<(() => Promise<void>) | null>(
     null,
   );
-  const [creatingOn, setCreatingOn] = useState<TrailId | null>(null);
-  const [newStopName, setNewStopName] = useState(itemTitle);
+  const [creatingOn, setCreatingOn] = useState<LearningPlanId | null>(null);
+  const [newStageName, setNewStageName] = useState(itemTitle);
   const [lastCreated, setLastCreated] = useState<{
-    trailId: TrailId;
-    stop: PlacementStop;
+    learningPlanId: LearningPlanId;
+    stage: PlacementStage;
   } | null>(null);
 
   const load = useCallback(async () => {
@@ -93,33 +94,42 @@ export function ItemPlacements({
     }
   };
 
-  const place = (stopId: StopId) =>
+  const place = (stageId: StageId) =>
     runPlacementMutation(async () => {
-      await addItemToStop(user, stopId, itemId);
+      await addItemToStage(user, stageId, itemId);
       await load();
       onChanged?.();
     });
-  const remove = (stopId: StopId) =>
+  const remove = (stageId: StageId) =>
     runPlacementMutation(async () => {
-      await removeItemFromStop(user, stopId, itemId);
+      await removeItemFromStage(user, stageId, itemId);
       await load();
       onChanged?.();
     });
-  const create = (trailId: TrailId, name: string) =>
+  const removeDirect = (learningPlanId: LearningPlanId) =>
+    runPlacementMutation(async () => {
+      await removeDirectItemFromLearningPlan(user, learningPlanId, itemId);
+      await load();
+      onChanged?.();
+    });
+  const create = (learningPlanId: LearningPlanId, name: string) =>
     runPlacementMutation(
       async () => {
-        const stop = await createStopWithItem(user, itemId, { trailId, name });
-        const placementStop = { id: stop.id, name: stop.name };
+        const stage = await createStageWithItem(user, itemId, {
+          learningPlanId,
+          name,
+        });
+        const placementStage = { id: stage.id, name: stage.name };
         setCatalog((current) =>
           current
             ? {
                 ...current,
-                trails: current.trails.map((state) =>
-                  state.trail.id === trailId
+                learningPlans: current.learningPlans.map((state) =>
+                  state.learningPlan.id === learningPlanId
                     ? {
                         kind: "placed",
-                        trail: state.trail,
-                        stop: placementStop,
+                        learningPlan: state.learningPlan,
+                        stage: placementStage,
                       }
                     : state,
                 ),
@@ -127,15 +137,17 @@ export function ItemPlacements({
             : current,
         );
         setLastCreated({
-          trailId,
-          stop: placementStop,
+          learningPlanId,
+          stage: placementStage,
         });
         setCreatingOn(null);
         onChanged?.();
         try {
           await load();
         } catch (caught: unknown) {
-          setError(`Could not refresh Trail placements: ${String(caught)}`);
+          setError(
+            `Could not refresh Learning Plan placements: ${String(caught)}`,
+          );
           setRetryAction(() => async () => {
             await load();
           });
@@ -143,8 +155,10 @@ export function ItemPlacements({
       },
       {
         retryStillAppliesAfterReconciliation: (reconciled) =>
-          reconciled.trails.some(
-            (state) => state.trail.id === trailId && state.kind === "available",
+          reconciled.learningPlans.some(
+            (state) =>
+              state.learningPlan.id === learningPlanId &&
+              state.kind === "available",
           ),
       },
     );
@@ -155,12 +169,12 @@ export function ItemPlacements({
         className="item-placements"
         aria-labelledby="item-placements-title"
       >
-        <h3 id="item-placements-title">Trail placements</h3>
+        <h3 id="item-placements-title">Learning Plan placements</h3>
         {!error ? (
-          <p role="status">Loading Trail placements…</p>
+          <p role="status">Loading Learning Plan placements…</p>
         ) : (
           <PlacementError
-            message={`Could not load Trail placements: ${error}`}
+            message={`Could not load Learning Plan placements: ${error}`}
             retryAction={retryAction}
             onRetry={runPlacementMutation}
           />
@@ -169,74 +183,104 @@ export function ItemPlacements({
     );
   }
 
-  const placed = catalog.trails.filter((trail) => trail.kind === "placed");
+  const placed = catalog.learningPlans.filter(
+    (learningPlan) =>
+      learningPlan.kind === "placed" ||
+      learningPlan.kind === "placed_direct" ||
+      (learningPlan.kind === "archived" && learningPlan.placement !== null),
+  );
 
   return (
     <section
       className="item-placements"
       aria-labelledby="item-placements-title"
     >
-      <h3 id="item-placements-title">Trail placements</h3>
+      <h3 id="item-placements-title">Learning Plan placements</h3>
       {placed.length === 0 ? (
-        <p>Not on a Trail</p>
+        <p>Not on a Learning Plan</p>
       ) : (
-        <ul aria-label="Current Trail placements">
-          {placed.map(({ trail, stop }) => (
-            <li key={trail.id}>
+        <ul aria-label="Current Learning Plan placements">
+          {placed.map((state) => (
+            <li key={state.learningPlan.id}>
               <span>
-                {trail.name} · {stop.name}
+                {state.learningPlan.name}
+                {state.kind === "placed" ? ` · ${state.stage.name}` : ""}
+                {state.kind === "archived" &&
+                state.placement !== null &&
+                state.placement !== "direct"
+                  ? ` · ${state.placement.name}`
+                  : ""}
+                {state.kind === "archived" ? " · Archived" : ""}
               </span>
               <span className="item-placement-actions">
-                {lastCreated?.trailId === trail.id &&
-                  lastCreated.stop.id === stop.id && (
-                    <Link to={`/trails/${trail.id}/stops/${stop.id}`}>
-                      Open Stop
+                {state.kind === "placed" &&
+                  lastCreated?.learningPlanId === state.learningPlan.id &&
+                  lastCreated.stage.id === state.stage.id && (
+                    <Link
+                      to={`/plans/${state.learningPlan.id}/stages/${state.stage.id}`}
+                    >
+                      Open Stage
                     </Link>
                   )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void remove(stop.id)}
-                  aria-label={`Remove from ${trail.name} · ${stop.name}`}
-                >
-                  Remove
-                </button>
+                {state.kind !== "archived" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      state.kind === "placed"
+                        ? void remove(state.stage.id)
+                        : void removeDirect(state.learningPlan.id)
+                    }
+                    aria-label={
+                      state.kind === "placed"
+                        ? `Remove from ${state.learningPlan.name} · ${state.stage.name}`
+                        : `Remove from ${state.learningPlan.name}`
+                    }
+                  >
+                    Remove
+                  </button>
+                )}
               </span>
             </li>
           ))}
         </ul>
       )}
 
-      {catalog.trails.length === 0 ? (
+      {catalog.learningPlans.length === 0 ? (
         <p>
-          No Trails yet. <Link to="/">Create a Trail first</Link>.
+          No Learning Plans yet.{" "}
+          <Link to="/plans">Create a Learning Plan first</Link>.
         </p>
       ) : (
         <details>
-          <summary>Add to Trail…</summary>
+          <summary>Add to Learning Plan…</summary>
           <ul className="item-placement-destinations">
-            {catalog.trails.map((state) => (
-              <li key={state.trail.id}>
-                <strong>{state.trail.name}</strong>
-                {state.kind === "placed" ? (
-                  <span>Already in {state.stop.name}</span>
+            {catalog.learningPlans.map((state) => (
+              <li key={state.learningPlan.id}>
+                <strong>{state.learningPlan.name}</strong>
+                {state.kind === "archived" ? (
+                  <span>Archived · read-only</span>
+                ) : state.kind === "placed" ? (
+                  <span>Already in {state.stage.name}</span>
+                ) : state.kind === "placed_direct" ? (
+                  <span>Already placed directly</span>
                 ) : (
                   <div className="item-placement-choice">
-                    {state.stops.length > 0 && (
+                    {state.stages.length > 0 && (
                       <select
-                        aria-label={`Add to ${state.trail.name}`}
+                        aria-label={`Add to ${state.learningPlan.name}`}
                         value=""
                         disabled={busy}
                         onChange={(event) =>
-                          void place(event.target.value as StopId)
+                          void place(event.target.value as StageId)
                         }
                       >
                         <option value="" disabled>
-                          Choose a Stop…
+                          Choose a Stage…
                         </option>
-                        {state.stops.map((stop) => (
-                          <option key={stop.id} value={stop.id}>
-                            {stop.name}
+                        {state.stages.map((stage) => (
+                          <option key={stage.id} value={stage.id}>
+                            {stage.name}
                           </option>
                         ))}
                       </select>
@@ -245,21 +289,23 @@ export function ItemPlacements({
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        setCreatingOn(state.trail.id);
-                        setNewStopName(itemTitle);
+                        setCreatingOn(state.learningPlan.id);
+                        setNewStageName(itemTitle);
                       }}
                     >
-                      New Stop
+                      New Stage
                     </button>
-                    {creatingOn === state.trail.id && (
-                      <NewStopForm
-                        trailName={state.trail.name}
-                        name={newStopName}
-                        existingStops={state.stops}
+                    {creatingOn === state.learningPlan.id && (
+                      <NewStageForm
+                        learningPlanName={state.learningPlan.name}
+                        name={newStageName}
+                        existingStages={state.stages}
                         busy={busy}
-                        onNameChange={setNewStopName}
+                        onNameChange={setNewStageName}
                         onCancel={() => setCreatingOn(null)}
-                        onSubmit={(name) => void create(state.trail.id, name)}
+                        onSubmit={(name) =>
+                          void create(state.learningPlan.id, name)
+                        }
                       />
                     )}
                   </div>
@@ -282,38 +328,40 @@ export function ItemPlacements({
   );
 }
 
-interface NewStopFormProps {
-  trailName: string;
+interface NewStageFormProps {
+  learningPlanName: string;
   name: string;
-  existingStops: PlacementStop[];
+  existingStages: PlacementStage[];
   busy: boolean;
   onNameChange: (name: string) => void;
   onCancel: () => void;
   onSubmit: (name: string) => void;
 }
 
-function NewStopForm({
-  trailName,
+function NewStageForm({
+  learningPlanName,
   name,
-  existingStops,
+  existingStages,
   busy,
   onNameChange,
   onCancel,
   onSubmit,
-}: NewStopFormProps) {
+}: NewStageFormProps) {
   const trimmedName = name.trim();
-  const repeatsName = existingStops.some((stop) => stop.name === trimmedName);
+  const repeatsName = existingStages.some(
+    (stage) => stage.name === trimmedName,
+  );
 
   return (
     <form
-      className="item-new-stop-form"
+      className="item-new-stage-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (trimmedName) onSubmit(trimmedName);
       }}
     >
       <label>
-        Stop name on {trailName}
+        Stage name on {learningPlanName}
         <input
           autoFocus
           required
@@ -324,13 +372,13 @@ function NewStopForm({
       </label>
       {repeatsName && (
         <p role="status">
-          A Stop on this Trail already has this name. You can still create
-          another.
+          A Stage on this Learning Plan already has this name. You can still
+          create another.
         </p>
       )}
       <span>
         <button type="submit" disabled={busy || !trimmedName}>
-          Create Stop
+          Create Stage
         </button>
         <button type="button" disabled={busy} onClick={onCancel}>
           Cancel

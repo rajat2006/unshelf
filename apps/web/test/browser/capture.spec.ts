@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { testAppUrl } from "./test-helpers";
+import { testApi, testAppUrl } from "./test-helpers";
 
 /**
  * Capture as a global chrome action (#92, design spec §3, ADR-0014). Capture is a
@@ -29,9 +29,11 @@ function composer(page: Page) {
 // Every signed-in surface carries the same global Capture action, and opening it
 // never changes the route — it opens over wherever the User already was.
 for (const surface of [
-  { name: "Trails index", path: "/" },
+  { name: "Today", path: "/today" },
+  { name: "Daily Focus history", path: "/today/2026-08-11" },
+  { name: "Plans index", path: "/plans" },
   { name: "Library", path: "/library" },
-  { name: "a Trail", path: "/trails/trail-1" },
+  { name: "a LearningPlan", path: "/plans/learning-plan-1" },
   { name: "an Item", path: "/items/item-1" },
 ]) {
   test(`Capture opens over ${surface.name} without changing the URL`, async ({
@@ -44,7 +46,7 @@ for (const surface of [
     await expect(composer(page)).toBeVisible();
     expect(page.url()).toBe(urlBefore);
 
-    // The composer names its destination: intake lands in the Library, not a Trail.
+    // The composer names its destination: intake lands in the Library, not a LearningPlan.
     await expect(
       composer(page).getByText(/land in your Library/),
     ).toBeVisible();
@@ -59,7 +61,7 @@ for (const surface of [
 test("Command/Ctrl+K opens Capture when focus is not in an editable control", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await expect(composer(page)).toBeHidden();
 
   await page.keyboard.press("Control+k");
@@ -69,7 +71,7 @@ test("Command/Ctrl+K opens Capture when focus is not in an editable control", as
 test("the c shortcut opens Capture when focus is not in an editable control", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await expect(composer(page)).toBeHidden();
 
   await page.keyboard.press("c");
@@ -79,9 +81,9 @@ test("the c shortcut opens Capture when focus is not in an editable control", as
 test("shortcuts are suppressed while focus is in an editable control", async ({
   page,
 }, testInfo) => {
-  // Home carries an editable field (the Trail-name composer); focus it.
-  await page.goto(appUrl(testInfo, "/"));
-  const field = page.getByLabel("Trail name");
+  // Plans carries an editable field (the Learning Plan-name composer); focus it.
+  await page.goto(appUrl(testInfo, "/plans"));
+  const field = page.getByLabel("Learning Plan name");
   await field.click();
   await page.keyboard.press("c");
   await expect(composer(page)).toBeHidden();
@@ -112,6 +114,44 @@ test("a successful capture lands the Item in the Library and leaves the User on 
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 });
 
+test("an offline Capture from a Learning Plan stays uncommitted and preserves Plan context", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-capture-from-plan`;
+  const learningPlan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Systems path",
+    })
+  ).json()) as { id: string };
+  const planUrl = appUrl(testInfo, `/plans/${learningPlan.id}`, user);
+  await page.goto(planUrl);
+
+  await captureButton(page).click();
+  const dialog = composer(page);
+  await dialog.getByLabel("Title").fill("Offline systems book");
+  await dialog.getByLabel("Type").selectOption("book");
+  await dialog.getByRole("button", { name: "Add to Library" }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(`${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe(
+    planUrl,
+  );
+  const items = (await (
+    await testApi(page, user, "/api/items")
+  ).json()) as Array<{ id: string; source: string | null; labels: unknown[] }>;
+  expect(items).toEqual([
+    expect.objectContaining({ source: null, labels: [] }),
+  ]);
+  const placements = (await (
+    await testApi(page, user, `/api/items/${items[0].id}/placements`)
+  ).json()) as {
+    learningPlans: Array<{ kind: string }>;
+  };
+  expect(placements.learningPlans).toEqual([
+    expect.objectContaining({ kind: "available" }),
+  ]);
+});
+
 test("Capture preserves Source verbatim and allows duplicate Sources", async ({
   page,
 }, testInfo) => {
@@ -139,7 +179,7 @@ test("Capture preserves Source verbatim and allows duplicate Sources", async ({
 test("validation keeps an incomplete capture inside the overlay", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/"));
+  await page.goto(appUrl(testInfo, "/plans"));
   await captureButton(page).click();
   const dialog = composer(page);
 

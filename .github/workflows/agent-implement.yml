@@ -32,6 +32,7 @@ jobs:
       issues: write
 
     env:
+      BASE_BRANCH: ${{ github.event.repository.default_branch }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       ISSUE_TITLE: ${{ github.event.issue.title }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -185,11 +186,11 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:blocked" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
 
-      - name: Checkout main
+      - name: Checkout default branch
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
           # AGENT_PAT so a push may include changes under .github/workflows/
           # (GITHUB_TOKEN lacks the `workflows` scope). Falls back to
@@ -314,7 +315,7 @@ jobs:
           pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")
           pr_url=$(gh pr create \
             --draft \
-            --base main \
+            --base "$BASE_BRANCH" \
             --head "$BRANCH" \
             --title "$pr_title" \
             --body-file "${RUNNER_TEMP}/pr_description.txt")

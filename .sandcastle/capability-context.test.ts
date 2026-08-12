@@ -25,6 +25,7 @@ const ENV_KEYS = [
   "ISSUE_NUMBER",
   "ISSUE_TITLE",
   "BRANCH",
+  "BASE_BRANCH",
   "OUTPUT_DIR",
   "AGENT_LABELS",
 ];
@@ -34,6 +35,7 @@ function setEnv(overrides: Record<string, string | undefined> = {}) {
     ISSUE_NUMBER: "63",
     ISSUE_TITLE: "agent-implement workflow",
     BRANCH: "agent/issue-63-agent-implement-workflow",
+    BASE_BRANCH: "dev",
     OUTPUT_DIR: "/run/tmp",
     // Pinned to Claude so the model/effort assertions below test the
     // capability policy, not whatever DEFAULT_PROVIDER currently is.
@@ -60,6 +62,7 @@ describe("loadCapabilityContext", () => {
     expect(ctx.issueNumber).toBe("63");
     expect(ctx.issueTitle).toBe("agent-implement workflow");
     expect(ctx.branch).toBe("agent/issue-63-agent-implement-workflow");
+    expect(ctx.baseBranch).toBe("dev");
     expect(ctx.outputDir).toBe("/run/tmp");
   });
 
@@ -69,6 +72,7 @@ describe("loadCapabilityContext", () => {
       ISSUE_NUMBER: "63",
       ISSUE_TITLE: "agent-implement workflow",
       BRANCH: "agent/issue-63-agent-implement-workflow",
+      BASE_BRANCH: "dev",
     });
   });
 
@@ -122,6 +126,7 @@ describe("loadIssueCapabilityContext", () => {
     expect(loadIssueCapabilityContext("explore")).toMatchObject({
       issueNumber: "63",
       issueTitle: "agent-implement workflow",
+      baseBranch: "dev",
       outputDir: "/run/tmp",
       // Think-tier resolution — distinct from the Build tier, so a resolver
       // that ignored the forwarded capability would fail here.
@@ -130,6 +135,7 @@ describe("loadIssueCapabilityContext", () => {
       promptArgs: {
         ISSUE_NUMBER: "63",
         ISSUE_TITLE: "agent-implement workflow",
+        BASE_BRANCH: "dev",
       },
     });
   });
@@ -156,6 +162,7 @@ const PRD_ENV_KEYS = [
   "SUB_ISSUE_NUMBER",
   "SUB_ISSUE_TITLE",
   "BRANCH",
+  "BASE_BRANCH",
   "OUTPUT_DIR",
   "AGENT_LABELS",
 ];
@@ -167,6 +174,7 @@ function setPrdEnv(overrides: Record<string, string | undefined> = {}) {
     SUB_ISSUE_NUMBER: "68",
     SUB_ISSUE_TITLE: "agent-implement-prd workflow",
     BRANCH: "agent/prd-52-build-the-sandcastle-platform",
+    BASE_BRANCH: "dev",
     OUTPUT_DIR: "/run/tmp",
     // Pinned to Claude so the model/effort assertions below test the
     // capability policy, not whatever DEFAULT_PROVIDER currently is.
@@ -191,6 +199,7 @@ describe("loadPrdPrContext", () => {
     const ctx = loadPrdPrContext("write-prd-pr");
     expect(ctx.prdNumber).toBe("52");
     expect(ctx.prdTitle).toBe("Build the Sandcastle platform");
+    expect(ctx.baseBranch).toBe("dev");
     expect(ctx.outputDir).toBe("/run/tmp");
   });
 
@@ -199,6 +208,7 @@ describe("loadPrdPrContext", () => {
     expect(loadPrdPrContext("write-prd-pr").promptArgs).toEqual({
       PRD_NUMBER: "52",
       PRD_TITLE: "Build the Sandcastle platform",
+      BASE_BRANCH: "dev",
     });
   });
 
@@ -237,6 +247,7 @@ describe("loadPrdImplementContext", () => {
     expect(ctx.subIssueNumber).toBe("68");
     expect(ctx.subIssueTitle).toBe("agent-implement-prd workflow");
     expect(ctx.branch).toBe("agent/prd-52-build-the-sandcastle-platform");
+    expect(ctx.baseBranch).toBe("dev");
   });
 
   it("exposes promptArgs shaped for {{...}} substitution", () => {
@@ -247,6 +258,7 @@ describe("loadPrdImplementContext", () => {
       SUB_ISSUE_NUMBER: "68",
       SUB_ISSUE_TITLE: "agent-implement-prd workflow",
       BRANCH: "agent/prd-52-build-the-sandcastle-platform",
+      BASE_BRANCH: "dev",
     });
   });
 

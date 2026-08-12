@@ -98,10 +98,13 @@ describe("production logger", () => {
     const databaseUrl =
       "postgresql://unshelf:renderer-db-password-sentinel@database:5432/unshelf";
     const failure = Object.assign(
-      new Error(`Item trail-42 failed: ${clerkSecret} ${databaseUrl}`),
+      new Error(`Item learningPlan-42 failed: ${clerkSecret} ${databaseUrl}`),
       {
         query: `select 'TypeScript' /* ${clerkSecret} */`,
-        parameters: ["trail-42", { password: "renderer-parameter-sentinel" }],
+        parameters: [
+          "learningPlan-42",
+          { password: "renderer-parameter-sentinel" },
+        ],
       },
     );
 
@@ -115,7 +118,7 @@ describe("production logger", () => {
     });
 
     expect(destination.output).not.toContain("sentinel");
-    expect(destination.output).toContain("trail-42");
+    expect(destination.output).toContain("learningPlan-42");
     expect(destination.output).toContain("TypeScript");
     expect(destination.output).toContain("[REDACTED]");
   });

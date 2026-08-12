@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
@@ -15,13 +15,13 @@ import { verifyBranchUpdate } from "../verify-branch-update";
 
 /**
  * The `update-branch` capability: resolve the merge conflicts that stop a stale
- * PR branch from coming current with `main`, and commit the merge.
+ * PR branch from coming current with its base branch, and commit the merge.
  *
  * Invoked by `.github/workflows/agent-update-branch.yml` ONLY when the workflow's
- * deterministic `git merge origin/main` hit conflicts — an already-current or
+ * deterministic base-branch merge hit conflicts — an already-current or
  * cleanly-mergeable branch is handled in the workflow without spending an agent
  * (CVM parity). A **two-phase** capability ({@link runWithExtraction}): the
- * produce pass re-merges `origin/main`, resolves the conflicts, runs the repo's
+ * produce pass re-merges the base, resolves the conflicts, runs the repo's
  * checks, and commits (reasoning in prose); the resumed extraction pass emits the
  * outcome as one `<output>` block — so the agent never has to both resolve a
  * merge and serialise rigid JSON in one turn, and a malformed block self-corrects
@@ -32,7 +32,7 @@ import { verifyBranchUpdate } from "../verify-branch-update";
  * a success-shaped block. Two guards convert that into a real `agent:blocked`:
  *   1. An explicit `outcome: blocked` fails the run with the agent's reason.
  *   2. {@link verifyBranchUpdate} cross-checks a success claim against the real
- *      git state (origin/main is now an ancestor of HEAD, HEAD advanced, no
+ *      git state (the base is now an ancestor of HEAD, HEAD advanced, no
  *      unresolved paths, no lingering merge state, a clean tree) — a failed
  *      postcondition fails the run — so an aborted or half-finished merge is
  *      never pushed.
@@ -44,6 +44,7 @@ import { verifyBranchUpdate } from "../verify-branch-update";
  */
 
 const ctx = loadCapabilityContext("update-branch");
+const baseRef = `origin/${ctx.baseBranch}`;
 logResolvedAgent(ctx);
 
 // Same subscription-seat setup as the other agent phases — a no-op when the run
@@ -52,8 +53,13 @@ prepareCodexAuth(ctx.agent.name);
 
 // Snapshot the pre-run git state so the postcondition check can tell "a merge
 // commit was actually made" from "nothing changed" (see verifyBranchUpdate).
-const headBefore = gitOut("git rev-parse HEAD");
-const mainWasAncestorBefore = gitOk("git merge-base --is-ancestor origin/main HEAD");
+const headBefore = gitOut("rev-parse", "HEAD");
+const baseWasAncestorBefore = gitOk(
+  "merge-base",
+  "--is-ancestor",
+  baseRef,
+  "HEAD",
+);
 
 const result = await runWithExtraction({
   name: `update-branch-#${ctx.issueNumber}`,
@@ -85,13 +91,14 @@ if (result.output.outcome === "blocked") {
 // the workflow is allowed to push anything.
 const verdict = verifyBranchUpdate({
   claimedOutcome: result.output.outcome,
+  baseRef,
   headBefore,
-  headAfter: gitOut("git rev-parse HEAD"),
-  mainWasAncestorBefore,
-  mainIsAncestor: gitOk("git merge-base --is-ancestor origin/main HEAD"),
-  inMergeState: gitOk("git rev-parse -q --verify MERGE_HEAD"),
-  unresolvedPaths: gitLines("git diff --name-only --diff-filter=U"),
-  treeDirty: gitOut("git status --porcelain").length > 0,
+  headAfter: gitOut("rev-parse", "HEAD"),
+  baseWasAncestorBefore,
+  baseIsAncestor: gitOk("merge-base", "--is-ancestor", baseRef, "HEAD"),
+  inMergeState: gitOk("rev-parse", "-q", "--verify", "MERGE_HEAD"),
+  unresolvedPaths: gitLines("diff", "--name-only", "--diff-filter=U"),
+  treeDirty: gitOut("status", "--porcelain").length > 0,
 });
 if (!verdict.ok) {
   fail(`Post-merge verification failed: ${verdict.reason}`);
@@ -118,9 +125,11 @@ function buildUpdateComment(output: UpdateBranchOutput): string {
   const body: string[] = ["## 🔄 Branch update", "", output.summary, ""];
 
   if (output.outcome === "already-current") {
-    body.push("The branch was already current with `main` — no merge was made.");
+    body.push(
+      `The branch was already current with \`${ctx.baseBranch}\` — no merge was made.`,
+    );
   } else if (output.conflicts.length === 0) {
-    body.push("Merged `main` in cleanly — no conflicts.");
+    body.push(`Merged \`${ctx.baseBranch}\` in cleanly — no conflicts.`);
   } else {
     body.push(`### Conflicts resolved (${output.conflicts.length})`, "");
     for (const c of output.conflicts) {
@@ -132,14 +141,14 @@ function buildUpdateComment(output: UpdateBranchOutput): string {
 }
 
 /** Run a git command and return its trimmed stdout. */
-function gitOut(cmd: string): string {
-  return execSync(cmd, { encoding: "utf8" }).trim();
+function gitOut(...args: string[]): string {
+  return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
 /** Run a git command for its exit status; true when it exits 0. */
-function gitOk(cmd: string): boolean {
+function gitOk(...args: string[]): boolean {
   try {
-    execSync(cmd, { stdio: "ignore" });
+    execFileSync("git", args, { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -147,8 +156,8 @@ function gitOk(cmd: string): boolean {
 }
 
 /** Run a git command and return its non-empty output lines, trimmed. */
-function gitLines(cmd: string): string[] {
-  return gitOut(cmd)
+function gitLines(...args: string[]): string[] {
+  return gitOut(...args)
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);

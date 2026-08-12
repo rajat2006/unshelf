@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import {
-  serializeDiagnosticValue,
-  serializeFailure,
-} from "../src/diagnostics";
+import { serializeDiagnosticValue, serializeFailure } from "../src/diagnostics";
 
 describe("failure diagnostics", () => {
   it("retains five nested Error causes and safely represents non-Error throws", () => {
@@ -78,7 +75,7 @@ describe("failure diagnostics", () => {
       "postgresql://unshelf:db-password-sentinel@database:5432/unshelf";
     const failure = Object.assign(
       new Error(
-        `Item trail-42 failed with ${clerkSecret} at postgresql://reader:url-password-sentinel@database:5432/unshelf password=inline-password-sentinel`,
+        `Item learningPlan-42 failed with ${clerkSecret} at postgresql://reader:url-password-sentinel@database:5432/unshelf password=inline-password-sentinel`,
         {
           cause: new Error(
             `safe-cause contained client_secret=nested-secret-sentinel`,
@@ -88,7 +85,7 @@ describe("failure diagnostics", () => {
       {
         query: `select * from items where title = 'TypeScript' /* ${clerkSecret} */`,
         parameters: [
-          "trail-42",
+          "learningPlan-42",
           {
             apiKey: "api-key-sentinel",
             note: "keep this note",
@@ -131,7 +128,7 @@ describe("failure diagnostics", () => {
     ]) {
       expect(rendered).not.toContain(sentinel);
     }
-    expect(rendered).toContain("trail-42");
+    expect(rendered).toContain("learningPlan-42");
     expect(rendered).toContain("TypeScript");
     expect(rendered).toContain("keep this note");
     expect(rendered).toContain("keep this header");

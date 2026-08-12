@@ -3,7 +3,7 @@
  * changes* — the lines a review finding may legitimately point at.
  *
  * A pure string-in / map-out function (no fs, no git): the review capability
- * feeds it `git diff origin/main...HEAD` and uses the result to check that every
+ * feeds it a three-dot base-to-HEAD diff and uses the result to check that every
  * finding's `file:line` anchor falls on a line the PR actually touched, so the
  * posted comment can't point a reviewer at an unchanged line the agent imagined
  * (spec #52 / #65 — the pure diff parser behind `review-output` validation).

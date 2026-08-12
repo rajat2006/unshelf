@@ -36,7 +36,7 @@ Rules:
   `"unresolved"` if you left it for a human. Be honest: only mark `fixed` what you
   actually committed.
 - `file` — the repo-relative path (e.g. `apps/web/src/trail/geometry.ts`).
-- `line` — the **new-side** line number in the **post-fix** `origin/main...HEAD`
+- `line` — the **new-side** line number in the post-fix base-branch diff
   diff, for an `unresolved` finding about a specific line (that is where its
   inline comment anchors). **Omit `line` entirely** for a file- or change-level
   finding, and you may omit it for `fixed` findings. Never guess a number —
