@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { STATUS_LABELS } from "../items/presentation";
+import { itemDetailRouteState } from "../items/item-route-state";
 
 type HistoryState =
   | { status: "loading" }
@@ -11,9 +12,14 @@ type HistoryState =
   | { status: "ready"; focus: DailyFocus };
 
 /** One elapsed Daily Focus: frozen evidence with explicit reconsideration only. */
-export function DailyFocusHistorySurface() {
+export function DailyFocusHistorySurface({
+  selectedDate,
+}: {
+  selectedDate?: string;
+} = {}) {
   const user = useCurrentUser();
-  const { date = "" } = useParams();
+  const { date: routeDate = "" } = useParams();
+  const date = selectedDate ?? routeDate;
   const location = useLocation();
   const navigate = useNavigate();
   const [browseDate, setBrowseDate] = useState(date);
@@ -103,7 +109,12 @@ export function DailyFocusHistorySurface() {
               <ul className="daily-focus-history__entries">
                 {state.focus.entries.map(({ item, snapshot, origin }) => (
                   <li key={item.id}>
-                    <Link to={`/items/${item.id}`}>{item.title}</Link>
+                    <Link
+                      to={`/items/${item.id}`}
+                      state={itemDetailRouteState(location)}
+                    >
+                      {item.title}
+                    </Link>
                     <span>{STATUS_LABELS[snapshot.status]}</span>
                     {snapshot.partPercentage !== null && (
                       <span>{snapshot.partPercentage}% of Parts complete</span>

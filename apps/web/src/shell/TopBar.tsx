@@ -1,6 +1,9 @@
 import { Link, NavLink, useLocation } from "react-router";
 import { UserButton } from "../application-auth/UserButton";
-import { readItemBackgroundLocation } from "../items/item-route-state";
+import {
+  itemBackgroundSurface,
+  readItemBackgroundLocation,
+} from "../items/item-route-state";
 import { useCapture } from "./useCapture";
 import { Wordmark } from "./Wordmark";
 
@@ -21,12 +24,18 @@ export function TopBar() {
   const backgroundLocation = location.pathname.startsWith("/items/")
     ? readItemBackgroundLocation(location.state)
     : null;
-  const activePath = backgroundLocation?.pathname ?? location.pathname;
+  const backgroundSurface = itemBackgroundSurface(backgroundLocation);
   const libraryActive =
-    activePath === "/library" ||
-    (location.pathname.startsWith("/items/") && !backgroundLocation);
-  const plansActive = activePath.startsWith("/plans");
-  const todayActive = activePath.startsWith("/today");
+    location.pathname === "/library" ||
+    (location.pathname.startsWith("/items/") &&
+      (backgroundSurface.kind === "library" ||
+        backgroundSurface.kind === "unknown"));
+  const plansActive =
+    location.pathname.startsWith("/plans") || backgroundSurface.kind === "plan";
+  const todayActive =
+    location.pathname.startsWith("/today") ||
+    backgroundSurface.kind === "today" ||
+    backgroundSurface.kind === "history";
 
   return (
     <header className="top-bar">

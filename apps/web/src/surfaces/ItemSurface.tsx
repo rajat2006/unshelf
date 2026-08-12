@@ -1,12 +1,16 @@
 import { useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import type { Item, ItemId, LearningPlanId } from "@unshelf/shared";
+import type { Item, ItemId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSidebar } from "../items/ItemSidebar";
-import { readItemBackgroundLocation } from "../items/item-route-state";
+import {
+  itemBackgroundSurface,
+  readItemBackgroundLocation,
+} from "../items/item-route-state";
 import { LibrarySurface } from "./LibrarySurface";
 import { LearningPlanSurface } from "./LearningPlanSurface";
 import { TodaySurface } from "./TodaySurface";
+import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
 
 /**
  * An Item at its one canonical URL (design spec §4) — `/items/:itemId`, the same
@@ -27,34 +31,33 @@ export function ItemSurface() {
   const changedItem = itemId ? changedItems[itemId] : undefined;
   const itemOverrides = Object.values(changedItems);
   const backgroundLocation = readItemBackgroundLocation(location.state);
-  const backgroundLearningPlanId = backgroundLocation?.pathname.match(
-    /^\/plans\/([^/]+)(?:\/stages\/[^/]+)?$/,
-  )?.[1] as LearningPlanId | undefined;
-  const backgroundIsLibrary = backgroundLocation?.pathname === "/library";
-  const backgroundIsToday = backgroundLocation?.pathname === "/today";
-  const backgroundLibrarySearch = backgroundIsLibrary
-    ? backgroundLocation.search
-    : "";
+  const backgroundSurface = itemBackgroundSurface(backgroundLocation);
+  const backgroundLibrarySearch =
+    backgroundSurface.kind === "library" && backgroundLocation
+      ? backgroundLocation.search
+      : "";
 
   return (
     <div className="item-detail-layout">
       {backgroundLocation ? (
-        backgroundLearningPlanId ? (
+        backgroundSurface.kind === "plan" ? (
           <LearningPlanSurface
             key={`${
               changedItem
                 ? `${changedItem.id}:${changedItem.status}`
                 : "learningPlan"
             }:${placementVersion}`}
-            learningPlanId={backgroundLearningPlanId}
+            learningPlanId={backgroundSurface.learningPlanId}
           />
-        ) : backgroundIsToday ? (
+        ) : backgroundSurface.kind === "today" ? (
           <TodaySurface />
+        ) : backgroundSurface.kind === "history" ? (
+          <DailyFocusHistorySurface selectedDate={backgroundSurface.date} />
         ) : (
           <LibrarySurface
             itemOverrides={itemOverrides}
             onItemChanged={recordItemChange}
-            labelFilterEnabled={backgroundIsLibrary}
+            labelFilterEnabled={backgroundSurface.kind === "library"}
             labelFilterSearch={backgroundLibrarySearch}
             onLabelFilterChange={(next) => {
               void navigate({

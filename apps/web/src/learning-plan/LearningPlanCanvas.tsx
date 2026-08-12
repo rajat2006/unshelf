@@ -190,6 +190,16 @@ export function LearningPlanCanvas({
     }
   }
 
+  async function retryAfterError() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const link = (to: PlanNodeId) => {
     if (linkingFrom) {
       const fromName = nodeName(nodeById.get(linkingFrom)!);
@@ -332,7 +342,13 @@ export function LearningPlanCanvas({
             arrange them.
           </p>
         )}
-        {error && <ErrorLine error={error} />}
+        {error && (
+          <ErrorLine
+            error={error}
+            busy={busy}
+            onRetry={() => void retryAfterError()}
+          />
+        )}
       </div>
     );
   }
@@ -544,7 +560,13 @@ export function LearningPlanCanvas({
           ? "Drag the map to pan. Open on a wider screen to arrange it."
           : "Drag to pan; ＋ adds the next stage, ⑃ forks a branch, ⇢ links to another, ✕ removes a link."}
       </p>
-      {error && <ErrorLine error={error} />}
+      {error && (
+        <ErrorLine
+          error={error}
+          busy={busy}
+          onRetry={() => void retryAfterError()}
+        />
+      )}
       <p role="status" className="visually-hidden">
         {announcement}
       </p>
@@ -1114,10 +1136,21 @@ function RowButton({
   );
 }
 
-function ErrorLine({ error }: { error: string }) {
+function ErrorLine({
+  error,
+  busy,
+  onRetry,
+}: {
+  error: string;
+  busy: boolean;
+  onRetry: () => void;
+}) {
   return (
     <div role="alert" className="surface-error">
-      Could not change the Learning Plan: {error}
+      <p>Could not change the Learning Plan: {error}</p>
+      <button type="button" disabled={busy} onClick={onRetry}>
+        Retry
+      </button>
     </div>
   );
 }

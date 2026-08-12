@@ -144,6 +144,22 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
   ).toHaveCount(0);
 
   await page
+    .getByRole("link", { name: "Finish the storage chapter", exact: true })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
+  await expect(
+    page.getByRole("link", { name: "Today", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Daily Focus history" }),
+  ).toBeVisible();
+  await page
+    .getByRole("complementary", { name: "Finish the storage chapter details" })
+    .getByRole("button", { name: "Close details" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/today/${historicalDate}(?:\\?|$)`));
+
+  await page
     .getByRole("button", {
       name: "Add Finish the storage chapter to Today",
     })

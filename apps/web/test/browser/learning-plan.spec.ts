@@ -564,3 +564,41 @@ test("the Plan Today sidecar contains a failed load and retries locally", async 
   await expect(sidecar.getByText("0 Items in Today")).toBeVisible();
   await expect(sidecar.getByRole("alert")).toHaveCount(0);
 });
+
+test("the Plan canvas contains a failed edit and retries locally", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "desktop authors plan topology");
+  const user = `${testInfo.project.name}-plan-canvas-retry`;
+  const plan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Recoverable canvas",
+    })
+  ).json()) as LearningPlan;
+  await page.route(`**/api/learning-plans/${plan.id}/stages`, async (route) => {
+    await route.fulfill({
+      status: 503,
+      json: { error: "temporarily unavailable" },
+    });
+  });
+
+  await page.goto(testAppUrl(`/plans/${plan.id}`, user));
+  await page.getByRole("button", { name: /Start your Learning Plan/ }).click();
+  await page.getByPlaceholder("Name your first stage").fill("Foundations");
+  await page.getByPlaceholder("Name your first stage").press("Enter");
+
+  const canvasError = page
+    .getByRole("alert")
+    .filter({ hasText: "Could not change the Learning Plan" });
+  await expect(canvasError).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Plans", exact: true }),
+  ).toBeVisible();
+
+  await canvasError.getByRole("button", { name: "Retry" }).click();
+
+  await expect(canvasError).toHaveCount(0);
+  await expect(page.getByPlaceholder("Name your first stage")).toHaveValue(
+    "Foundations",
+  );
+});
