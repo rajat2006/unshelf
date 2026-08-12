@@ -13,8 +13,8 @@ import {
 import { runWithExtraction } from "../run-with-extraction";
 
 /**
- * The `architecture-review` capability: sweep the codebase on `main` for the
- * single freshest **deepening opportunity** and propose it as a PRD — the
+ * The `architecture-review` capability: sweep the codebase on its default
+ * branch for the single freshest **deepening opportunity** and propose it as a PRD — the
  * autonomous, GitHub-native analogue of CVM's interactive
  * `/improve-codebase-architecture`.
  *
@@ -42,6 +42,7 @@ import { runWithExtraction } from "../run-with-extraction";
  */
 
 const outputDir = requireEnv("OUTPUT_DIR");
+const baseBranch = requireEnv("BASE_BRANCH");
 // No issue ⇒ no label set of its own, so an empty AGENT_LABELS resolves to
 // DEFAULT_PROVIDER — the cron path follows the same one knob as everything else.
 // A manual `workflow_dispatch` can pin either provider, which the workflow
@@ -74,7 +75,7 @@ const result = await runWithExtraction({
   logging: { type: "stdout" },
   idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
   promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: { EXISTING_PROPOSALS: proposalList },
+  promptArgs: { BASE_BRANCH: baseBranch, EXISTING_PROPOSALS: proposalList },
   extractionPrompt: fs.readFileSync(
     path.join(import.meta.dirname, "extraction.md"),
     "utf8",

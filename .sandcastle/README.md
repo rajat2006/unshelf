@@ -99,7 +99,7 @@ pinned Sandcastle version and Unshelf's provider set:
   retry. The agent's claim is not trusted alone — see `verify-branch-update.ts`.
 - **`verify-branch-update.ts`** — `verifyBranchUpdate(facts)`: a pure verifier
   the `update-branch` runner calls to cross-check the agent's success claim
-  against the real git state (origin/main is now an ancestor of HEAD, HEAD
+  against the real git state (the remote base is now an ancestor of HEAD, HEAD
   advanced when `merged`, no unresolved paths remain, the repo is not mid-merge,
   the tree is clean). Returns `{ ok }` or `{ ok:false, reason }`; a
   failure fails the runner so an aborted or half-finished merge can never be
@@ -175,7 +175,7 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
 - **`explore/`** — the read-only issue investigation capability (workflow
   `agent-explore.yml`). A human applies `agent:explore`; the workflow reads the
   full label set, so a provider pin (`agent:claude` / `agent:codex`, else
-  `DEFAULT_PROVIDER`) routes it like every other capability. The produce pass verifies the issue against `main`, assesses
+  `DEFAULT_PROVIDER`) routes it like every other capability. The produce pass verifies the issue against the default branch, assesses
   difficulty, relevant files, open questions, implementation shape, and useful
   test seams; the resumed extraction pass validates one non-empty Markdown
   comment. The workflow fetches issue context before withholding GitHub
@@ -261,11 +261,11 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   state — that belongs to the review leg. Shares the per-PR concurrency group with
   `review`.
 - **`update-branch/`** — brings a stale or conflicted PR branch current with
-  `main` (workflow `agent-update-branch.yml`). The workflow resolves the common
+  its base (workflow `agent-update-branch.yml`). The workflow resolves the common
   cases **deterministically, without an agent**: an already-current branch is a
   no-op, and a conflict-free merge is done with `git merge` in a shell step. Only
   when that merge hits **real conflicts** is the agent invoked (via
-  `runWithExtraction`) — its produce pass re-merges `origin/main`, resolves the
+  `runWithExtraction`) — its produce pass re-merges the remote base, resolves the
   conflicts, runs the repo's checks, and commits; the resumed extraction pass
   emits the `<output>` block (`extraction.md`) validated against
   `updateBranchOutputSchema`. Before anything is pushed, the runner cross-checks

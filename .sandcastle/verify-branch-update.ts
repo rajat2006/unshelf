@@ -9,10 +9,12 @@ import type { UpdateOutcome } from "./update-branch-output";
 export interface BranchUpdateFacts {
   /** What the agent *claims* happened. Only success claims are verified here. */
   readonly claimedOutcome: UpdateOutcome;
-  /** `origin/main` is an ancestor of HEAD now (main is fully incorporated). */
-  readonly mainIsAncestor: boolean;
-  /** `origin/main` was already an ancestor of HEAD *before* the run. */
-  readonly mainWasAncestorBefore: boolean;
+  /** The remote-tracking ref being incorporated, such as `origin/dev`. */
+  readonly baseRef: string;
+  /** The base ref is an ancestor of HEAD now (the base is fully incorporated). */
+  readonly baseIsAncestor: boolean;
+  /** The base ref was already an ancestor of HEAD *before* the run. */
+  readonly baseWasAncestorBefore: boolean;
   /** A merge is still in progress (`.git/MERGE_HEAD` present). */
   readonly inMergeState: boolean;
   /** Paths still unmerged after the run (conflicts left unresolved). */
@@ -36,7 +38,7 @@ export type BranchUpdateVerdict =
  * not trusted on its own: the prompt permits `git merge --abort`, so an agent
  * that gives up can still emit a success-shaped block — deterministic
  * postconditions (CVM parity) are what stop an aborted or half-finished merge
- * from being pushed and reported as "Merged main."
+ * from being pushed and reported as a successful merge.
  *
  * A `blocked` claim is NOT the concern of this function — the runner routes that
  * to failure with the agent's own `reason` before calling here. If a `blocked`
@@ -60,7 +62,7 @@ export function verifyBranchUpdate(
   }
 
   // Shared postconditions for any successful update: the merge must be finished,
-  // conflict-free, committed, and must actually incorporate main.
+  // conflict-free, committed, and must actually incorporate the base.
   if (facts.inMergeState) {
     return {
       ok: false,
@@ -83,18 +85,18 @@ export function verifyBranchUpdate(
         "resolution was not committed.",
     };
   }
-  if (!facts.mainIsAncestor) {
+  if (!facts.baseIsAncestor) {
     return {
       ok: false,
       reason:
-        "origin/main is not an ancestor of HEAD — the branch was not brought " +
-        "current with main (the merge may have been aborted).",
+        `${facts.baseRef} is not an ancestor of HEAD — the branch was not ` +
+        "brought current with its base (the merge may have been aborted).",
     };
   }
 
   // Outcome-specific: the claim must match what actually happened to HEAD. We
-  // check that HEAD *advanced* (a new commit landed) and — via mainIsAncestor
-  // above — that it now incorporates origin/main; we do NOT assert HEAD is
+  // check that HEAD *advanced* (a new commit landed) and — via baseIsAncestor
+  // above — that it now incorporates the base; we do NOT assert HEAD is
   // literally a 2-parent merge commit, since a legitimate merge-then-fixup would
   // then fail. The later non-force push is what guards against rewritten history.
   if (facts.claimedOutcome === "merged" && facts.headAfter === facts.headBefore) {
@@ -117,11 +119,11 @@ export function verifyBranchUpdate(
         "the branch was not already current.",
     };
   }
-  if (facts.claimedOutcome === "already-current" && !facts.mainWasAncestorBefore) {
+  if (facts.claimedOutcome === "already-current" && !facts.baseWasAncestorBefore) {
     return {
       ok: false,
       reason:
-        "Agent reported already-current but origin/main was not an ancestor of " +
+        `Agent reported already-current but ${facts.baseRef} was not an ancestor of ` +
         "HEAD before the run — the branch genuinely needed a merge.",
     };
   }

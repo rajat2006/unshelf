@@ -2,7 +2,7 @@
 
 Implement issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
-You are already on branch `{{BRANCH}}`, cut from `main`. Pull the issue in full,
+You are already on branch `{{BRANCH}}`, cut from `{{BASE_BRANCH}}`. Pull the issue in full,
 including comments and any parent it references:
 
 ```

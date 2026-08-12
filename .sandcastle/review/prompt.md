@@ -13,14 +13,14 @@ skill.
 The fixed point for the review is the mainline the branch was cut from:
 
 ```
-origin/main
+origin/{{BASE_BRANCH}}
 ```
 
 So the diff under review is:
 
 ```
-git diff origin/main...HEAD
-git log origin/main..HEAD --oneline
+git diff origin/{{BASE_BRANCH}}...HEAD
+git log origin/{{BASE_BRANCH}}..HEAD --oneline
 ```
 
 (Three-dot diff, against the merge-base — the same form `/code-review` expects.)
@@ -41,7 +41,7 @@ Work in this order:
 
 ### 1. Review
 
-Run the `/code-review` skill with `origin/main` as the fixed point. It reviews
+Run the `/code-review` skill with `origin/{{BASE_BRANCH}}` as the fixed point. It reviews
 along both axes in parallel sub-agents and reports them separately:
 
 - **Standards** — does the code follow this repo's documented coding standards
@@ -83,7 +83,7 @@ a human), make no commits.
 Re-diff after your commits:
 
 ```
-git diff origin/main...HEAD
+git diff origin/{{BASE_BRANCH}}...HEAD
 ```
 
 Confirm your fixes actually resolved the findings they targeted and did not

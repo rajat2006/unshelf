@@ -29,11 +29,11 @@ Also skim the human-readable view for top-level discussion:
 gh pr view {{PR_NUMBER}} --comments
 ```
 
-The branch was cut from `origin/main`, so the change under review is:
+The branch targets `{{BASE_BRANCH}}`, so the change under review is:
 
 ```
-git diff origin/main...HEAD
-git log origin/main..HEAD --oneline
+git diff origin/{{BASE_BRANCH}}...HEAD
+git log origin/{{BASE_BRANCH}}..HEAD --oneline
 ```
 
 Read the originating spec and any references in the commit messages, so a fix
@@ -94,7 +94,7 @@ Re-diff after your commits and confirm your changes actually resolve the comment
 they targeted and introduce nothing new:
 
 ```
-git diff origin/main...HEAD
+git diff origin/{{BASE_BRANCH}}...HEAD
 ```
 
 # REPORTING

@@ -1,7 +1,7 @@
 name: Agent Update Branch
 
 # The branch-refresh leg (spec #52 / #67): applying `agent:update-branch` to a PR
-# brings a stale or conflicted branch current with `main`.
+# brings a stale or conflicted branch current with its PR base.
 #
 # Mirrors CVM's deterministic-first design: the common cases are resolved WITHOUT
 # an agent — an already-current branch is a no-op, and a conflict-free merge is
@@ -39,6 +39,7 @@ jobs:
       issues: write
 
     env:
+      BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -81,8 +82,8 @@ jobs:
             exit 0
           fi
 
-          # The PR head branch is what we check out, merge origin/main into, and
-          # push back.
+          # The PR head branch is what we check out, merge the remote PR base
+          # into, and push back.
           head_ref=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
 
@@ -132,15 +133,15 @@ jobs:
           fetch-depth: 0
           # AGENT_PAT because the merge commit is pushed back onto the PR branch
           # (a push touching .github/workflows/ needs the `workflows` scope
-          # GITHUB_TOKEN lacks — a merge from main can carry such a change).
+          # GITHUB_TOKEN lacks — a merge from the base can carry such a change).
           # Falls back to GITHUB_TOKEN, which still pushes ordinary code changes.
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Fetch the merge base (origin/main)
+      - name: Fetch the merge base
         if: steps.gate.outputs.proceed == 'true'
-        # Explicit dest refspec so `origin/main` resolves for `git merge
-        # origin/main`, whatever narrow refspec the checkout left behind.
-        run: git fetch --no-tags origin main:refs/remotes/origin/main
+        # Explicit dest refspec so the remote base resolves for `git merge`,
+        # whatever narrow refspec the checkout left behind.
+        run: git fetch --no-tags origin "$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
 
       - name: Configure git identity
         if: steps.gate.outputs.proceed == 'true'
@@ -156,7 +157,7 @@ jobs:
         id: premerge
         if: steps.gate.outputs.proceed == 'true'
         # Resolve the common cases without spending an agent (CVM parity):
-        #   already-current — main is already an ancestor, nothing to do.
+        #   already-current — the base is already an ancestor, nothing to do.
         #   clean           — `git merge` succeeds with no conflicts; the merge
         #                     commit is now on HEAD, ready to push.
         #   needs-agent     — `git merge` hit conflicts; abort to restore a clean
@@ -165,13 +166,13 @@ jobs:
         # the `if`.
         run: |
           set -uo pipefail
-          if git merge-base --is-ancestor origin/main HEAD; then
-            echo "origin/main is already an ancestor of HEAD — already current."
+          if git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD; then
+            echo "origin/$BASE_BRANCH is already an ancestor of HEAD — already current."
             echo "mode=already-current" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git merge --no-edit origin/main; then
-            echo "origin/main merged cleanly without conflicts."
+          if git merge --no-edit "origin/$BASE_BRANCH"; then
+            echo "origin/$BASE_BRANCH merged cleanly without conflicts."
             echo "mode=clean" >> "$GITHUB_OUTPUT"
           else
             echo "Merge hit conflicts — aborting for the agent to resolve."
@@ -255,10 +256,10 @@ jobs:
           comment="${RUNNER_TEMP}/update_branch_comment.md"
           case "$MODE" in
             already-current)
-              printf '## 🔄 Branch update\n\nThe branch was already current with `main` — nothing to do.\n' > "$comment"
+              printf '## 🔄 Branch update\n\nThe branch was already current with `%s` — nothing to do.\n' "$BASE_BRANCH" > "$comment"
               ;;
             clean)
-              printf '## 🔄 Branch update\n\nMerged `main` in cleanly — no conflicts.\n' > "$comment"
+              printf '## 🔄 Branch update\n\nMerged `%s` in cleanly — no conflicts.\n' "$BASE_BRANCH" > "$comment"
               ;;
           esac
           gh pr comment "$PR_NUMBER" --body-file "$comment"

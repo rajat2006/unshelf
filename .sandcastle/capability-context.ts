@@ -4,17 +4,20 @@ import { requireEnv } from "./require-env";
 /**
  * Context for a read-only capability attached to an issue, such as
  * `agent:explore`. It intentionally has no branch: the capability investigates
- * `main` and emits output for the workflow to publish without committing.
+ * the repository's default branch and emits output for the workflow to publish
+ * without committing.
  */
 export interface IssueCapabilityContext extends ResolvedAgent {
   readonly issueNumber: string;
   readonly issueTitle: string;
+  readonly baseBranch: string;
   readonly outputDir: string;
   /** The issue's full label set, including the optional provider label. */
   readonly labels: readonly string[];
   readonly promptArgs: {
     readonly ISSUE_NUMBER: string;
     readonly ISSUE_TITLE: string;
+    readonly BASE_BRANCH: string;
   };
 }
 
@@ -29,18 +32,21 @@ export function loadIssueCapabilityContext(
 ): IssueCapabilityContext {
   const issueNumber = requireEnv("ISSUE_NUMBER");
   const issueTitle = requireEnv("ISSUE_TITLE");
+  const baseBranch = requireEnv("BASE_BRANCH");
   const outputDir = requireEnv("OUTPUT_DIR");
   const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 
   return {
     issueNumber,
     issueTitle,
+    baseBranch,
     outputDir,
     labels,
     ...resolveAgent(labels, capability),
     promptArgs: {
       ISSUE_NUMBER: issueNumber,
       ISSUE_TITLE: issueTitle,
+      BASE_BRANCH: baseBranch,
     },
   };
 }
@@ -55,6 +61,7 @@ export interface CapabilityContext extends ResolvedAgent {
   readonly issueNumber: string;
   readonly issueTitle: string;
   readonly branch: string;
+  readonly baseBranch: string;
   /** Directory the workflow reads output files back from (`runner.temp`). */
   readonly outputDir: string;
   /** The issue's full label set. */
@@ -64,6 +71,7 @@ export interface CapabilityContext extends ResolvedAgent {
     readonly ISSUE_NUMBER: string;
     readonly ISSUE_TITLE: string;
     readonly BRANCH: string;
+    readonly BASE_BRANCH: string;
   };
 }
 
@@ -78,9 +86,10 @@ export interface CapabilityContext extends ResolvedAgent {
  * `agent:implement`. With neither present the default provider applies.
  * The `capability` the caller passes chooses that provider's model + effort.
  *
- * Required vars (`ISSUE_NUMBER`, `ISSUE_TITLE`, `BRANCH`, `OUTPUT_DIR`) throw via
- * {@link requireEnv} when missing — a missing one is a workflow wiring bug that
- * should land the issue in `agent:blocked`, not run against a silent default.
+ * Required vars (`ISSUE_NUMBER`, `ISSUE_TITLE`, `BRANCH`, `BASE_BRANCH`,
+ * `OUTPUT_DIR`) throw via {@link requireEnv} when missing — a missing one is a
+ * workflow wiring bug that should land the issue in `agent:blocked`, not run
+ * against a silent default.
  */
 export function loadCapabilityContext(
   capability: Capability,
@@ -95,6 +104,7 @@ export function loadCapabilityContext(
       ISSUE_NUMBER: issue.issueNumber,
       ISSUE_TITLE: issue.issueTitle,
       BRANCH: branch,
+      BASE_BRANCH: issue.baseBranch,
     },
   };
 }
@@ -109,6 +119,7 @@ export function loadCapabilityContext(
 export interface PrdPrContext extends ResolvedAgent {
   readonly prdNumber: string;
   readonly prdTitle: string;
+  readonly baseBranch: string;
   /** Directory the workflow reads output files back from (`runner.temp`). */
   readonly outputDir: string;
   /** The PRD's full label set. */
@@ -116,6 +127,7 @@ export interface PrdPrContext extends ResolvedAgent {
   readonly promptArgs: {
     readonly PRD_NUMBER: string;
     readonly PRD_TITLE: string;
+    readonly BASE_BRANCH: string;
   };
 }
 
@@ -134,6 +146,7 @@ export interface PrdImplementContext extends PrdPrContext {
     readonly SUB_ISSUE_NUMBER: string;
     readonly SUB_ISSUE_TITLE: string;
     readonly BRANCH: string;
+    readonly BASE_BRANCH: string;
   };
 }
 
@@ -148,18 +161,21 @@ export interface PrdImplementContext extends PrdPrContext {
 export function loadPrdPrContext(capability: Capability): PrdPrContext {
   const prdNumber = requireEnv("PRD_NUMBER");
   const prdTitle = requireEnv("PRD_TITLE");
+  const baseBranch = requireEnv("BASE_BRANCH");
   const outputDir = requireEnv("OUTPUT_DIR");
   const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 
   return {
     prdNumber,
     prdTitle,
+    baseBranch,
     outputDir,
     labels,
     ...resolveAgent(labels, capability),
     promptArgs: {
       PRD_NUMBER: prdNumber,
       PRD_TITLE: prdTitle,
+      BASE_BRANCH: baseBranch,
     },
   };
 }
@@ -180,6 +196,7 @@ export function loadPrdImplementContext(
   const subIssueNumber = requireEnv("SUB_ISSUE_NUMBER");
   const subIssueTitle = requireEnv("SUB_ISSUE_TITLE");
   const branch = requireEnv("BRANCH");
+  const baseBranch = requireEnv("BASE_BRANCH");
   const outputDir = requireEnv("OUTPUT_DIR");
   const labels = JSON.parse(process.env.AGENT_LABELS ?? "[]") as string[];
 
@@ -189,6 +206,7 @@ export function loadPrdImplementContext(
     subIssueNumber,
     subIssueTitle,
     branch,
+    baseBranch,
     outputDir,
     labels,
     ...resolveAgent(labels, capability),
@@ -198,6 +216,7 @@ export function loadPrdImplementContext(
       SUB_ISSUE_NUMBER: subIssueNumber,
       SUB_ISSUE_TITLE: subIssueTitle,
       BRANCH: branch,
+      BASE_BRANCH: baseBranch,
     },
   };
 }

@@ -5,7 +5,7 @@ import { updateBranchOutputSchema } from "./update-branch-output";
 function conflict(overrides: Record<string, unknown> = {}) {
   return {
     file: "apps/web/src/trail/geometry.ts",
-    resolution: "Kept the branch's new signature and re-applied main's rename.",
+    resolution: "Kept the branch's new signature and re-applied the base's rename.",
     ...overrides,
   };
 }
@@ -14,7 +14,7 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
   it("accepts a merge that resolved conflicts", () => {
     const parsed = updateBranchOutputSchema.parse({
       outcome: "merged",
-      summary: "Merged main into the branch, resolving 2 conflicts.",
+      summary: "Merged the base into the branch, resolving 2 conflicts.",
       conflicts: [conflict(), conflict({ file: "CONTEXT.md" })],
     });
     expect(parsed.outcome).toBe("merged");
@@ -24,7 +24,7 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
   it("accepts a clean merge with zero conflicts", () => {
     const parsed = updateBranchOutputSchema.parse({
       outcome: "merged",
-      summary: "Merged main cleanly; no conflicts.",
+      summary: "Merged the base cleanly; no conflicts.",
       conflicts: [],
     });
     expect(parsed.conflicts).toEqual([]);
@@ -33,7 +33,7 @@ describe("updateBranchOutputSchema — the update-branch <output> contract", () 
   it("accepts an already-current branch (no-op merge)", () => {
     const parsed = updateBranchOutputSchema.parse({
       outcome: "already-current",
-      summary: "Branch is already current with main; nothing to do.",
+      summary: "Branch is already current with its base; nothing to do.",
       conflicts: [],
     });
     expect(parsed.outcome).toBe("already-current");

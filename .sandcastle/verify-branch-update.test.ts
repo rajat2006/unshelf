@@ -5,14 +5,15 @@ import {
 } from "./verify-branch-update";
 
 /**
- * A fully-successful `merged` snapshot: main incorporated, HEAD advanced (a new
+ * A fully-successful `merged` snapshot: base incorporated, HEAD advanced (a new
  * commit landed), clean tree, no lingering merge state. Spread-overridable per test.
  */
 function facts(overrides: Partial<BranchUpdateFacts> = {}): BranchUpdateFacts {
   return {
     claimedOutcome: "merged",
-    mainIsAncestor: true,
-    mainWasAncestorBefore: false,
+    baseRef: "origin/dev",
+    baseIsAncestor: true,
+    baseWasAncestorBefore: false,
     inMergeState: false,
     unresolvedPaths: [],
     treeDirty: false,
@@ -23,15 +24,15 @@ function facts(overrides: Partial<BranchUpdateFacts> = {}): BranchUpdateFacts {
 }
 
 describe("verifyBranchUpdate — deterministic post-merge postconditions", () => {
-  it("passes a genuine merge (HEAD moved, main incorporated, clean)", () => {
+  it("passes a genuine merge (HEAD moved, base incorporated, clean)", () => {
     expect(verifyBranchUpdate(facts())).toEqual({ ok: true });
   });
 
-  it("passes a genuine already-current no-op (HEAD unchanged, main was ancestor)", () => {
+  it("passes a genuine already-current no-op (HEAD unchanged, base was ancestor)", () => {
     const verdict = verifyBranchUpdate(
       facts({
         claimedOutcome: "already-current",
-        mainWasAncestorBefore: true,
+        baseWasAncestorBefore: true,
         headBefore: "aaaa",
         headAfter: "aaaa",
       }),
@@ -64,8 +65,8 @@ describe("verifyBranchUpdate — deterministic post-merge postconditions", () =>
     if (!verdict.ok) expect(verdict.reason).toMatch(/uncommitted/);
   });
 
-  it("fails when origin/main is not an ancestor of HEAD (aborted merge)", () => {
-    const verdict = verifyBranchUpdate(facts({ mainIsAncestor: false }));
+  it("fails when the base is not an ancestor of HEAD (aborted merge)", () => {
+    const verdict = verifyBranchUpdate(facts({ baseIsAncestor: false }));
     expect(verdict).toMatchObject({ ok: false });
     if (!verdict.ok) expect(verdict.reason).toMatch(/not an ancestor/);
   });
@@ -82,7 +83,7 @@ describe("verifyBranchUpdate — deterministic post-merge postconditions", () =>
     const verdict = verifyBranchUpdate(
       facts({
         claimedOutcome: "already-current",
-        mainWasAncestorBefore: true,
+        baseWasAncestorBefore: true,
         headBefore: "aaaa",
         headAfter: "bbbb",
       }),
@@ -91,11 +92,11 @@ describe("verifyBranchUpdate — deterministic post-merge postconditions", () =>
     if (!verdict.ok) expect(verdict.reason).toMatch(/HEAD moved/);
   });
 
-  it("fails an 'already-current' claim where main was not an ancestor before", () => {
+  it("fails an 'already-current' claim where the base was not an ancestor before", () => {
     const verdict = verifyBranchUpdate(
       facts({
         claimedOutcome: "already-current",
-        mainWasAncestorBefore: false,
+        baseWasAncestorBefore: false,
         headBefore: "aaaa",
         headAfter: "aaaa",
       }),
