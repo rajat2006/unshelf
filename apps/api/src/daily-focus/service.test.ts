@@ -89,6 +89,21 @@ describe("Daily Focus service", () => {
     });
 
     await request(app)
+      .patch(`/api/items/${item.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" })
+      .expect(200);
+    const manuallyCompleted = (
+      await request(app)
+        .get("/api/daily-focus/today")
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyFocus;
+    expect(manuallyCompleted.entries[0]).toMatchObject({
+      snapshot: { status: "done", partPercentage: 0 },
+    });
+
+    await request(app)
       .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
       .set(TEST_USER_HEADER, user)
       .send({ completed: true })

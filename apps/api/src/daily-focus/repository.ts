@@ -11,6 +11,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { refreshTodayEntrySnapshot } from "./snapshots";
 import { ITEM_PROJECTION, toItem } from "../items/repository";
 import {
   dailyFocuses,
@@ -19,7 +20,6 @@ import {
   items,
   learningPlanItemPlacements,
   learningPlans,
-  parts,
   stages,
 } from "../schema";
 
@@ -172,16 +172,6 @@ export async function addTodayItem({
       .limit(1);
     if (!ownedItem) return { ok: false, error: "not_found" };
 
-    const [partCompletion] = await tx
-      .select({
-        percentage: sql<number | null>`round(
-          100.0 * count(*) filter (where ${parts.completed})
-          / nullif(count(*), 0)
-        )::integer`,
-      })
-      .from(parts)
-      .where(and(eq(parts.itemId, itemId), eq(parts.userId, userId)));
-
     const [originPlacement] = origin
       ? await tx
           .select({ id: learningPlanItemPlacements.id })
@@ -221,10 +211,11 @@ export async function addTodayItem({
         userId,
         itemId,
         statusSnapshot: ownedItem.status,
-        partPercentageSnapshot: partCompletion.percentage,
+        partPercentageSnapshot: null,
       })
       .onConflictDoNothing()
       .returning({ itemId: dailyFocusItems.itemId });
+    await refreshTodayEntrySnapshot(tx, { userId, itemId });
 
     if (originPlacement) {
       await tx
