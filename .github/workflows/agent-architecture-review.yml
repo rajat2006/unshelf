@@ -2,8 +2,9 @@ name: Agent Architecture Review
 
 # The scheduled/on-demand architecture-review leg (spec #52 / #70). Unlike the
 # other agent workflows this has NO label trigger and NO originating issue/PR:
-# it runs on a weekly cron and via `workflow_dispatch`, surveys the tree on
-# `main` for the single freshest deepening opportunity, and proposes it as a PRD
+# it runs on a weekly cron and via `workflow_dispatch`, surveys the tree on the
+# default branch for the single freshest deepening opportunity, and proposes it
+# as a PRD
 # labelled `source:architecture-review` (a human later expands it with
 # `agent:to-issues`). Read-only: the agent produces only output files — this
 # workflow owns every `gh` mutation (spec invariant H). Mirrors CVM's
@@ -28,6 +29,7 @@ on:
         default: default
 
 env:
+  BASE_BRANCH: ${{ github.event.repository.default_branch }}
   # Provenance label CVM applies to every architecture-review proposal — the
   # dedupe key and the backlog the open-proposal cap counts.
   PROVENANCE_LABEL: "source:architecture-review"
@@ -115,11 +117,11 @@ jobs:
             *) echo "labels_json=[]" >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - name: Checkout main
+      - name: Checkout default branch
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
@@ -194,8 +196,8 @@ jobs:
           title=$(cat "${RUNNER_TEMP}/prd_title.txt")
           {
             cat "${RUNNER_TEMP}/prd_body.txt"
-            printf '\n\n---\n_Proposed by the scheduled architecture-review agent — reviewed `main` at `%s` ([run log](%s)). Apply `agent:to-issues` to expand into child issues._\n' \
-              "${COMMIT_SHA:0:12}" "$RUN_URL"
+            printf '\n\n---\n_Proposed by the scheduled architecture-review agent — reviewed `%s` at `%s` ([run log](%s)). Apply `agent:to-issues` to expand into child issues._\n' \
+              "$BASE_BRANCH" "${COMMIT_SHA:0:12}" "$RUN_URL"
           } > "${RUNNER_TEMP}/prd_issue_body.md"
 
           url=$(gh issue create \

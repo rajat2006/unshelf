@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
@@ -11,7 +11,8 @@ import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
  * The `implement` capability: work a ready issue into commits on its branch.
  *
  * Invoked by `.github/workflows/agent-implement.yml` AFTER the branch is cut
- * from `main`. This is the one capability that calls `run()` directly — no
+ * from the configured base branch. This is the one capability that calls
+ * `run()` directly — no
  * structured output, neither wrapper — because the *work is the commits*, which
  * the workflow (not the agent) pushes. There is nothing to extract.
  *
@@ -38,7 +39,9 @@ const result = await sandcastle.run({
 });
 
 const commitsAhead = Number(
-  execSync("git rev-list --count main..HEAD", { encoding: "utf8" }).trim(),
+  execFileSync("git", ["rev-list", "--count", `${ctx.baseBranch}..HEAD`], {
+    encoding: "utf8",
+  }).trim(),
 );
 if (!Number.isFinite(commitsAhead) || commitsAhead === 0) {
   fail("Agent finished but made no commits on the branch.");

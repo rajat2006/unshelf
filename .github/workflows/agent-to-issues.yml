@@ -31,6 +31,7 @@ jobs:
       issues: write
 
     env:
+      BASE_BRANCH: ${{ github.event.repository.default_branch }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       ISSUE_TITLE: ${{ github.event.issue.title }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -214,11 +215,11 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" --remove-label "agent:blocked" || true
           gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
 
-      - name: Checkout main
+      - name: Checkout default branch
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
           # AGENT_PAT preferred for parity with the other workflows; falls back to
           # GITHUB_TOKEN. This capability only reads the repo — no push.

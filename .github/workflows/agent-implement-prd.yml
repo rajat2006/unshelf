@@ -38,6 +38,7 @@ jobs:
       issues: write
 
     env:
+      BASE_BRANCH: ${{ github.event.repository.default_branch }}
       PRD_NUMBER: ${{ github.event.issue.number }}
       PRD_TITLE: ${{ github.event.issue.title }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -222,11 +223,11 @@ jobs:
           gh issue edit "$PRD_NUMBER" --remove-label "agent:blocked" || true
           gh issue edit "$PRD_NUMBER" --add-label "agent:in-progress"
 
-      - name: Checkout main
+      - name: Checkout default branch
         if: steps.shape.outputs.mode == 'run'
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
           # AGENT_PAT so a push may include changes under .github/workflows/
           # (GITHUB_TOKEN lacks the `workflows` scope). Falls back to GITHUB_TOKEN
@@ -259,7 +260,8 @@ jobs:
           git config user.name "unshelf-agent[bot]"
           git config user.email "unshelf-agent[bot]@users.noreply.github.com"
           # Resume the PRD branch if it already exists (earlier sub-issue runs),
-          # else cut it fresh from main. Commits accumulate across runs — this is
+          # else cut it fresh from the default branch. Commits accumulate across
+          # runs — this is
           # why the push below is NOT a force-push.
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
             git fetch origin "$BRANCH"
@@ -384,7 +386,7 @@ jobs:
             pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")
             pr_url=$(gh pr create \
               --draft \
-              --base main \
+              --base "$BASE_BRANCH" \
               --head "$BRANCH" \
               --title "$pr_title" \
               --body-file "${RUNNER_TEMP}/pr_description.txt")

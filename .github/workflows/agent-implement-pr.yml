@@ -33,6 +33,7 @@ jobs:
       issues: write
 
     env:
+      BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -201,11 +202,11 @@ jobs:
           # Falls back to GITHUB_TOKEN, which still pushes ordinary code changes.
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Fetch the review base (origin/main)
+      - name: Fetch the review base
         if: steps.gate.outputs.proceed == 'true'
-        # Explicit dest refspec so `origin/main` resolves for `git diff
-        # origin/main...HEAD`, whatever narrow refspec the checkout left behind.
-        run: git fetch --no-tags origin main:refs/remotes/origin/main
+        # Explicit dest refspec so the remote base resolves for three-dot diffs,
+        # whatever narrow refspec the checkout left behind.
+        run: git fetch --no-tags origin "$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
 
       - name: Setup pnpm
         if: steps.gate.outputs.proceed == 'true'
