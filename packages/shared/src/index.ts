@@ -89,6 +89,10 @@ export type LabelId = string & {
   readonly [identifierBrand]: "LabelId";
 };
 
+export type DailyFocusId = string & {
+  readonly [identifierBrand]: "DailyFocusId";
+};
+
 /**
  * API request types are inferred from the canonical runtime schemas. This
  * type-only facade keeps existing `@unshelf/shared` consumers runtime-free.
@@ -114,6 +118,7 @@ export type {
   UpdateItemTargetDateRequest,
   UpdatePartCompletionRequest,
   UpdatePartRequest,
+  AddDailyFocusItemRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */
@@ -180,6 +185,27 @@ export interface Part {
 export interface ItemDetail extends Item {
   parts: Part[];
   partPercentage: number | null;
+}
+
+/** Derive completion for any current selection of shared Items. */
+export function deriveItemCompletion(items: readonly Pick<Item, "status">[]): {
+  done: number;
+  total: number;
+} {
+  return {
+    done: items.filter((item) => item.status === Status.Done).length,
+    total: items.length,
+  };
+}
+
+/** The editable selection of whole Items for one server calendar date. */
+export interface DailyFocus {
+  id: DailyFocusId;
+  userId: UserId;
+  date: string;
+  items: Item[];
+  done: number;
+  total: number;
 }
 
 /**

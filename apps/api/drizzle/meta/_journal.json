@@ -57,6 +57,13 @@
       "when": 1786506288196,
       "tag": "0007_loving_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786507500986,
+      "tag": "0008_chilly_firebird",
+      "breakpoints": true
     }
   ]
 }

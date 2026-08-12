@@ -7,6 +7,7 @@ import { createItemsRouter } from "./items/router";
 import { createLabelsRouter } from "./labels/router";
 import { createStagesRouter } from "./stages/router";
 import { createLearningPlansRouter } from "./learning-plans/router";
+import { createDailyFocusRouter } from "./daily-focus/router";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -82,6 +83,11 @@ export function createApp(
     "/api/learning-plans",
     captureRouteMount,
     createLearningPlansRouter(db, auth),
+  );
+  app.use(
+    "/api/daily-focus",
+    captureRouteMount,
+    createDailyFocusRouter(db, auth),
   );
   app.use(markRoutingResolved);
   app.use(

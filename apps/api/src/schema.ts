@@ -120,6 +120,53 @@ export const items = pgTable(
   ],
 );
 
+/** One User-owned Daily Focus for each canonical server calendar date. */
+export const dailyFocuses = pgTable(
+  "daily_focuses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    date: date("date")
+      .notNull()
+      .default(sql`current_date`),
+  },
+  (table) => [
+    unique("daily_focuses_user_date_unique").on(table.userId, table.date),
+    unique("daily_focuses_id_user_id_idx").on(table.id, table.userId),
+  ],
+);
+
+/** Set membership of whole shared Items in one dated Daily Focus. */
+export const dailyFocusItems = pgTable(
+  "daily_focus_items",
+  {
+    dailyFocusId: uuid("daily_focus_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    itemId: uuid("item_id").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyFocusId, table.itemId] }),
+    foreignKey({
+      name: "daily_focus_items_focus_owner_fk",
+      columns: [table.dailyFocusId, table.userId],
+      foreignColumns: [dailyFocuses.id, dailyFocuses.userId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "daily_focus_items_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }).onDelete("cascade"),
+    index("daily_focus_items_user_id_idx").on(table.userId),
+  ],
+);
+
 /** Ordered, lightweight checklist entries that structure one shared Item. */
 export const parts = pgTable(
   "parts",

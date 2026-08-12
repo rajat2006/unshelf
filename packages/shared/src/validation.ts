@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  DailyFocusId,
   ItemId,
   LabelId,
   LearningPlanId,
@@ -26,6 +27,7 @@ export const stageIdSchema = identifierSchema<StageId>();
 export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
 export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
+export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -44,6 +46,10 @@ export const targetDateSchema = z.iso
 
 export const updateItemTargetDateRequestSchema = z.strictObject({
   targetDate: targetDateSchema.nullable(),
+});
+
+export const addDailyFocusItemRequestSchema = z.strictObject({
+  itemId: itemIdSchema,
 });
 
 export const createPartsRequestSchema = z.strictObject({
@@ -123,6 +129,9 @@ export type UpdateItemStatusRequest = z.infer<
 >;
 export type UpdateItemTargetDateRequest = z.infer<
   typeof updateItemTargetDateRequestSchema
+>;
+export type AddDailyFocusItemRequest = z.infer<
+  typeof addDailyFocusItemRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;

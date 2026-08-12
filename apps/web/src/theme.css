@@ -42,6 +42,43 @@
     system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+.today-surface {
+  display: grid;
+  gap: 1rem;
+}
+
+.today-surface__completion {
+  color: var(--muted);
+  margin: 0;
+}
+
+.today-planning {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+}
+
+.today-planning label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.today-planning__results {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.today-planning__results li {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
 /* Dark is a peer, not an add-on: the same ten roles, redefined. */
 @media (prefers-color-scheme: dark) {
   :root {

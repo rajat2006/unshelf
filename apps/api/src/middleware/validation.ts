@@ -37,6 +37,7 @@ export const VALIDATION_FAILURE_CODES = [
   "missing_stage_item_disposition",
   "invalid_edge_endpoints",
   "self_edge",
+  "invalid_daily_focus_item",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];

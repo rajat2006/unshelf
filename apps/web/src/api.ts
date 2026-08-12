@@ -6,6 +6,7 @@ import type {
   CreateStageRequest,
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
+  DailyFocus,
   Item,
   ItemDetail,
   ItemId,
@@ -202,6 +203,36 @@ export async function updateItemTargetDate(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/** Read the authenticated User's editable focus for the database's current date. */
+export async function fetchToday(user: CurrentUser): Promise<DailyFocus> {
+  return requestJson<DailyFocus>(user, "/api/daily-focus/today");
+}
+
+/** Explicitly select one whole shared Library Item for Today. */
+export async function addItemToToday(
+  user: CurrentUser,
+  itemId: ItemId,
+): Promise<DailyFocus> {
+  return requestJson<DailyFocus>(user, "/api/daily-focus/today/items", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemId }),
+  });
+}
+
+/** Remove only dated focus membership, leaving the shared Item untouched. */
+export async function removeItemFromToday(
+  user: CurrentUser,
+  dailyFocusId: DailyFocus["id"],
+  itemId: ItemId,
+): Promise<DailyFocus> {
+  return requestJson<DailyFocus>(
+    user,
+    `/api/daily-focus/${dailyFocusId}/items/${itemId}`,
+    { method: "DELETE" },
+  );
 }
 
 /** Every private Label owned by the current User. */
