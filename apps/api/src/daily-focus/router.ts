@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import {
   addDailyFocusItemRequestSchema,
+  dailyFocusDateSchema,
   dailyFocusIdSchema,
   itemIdSchema,
 } from "@unshelf/shared/validation";
@@ -43,6 +44,27 @@ export function createDailyFocusRouter(
       await dailyFocusService.getTodayFocus({ db, userId: req.user!.id }),
     );
   });
+
+  router.get(
+    "/:date",
+    validateRequest(
+      { params: { date: dailyFocusDateSchema } },
+      "invalid_daily_focus_date",
+    ),
+    async (req, res) => {
+      const { date } = res.locals.validated.params;
+      const focus = await dailyFocusService.getHistoricalFocus({
+        db,
+        userId: req.user!.id,
+        date,
+      });
+      if (!focus) {
+        res.status(404).json({ error: "daily focus not found" });
+        return;
+      }
+      res.json(focus);
+    },
+  );
 
   router.delete(
     "/:dailyFocusId/items/:itemId",

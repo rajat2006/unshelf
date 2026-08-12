@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { DailyFocus, Item } from "@unshelf/shared";
+import type { DailyFocus, Item, ItemDetail } from "@unshelf/shared";
 import {
   startTestApp,
   TEST_USER_HEADER,
@@ -60,6 +60,143 @@ describe("Daily Focus service", () => {
       "select current_date::text as date",
     );
     expect(duplicateFocus.date).toBe(serverDate.rows[0]?.date);
+  });
+
+  it("keeps today's Status and Part percentage snapshot current with Item changes", async () => {
+    const user = "daily-focus-current-snapshot";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Work through database internals", type: "course" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["Storage", "Indexes"] })
+    ).body as ItemDetail;
+
+    const selected = (
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: item.id })
+        .expect(201)
+    ).body as DailyFocus;
+    expect(selected.entries[0]).toMatchObject({
+      snapshot: { status: "not_started", partPercentage: 0 },
+    });
+
+    await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true })
+      .expect(200);
+    const refreshed = (
+      await request(app)
+        .get("/api/daily-focus/today")
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyFocus;
+
+    expect(refreshed.entries[0]).toMatchObject({
+      item: { id: item.id, status: "in_progress" },
+      snapshot: { status: "in_progress", partPercentage: 50 },
+    });
+  });
+
+  it("freezes elapsed history and requires explicit re-addition on the new date", async () => {
+    const user = "daily-focus-history-owner";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Keep yesterday honest", type: "book" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["First half", "Second half"] })
+    ).body as ItemDetail;
+    const selected = (
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: item.id })
+        .expect(201)
+    ).body as DailyFocus;
+    await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true })
+      .expect(200);
+
+    const elapsed = await harness.pool.query<{ date: string }>(
+      `update daily_focuses
+       set date = current_date - 1
+       where id = $1
+       returning date::text`,
+      [selected.id],
+    );
+    const historicalDate = elapsed.rows[0].date;
+
+    await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[1].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true })
+      .expect(200);
+    const history = await request(app)
+      .get(`/api/daily-focus/${historicalDate}`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+
+    expect(history.body).toMatchObject({
+      id: selected.id,
+      date: historicalDate,
+      done: 0,
+      total: 1,
+      entries: [
+        {
+          item: { id: item.id, status: "done" },
+          snapshot: { status: "in_progress", partPercentage: 50 },
+        },
+      ],
+    });
+    await request(app)
+      .delete(`/api/daily-focus/${selected.id}/items/${item.id}`)
+      .set(TEST_USER_HEADER, user)
+      .expect(404);
+    await request(app)
+      .get(`/api/daily-focus/${historicalDate}`)
+      .set(TEST_USER_HEADER, "daily-focus-history-intruder")
+      .expect(404);
+
+    const today = (
+      await request(app)
+        .get("/api/daily-focus/today")
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyFocus;
+    expect(today).toMatchObject({ total: 0, entries: [] });
+    expect(today.id).not.toBe(selected.id);
+
+    const reconsidered = await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: item.id })
+      .expect(201);
+    expect(reconsidered.body).toMatchObject({
+      done: 1,
+      total: 1,
+      entries: [
+        {
+          item: { id: item.id, status: "done" },
+          snapshot: { status: "done", partPercentage: 100 },
+        },
+      ],
+    });
   });
 
   it("retains an active direct Learning Plan placement as optional origin context", async () => {
@@ -320,7 +457,13 @@ describe("Daily Focus service", () => {
       id: focus.id,
       done: 1,
       total: 1,
-      entries: [{ item: { id: item.id, status: "done" }, origin: null }],
+      entries: [
+        {
+          item: { id: item.id, status: "done" },
+          origin: null,
+          snapshot: { status: "done", partPercentage: null },
+        },
+      ],
     });
 
     const removed = await request(app)
@@ -401,15 +544,17 @@ describe("Daily Focus service", () => {
     ).rejects.toThrow(/daily_focuses_user_date_unique/);
     await expect(
       harness.pool.query(
-        `insert into daily_focus_items (daily_focus_id, user_id, item_id)
-         values ($1, $2, $3)`,
+        `insert into daily_focus_items
+          (daily_focus_id, user_id, item_id, status_snapshot)
+         values ($1, $2, $3, 'not_started')`,
         [focus.id, focus.userId, ownerItem.id],
       ),
     ).rejects.toThrow(/daily_focus_items_daily_focus_id_item_id_pk/);
     await expect(
       harness.pool.query(
-        `insert into daily_focus_items (daily_focus_id, user_id, item_id)
-         values ($1, $2, $3)`,
+        `insert into daily_focus_items
+          (daily_focus_id, user_id, item_id, status_snapshot)
+         values ($1, $2, $3, 'not_started')`,
         [focus.id, focus.userId, intruderItem.id],
       ),
     ).rejects.toThrow(/daily_focus_items_item_owner_fk/);

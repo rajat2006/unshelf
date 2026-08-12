@@ -18,6 +18,7 @@ import { ItemSurface } from "./surfaces/ItemSurface";
 import { LibrarySurface } from "./surfaces/LibrarySurface";
 import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
 import { TodaySurface } from "./surfaces/TodaySurface";
+import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
 
 /**
  * The routed Unshelf shell (design spec §3–§5, ADR-0013).
@@ -44,6 +45,7 @@ export function App() {
           <Route index element={<Navigate to="/plans" replace />} />
           <Route path="plans" element={<PlansSurface />} />
           <Route path="today" element={<TodaySurface />} />
+          <Route path="today/:date" element={<DailyFocusHistorySurface />} />
           <Route
             path="library"
             element={<LibrarySurface labelFilterEnabled />}

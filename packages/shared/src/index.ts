@@ -218,6 +218,11 @@ export interface DailyFocusOrigin {
 export interface DailyFocusEntry {
   item: Item;
   origin: DailyFocusOrigin | null;
+  /** The Item state last visible on this focus's server calendar date. */
+  snapshot: {
+    status: Status;
+    partPercentage: number | null;
+  };
 }
 
 /**

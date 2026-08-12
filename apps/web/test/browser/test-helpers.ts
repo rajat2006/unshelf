@@ -1,5 +1,9 @@
 import { expect, type APIResponse, type Page } from "@playwright/test";
-import { testBearerToken, type TestUserId } from "./harness";
+import {
+  BROWSER_HARNESS_API_ORIGIN,
+  testBearerToken,
+  type TestUserId,
+} from "./harness";
 
 /** Address one private route in the browser harness as an explicit test User. */
 export function testAppUrl(
@@ -28,4 +32,22 @@ export async function testApi(
   });
   expect(response.ok(), `${method} ${path}`).toBe(true);
   return response;
+}
+
+/** Move an owned focus behind the database clock for rollover browser tests. */
+export async function elapseDailyFocus(
+  page: Page,
+  user: string,
+  dailyFocusId: string,
+): Promise<string> {
+  const response = await page.request.post(
+    `${BROWSER_HARNESS_API_ORIGIN}/__test__/daily-focus/${dailyFocusId}/elapse`,
+    {
+      headers: {
+        Authorization: `Bearer ${testBearerToken(user as TestUserId)}`,
+      },
+    },
+  );
+  expect(response.ok()).toBe(true);
+  return ((await response.json()) as { date: string }).date;
 }

@@ -4,6 +4,7 @@ import {
   type DailyFocus,
   type Item,
 } from "@unshelf/shared";
+import { Link, useLocation } from "react-router";
 import {
   addItemToToday,
   fetchAll,
@@ -22,6 +23,7 @@ type TodayState =
 /** The current editable Daily Focus and its explicit Library selection seam. */
 export function TodaySurface() {
   const user = useCurrentUser();
+  const location = useLocation();
   const [state, setState] = useState<TodayState>({ status: "loading" });
   const [query, setQuery] = useState("");
   const [mutationError, setMutationError] = useState(false);
@@ -85,14 +87,20 @@ export function TodaySurface() {
     setState((current) => {
       if (current.status !== "ready") return current;
       const entries = current.focus.entries.map((entry) =>
-        entry.item.id === changed.id ? { ...entry, item: changed } : entry,
+        entry.item.id === changed.id
+          ? {
+              ...entry,
+              item: changed,
+              snapshot: { ...entry.snapshot, status: changed.status },
+            }
+          : entry,
       );
       return {
         ...current,
         focus: {
           ...current.focus,
           entries,
-          ...deriveItemCompletion(entries.map((entry) => entry.item)),
+          ...deriveItemCompletion(entries.map((entry) => entry.snapshot)),
         },
         library: current.library.map((item) =>
           item.id === changed.id ? changed : item,
@@ -116,6 +124,14 @@ export function TodaySurface() {
       {state.status === "ready" && (
         <>
           <p className="quiet-copy">{state.focus.date}</p>
+          <Link
+            to={{
+              pathname: `/today/${previousCalendarDate(state.focus.date)}`,
+              search: location.search,
+            }}
+          >
+            Browse yesterday
+          </Link>
           <p className="today-surface__completion">
             {state.focus.done} of {state.focus.total} done
           </p>
@@ -199,4 +215,10 @@ export function TodaySurface() {
       )}
     </section>
   );
+}
+
+function previousCalendarDate(date: string): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - 1);
+  return value.toISOString().slice(0, 10);
 }

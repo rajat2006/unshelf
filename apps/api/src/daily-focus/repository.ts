@@ -19,6 +19,7 @@ import {
   items,
   learningPlanItemPlacements,
   learningPlans,
+  parts,
   stages,
 } from "../schema";
 
@@ -58,6 +59,8 @@ async function readDailyFocus(
       originLearningPlanName: learningPlans.name,
       originStageId: stages.id,
       originStageName: stages.name,
+      statusSnapshot: dailyFocusItems.statusSnapshot,
+      partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
     })
     .from(dailyFocusItems)
     .innerJoin(
@@ -108,6 +111,10 @@ async function readDailyFocus(
     const item = toItem(itemRow);
     return {
       item,
+      snapshot: {
+        status: itemRow.statusSnapshot,
+        partPercentage: itemRow.partPercentageSnapshot,
+      },
       origin:
         itemRow.originLearningPlanId && itemRow.originLearningPlanName
           ? {
@@ -126,13 +133,12 @@ async function readDailyFocus(
           : null,
     };
   });
-  const focusItems = entries.map((entry) => entry.item);
   return {
     id: row.id as DailyFocusId,
     userId: row.user_id as UserId,
     date: row.date,
     entries,
-    ...deriveItemCompletion(focusItems),
+    ...deriveItemCompletion(entries.map((entry) => entry.snapshot)),
   };
 }
 
@@ -153,12 +159,28 @@ export async function addTodayItem({
   origin: AddDailyFocusItemRequest["origin"];
 }): Promise<AddTodayItemResult> {
   return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${itemId}, 0))`,
+    );
     const [ownedItem] = await tx
-      .select({ id: items.id })
+      .select({
+        id: items.id,
+        status: items.status,
+      })
       .from(items)
       .where(and(eq(items.id, itemId), eq(items.userId, userId)))
       .limit(1);
     if (!ownedItem) return { ok: false, error: "not_found" };
+
+    const [partCompletion] = await tx
+      .select({
+        percentage: sql<number | null>`round(
+          100.0 * count(*) filter (where ${parts.completed})
+          / nullif(count(*), 0)
+        )::integer`,
+      })
+      .from(parts)
+      .where(and(eq(parts.itemId, itemId), eq(parts.userId, userId)));
 
     const [originPlacement] = origin
       ? await tx
@@ -194,7 +216,13 @@ export async function addTodayItem({
     const focus = await ensureTodayFocus(tx, userId);
     const inserted = await tx
       .insert(dailyFocusItems)
-      .values({ dailyFocusId: focus.id, userId, itemId })
+      .values({
+        dailyFocusId: focus.id,
+        userId,
+        itemId,
+        statusSnapshot: ownedItem.status,
+        partPercentageSnapshot: partCompletion.percentage,
+      })
       .onConflictDoNothing()
       .returning({ itemId: dailyFocusItems.itemId });
 
@@ -233,6 +261,34 @@ export async function getTodayFocus(
     const focus = await ensureTodayFocus(tx, userId);
     return readDailyFocus(tx, focus);
   });
+}
+
+/** Read one elapsed focus without creating a record for an absent date. */
+export async function getHistoricalFocus({
+  db,
+  userId,
+  date,
+}: {
+  db: Database;
+  userId: UserId;
+  date: string;
+}): Promise<DailyFocus | null> {
+  const [focus] = await db
+    .select({
+      id: dailyFocuses.id,
+      user_id: dailyFocuses.userId,
+      date: sql<string>`${dailyFocuses.date}::text`,
+    })
+    .from(dailyFocuses)
+    .where(
+      and(
+        eq(dailyFocuses.userId, userId),
+        eq(dailyFocuses.date, date),
+        sql`${dailyFocuses.date} < current_date`,
+      ),
+    )
+    .limit(1);
+  return focus ? readDailyFocus(db, focus) : null;
 }
 
 /** Remove only current focus membership, never the shared Item itself. */

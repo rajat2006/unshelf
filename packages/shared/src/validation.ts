@@ -44,6 +44,9 @@ export const targetDateSchema = z.iso
   .date()
   .refine((value) => !value.startsWith("0000-"));
 
+/** A dated Daily Focus path uses the same real calendar-date contract. */
+export const dailyFocusDateSchema = targetDateSchema;
+
 export const updateItemTargetDateRequestSchema = z.strictObject({
   targetDate: targetDateSchema.nullable(),
 });

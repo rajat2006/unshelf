@@ -211,6 +211,14 @@ export async function fetchToday(user: CurrentUser): Promise<DailyFocus> {
   return requestJson<DailyFocus>(user, "/api/daily-focus/today");
 }
 
+/** Read one immutable Daily Focus by its elapsed server calendar date. */
+export async function fetchDailyFocusHistory(
+  user: CurrentUser,
+  date: string,
+): Promise<DailyFocus> {
+  return requestJson<DailyFocus>(user, `/api/daily-focus/${date}`);
+}
+
 /** Explicitly select one whole shared Library Item for Today. */
 export async function addItemToToday(
   user: CurrentUser,

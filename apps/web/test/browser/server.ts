@@ -1,4 +1,8 @@
-import { createServer as createHttpServer } from "node:http";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createServer as createViteServer } from "vite";
 import {
@@ -22,7 +26,46 @@ const testApp = await startTestAppWithLegacyFixture(
   },
   (db) => seedLegacyLearningPlanFixture(db, legacy),
 );
-const apiServer = createHttpServer(testApp.app);
+const apiServer = createHttpServer((req, res) => {
+  void handleApiRequest(req, res).catch((error: unknown) => {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end(String(error));
+  });
+});
+
+async function handleApiRequest(req: IncomingMessage, res: ServerResponse) {
+  const pathname = req.url
+    ? new URL(req.url, BROWSER_HARNESS_API_ORIGIN).pathname
+    : "";
+  const match = pathname.match(
+    /^\/__test__\/daily-focus\/([0-9a-f-]+)\/elapse$/,
+  );
+  if (req.method === "POST" && match) {
+    const user = testUserFromAuthorization(req.headers.authorization);
+    if (!user) {
+      res.writeHead(401).end();
+      return;
+    }
+    const elapsed = await testApp.pool.query<{ date: string }>(
+      `update daily_focuses
+       set date = current_date - 1
+       from users
+       where daily_focuses.id = $1
+         and daily_focuses.user_id = users.id
+         and users.clerk_user_id = $2
+       returning daily_focuses.date::text`,
+      [match[1], user],
+    );
+    if (!elapsed.rows[0]) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(elapsed.rows[0]));
+    return;
+  }
+  testApp.app(req, res);
+}
 
 await new Promise<void>((resolve, reject) => {
   apiServer.once("error", reject);

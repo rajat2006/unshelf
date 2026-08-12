@@ -147,6 +147,10 @@ export const dailyFocusItems = pgTable(
       .notNull()
       .references(() => users.id),
     itemId: uuid("item_id").notNull(),
+    statusSnapshot: text("status_snapshot", {
+      enum: nonEmpty(ITEM_STATUSES),
+    }).notNull(),
+    partPercentageSnapshot: integer("part_percentage_snapshot"),
     addedAt: timestamp("added_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -169,6 +173,14 @@ export const dailyFocusItems = pgTable(
       table.itemId,
     ),
     index("daily_focus_items_user_id_idx").on(table.userId),
+    check(
+      "daily_focus_items_status_snapshot_check",
+      sql`${table.statusSnapshot} in ${enumList(ITEM_STATUSES)}`,
+    ),
+    check(
+      "daily_focus_items_part_percentage_snapshot_check",
+      sql`${table.partPercentageSnapshot} between 0 and 100`,
+    ),
   ],
 );
 

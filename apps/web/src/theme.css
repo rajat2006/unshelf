@@ -79,6 +79,31 @@
   justify-content: space-between;
 }
 
+.daily-focus-history__navigation,
+.daily-focus-history__navigation form,
+.daily-focus-history__navigation label,
+.daily-focus-history__entries,
+.daily-focus-history__entries li {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.daily-focus-history__navigation form {
+  grid-template-columns: minmax(0, 14rem) auto;
+  align-items: end;
+}
+
+.daily-focus-history__entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.daily-focus-history__entries li {
+  border-bottom: 1px solid var(--line);
+  padding-block: 0.75rem;
+}
+
 /* Dark is a peer, not an add-on: the same ten roles, redefined. */
 @media (prefers-color-scheme: dark) {
   :root {

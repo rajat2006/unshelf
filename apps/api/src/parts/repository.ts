@@ -12,6 +12,7 @@ import {
   type UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
 import { getItem } from "../items/repository";
 import { items, parts } from "../schema";
 
@@ -47,6 +48,7 @@ export async function createParts(
     );
 
     if (start > 0) await deriveItemStatus(tx, input);
+    await refreshTodayEntrySnapshot(tx, input);
 
     return getItem(tx, input.userId, input.itemId);
   });
@@ -170,6 +172,7 @@ export async function updatePartCompletion(
         ),
       );
     await deriveItemStatus(tx, input);
+    await refreshTodayEntrySnapshot(tx, input);
     return getItem(tx, input.userId, input.itemId);
   });
 }
@@ -221,6 +224,7 @@ export async function removePart(
         .set({ statusMode: StatusMode.Manual })
         .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
     }
+    await refreshTodayEntrySnapshot(tx, input);
     return getItem(tx, input.userId, input.itemId);
   });
 }

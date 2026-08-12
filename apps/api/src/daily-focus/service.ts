@@ -27,6 +27,16 @@ export const getTodayFocus = ({
   userId: UserId;
 }) => dailyFocusRepository.getTodayFocus(db, userId);
 
+export const getHistoricalFocus = ({
+  db,
+  userId,
+  date,
+}: {
+  db: Database;
+  userId: UserId;
+  date: string;
+}) => dailyFocusRepository.getHistoricalFocus({ db, userId, date });
+
 export const removeTodayItem = ({
   db,
   userId,

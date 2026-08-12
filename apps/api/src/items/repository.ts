@@ -13,6 +13,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
 import { itemLabels, items, labels } from "../schema";
 
 export interface ItemRow {
@@ -198,20 +199,27 @@ export async function updateItemStatus(
   itemId: ItemId,
   status: Status,
 ): Promise<Item | null> {
-  const rows = await db
-    .update(items)
-    .set({
-      completedAt: sql<Date | null>`case
-        when ${items.status} <> 'done' and ${status} = 'done' then now()
-        when ${items.status} = 'done' and ${status} <> 'done' then null
-        else ${items.completedAt}
-      end`,
-      status,
-      statusMode: StatusMode.Manual,
-    })
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
-    .returning({ id: items.id });
-  return rows[0] ? getItemSummary(db, userId, itemId) : null;
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${itemId}, 0))`,
+    );
+    const rows = await tx
+      .update(items)
+      .set({
+        completedAt: sql<Date | null>`case
+          when ${items.status} <> 'done' and ${status} = 'done' then now()
+          when ${items.status} = 'done' and ${status} <> 'done' then null
+          else ${items.completedAt}
+        end`,
+        status,
+        statusMode: StatusMode.Manual,
+      })
+      .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+      .returning({ id: items.id });
+    if (!rows[0]) return null;
+    await refreshTodayEntrySnapshot(tx, { userId, itemId });
+    return getItemSummary(tx, userId, itemId);
+  });
 }
 
 /**
