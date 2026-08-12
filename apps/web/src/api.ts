@@ -69,14 +69,6 @@ async function authenticatedRequest(
   return response;
 }
 
-async function requestWithoutBody(
-  user: CurrentUser,
-  path: string,
-  init: RequestInit,
-): Promise<void> {
-  await authenticatedRequest(user, path, init);
-}
-
 /** Fetch All — every Item belonging to the current User. */
 export async function fetchAll(user: CurrentUser): Promise<Item[]> {
   return requestJson<Item[]>(user, "/api/items");
@@ -253,7 +245,7 @@ export async function suppressDailyPlanningItem(
   user: CurrentUser,
   itemId: ItemId,
 ): Promise<void> {
-  return requestWithoutBody(user, "/api/daily-focus/today/suppressions", {
+  await authenticatedRequest(user, "/api/daily-focus/today/suppressions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ itemId }),

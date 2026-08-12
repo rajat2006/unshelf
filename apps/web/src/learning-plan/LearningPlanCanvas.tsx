@@ -270,12 +270,14 @@ export function LearningPlanCanvas({
   const width = PAD * 2 + topologyLayout.depthCount * COL_W;
   const height = PAD * 2 + topologyLayout.laneCount * LANE_H;
 
-  const frontier = sequencedNodes.find((n) => {
-    if (isDone(n)) return false;
-    const preds = edges
-      .filter((e) => e.toNodeId === n.id)
-      .map((e) => e.fromNodeId);
-    return preds.every((p) => isDone(nodeById.get(p)!));
+  const frontier = sequencedNodes.find((node) => {
+    if (isDone(node)) return false;
+    const predecessorIds = edges
+      .filter((edge) => edge.toNodeId === node.id)
+      .map((edge) => edge.fromNodeId);
+    return predecessorIds.every((predecessorId) =>
+      isDone(nodeById.get(predecessorId)!),
+    );
   });
 
   // ---- pointer handlers (desktop authoring; pan works read-only too) ----
