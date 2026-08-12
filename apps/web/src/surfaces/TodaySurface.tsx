@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemRow } from "../items/ItemRow";
+import { planItemBackgroundLocation } from "../items/item-route-state";
 
 type TodayState =
   | { status: "loading" }
@@ -129,11 +130,14 @@ export function TodaySurface() {
                     item={item}
                     user={user}
                     onChanged={replaceItem}
-                    detailBackgroundPath={
+                    detailBackgroundLocation={
                       origin
-                        ? origin.stage
-                          ? `/plans/${origin.learningPlan.id}/stages/${origin.stage.id}`
-                          : `/plans/${origin.learningPlan.id}`
+                        ? planItemBackgroundLocation({
+                            learningPlanId: origin.learningPlan.id,
+                            ...(origin.stage
+                              ? { stageId: origin.stage.id }
+                              : {}),
+                          })
                         : undefined
                     }
                   >

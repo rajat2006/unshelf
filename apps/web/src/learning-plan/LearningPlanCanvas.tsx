@@ -25,6 +25,10 @@ import {
   type TopologyPlacement,
 } from "../topology";
 import { ProgressRing } from "./ProgressRing";
+import {
+  itemDetailRouteState,
+  planItemBackgroundLocation,
+} from "../items/item-route-state";
 
 /**
  * The Learning Plan canvas — ADR-0010's topology-as-journey, reskinned to Quiet Focus.
@@ -603,13 +607,9 @@ function LooseNodeRail({
                 {node.kind === PlanNodeKind.Item ? (
                   <Link
                     to={`/items/${node.item.id}`}
-                    state={{
-                      backgroundLocation: {
-                        pathname: `/plans/${learningPlanId}`,
-                        search: "",
-                        hash: "",
-                      },
-                    }}
+                    state={itemDetailRouteState(
+                      planItemBackgroundLocation({ learningPlanId }),
+                    )}
                     aria-label={`Open ${name}`}
                     className="unsequenced-rail__stage"
                   >
@@ -814,13 +814,9 @@ function Waypoint({
       {node.kind === PlanNodeKind.Item ? (
         <Link
           to={`/items/${node.item.id}`}
-          state={{
-            backgroundLocation: {
-              pathname: `/plans/${learningPlanId}`,
-              search: "",
-              hash: "",
-            },
-          }}
+          state={itemDetailRouteState(
+            planItemBackgroundLocation({ learningPlanId }),
+          )}
           className="learning-plan-stage-link"
           aria-label={`Open ${name}`}
           title={progressLabel}

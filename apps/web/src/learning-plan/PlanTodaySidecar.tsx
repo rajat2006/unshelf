@@ -10,6 +10,10 @@ import {
 } from "@unshelf/shared";
 import { addItemToToday, fetchLearningPlanStage, fetchToday } from "../api";
 import type { CurrentUser } from "../application-auth/types";
+import {
+  itemDetailRouteState,
+  planItemBackgroundLocation,
+} from "../items/item-route-state";
 
 interface PlannedItem {
   item: Item;
@@ -110,13 +114,10 @@ export function PlanTodaySidecar({
               {plannedItems.map((plannedItem) => {
                 const { item, stage } = plannedItem;
                 const selected = selectedIds.has(item.id);
-                const backgroundLocation = {
-                  pathname: stage
-                    ? `/plans/${learningPlan.id}/stages/${stage.id}`
-                    : `/plans/${learningPlan.id}`,
-                  search: "",
-                  hash: "",
-                };
+                const backgroundLocation = planItemBackgroundLocation({
+                  learningPlanId: learningPlan.id,
+                  ...(stage ? { stageId: stage.id } : {}),
+                });
                 return (
                   <li key={item.id}>
                     <span>{item.title}</span>
@@ -132,7 +133,7 @@ export function PlanTodaySidecar({
                         </button>
                         <Link
                           to={`/items/${item.id}`}
-                          state={{ backgroundLocation }}
+                          state={itemDetailRouteState(backgroundLocation)}
                           aria-label={`Open ${item.title} from Today`}
                         >
                           Open

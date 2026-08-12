@@ -230,6 +230,69 @@ describe("Daily Focus service", () => {
     expect(focus.body).toMatchObject({ total: 0, entries: [] });
   });
 
+  it("combines Items from several Learning Plans with an unplanned Library Item", async () => {
+    const user = "daily-focus-mixed-origins";
+    const createItem = async (title: string) =>
+      (
+        await request(app)
+          .post("/api/items")
+          .set(TEST_USER_HEADER, user)
+          .send({ title, type: "article" })
+      ).body as Item;
+    const createPlan = async (name: string) =>
+      (
+        await request(app)
+          .post("/api/learning-plans")
+          .set(TEST_USER_HEADER, user)
+          .send({ name })
+      ).body as { id: string; name: string };
+    const firstItem = await createItem("First planned Item");
+    const secondItem = await createItem("Second planned Item");
+    const unplannedItem = await createItem("Library-only Item");
+    const firstPlan = await createPlan("First Plan");
+    const secondPlan = await createPlan("Second Plan");
+    for (const [plan, item] of [
+      [firstPlan, firstItem],
+      [secondPlan, secondItem],
+    ] as const) {
+      await request(app)
+        .post(`/api/learning-plans/${plan.id}/items`)
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: item.id })
+        .expect(201);
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, user)
+        .send({
+          itemId: item.id,
+          origin: { learningPlanId: plan.id },
+        })
+        .expect(201);
+    }
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: unplannedItem.id })
+      .expect(201);
+
+    const focus = (
+      await request(app)
+        .get("/api/daily-focus/today")
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyFocus;
+    expect(
+      focus.entries.map((entry) => ({
+        itemId: entry.item.id,
+        planId: entry.origin?.learningPlan.id ?? null,
+      })),
+    ).toEqual([
+      { itemId: firstItem.id, planId: firstPlan.id },
+      { itemId: secondItem.id, planId: secondPlan.id },
+      { itemId: unplannedItem.id, planId: null },
+    ]);
+  });
+
   it("removes only focus membership and derives completion from shared Item Status", async () => {
     const user = "daily-focus-remove-owner";
     const item = (

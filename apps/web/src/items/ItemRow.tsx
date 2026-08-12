@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
 import { Link, useLocation } from "react-router";
 import type { CurrentUser } from "../application-auth/types";
-import { readItemBackgroundLocation } from "./item-route-state";
+import {
+  itemDetailRouteState,
+  readItemBackgroundLocation,
+  type ItemBackgroundLocation,
+} from "./item-route-state";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { TYPE_LABELS } from "./presentation";
@@ -17,7 +21,7 @@ interface ItemRowProps {
    * take it out again inside a Stage. The only part of a row that varies.
    */
   children?: ReactNode;
-  detailBackgroundPath?: string;
+  detailBackgroundLocation?: ItemBackgroundLocation;
 }
 
 /**
@@ -35,7 +39,7 @@ export function ItemRow({
   user,
   onChanged,
   children,
-  detailBackgroundPath,
+  detailBackgroundLocation,
 }: ItemRowProps) {
   const location = useLocation();
   const preservedBackground = readItemBackgroundLocation(location.state);
@@ -43,16 +47,14 @@ export function ItemRow({
     location.pathname.startsWith("/items/") && preservedBackground
       ? preservedBackground
       : location;
-  const backgroundLocation = detailBackgroundPath
-    ? { pathname: detailBackgroundPath, search: "", hash: "" }
-    : originLocation;
+  const backgroundLocation = detailBackgroundLocation ?? originLocation;
 
   return (
     <li className="item-row">
       <Link
         className="item-row__title"
         to={`/items/${item.id}`}
-        state={{ backgroundLocation }}
+        state={itemDetailRouteState(backgroundLocation)}
       >
         {item.title}
       </Link>
