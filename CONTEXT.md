@@ -31,10 +31,29 @@ _course_, _book_, or _other_. Chosen by the User at capture; a label on the Item
 not a separate kind of record.
 _Avoid_: Kind, Category, Format
 
+**Structured Item**:
+An Item that currently owns a non-empty, flat, ordered list of Parts, not a
+separate kind of Item. Structure is optional for every Type and is a User-owned
+snapshot entered and edited manually.
+_Avoid_: Structured Type, Container Item
+
+**Part**:
+A lightweight, checkable title owned in a flat order by exactly one Structured
+Item. It is not an Item, has no Type, Source, Status, Target date, or Labels, does
+not appear in the Library, and cannot be selected independently for a Learning
+Plan or Daily Focus; renaming or reordering it preserves its identity and
+Completion.
+_Avoid_: Child Item, Sub-item, Library Item
+
 **Status**:
 An Item's item-level progress — _not started_, _in progress_, or _done_. There is
-one Status per Item, shared across every place the Item is referenced. Stage and
-Learning Plan progress derive from this value rather than storing another Status.
+one shared Status per Item across every place it is referenced. A Structured Item
+derives it from Part completion unless the User chooses a Status manually. A
+manual choice does not rewrite Part checkboxes, and its Status remains visible
+separately from the derived Part percentage. Creating its initial Part list or
+removing its final Part preserves that choice; other Part-completion or membership
+changes return Status to automatic derivation. Stage and Learning Plan progress
+derive from this value rather than storing another Status.
 _Avoid_: Progress, State
 
 **Target date**:
