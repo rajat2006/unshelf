@@ -1,5 +1,12 @@
 # Ingestion is one uniform manual capture; no fetch, no import
 
+> **Exact-Provider-identity dedupe and provenance superseded by [the recurring
+> discovery decision](https://github.com/rajat2006/unshelf/issues/266)
+> (2026-08-08).** Manual Capture remains immediate and Source-only matches still
+> do not deduplicate. When Unshelf establishes an exact Provider identity, one User
+> has at most one matching Item, and later Candidates link to it. This ADR otherwise
+> continues to describe the original v1 manual-capture boundary.
+
 v1 has no ingestion machinery. Content enters Unshelf through a **single uniform
 manual capture** — the User creates an **Item** by hand with a required title, a
 chosen type, and an optional Source, landing in **All**. There is no metadata

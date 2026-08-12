@@ -13,6 +13,66 @@ In v1 one User is one isolated tenant; there are no teams, and nothing is shared
 between Users.
 _Avoid_: Account, Customer, Tenant (all denote the same thing as User in v1)
 
+### Recurring discovery
+
+**Provider**:
+An external service Unshelf queries for learning material through provider-specific
+targets and filters. Provider details stay behind the recurring-discovery boundary
+rather than becoming shared Unshelf concepts.
+_Avoid_: Source (the optional link stored on an Item), Follow
+
+**Follow**:
+A User-owned instruction to discover learning material repeatedly from a
+Provider-defined target, such as a channel, playlist, or query. Unshelf owns its
+active, paused, or removed lifecycle; pausing or removing it stops new Discoveries
+without resolving existing ones or deleting history. Resuming examines current
+Provider results without backfilling the paused interval.
+_Avoid_: Subscription (may mean a paid plan or a provider's own subscription),
+Channel (one provider-specific kind of target), Source (already the link stored
+on an Item)
+
+**Candidate**:
+A provider-identified piece of potential learning material surfaced before an
+Item exists or is linked for it. For one User, one Provider identity denotes one
+durable Candidate, which retains every Follow and Discovery that surfaced it and
+may link to one Item. If that Item is removed, the Candidate retains the prior
+Keep in its history and a future Discovery may link it to a new Item.
+_Avoid_: Item, Inbox Item, Recommendation
+
+**Discovery**:
+One occurrence accepted by a Provider's discovery policy of a Follow surfacing a
+Candidate to its User. At minimum, repeated polling while that result remains
+present for the same Follow creates none; a different Follow or a result that
+disappears and later reappears is eligible for a new one. Each Discovery
+independently moves from _new_ to _seen_, then to _kept_ or _dismissed_, while its
+history remains durable.
+_Avoid_: Candidate, Capture, Import
+
+**Provider identity**:
+A Provider and that Provider's stable reference to one piece of learning material,
+treated together as an exact, provider-namespaced identity. Matching titles or raw
+Source strings are not Provider identity.
+_Avoid_: Source, title, URL
+
+**Seen**:
+The Discovery intake state meaning the User has acknowledged its Candidate but
+has not chosen Keep or Dismiss.
+_Avoid_: Read, Viewed, Completed
+
+**Keep**:
+A User's decision to resolve one Discovery by linking its Candidate to an Item in
+the Library. Keep creates that Item from the Candidate's current title, Type,
+Source, and Provider identity, or reuses the User's Item with that exact Provider
+identity. It does not resolve other Discoveries or silently apply later Provider
+metadata changes to the Item.
+_Avoid_: Capture, Save, Import
+
+**Dismiss**:
+A User's decision to remove one Discovery from intake without changing its
+Candidate or linked Item. It does not suppress later Discoveries; they may surface
+again with the Candidate's prior dismissal or Keep history.
+_Avoid_: Delete, Hide, Ignore
+
 ### Items & organisation
 
 **Item**:
@@ -21,8 +81,9 @@ course, YouTube playlist, or (offline) book — added by hand: paste a link or t
 a title. Referenced, not copied: one Item can be placed in many Learning Plans,
 but at most once in any one Learning Plan, and every placement points at the
 single stored record. "Only one of it" is about model identity —
-one row per capture — not source-uniqueness: capture the same link twice and you
-have two Items (v1 does not dedupe).
+one row per capture — not source-uniqueness: capturing the same link twice creates
+two Items unless the capture establishes the same exact Provider identity, in
+which case the User's existing Item is reused.
 _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:
@@ -85,6 +146,9 @@ chosen Type, optional Source) landing in the **Library**. v1 has a single captur
 metadata is fetched (you type the title), and there is no bulk **import** from
 other tools. Pasting a link and adding an offline book by title are the same
 capture — the link just fills Source, which is stored verbatim and unvalidated.
+Manual Capture creates or reuses the Item immediately; it never waits in recurring
+discovery intake. If a matching Candidate is discovered later, it links to that
+Item while its Discovery remains visible and unresolved as already captured.
 _Avoid_: Import, Ingest, Add, Save (Import means a bulk pull from an external
 tool — a deferred sibling of Capture, not a synonym)
 
