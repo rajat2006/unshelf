@@ -1,13 +1,13 @@
 import { Link, NavLink, useLocation } from "react-router";
 import { UserButton } from "../application-auth/UserButton";
+import { readItemBackgroundLocation } from "../items/item-route-state";
 import { useCapture } from "./useCapture";
 import { Wordmark } from "./Wordmark";
 
 /**
- * The slim two-door top bar (design spec §3), present on every signed-in surface.
- * Left: the Unshelf mark (= Learning Plans / home) and the two named doors, Learning Plans and
- * Library — the two organising axes, named so neither reads as filtering the
- * other. Right: the global Capture action and the account control (ADR-0014).
+ * The four-room top bar, present on every signed-in surface. Left: the Unshelf
+ * mark (= Today / home) and the Today, deferred Discover, Library, and Plans
+ * rooms. Right: the global Capture action and the account control.
  * Capture opens a non-navigating overlay, so intake is available from every
  * surface without moving the User off the one they are on.
  *
@@ -18,15 +18,21 @@ import { Wordmark } from "./Wordmark";
 export function TopBar() {
   const { open } = useCapture();
   const location = useLocation();
+  const backgroundLocation = location.pathname.startsWith("/items/")
+    ? readItemBackgroundLocation(location.state)
+    : null;
+  const activePath = backgroundLocation?.pathname ?? location.pathname;
   const libraryActive =
-    location.pathname === "/library" || location.pathname.startsWith("/items/");
-  const plansActive = location.pathname.startsWith("/plans");
+    activePath === "/library" ||
+    (location.pathname.startsWith("/items/") && !backgroundLocation);
+  const plansActive = activePath.startsWith("/plans");
+  const todayActive = activePath.startsWith("/today");
 
   return (
     <header className="top-bar">
       <NavLink
-        to="/plans"
-        aria-label="Unshelf — go to Learning Plans"
+        to="/today"
+        aria-label="Unshelf — go to Today"
         className="top-bar__home"
         end
       >
@@ -34,18 +40,34 @@ export function TopBar() {
       </NavLink>
       <nav aria-label="Primary" className="top-bar__nav">
         <Link
-          to="/plans"
-          className={`top-bar__door${plansActive ? " active" : ""}`}
-          aria-current={plansActive ? "page" : undefined}
+          to="/today"
+          className={`top-bar__door${todayActive ? " active" : ""}`}
+          aria-current={todayActive ? "page" : undefined}
         >
-          Learning Plans
+          Today
         </Link>
+        <button
+          type="button"
+          className="top-bar__door top-bar__door--deferred"
+          aria-label="Discover — Coming later"
+          disabled
+        >
+          <span>Discover</span>
+          <small>Coming later</small>
+        </button>
         <Link
           to="/library"
           className={`top-bar__door${libraryActive ? " active" : ""}`}
           aria-current={libraryActive ? "page" : undefined}
         >
           Library
+        </Link>
+        <Link
+          to="/plans"
+          className={`top-bar__door${plansActive ? " active" : ""}`}
+          aria-current={plansActive ? "page" : undefined}
+        >
+          Plans
         </Link>
       </nav>
       <div className="top-bar__actions">

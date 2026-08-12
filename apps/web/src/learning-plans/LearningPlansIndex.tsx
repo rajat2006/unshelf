@@ -3,8 +3,8 @@ import { Link } from "react-router";
 import type { LearningPlan } from "@unshelf/shared";
 
 /**
- * The Learning Plans index (design spec §2, §6, ADR-0014) — Home. It is Learning Plans-only: the
- * User's LearningPlans as progress cards, plus one quiet action to start another; no
+ * The Learning Plans index in the Plans room. It is Learning Plans-only: the
+ * User's plans as progress cards, plus one quiet action to start another; no
  * label filters and no capture line live here (both were tried and dropped —
  * capture is global chrome, labels live in the Library).
  *
@@ -146,7 +146,7 @@ function EmptyLearningPlans() {
 
 /**
  * Name and create a LearningPlan. Deliberately not autofocused: the global Capture
- * shortcuts (`c` / `⌘K`) must keep working on a freshly loaded Home, which they
+ * shortcuts (`c` / `⌘K`) must keep working on a freshly loaded Plans room, which they
  * only do while focus is not already in an editable control.
  */
 function NewLearningPlanForm({

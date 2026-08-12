@@ -34,13 +34,14 @@ export function PlanTodaySidecar({
 }: PlanTodaySidecarProps) {
   const [focus, setFocus] = useState<DailyFocus | null>(null);
   const [plannedItems, setPlannedItems] = useState<PlannedItem[] | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"load" | "mutation" | null>(null);
+  const [loadVersion, setLoadVersion] = useState(0);
   const [addingId, setAddingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
-      setError(false);
+      setError(null);
       try {
         const stageNodes = topology.nodes.filter(
           (node) => node.kind === PlanNodeKind.Stage,
@@ -64,14 +65,14 @@ export function PlanTodaySidecar({
         setFocus(nextFocus);
         setPlannedItems([...directItems, ...stagedItems]);
       } catch {
-        if (active) setError(true);
+        if (active) setError("load");
       }
     };
     void load();
     return () => {
       active = false;
     };
-  }, [learningPlan.id, topology, user]);
+  }, [learningPlan.id, loadVersion, topology, user]);
 
   const selectedIds = useMemo(
     () => new Set(focus?.entries.map((entry) => entry.item.id) ?? []),
@@ -80,7 +81,7 @@ export function PlanTodaySidecar({
 
   const add = async ({ item, stage }: PlannedItem) => {
     setAddingId(item.id);
-    setError(false);
+    setError(null);
     try {
       setFocus(
         await addItemToToday(user, item.id, {
@@ -89,7 +90,7 @@ export function PlanTodaySidecar({
         }),
       );
     } catch {
-      setError(true);
+      setError("mutation");
     } finally {
       setAddingId(null);
     }
@@ -158,7 +159,21 @@ export function PlanTodaySidecar({
           )}
         </>
       )}
-      {error && <p role="alert">Couldn&apos;t update Today. Try again.</p>}
+      {error && (
+        <div role="alert">
+          <p>
+            {error === "load"
+              ? "Couldn’t load Today."
+              : "Couldn’t update Today."}
+          </p>
+          <button
+            type="button"
+            onClick={() => setLoadVersion((current) => current + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

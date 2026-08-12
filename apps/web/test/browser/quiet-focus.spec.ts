@@ -9,9 +9,11 @@ async function expectNoAccessibilityViolations(page: Page): Promise<void> {
 
 async function startLearningPlan(page: Page, user: string): Promise<void> {
   await page.goto(testAppUrl("/plans", user));
-  await page.getByLabel("Learning Plan name").fill("Quiet Focus journey");
+  await page
+    .getByLabel("Learning Plan name")
+    .fill("Editorial learning journey");
   await page.getByRole("button", { name: "Start a Learning Plan" }).click();
-  await page.getByRole("link", { name: /Quiet Focus journey/ }).click();
+  await page.getByRole("link", { name: /Editorial learning journey/ }).click();
 }
 
 async function addStage(
@@ -41,7 +43,7 @@ async function addStage(
       .getByRole("listitem")
       .filter({ hasText: `${name} continuation` });
     await looseStage
-      .getByRole("button", { name: "Sequence this Stage" })
+      .getByRole("button", { name: `Sequence ${name} continuation` })
       .click();
     await looseStage.getByLabel("Follows").selectOption({ label: name });
     await looseStage
@@ -53,18 +55,22 @@ async function addStage(
   ).toBeVisible();
 }
 
-test("the LearningPlan uses Quiet Focus in both color schemes and exposes non-color state cues", async ({
+test("the Learning Plan uses warm editorial styling in both color schemes and exposes non-color state cues", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name === "phone", "desktop creates the topology");
-  const user = `${testInfo.project.name}-quiet-focus-theme`;
+  const user = `${testInfo.project.name}-editorial-theme`;
 
   await page.emulateMedia({ colorScheme: "light" });
   await startLearningPlan(page, user);
   await addStage(page, "Begin here", true);
 
   const canvas = page.getByRole("region", { name: "Learning Plan canvas" });
-  await expect(canvas).toHaveCSS("background-color", "rgb(244, 245, 247)");
+  await expect(canvas).toHaveCSS("background-color", "rgb(250, 249, 245)");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCSS(
+    "font-family",
+    /Georgia/,
+  );
   await expect(page.getByText("You are here", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Dotted path: ahead", { exact: true }),
@@ -74,7 +80,7 @@ test("the LearningPlan uses Quiet Focus in both color schemes and exposes non-co
   ).toBeVisible();
 
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(canvas).toHaveCSS("background-color", "rgb(18, 19, 25)");
+  await expect(canvas).toHaveCSS("background-color", "rgb(27, 32, 27)");
 
   await expectNoAccessibilityViolations(page);
 });
@@ -127,9 +133,7 @@ test("completed Stages, overlays, rows, and sidebars remain accessible", async (
   });
 
   await page.goto(testAppUrl(`/plans/${learningPlan.id}`, user));
-  await expect(
-    page.getByText(/Completed stage/).first(),
-  ).toBeAttached();
+  await expect(page.getByText(/Completed stage/).first()).toBeAttached();
   await expectNoAccessibilityViolations(page);
 
   await page.goto(testAppUrl("/library", user));

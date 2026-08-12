@@ -31,7 +31,8 @@ import {
 } from "../items/item-route-state";
 
 /**
- * The Learning Plan canvas — ADR-0010's topology-as-journey, reskinned to Quiet Focus.
+ * The Learning Plan canvas — ADR-0010's topology-as-journey on the warm
+ * editorial token layer.
  * User's Stages are waypoints on a horizontal trodden learningPlan; sequence runs
  * left→right, a fork is a Stage with several out-edges, a join several in-edges.
  * Every position is *derived* from the topology (`layout`), never stored, so the

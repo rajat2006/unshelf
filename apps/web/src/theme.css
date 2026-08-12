@@ -1,28 +1,27 @@
 /*
- * Quiet Focus — the locked token layer (ADR-0012, design spec §1). Every colour
- * decision routes through a custom property so the light/dark peers and the
- * "never red for past-target" rule are enforced in one place, not per component.
- * Switching light↔dark redefines ~ten tokens; nothing else changes.
+ * Warm editorial workspace (#302). Every colour decision routes through a
+ * custom property so light/dark parity and the "never red for past-target"
+ * rule remain enforced in one place.
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Palette — light (design spec §1 token table). */
-  --bg: #fafafb;
-  --surface: #ffffff;
-  --ink: #16181d;
-  --muted: #676c76;
-  --line: #e6e8ec;
-  --accent: #4b57c4;
-  --accent-h: #3b46a8;
+  /* Warm neutrals and forest-green action colour. */
+  --bg: #f7f6f1;
+  --surface: #fffdf8;
+  --ink: #20231f;
+  --muted: #666b64;
+  --line: #d9d9d1;
+  --accent: #334b39;
+  --accent-h: #273d2c;
   --on-accent: #ffffff;
-  --done: #1f9d63;
-  --on-done: #0e0f13;
-  --past: #767c88;
+  --done: #4d7058;
+  --on-done: #ffffff;
+  --past: #6e746d;
   --field-bg: #ffffff;
-  --field-line: #d9dce2;
-  --learning-plan-bg: #f4f5f7;
+  --field-line: #d5d5cd;
+  --learning-plan-bg: #faf9f5;
   --learning-plan-grid: color-mix(in srgb, var(--line) 65%, transparent);
   --shadow: color-mix(in srgb, var(--ink) 14%, transparent);
 
@@ -37,9 +36,9 @@
   --radius-2: 8px;
   --radius-3: 10px;
 
-  /* One modern grotesque for everything — the native stack, zero webfont cost. */
-  --font:
+  --font-body:
     system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
 }
 
 .today-surface {
@@ -104,22 +103,23 @@
   padding-block: 0.75rem;
 }
 
-/* Dark is a peer, not an add-on: the same ten roles, redefined. */
+/* Dark is a peer, not an add-on: the same semantic roles, redefined. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e0f13;
-    --surface: #16181d;
-    --ink: #eceef3;
-    --muted: #8b909b;
-    --line: #24272e;
-    --accent: #7c88ff;
-    --accent-h: #99a2ff;
-    --on-accent: #0e0f13;
-    --done: #35c081;
-    --past: #868c98;
-    --field-bg: #1a1c22;
-    --field-line: #2c2f38;
-    --learning-plan-bg: #121319;
+    --bg: #171b17;
+    --surface: #202520;
+    --ink: #f3f1e8;
+    --muted: #aab0a7;
+    --line: #3b423b;
+    --accent: #86aa8e;
+    --accent-h: #9dbda3;
+    --on-accent: #101510;
+    --done: #79ad85;
+    --on-done: #101510;
+    --past: #9aa198;
+    --field-bg: #252b25;
+    --field-line: #465046;
+    --learning-plan-bg: #1b201b;
   }
 }
 
@@ -228,11 +228,27 @@ body {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
+  justify-content: center;
   padding: var(--space-2);
+  border: 0;
   border-radius: var(--radius-1);
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-weight: 500;
   text-decoration: none;
+}
+
+.top-bar__door--deferred {
+  flex-direction: column;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.top-bar__door--deferred small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1;
 }
 
 .top-bar__door[aria-current="page"],
@@ -1715,9 +1731,16 @@ body {
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font);
+  font-family: var(--font-body);
   /* Reflow to any width with no page-level horizontal scroll (ADR-0008). */
   overflow-x: hidden;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
 }
 
 /* Keyboard focus is always visible, in both themes. */

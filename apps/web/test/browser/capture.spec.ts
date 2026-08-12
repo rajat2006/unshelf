@@ -29,7 +29,9 @@ function composer(page: Page) {
 // Every signed-in surface carries the same global Capture action, and opening it
 // never changes the route — it opens over wherever the User already was.
 for (const surface of [
-  { name: "Learning Plans index", path: "/plans" },
+  { name: "Today", path: "/today" },
+  { name: "Daily Focus history", path: "/today/2026-08-11" },
+  { name: "Plans index", path: "/plans" },
   { name: "Library", path: "/library" },
   { name: "a LearningPlan", path: "/plans/learning-plan-1" },
   { name: "an Item", path: "/items/item-1" },
@@ -79,7 +81,7 @@ test("the c shortcut opens Capture when focus is not in an editable control", as
 test("shortcuts are suppressed while focus is in an editable control", async ({
   page,
 }, testInfo) => {
-  // Home carries an editable field (the LearningPlan-name composer); focus it.
+  // Plans carries an editable field (the Learning Plan-name composer); focus it.
   await page.goto(appUrl(testInfo, "/plans"));
   const field = page.getByLabel("Learning Plan name");
   await field.click();

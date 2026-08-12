@@ -473,6 +473,9 @@ test("a User adds direct and staged Plan Items to Today with durable origin cont
 
   await page.goto(testAppUrl(`/plans/${plan.id}`, user));
   const sidecar = page.getByRole("complementary", { name: "Today sidecar" });
+  await expect(
+    page.getByRole("complementary", { name: /Discover/i }),
+  ).toHaveCount(0);
   await sidecar
     .getByRole("button", { name: `Add ${directItem.title} to Today` })
     .click();
@@ -497,7 +500,13 @@ test("a User adds direct and staged Plan Items to Today with durable origin cont
   await focus.getByRole("link", { name: stagedItem.title }).click();
   await expect(page).toHaveURL(new RegExp(`/items/${stagedItem.id}$`));
   await expect(
+    page.getByRole("link", { name: "Plans", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
     page.getByRole("complementary", { name: "Query engines details" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Practical databases" }),
   ).toBeVisible();
   await page
     .getByRole("complementary", { name: `${stagedItem.title} details` })
@@ -506,6 +515,9 @@ test("a User adds direct and staged Plan Items to Today with durable origin cont
   await expect(page).toHaveURL(
     new RegExp(`/plans/${plan.id}/stages/${stage.id}$`),
   );
+  await expect(
+    page.getByRole("complementary", { name: "Query engines details" }),
+  ).toBeVisible();
 
   if (testInfo.project.name === "phone") {
     expect(
@@ -515,4 +527,40 @@ test("a User adds direct and staged Plan Items to Today with durable origin cont
       page.getByRole("button", { name: /^(Link from|Disconnect) / }),
     ).toHaveCount(0);
   }
+});
+
+test("the Plan Today sidecar contains a failed load and retries locally", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-plan-today-retry`;
+  const plan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Resilient planning",
+    })
+  ).json()) as LearningPlan;
+  let todayReadsAvailable = false;
+  await page.route("**/api/daily-focus/today", async (route) => {
+    if (!todayReadsAvailable) {
+      await route.fulfill({
+        status: 503,
+        json: { error: "temporarily unavailable" },
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/plans/${plan.id}`, user));
+
+  const sidecar = page.getByRole("complementary", { name: "Today sidecar" });
+  await expect(sidecar.getByRole("alert")).toContainText("Couldn’t load Today");
+  await expect(
+    page.getByRole("link", { name: "Plans", exact: true }),
+  ).toBeVisible();
+
+  todayReadsAvailable = true;
+  await sidecar.getByRole("button", { name: "Retry" }).click();
+
+  await expect(sidecar.getByText("0 Items in Today")).toBeVisible();
+  await expect(sidecar.getByRole("alert")).toHaveCount(0);
 });

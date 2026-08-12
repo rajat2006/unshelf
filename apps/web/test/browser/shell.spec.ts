@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { testAppUrl } from "./test-helpers";
 
 /**
- * The routed Quiet Focus shell (#91): route table, auth gate, intended-route
+ * The routed four-room shell: route table, auth gate, intended-route
  * restoration, not-found recovery, and the theme + responsive foundation. These
  * assert external behaviour — visible surfaces and controls, URLs, restored deep
  * links — not component structure or token plumbing.
@@ -23,20 +23,28 @@ async function pageHasNoHorizontalOverflow(page: Page): Promise<boolean> {
   });
 }
 
-test("the top bar carries the Learning Plans and Library doors on every signed-in surface", async ({
+test("the top bar carries the four workspace rooms with Today as home", async ({
   page,
 }, testInfo) => {
-  await page.goto(appUrl(testInfo, "/plans"));
+  await page.goto(appUrl(testInfo, "/"));
 
-  const learningPlansDoor = page.getByRole("link", {
-    name: "Learning Plans",
-    exact: true,
+  await expect(page).toHaveURL(/\/test\/browser\/today$/);
+
+  const todayDoor = page.getByRole("link", { name: "Today", exact: true });
+  const discoverDoor = page.getByRole("button", {
+    name: "Discover — Coming later",
   });
+
+  const plansDoor = page.getByRole("link", { name: "Plans", exact: true });
   const libraryDoor = page.getByRole("link", { name: "Library", exact: true });
-  await expect(learningPlansDoor).toBeVisible();
+  await expect(todayDoor).toHaveAttribute("aria-current", "page");
+  await expect(discoverDoor).toBeVisible();
+  await expect(discoverDoor).toBeDisabled();
+  await expect(discoverDoor).toHaveText("DiscoverComing later");
   await expect(libraryDoor).toBeVisible();
+  await expect(plansDoor).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
+    page.getByRole("heading", { level: 1, name: "Today" }),
   ).toBeVisible();
 
   await libraryDoor.click();
@@ -47,14 +55,12 @@ test("the top bar carries the Learning Plans and Library doors on every signed-i
   // The active destination is apparent, not conveyed by colour alone.
   await expect(libraryDoor).toHaveAttribute("aria-current", "page");
   // The doors persist across the surface change.
-  await expect(learningPlansDoor).toBeVisible();
+  await expect(todayDoor).toBeVisible();
 
-  await page
-    .getByRole("link", { name: "Unshelf — go to Learning Plans" })
-    .click();
-  await expect(page).toHaveURL(/\/test\/browser\/plans$/);
+  await page.getByRole("link", { name: "Unshelf — go to Today" }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/today$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
+    page.getByRole("heading", { level: 1, name: "Today" }),
   ).toBeVisible();
 });
 
@@ -88,18 +94,16 @@ test("the route table recognizes the Learning Plan, Stage, and canonical Item ro
   ).toBeVisible();
 });
 
-test("an unknown route recovers to Home", async ({ page }, testInfo) => {
+test("an unknown route recovers to Today", async ({ page }, testInfo) => {
   await page.goto(appUrl(testInfo, "/nowhere-real"));
   await expect(
     page.getByRole("heading", { name: "This page doesn't exist" }),
   ).toBeVisible();
 
-  await page
-    .getByRole("link", { name: "Go to Learning Plans", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/test\/browser\/plans$/);
+  await page.getByRole("link", { name: "Go to Today", exact: true }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/today$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Learning Plans" }),
+    page.getByRole("heading", { level: 1, name: "Today" }),
   ).toBeVisible();
 });
 
@@ -148,7 +152,7 @@ test("a valid intended private route survives sign-in", async ({
   ).toBeVisible();
 });
 
-test("the system colour scheme resolves to the locked Quiet Focus page colour", async ({
+test("the system colour scheme resolves to warm editorial page colours", async ({
   page,
 }, testInfo) => {
   const pageBackground = () =>
@@ -156,11 +160,11 @@ test("the system colour scheme resolves to the locked Quiet Focus page colour", 
 
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(appUrl(testInfo, "/plans"));
-  expect(await pageBackground()).toBe("rgb(250, 250, 251)"); // #FAFAFB
+  expect(await pageBackground()).toBe("rgb(247, 246, 241)"); // #F7F6F1
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(appUrl(testInfo, "/plans"));
-  expect(await pageBackground()).toBe("rgb(14, 15, 19)"); // #0E0F13
+  expect(await pageBackground()).toBe("rgb(23, 27, 23)"); // #171B17
 });
 
 test("keyboard focus reaches the top bar with a visible focus ring", async ({
@@ -181,6 +185,9 @@ test("the shell reflows with no page-level horizontal scroll", async ({
   page,
 }, testInfo) => {
   await page.goto(appUrl(testInfo, "/plans"));
+  expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
+
+  await page.goto(appUrl(testInfo, "/today"));
   expect(await pageHasNoHorizontalOverflow(page)).toBe(true);
 
   await page.goto(appUrl(testInfo, "/library"));

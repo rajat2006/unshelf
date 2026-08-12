@@ -88,7 +88,7 @@ const render = (readOnly: boolean, view: LearningPlanView = learningPlan) =>
     </MemoryRouter>,
   );
 
-describe("Learning Plan canvas — Quiet Focus", () => {
+describe("Learning Plan canvas", () => {
   it("draws each Stage as a waypoint with its name and progress", () => {
     const markup = render(false);
 

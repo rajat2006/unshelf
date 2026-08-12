@@ -59,7 +59,7 @@ test("the Library triages one shared Item across Status and Target date", async 
     .fill("2000-01-01");
   const pastTarget = page.getByText("Past target", { exact: true });
   await expect(pastTarget).toBeVisible();
-  await expect(pastTarget).toHaveCSS("color", "rgb(118, 124, 136)");
+  await expect(pastTarget).toHaveCSS("color", "rgb(110, 116, 109)");
 
   await status.getByRole("button", { name: "Done" }).click();
   await expect(pastTarget).toHaveCount(0);
@@ -199,7 +199,7 @@ test("selecting and clearing a Label filter updates the URL and visible Library 
   ).json()) as { labels: Array<{ id: string }> };
   expect(stored.labels.map((label) => label.id)).toEqual([systems.id]);
 
-  await page.getByRole("link", { name: "Learning Plans", exact: true }).click();
+  await page.getByRole("link", { name: "Plans", exact: true }).click();
   await expect(
     page.getByRole("group", { name: "Filter by Label" }),
   ).toHaveCount(0);
@@ -470,7 +470,7 @@ test("the Library keeps its shell while row-shaped loading resolves", async ({
     page.getByRole("status", { name: "Loading Library" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Learning Plans", exact: true }),
+    page.getByRole("link", { name: "Plans", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Library", exact: true }),

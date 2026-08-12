@@ -13,10 +13,10 @@ import {
 } from "../learning-plans/LearningPlansIndex";
 
 /**
- * Home — the Learning Plans index (design spec §2, ADR-0014). Home is the User's LearningPlans,
- * each with derived progress, and one quiet action to start another; it is
- * Learning Plans-only (no label filters, no capture line — capture is global chrome and
- * labels live in the Library). This container owns the fetch and the create; the
+ * The Plans room is the Learning Plans index: each plan has derived progress
+ * and one quiet action to start another. It is Plans-only (no label filters or
+ * capture line — capture is global chrome and labels live in the Library).
+ * This container owns the fetch and the create; the
  * `LearningPlansIndex` below renders the loading, error, empty, and card states.
  */
 export function PlansSurface() {

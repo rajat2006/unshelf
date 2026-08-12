@@ -230,6 +230,9 @@ test("opening an Item from a Stage preserves its LearningPlan and follows browse
     }),
   ).toBeVisible();
   await expect(
+    page.getByRole("link", { name: "Plans", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
     page.getByRole("button", { name: stage.name, exact: true }),
   ).toBeEnabled();
   await expect(

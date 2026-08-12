@@ -50,6 +50,24 @@ test("a User explicitly chooses and edits today's shared Library Items", async (
   ).toBeVisible();
   await expect(page.getByText("0 of 1 done")).toBeVisible();
 
+  await focus
+    .getByRole("link", { name: "Read Designing Data-Intensive Applications" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/items/${chosen.id}$`));
+  await expect(
+    page.getByRole("link", { name: "Today", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Today" }),
+  ).toBeVisible();
+  await page
+    .getByRole("complementary", {
+      name: "Read Designing Data-Intensive Applications details",
+    })
+    .getByRole("button", { name: "Close details" })
+    .click();
+  await expect(page).toHaveURL(/\/today(?:\?|$)/);
+
   await page.reload();
   await expect(
     focus.getByText("Read Designing Data-Intensive Applications", {
@@ -131,7 +149,7 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     })
     .click();
   await expect(page.getByText("Added to Today")).toBeVisible();
-  await page.getByRole("link", { name: "Go to Today" }).click();
+  await page.getByRole("link", { name: "Go to Today", exact: true }).click();
   await expect(page).toHaveURL(/\/today\?/);
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 });

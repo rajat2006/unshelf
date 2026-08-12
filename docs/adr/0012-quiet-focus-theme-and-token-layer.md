@@ -63,3 +63,16 @@ dark, until it reads tokens instead of literals.
   prototype (`apps/web/prototype-theme.html` →
   `apps/web/src/prototype/ThemePrototype.tsx`, `worktree-issue-55-theme-prototype`),
   never merged.
+
+## Update — the four-room workspace adopts the warm editorial direction (2026-08-12)
+
+PRD #302 and its selected Rooms + plan studio prototype supersede this ADR's
+cool-neutral palette and single-grotesque typography. The signed-in workspace
+now uses warm neutral surfaces, a forest-green primary accent, serif display
+type, and a readable system-ui body face.
+
+The durable parts of this decision still stand: colours continue to flow through
+semantic custom properties; light and dark remain peers; completion stays green;
+past-target treatment stays quiet and non-alarming; and visible focus plus
+reduced-motion behavior remain required. The prototype's literals informed the
+direction but did not become a second styling system.

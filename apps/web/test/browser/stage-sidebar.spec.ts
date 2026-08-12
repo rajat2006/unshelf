@@ -75,7 +75,7 @@ test("a Stage route opens beside its interactive LearningPlan and follows browse
     page.getByRole("heading", { level: 1, name: `${user} Learning Plan` }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Sequence this Stage" }),
+    page.getByRole("button", { name: `Sequence ${stageName}` }),
   ).toBeEnabled();
 
   await page.goBack();
@@ -358,12 +358,13 @@ test("Stage detail loading stays shaped inside the sidebar", async ({
   const user = `${testInfo.project.name}-stage-sidebar-loading`;
   const { learningPlan, stage } = await seedStageWithItem(page, user);
   let releaseStage!: () => void;
+  const stageResponseReleased = new Promise<void>((resolve) => {
+    releaseStage = resolve;
+  });
   await page.route(
     `**/api/learning-plans/${learningPlan.id}/stages/${stage.id}`,
     async (route) => {
-      await new Promise<void>((resolve) => {
-        releaseStage = resolve;
-      });
+      await stageResponseReleased;
       await route.continue();
     },
   );
