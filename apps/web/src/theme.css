@@ -9,7 +9,7 @@
 
   /* Warm neutrals and forest-green action colour. */
   --bg: #f7f6f1;
-  --surface: #fffdf8;
+  --surface: #ffffff;
   --ink: #20231f;
   --muted: #666b64;
   --line: #d9d9d1;
@@ -21,6 +21,7 @@
   --past: #6e746d;
   --field-bg: #ffffff;
   --field-line: #d5d5cd;
+  --chrome-bg: rgb(255 255 253 / 94%);
   --learning-plan-bg: #faf9f5;
   --learning-plan-grid: color-mix(in srgb, var(--line) 65%, transparent);
   --shadow: color-mix(in srgb, var(--ink) 14%, transparent);
@@ -119,6 +120,7 @@
     --past: #9aa198;
     --field-bg: #252b25;
     --field-line: #465046;
+    --chrome-bg: rgb(32 37 32 / 94%);
     --learning-plan-bg: #1b201b;
   }
 }
@@ -133,6 +135,40 @@ html,
 body {
   margin: 0;
   min-width: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+button:disabled {
+  cursor: default;
+}
+
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius-2);
+  background: var(--field-bg);
+  color: var(--ink);
 }
 
 .visually-hidden {
@@ -195,13 +231,18 @@ body {
 }
 
 .top-bar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
   display: flex;
+  min-height: 68px;
   min-width: 0;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  gap: clamp(var(--space-4), 3vw, 2rem);
+  padding: 10px clamp(18px, 3vw, 42px);
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--chrome-bg);
+  backdrop-filter: blur(10px);
 }
 
 .top-bar__home {
@@ -253,20 +294,29 @@ body {
 
 .top-bar__door[aria-current="page"],
 .top-bar__door.active {
+  position: relative;
   color: var(--ink);
-  font-weight: 650;
-  text-decoration: underline;
-  text-decoration-color: var(--accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: var(--space-1);
+  font-weight: 750;
+}
+
+.top-bar__door[aria-current="page"]::after,
+.top-bar__door.active::after {
+  position: absolute;
+  right: var(--space-2);
+  bottom: -13px;
+  left: var(--space-2);
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: var(--done);
+  content: "";
 }
 
 .app-main {
   width: 100%;
-  max-width: 72rem;
+  max-width: 77.5rem;
   min-width: 0;
   margin: 0 auto;
-  padding: clamp(var(--space-4), 4vw, var(--space-6));
+  padding: 38px clamp(20px, 5vw, 70px) 50px;
 }
 
 .capture-dialog {
