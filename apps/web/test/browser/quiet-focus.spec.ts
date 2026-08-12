@@ -61,12 +61,11 @@ test("the Learning Plan uses warm editorial styling in both color schemes and ex
   test.skip(testInfo.project.name === "phone", "desktop creates the topology");
   const user = `${testInfo.project.name}-editorial-theme`;
 
-  await page.emulateMedia({ colorScheme: "light" });
   await startLearningPlan(page, user);
   await addStage(page, "Begin here", true);
 
   const canvas = page.getByRole("region", { name: "Learning Plan canvas" });
-  await expect(canvas).toHaveCSS("background-color", "rgb(250, 249, 245)");
+  await expect(canvas).toHaveCSS("background-color", "rgb(252, 252, 250)");
   await expect(page.getByRole("heading", { level: 1 })).toHaveCSS(
     "font-family",
     /Georgia/,
@@ -79,8 +78,8 @@ test("the Learning Plan uses warm editorial styling in both color schemes and ex
     page.getByText("Solid path: walked", { exact: true }),
   ).toBeVisible();
 
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(canvas).toHaveCSS("background-color", "rgb(27, 32, 27)");
+  await page.getByLabel("Theme").selectOption("dark");
+  await expect(canvas).toHaveCSS("background-color", "rgb(26, 27, 26)");
 
   await expectNoAccessibilityViolations(page);
 });

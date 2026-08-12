@@ -152,19 +152,36 @@ test("a valid intended private route survives sign-in", async ({
   ).toBeVisible();
 });
 
-test("the system colour scheme resolves to warm editorial page colours", async ({
+test("the workspace defaults to light and changes theme only when selected", async ({
   page,
 }, testInfo) => {
   const pageBackground = () =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.goto(appUrl(testInfo, "/plans"));
-  expect(await pageBackground()).toBe("rgb(247, 246, 241)"); // #F7F6F1
-
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(appUrl(testInfo, "/plans"));
-  expect(await pageBackground()).toBe("rgb(23, 27, 23)"); // #171B17
+  expect(await pageBackground()).toBe("rgb(251, 251, 249)");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  const theme = page.getByLabel("Theme");
+  await theme.selectOption("dark");
+  expect(await pageBackground()).toBe("rgb(23, 24, 23)");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.reload();
+  await expect(theme).toHaveValue("dark");
+  expect(await pageBackground()).toBe("rgb(23, 24, 23)");
+
+  await theme.selectOption("system");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.reload();
+  await expect(theme).toHaveValue("system");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await pageBackground()).toBe("rgb(251, 251, 249)");
 });
 
 test("keyboard focus reaches the top bar with a visible focus ring", async ({

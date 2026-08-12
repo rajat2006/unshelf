@@ -91,3 +91,8 @@ semantic custom properties; light and dark remain peers; completion stays green;
 past-target treatment stays quiet and non-alarming; and visible focus plus
 reduced-motion behavior remain required. The prototype's literals informed the
 direction but did not become a second styling system.
+
+The workspace opens in the selected prototype's calm light scheme by default,
+independent of the operating-system preference. A persistent Light / Dark / System
+control makes dark explicit while retaining System for Users who want the workspace
+to follow their device.

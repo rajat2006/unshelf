@@ -5,7 +5,7 @@
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* White-led warm neutrals with forest green reserved for emphasis. */
   --bg: #fbfbf9;
@@ -345,27 +345,26 @@
   padding-block: 0.75rem;
 }
 
-/* Dark is a peer, not an add-on: the same semantic roles, redefined. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #171817;
-    --surface: #222322;
-    --quiet-surface: #1f201f;
-    --quiet-surface-strong: #1c1d1c;
-    --ink: #f3f1e8;
-    --muted: #aaaca9;
-    --line: #3d3e3c;
-    --accent: #86aa8e;
-    --accent-h: #9dbda3;
-    --on-accent: #101510;
-    --done: #79ad85;
-    --on-done: #101510;
-    --past: #9aa198;
-    --field-bg: #272827;
-    --field-line: #474947;
-    --chrome-bg: rgb(34 35 34 / 94%);
-    --learning-plan-bg: #1a1b1a;
-  }
+/* Dark remains available by explicit choice; light is the default. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171817;
+  --surface: #222322;
+  --quiet-surface: #1f201f;
+  --quiet-surface-strong: #1c1d1c;
+  --ink: #f3f1e8;
+  --muted: #aaaca9;
+  --line: #3d3e3c;
+  --accent: #86aa8e;
+  --accent-h: #9dbda3;
+  --on-accent: #101510;
+  --done: #79ad85;
+  --on-done: #101510;
+  --past: #9aa198;
+  --field-bg: #272827;
+  --field-line: #474947;
+  --chrome-bg: rgb(34 35 34 / 94%);
+  --learning-plan-bg: #1a1b1a;
 }
 
 *,
@@ -506,6 +505,13 @@ textarea {
 .top-bar__actions {
   margin-left: auto;
   gap: var(--space-3);
+}
+
+.theme-control select {
+  min-height: 36px;
+  padding: var(--space-1) 1.75rem var(--space-1) var(--space-2);
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .top-bar__door {

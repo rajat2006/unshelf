@@ -5,6 +5,7 @@ import {
   readItemBackgroundLocation,
 } from "../items/item-route-state";
 import { useCapture } from "./useCapture";
+import { ThemeControl } from "./ThemeControl";
 import { Wordmark } from "./Wordmark";
 
 /**
@@ -62,6 +63,7 @@ export function TopBar() {
         <RoomLink to="/plans" label="Plans" active={plansActive} />
       </nav>
       <div className="top-bar__actions">
+        <ThemeControl />
         <button type="button" onClick={open} className="top-bar__capture">
           Capture
         </button>
