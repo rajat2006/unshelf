@@ -143,9 +143,7 @@ export function PlanTodaySidecar({
                     ) : (
                       <button
                         type="button"
-                        disabled={
-                          addingId !== null || learningPlan.archivedAt !== null
-                        }
+                        disabled={addingId !== null}
                         onClick={() => void add(plannedItem)}
                         aria-label={`Add ${item.title} to Today`}
                       >

@@ -51,6 +51,7 @@ async function ensureTodayFocus(
 async function readDailyFocus(
   db: Database,
   row: DailyFocusIdentityRow,
+  completionSource: "item" | "snapshot",
 ): Promise<DailyFocus> {
   const itemRows = await db
     .select({
@@ -138,7 +139,11 @@ async function readDailyFocus(
     userId: row.user_id as UserId,
     date: row.date,
     entries,
-    ...deriveItemCompletion(entries.map((entry) => entry.snapshot)),
+    ...deriveItemCompletion(
+      entries.map((entry) =>
+        completionSource === "item" ? entry.item : entry.snapshot,
+      ),
+    ),
   };
 }
 
@@ -181,7 +186,6 @@ export async function addTodayItem({
             and(
               eq(learningPlans.id, learningPlanItemPlacements.learningPlanId),
               eq(learningPlans.userId, learningPlanItemPlacements.userId),
-              isNull(learningPlans.archivedAt),
             ),
           )
           .where(
@@ -238,7 +242,7 @@ export async function addTodayItem({
     return {
       ok: true,
       added: inserted.length > 0,
-      focus: await readDailyFocus(tx, focus),
+      focus: await readDailyFocus(tx, focus, "item"),
     };
   });
 }
@@ -250,7 +254,7 @@ export async function getTodayFocus(
 ): Promise<DailyFocus> {
   return db.transaction(async (tx) => {
     const focus = await ensureTodayFocus(tx, userId);
-    return readDailyFocus(tx, focus);
+    return readDailyFocus(tx, focus, "item");
   });
 }
 
@@ -279,7 +283,7 @@ export async function getHistoricalFocus({
       ),
     )
     .limit(1);
-  return focus ? readDailyFocus(db, focus) : null;
+  return focus ? readDailyFocus(db, focus, "snapshot") : null;
 }
 
 /** Remove only current focus membership, never the shared Item itself. */
@@ -322,6 +326,6 @@ export async function removeTodayItem({
         ),
       )
       .returning({ itemId: dailyFocusItems.itemId });
-    return removed.length > 0 ? readDailyFocus(tx, focus) : null;
+    return removed.length > 0 ? readDailyFocus(tx, focus, "item") : null;
   });
 }

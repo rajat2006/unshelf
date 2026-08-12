@@ -204,7 +204,7 @@ export function LearningPlanSurface({
           user={user}
           onClose={() => void navigate(`/plans/${learningPlanId}`)}
           onLearningPlanChanged={refresh}
-          structuralReadOnly={archived}
+          structuralReadOnly={readOnly}
         />
       )}
     </div>

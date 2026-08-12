@@ -134,6 +134,24 @@ test("a cold Stage deep link restores its LearningPlan and shared Item facts at 
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
     "2099-06-15",
   );
+  if (testInfo.project.name === "phone") {
+    await expect(sidebar.getByLabel("Rename Stage")).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: `Move ${item.title} up` }),
+    ).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: "Remove from stage" }),
+    ).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: "Move directly in plan" }),
+    ).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("heading", { name: "Add Items from your Library" }),
+    ).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: "Remove Stage" }),
+    ).toHaveCount(0);
+  }
 
   await status.getByRole("button", { name: "Done" }).click();
   await expect(status.getByRole("button", { name: "Done" })).toHaveAttribute(

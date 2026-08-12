@@ -86,6 +86,11 @@ test("a Power Learner moves a mixed corpus through the manual planning workspace
   });
   await capture(page, { title: "Study the database book", type: "book" });
   await capture(page, { title: "Watch a query-planning video", type: "video" });
+  await expect(
+    page
+      .getByRole("region", { name: "Suggestions" })
+      .getByText("Watch a query-planning video", { exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "Library", exact: true }).click();
   await page
@@ -108,6 +113,13 @@ test("a Power Learner moves a mixed corpus through the manual planning workspace
   const drawer = page.getByRole("complementary", {
     name: "Library placement drawer",
   });
+  await capture(page, {
+    title: "Captured while planning",
+    type: "article",
+  });
+  await expect(
+    drawer.getByText("Captured while planning", { exact: true }),
+  ).toBeVisible();
   await drawer
     .getByRole("listitem")
     .filter({ hasText: "Read a storage-engine article" })

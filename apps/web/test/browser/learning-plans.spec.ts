@@ -128,6 +128,20 @@ test("a User archives a read-only Learning Plan, sees live progress, and restore
   await expect(
     page.getByRole("button", { name: /^(Link from|Disconnect) / }),
   ).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("complementary", { name: "Today sidecar" })
+      .getByRole("button", {
+        name: "Add Shared progress item to Today",
+      }),
+  ).toBeEnabled();
+  await page.goto(appUrl(testInfo, "/today", user));
+  await page
+    .getByRole("combobox", { name: "Learning Plan lens" })
+    .selectOption(plan.id);
+  await expect(
+    page.getByText("In Lifecycle plan", { exact: true }),
+  ).toBeVisible();
 
   await page.goto(appUrl(testInfo, `/items/${item.id}`, user));
   await expect(page.getByText("Lifecycle plan · Archived")).toBeVisible();

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   Status,
   type DailyFocusOrigin,
@@ -235,7 +235,6 @@ async function readSelectedPlan(
       and(
         eq(learningPlans.id, learningPlanId),
         eq(learningPlans.userId, userId),
-        isNull(learningPlans.archivedAt),
       ),
     )
     .limit(1);

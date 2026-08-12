@@ -67,6 +67,10 @@ describe("Daily Planning service", () => {
       .set(TEST_USER_HEADER, user)
       .send({ itemId: planned.id })
       .expect(201);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
 
     await request(app)
       .patch(`/api/items/${dormant.id}/status`)

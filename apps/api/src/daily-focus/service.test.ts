@@ -331,7 +331,7 @@ describe("Daily Focus service", () => {
     });
   });
 
-  it("refuses stale and archived structural origins", async () => {
+  it("refuses stale origins and retains archived placement context", async () => {
     const user = "daily-focus-invalid-origin";
     const item = (
       await request(app)
@@ -373,13 +373,24 @@ describe("Daily Focus service", () => {
         itemId: item.id,
         origin: { learningPlanId: learningPlan.id },
       })
-      .expect(404);
+      .expect(201);
 
     const focus = await request(app)
       .get("/api/daily-focus/today")
       .set(TEST_USER_HEADER, user)
       .expect(200);
-    expect(focus.body).toMatchObject({ total: 0, entries: [] });
+    expect(focus.body).toMatchObject({
+      total: 1,
+      entries: [
+        {
+          item: { id: item.id },
+          origin: {
+            learningPlan: { id: learningPlan.id, name: "Origin plan" },
+            stage: null,
+          },
+        },
+      ],
+    });
   });
 
   it("combines Items from several Learning Plans with an unplanned Library Item", async () => {
@@ -464,6 +475,10 @@ describe("Daily Focus service", () => {
       .patch(`/api/items/${item.id}/status`)
       .set(TEST_USER_HEADER, user)
       .send({ status: "done" });
+    await harness.pool.query(
+      "update daily_focus_items set status_snapshot = 'not_started' where daily_focus_id = $1 and item_id = $2",
+      [focus.id, item.id],
+    );
     const refreshed = await request(app)
       .get("/api/daily-focus/today")
       .set(TEST_USER_HEADER, user);
@@ -476,7 +491,7 @@ describe("Daily Focus service", () => {
         {
           item: { id: item.id, status: "done" },
           origin: null,
-          snapshot: { status: "done", partPercentage: null },
+          snapshot: { status: "not_started", partPercentage: null },
         },
       ],
     });

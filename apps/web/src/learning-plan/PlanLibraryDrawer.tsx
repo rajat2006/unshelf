@@ -10,6 +10,7 @@ import {
   removeDirectItemFromLearningPlan,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
+import { useCaptureListener } from "../shell/useCaptureListener";
 
 interface PlanLibraryDrawerProps {
   learningPlanId: LearningPlanId;
@@ -44,6 +45,7 @@ export function PlanLibraryDrawer({
   useEffect(() => {
     void search();
   }, [search]);
+  useCaptureListener(search);
 
   async function change(candidate: LearningPlanItemCandidate) {
     setBusyItemId(candidate.item.id);

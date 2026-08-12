@@ -19,6 +19,7 @@ import {
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemRow } from "../items/ItemRow";
 import { planItemBackgroundLocation } from "../items/item-route-state";
+import { useCaptureListener } from "../shell/useCaptureListener";
 
 type TodayState =
   | { status: "loading" }
@@ -54,7 +55,7 @@ export function TodaySurface() {
         status: "ready",
         focus,
         planning,
-        plans: plans.filter((plan) => plan.archivedAt === null),
+        plans,
       });
     } catch {
       setState({ status: "error" });
@@ -64,6 +65,7 @@ export function TodaySurface() {
   useEffect(() => {
     void load();
   }, [load]);
+  useCaptureListener(load);
 
   useEffect(() => {
     if (state.status !== "ready") return;
