@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { StatusMode } from "@unshelf/shared";
 import type {
   CreateItemRequest,
   Item,
@@ -22,6 +23,7 @@ export interface ItemRow {
   created_at: Date;
   type: Type;
   status: Status;
+  status_mode: StatusMode;
   target_date: string | null;
   past_target: boolean;
   completed_at: Date | null;
@@ -52,6 +54,7 @@ export const ITEM_PROJECTION = {
   created_at: items.createdAt,
   type: items.type,
   status: items.status,
+  status_mode: items.statusMode,
   target_date: sql<string | null>`${items.targetDate}::text`,
   past_target: sql<boolean>`(
     coalesce(${items.targetDate} < current_date, false)
@@ -81,6 +84,7 @@ export const toItem = (row: ItemRow): Item => ({
   createdAt: row.created_at.toISOString(),
   type: row.type,
   status: row.status,
+  statusMode: row.status_mode,
   targetDate: row.target_date,
   pastTarget: row.past_target,
   completedAt: row.completed_at
@@ -203,6 +207,7 @@ export async function updateItemStatus(
         else ${items.completedAt}
       end`,
       status,
+      statusMode: StatusMode.Manual,
     })
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .returning({ id: items.id });

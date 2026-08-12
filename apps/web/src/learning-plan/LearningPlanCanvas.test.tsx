@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   PlanNodeKind,
   Status,
+  StatusMode,
   Type,
   type DirectItemNodeId,
   type ItemId,
@@ -43,6 +44,7 @@ const directItemNode = ({
     createdAt: "2026-07-01T00:00:00.000Z",
     type: Type.Book,
     status: Status.NotStarted,
+    statusMode: StatusMode.Manual,
     targetDate: null,
     pastTarget: false,
     completedAt: null,

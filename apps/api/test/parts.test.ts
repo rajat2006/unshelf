@@ -37,6 +37,7 @@ describe("Item Parts", () => {
     expect(created.body).toMatchObject({
       id: item.id,
       status: "in_progress",
+      statusMode: "manual",
       partPercentage: 0,
       parts: [
         { title: "Introduction", position: 0, completed: false },
@@ -76,6 +77,7 @@ describe("Item Parts", () => {
     expect(half.status).toBe(200);
     expect(half.body).toMatchObject({
       status: "in_progress",
+      statusMode: "automatic",
       partPercentage: 50,
       completedAt: null,
     });
@@ -85,6 +87,7 @@ describe("Item Parts", () => {
       .set(TEST_USER_HEADER, user)
       .send({ completed: true });
     expect(done.body.status).toBe("done");
+    expect(done.body.statusMode).toBe("automatic");
     expect(done.body.partPercentage).toBe(100);
     expect(done.body.completedAt).toEqual(expect.any(String));
 
@@ -94,8 +97,87 @@ describe("Item Parts", () => {
       .send({ completed: false });
     expect(reopened.body).toMatchObject({
       status: "in_progress",
+      statusMode: "automatic",
       partPercentage: 50,
       completedAt: null,
+    });
+  });
+
+  it("persists a manual Status override without rewriting Part Completion", async () => {
+    const user = "parts-manual-status";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Override my outline", type: "course" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["One", "Two"] })
+    ).body as ItemDetail;
+    await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true });
+
+    const overridden = await request(app)
+      .patch(`/api/items/${item.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" });
+
+    expect(overridden.status).toBe(200);
+    const overriddenItem = overridden.body as Item;
+    expect(overriddenItem).toMatchObject({
+      status: "done",
+      statusMode: "manual",
+    });
+    expect(typeof overriddenItem.completedAt).toBe("string");
+    const refreshed = await request(app)
+      .get(`/api/items/${item.id}`)
+      .set(TEST_USER_HEADER, user);
+    expect(refreshed.body as ItemDetail).toMatchObject({
+      status: "done",
+      statusMode: "manual",
+      completedAt: overriddenItem.completedAt,
+      partPercentage: 50,
+      parts: [
+        { id: structured.parts[0].id, completed: true },
+        { id: structured.parts[1].id, completed: false },
+      ],
+    });
+  });
+
+  it("resumes automatic Status when Part Completion changes", async () => {
+    const user = "parts-resume-completion";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Resume from checklist", type: "book" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["One", "Two"] })
+    ).body as ItemDetail;
+    await request(app)
+      .patch(`/api/items/${item.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" });
+
+    const resumed = await request(app)
+      .patch(`/api/items/${item.id}/parts/${structured.parts[0].id}/completion`)
+      .set(TEST_USER_HEADER, user)
+      .send({ completed: true });
+
+    expect(resumed.body).toMatchObject({
+      status: "in_progress",
+      statusMode: "automatic",
+      completedAt: null,
+      partPercentage: 50,
     });
   });
 
@@ -117,6 +199,10 @@ describe("Item Parts", () => {
       .patch(`/api/items/${item.id}/parts/${initial.parts[0].id}/completion`)
       .set(TEST_USER_HEADER, user)
       .send({ completed: true });
+    await request(app)
+      .patch(`/api/items/${item.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "not_started" });
 
     const added = await request(app)
       .post(`/api/items/${item.id}/parts`)
@@ -126,6 +212,7 @@ describe("Item Parts", () => {
     expect(added.status).toBe(201);
     expect(added.body).toMatchObject({
       status: "in_progress",
+      statusMode: "automatic",
       partPercentage: 50,
       completedAt: null,
       parts: [
@@ -167,6 +254,7 @@ describe("Item Parts", () => {
     expect(renamed.status).toBe(200);
     expect(renamed.body).toMatchObject({
       status: "done",
+      statusMode: "manual",
       completedAt: manuallyDone.completedAt,
       partPercentage: 33,
     });
@@ -184,6 +272,7 @@ describe("Item Parts", () => {
     expect(reordered.status).toBe(200);
     expect(reordered.body).toMatchObject({
       status: "done",
+      statusMode: "manual",
       completedAt: manuallyDone.completedAt,
       partPercentage: 33,
       parts: [
@@ -224,6 +313,7 @@ describe("Item Parts", () => {
     expect(oneLeft.status).toBe(200);
     expect(oneLeftItem).toMatchObject({
       status: "done",
+      statusMode: "automatic",
       partPercentage: 100,
       parts: [{ id: structured.parts[0].id, position: 0 }],
     });
@@ -235,6 +325,7 @@ describe("Item Parts", () => {
     expect(unstructured.status).toBe(200);
     expect(unstructured.body).toMatchObject({
       status: "done",
+      statusMode: "manual",
       completedAt: oneLeftItem.completedAt,
       partPercentage: null,
       parts: [],
@@ -268,6 +359,16 @@ describe("Item Parts", () => {
     expect(
       (
         await request(app)
+          .patch(
+            `/api/items/${item.id}/parts/${structured.parts[0].id}/completion`,
+          )
+          .set(TEST_USER_HEADER, intruder)
+          .send({ completed: true })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
           .delete(`/api/items/${item.id}/parts/${structured.parts[0].id}`)
           .set(TEST_USER_HEADER, intruder)
       ).status,
@@ -284,6 +385,7 @@ describe("Item Parts", () => {
         .set(TEST_USER_HEADER, owner)
     ).body as ItemDetail;
     expect(unchanged.parts).toEqual(structured.parts);
+    expect(unchanged.statusMode).toBe("manual");
   });
 
   it("enforces Part ownership, order, title, and cascade constraints in PostgreSQL", async () => {
@@ -324,6 +426,12 @@ describe("Item Parts", () => {
         [first.userId, first.id],
       ),
     ).rejects.toMatchObject({ constraint: "parts_title_nonblank_check" });
+    await expect(
+      harness.pool.query(
+        "UPDATE items SET status_mode = 'inferred' WHERE id = $1",
+        [first.id],
+      ),
+    ).rejects.toMatchObject({ constraint: "items_status_mode_check" });
 
     await harness.pool.query("DELETE FROM items WHERE id = $1", [first.id]);
     const remaining = await harness.pool.query(

@@ -35,6 +35,14 @@ export enum Status {
 
 export const ITEM_STATUSES = Object.values(Status);
 
+/** Whether a Structured Item's Status is chosen or follows its Parts. */
+export enum StatusMode {
+  Manual = "manual",
+  Automatic = "automatic",
+}
+
+export const ITEM_STATUS_MODES = Object.values(StatusMode);
+
 /** The internal topology-node variants currently supported by Learning Plans. */
 export enum PlanNodeKind {
   Item = "item",
@@ -138,6 +146,8 @@ export interface Item {
   type: Type;
   /** Item-level progress; a fresh capture is *not started*. */
   status: Status;
+  /** Whether Status is manually chosen or automatically derived from Parts. */
+  statusMode: StatusMode;
   /**
    * The User's optional soft "by when" as a calendar date (`YYYY-MM-DD`), or
    * null. One value per Item, shared across every Stage it appears in.

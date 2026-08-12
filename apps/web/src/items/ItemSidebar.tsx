@@ -95,6 +95,7 @@ export function ItemSidebar({
             item={visibleItem}
             user={user}
             onChanged={replaceItem}
+            structured={visibleItem.partPercentage !== null}
           />
           <ItemTargetDate
             item={visibleItem}

@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import {
   Status,
+  StatusMode,
   Type,
   type Item,
   type ItemId,
@@ -41,6 +42,7 @@ const item: Item = {
   createdAt: "2026-07-01T00:00:00.000Z",
   type: Type.Article,
   status: Status.InProgress,
+  statusMode: StatusMode.Manual,
   targetDate: "2026-08-01",
   pastTarget: false,
   completedAt: null,

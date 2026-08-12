@@ -138,6 +138,16 @@ test("an Item can be structured and maintain its ordered Part checklist", async 
       .getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
 
+  await sidebar
+    .getByRole("group", { name: `Status for ${item.title}` })
+    .getByRole("button", { name: "Done" })
+    .click();
+  await expect(sidebar.getByText("Status set manually")).toBeVisible();
+  await expect(sidebar.getByText("50% complete")).toBeVisible();
+  await expect(
+    sidebar.getByRole("checkbox", { name: "Project" }),
+  ).toBeChecked();
+
   await sidebar.getByLabel("Title for Introduction").fill("Foundations");
   await sidebar.getByRole("button", { name: "Save Foundations" }).click();
   await sidebar.getByRole("button", { name: "Move Project up" }).click();
@@ -153,6 +163,11 @@ test("an Item can be structured and maintain its ordered Part checklist", async 
     refreshed.getByRole("checkbox", { name: "Project" }),
   ).toBeChecked();
   await expect(refreshed.getByText("50% complete")).toBeVisible();
+  await expect(refreshed.getByText("Status set manually")).toBeVisible();
+
+  await refreshed.getByRole("checkbox", { name: "Foundations" }).click();
+  await expect(refreshed.getByText("Status follows Parts")).toBeVisible();
+  await expect(refreshed.getByText("100% complete")).toBeVisible();
 
   await refreshed.getByRole("button", { name: "Remove Foundations" }).click();
   await expect(refreshed.getByText("100% complete")).toBeVisible();

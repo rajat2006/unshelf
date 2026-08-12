@@ -15,9 +15,11 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   ITEM_STATUSES,
+  ITEM_STATUS_MODES,
   ITEM_TYPES,
   PLAN_NODE_KINDS,
   Status,
+  StatusMode,
 } from "@unshelf/shared";
 
 /**
@@ -93,6 +95,9 @@ export const items = pgTable(
     status: text("status", { enum: nonEmpty(ITEM_STATUSES) })
       .notNull()
       .default(Status.NotStarted),
+    statusMode: text("status_mode", { enum: nonEmpty(ITEM_STATUS_MODES) })
+      .notNull()
+      .default(StatusMode.Manual),
     targetDate: date("target_date"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
@@ -107,6 +112,10 @@ export const items = pgTable(
     check(
       "items_status_check",
       sql`${table.status} in ${enumList(ITEM_STATUSES)}`,
+    ),
+    check(
+      "items_status_mode_check",
+      sql`${table.statusMode} in ${enumList(ITEM_STATUS_MODES)}`,
     ),
   ],
 );

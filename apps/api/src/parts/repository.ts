@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   Status,
+  StatusMode,
   type CreatePartsRequest,
   type ItemDetail,
   type ItemId,
@@ -214,6 +215,11 @@ export async function removePart(
           .where(and(eq(parts.id, part.id), eq(parts.userId, input.userId)));
       }
       await deriveItemStatus(tx, input);
+    } else {
+      await tx
+        .update(items)
+        .set({ statusMode: StatusMode.Manual })
+        .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
     }
     return getItem(tx, input.userId, input.itemId);
   });
@@ -245,6 +251,7 @@ async function deriveItemStatus(
         else ${items.completedAt}
       end`,
       status,
+      statusMode: StatusMode.Automatic,
     })
     .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
 }
