@@ -1,16 +1,22 @@
 import { useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import type { Item, ItemId, TrailId } from "@unshelf/shared";
+import type { Item, ItemId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSidebar } from "../items/ItemSidebar";
-import { readItemBackgroundLocation } from "../items/item-route-state";
+import {
+  itemBackgroundSurface,
+  readItemBackgroundLocation,
+} from "../items/item-route-state";
 import { LibrarySurface } from "./LibrarySurface";
-import { TrailSurface } from "./TrailSurface";
+import { LearningPlanSurface } from "./LearningPlanSurface";
+import { TodaySurface } from "./TodaySurface";
+import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
 
 /**
  * An Item at its one canonical URL (design spec §4) — `/items/:itemId`, the same
- * record regardless of the Stop or Trail it was reached through. This slice
- * opens as a route-owned right sidebar over its canonical home, the Library.
+ * record regardless of where it was reached. The route-owned sidebar keeps a
+ * live Today or Learning Plan room underneath when navigation supplied one;
+ * a cold deep link opens over the Item's canonical Library home.
  */
 export function ItemSurface() {
   const { itemId } = useParams();
@@ -25,29 +31,33 @@ export function ItemSurface() {
   const changedItem = itemId ? changedItems[itemId] : undefined;
   const itemOverrides = Object.values(changedItems);
   const backgroundLocation = readItemBackgroundLocation(location.state);
-  const backgroundTrailId = backgroundLocation?.pathname.match(
-    /^\/trails\/([^/]+)$/,
-  )?.[1] as TrailId | undefined;
-  const backgroundIsLibrary = backgroundLocation?.pathname === "/library";
-  const backgroundLibrarySearch = backgroundIsLibrary
-    ? backgroundLocation.search
-    : "";
+  const backgroundSurface = itemBackgroundSurface(backgroundLocation);
+  const backgroundLibrarySearch =
+    backgroundSurface.kind === "library" && backgroundLocation
+      ? backgroundLocation.search
+      : "";
 
   return (
     <div className="item-detail-layout">
       {backgroundLocation ? (
-        backgroundTrailId ? (
-          <TrailSurface
+        backgroundSurface.kind === "plan" ? (
+          <LearningPlanSurface
             key={`${
-              changedItem ? `${changedItem.id}:${changedItem.status}` : "trail"
+              changedItem
+                ? `${changedItem.id}:${changedItem.status}`
+                : "learningPlan"
             }:${placementVersion}`}
-            trailId={backgroundTrailId}
+            learningPlanId={backgroundSurface.learningPlanId}
           />
+        ) : backgroundSurface.kind === "today" ? (
+          <TodaySurface />
+        ) : backgroundSurface.kind === "history" ? (
+          <DailyFocusHistorySurface selectedDate={backgroundSurface.date} />
         ) : (
           <LibrarySurface
             itemOverrides={itemOverrides}
             onItemChanged={recordItemChange}
-            labelFilterEnabled={backgroundIsLibrary}
+            labelFilterEnabled={backgroundSurface.kind === "library"}
             labelFilterSearch={backgroundLibrarySearch}
             onLabelFilterChange={(next) => {
               void navigate({
@@ -73,7 +83,11 @@ export function ItemSurface() {
             setPlacementVersion((current) => current + 1)
           }
           onClose={() => {
-            void (backgroundLocation ? navigate(-1) : navigate("/library"));
+            void navigate(
+              backgroundLocation
+                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
+                : "/library",
+            );
           }}
         />
       )}

@@ -1,7 +1,14 @@
-import { createServer as createHttpServer } from "node:http";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createServer as createViteServer } from "vite";
-import { startTestApp } from "../../../api/test/harness";
+import {
+  seedLegacyLearningPlanFixture,
+  startTestAppWithLegacyFixture,
+} from "../../../api/test/harness";
 import {
   BROWSER_HARNESS_API_ORIGIN,
   BROWSER_HARNESS_API_PORT,
@@ -10,12 +17,81 @@ import {
   BROWSER_HARNESS_WEB_PORT,
   testUserFromAuthorization,
 } from "./harness";
+import { LEGACY_LEARNING_PLAN_FIXTURE as legacy } from "./legacy-learning-plan-fixture";
 
-const testApp = await startTestApp((req) => {
-  const userId = testUserFromAuthorization(req.header("authorization"));
-  return userId ? (userId as unknown as ClerkUserId) : null;
+const testApp = await startTestAppWithLegacyFixture(
+  (req) => {
+    const userId = testUserFromAuthorization(req.header("authorization"));
+    return userId ? (userId as unknown as ClerkUserId) : null;
+  },
+  (db) => seedLegacyLearningPlanFixture(db, legacy),
+);
+const apiServer = createHttpServer((req, res) => {
+  void handleApiRequest(req, res).catch((error: unknown) => {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end(String(error));
+  });
 });
-const apiServer = createHttpServer(testApp.app);
+
+async function handleApiRequest(req: IncomingMessage, res: ServerResponse) {
+  const pathname = req.url
+    ? new URL(req.url, BROWSER_HARNESS_API_ORIGIN).pathname
+    : "";
+  const match = pathname.match(
+    /^\/__test__\/daily-focus\/([0-9a-f-]+)\/elapse$/,
+  );
+  if (req.method === "POST" && match) {
+    const user = testUserFromAuthorization(req.headers.authorization);
+    if (!user) {
+      res.writeHead(401).end();
+      return;
+    }
+    const elapsed = await testApp.pool.query<{ date: string }>(
+      `update daily_focuses
+       set date = current_date - 1
+       from users
+       where daily_focuses.id = $1
+         and daily_focuses.user_id = users.id
+         and users.clerk_user_id = $2
+       returning daily_focuses.date::text`,
+      [match[1], user],
+    );
+    if (!elapsed.rows[0]) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(elapsed.rows[0]));
+    return;
+  }
+  const suppressionMatch = pathname.match(
+    /^\/__test__\/daily-planning\/([0-9a-f-]+)\/elapse-suppression$/,
+  );
+  if (req.method === "POST" && suppressionMatch) {
+    const user = testUserFromAuthorization(req.headers.authorization);
+    if (!user) {
+      res.writeHead(401).end();
+      return;
+    }
+    const elapsed = await testApp.pool.query(
+      `update daily_planning_suppressions
+       set date = current_date - 1
+       from users
+       where daily_planning_suppressions.item_id = $1
+         and daily_planning_suppressions.user_id = users.id
+         and users.clerk_user_id = $2
+         and daily_planning_suppressions.date = current_date`,
+      [suppressionMatch[1], user],
+    );
+    if (elapsed.rowCount !== 1) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(204).end();
+    return;
+  }
+  testApp.app(req, res);
+}
 
 await new Promise<void>((resolve, reject) => {
   apiServer.once("error", reject);
@@ -64,10 +140,10 @@ vite.middlewares.stack.unshift({
 
 await vite.listen();
 
-let stopping = false;
+let stageping = false;
 async function stop() {
-  if (stopping) return;
-  stopping = true;
+  if (stageping) return;
+  stageping = true;
   await vite.close();
   await new Promise<void>((resolve, reject) => {
     apiServer.close((error) => (error ? reject(error) : resolve()));

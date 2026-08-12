@@ -91,3 +91,26 @@ preserve the route-owned right-sidebar decision:
 At phone width the same Stop URL owns a full-width detail surface beneath a compact
 Trail context bar. That responsive presentation changes the rectangle, not route
 ownership, history, refresh, bookmark, or deep-link behavior.
+
+## Update — Today becomes the default room (2026-08-12)
+
+PRD #302 replaces the Trail-oriented room contract with the completed manual
+planning workspace. The signed-in route table is now:
+
+| Route | Surface |
+|-------|---------|
+| `/` | Redirect to Today |
+| `/today` | Current Daily Focus and Daily Planning |
+| `/today/:date` | Read-only Daily Focus history |
+| `/library` | Library (`?label=…` and `?q=…` carry retrieval state) |
+| `/plans` | Learning Plans index |
+| `/plans/:learningPlanId` | Stable Learning Plan studio |
+| `/plans/:learningPlanId/stages/:stageId` | Open Stage detail |
+| `/items/:itemId` | Canonical Item detail |
+| `/sign-in` | The single auth route |
+
+Discover is named in global navigation but deliberately has no route while it is
+deferred. Item detail keeps its one canonical URL: navigation state may retain a
+Today or Learning Plan room underneath, while a cold Item deep link still opens
+over Library. Intended private routes survive sign-in, and unknown routes offer
+recovery to Today.

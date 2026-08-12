@@ -1,0 +1,2 @@
+ALTER TABLE "items" ADD COLUMN "status_mode" text DEFAULT 'manual' NOT NULL;--> statement-breakpoint
+ALTER TABLE "items" ADD CONSTRAINT "items_status_mode_check" CHECK ("items"."status_mode" in ('manual', 'automatic'));

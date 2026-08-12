@@ -23,7 +23,7 @@ export function respondToPlacementFailure({
       return;
     case "conflict":
       response.status(409).json({
-        error: "item already placed on this trail",
+        error: "item already placed on this learning plan",
       });
   }
 }

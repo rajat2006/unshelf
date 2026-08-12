@@ -13,10 +13,12 @@ import { AuthPlaceholder } from "./shell/AuthPlaceholder";
 import { NotFound } from "./shell/NotFound";
 import { Shell } from "./shell/Shell";
 import { SignInScreen } from "./shell/SignInScreen";
-import { HomeSurface } from "./surfaces/HomeSurface";
+import { PlansSurface } from "./surfaces/PlansSurface";
 import { ItemSurface } from "./surfaces/ItemSurface";
 import { LibrarySurface } from "./surfaces/LibrarySurface";
-import { TrailSurface } from "./surfaces/TrailSurface";
+import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
+import { TodaySurface } from "./surfaces/TodaySurface";
+import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
 
 /**
  * The routed Unshelf shell (design spec §3–§5, ADR-0013).
@@ -26,7 +28,7 @@ import { TrailSurface } from "./surfaces/TrailSurface";
  * content. Once resolved, `/sign-in` is the single auth route; every other route
  * requires a signed-in User, so a signed-out visitor is redirected to sign-in
  * with their intended destination preserved. Signing in restores that
- * destination; an unknown route recovers to Home.
+ * destination; an unknown route offers recovery to Today.
  */
 export function App() {
   const { status } = useApplicationAuth();
@@ -40,15 +42,21 @@ export function App() {
       <Route path="/sign-in" element={<SignInRoute />} />
       <Route element={<RequireAuth />}>
         <Route element={<Shell />}>
-          <Route index element={<HomeSurface />} />
+          <Route index element={<Navigate to="/today" replace />} />
+          <Route path="plans" element={<PlansSurface />} />
+          <Route path="today" element={<TodaySurface />} />
+          <Route path="today/:date" element={<DailyFocusHistorySurface />} />
           <Route
             path="library"
             element={<LibrarySurface labelFilterEnabled />}
           />
-          <Route path="trails/:trailId" element={<TrailSurface />} />
           <Route
-            path="trails/:trailId/stops/:stopId"
-            element={<TrailSurface />}
+            path="plans/:learningPlanId"
+            element={<LearningPlanSurface />}
+          />
+          <Route
+            path="plans/:learningPlanId/stages/:stageId"
+            element={<LearningPlanSurface />}
           />
           <Route path="items/:itemId" element={<ItemSurface />} />
           <Route path="*" element={<NotFound />} />
@@ -74,7 +82,7 @@ function RequireAuth() {
 
 /**
  * The `/sign-in` route: the chrome-less screen while signed out, and — once auth
- * resolves signed-in — a redirect to the intended private route (or Home when
+ * resolves signed-in — a redirect to the intended private route (or Today when
  * there was none, e.g. a signed-in User visiting `/sign-in` directly).
  */
 function SignInRoute() {
@@ -84,7 +92,7 @@ function SignInRoute() {
   const intended = (location.state as { from?: Location } | null)?.from;
   const destination = intended
     ? `${intended.pathname}${intended.search}${intended.hash}`
-    : "/";
+    : "/today";
 
   useEffect(() => {
     if (status === "signed-in") {

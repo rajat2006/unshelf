@@ -145,7 +145,7 @@ describe("API request lifecycle", () => {
 
     const response = await request(app)
       .post(
-        "/api/items?trail=retained-trail&access_token=query-sentinel&x-amz-signature=signature-sentinel",
+        "/api/items?learningPlan=retained-learningPlan&access_token=query-sentinel&x-amz-signature=signature-sentinel",
       )
       .set("Authorization", "Bearer header-sentinel")
       .set("X-Business-Context", "retained-header-value")
@@ -205,7 +205,7 @@ describe("API request lifecycle", () => {
           }),
           params: {},
           query: {
-            trail: "retained-trail",
+            learningPlan: "retained-learningPlan",
             access_token: "[REDACTED]",
             "x-amz-signature": "[REDACTED]",
           },
@@ -341,14 +341,14 @@ describe("API request lifecycle", () => {
       "postgresql://unshelf:health-db-password-sentinel@database:5432/unshelf";
     const failure = Object.assign(
       new Error(
-        `connection terminated for trail-42: ${clerkSecret} ${databaseUrl}`,
+        `connection terminated for learningPlan-42: ${clerkSecret} ${databaseUrl}`,
       ),
       {
         code: "57P01",
         query: `select message, now() from health_check /* ${clerkSecret} */`,
         parameters: [
           "health-check",
-          { password: "parameter-password-sentinel", item: "trail-42" },
+          { password: "parameter-password-sentinel", item: "learningPlan-42" },
         ],
         severity: "FATAL",
         detail: "PostgreSQL is shutting down",
@@ -377,7 +377,7 @@ describe("API request lifecycle", () => {
 
     const response = await request(app)
       .get(
-        "/api/health?trail=retained-health&access_token=health-query-sentinel",
+        "/api/health?learningPlan=retained-health&access_token=health-query-sentinel",
       )
       .set("Authorization", "Bearer health-header-sentinel")
       .expect(503);
@@ -396,14 +396,15 @@ describe("API request lifecycle", () => {
       error: objectContaining({
         type: "Error",
         code: "57P01",
-        message: "connection terminated for trail-42: [REDACTED] [REDACTED]",
+        message:
+          "connection terminated for learningPlan-42: [REDACTED] [REDACTED]",
         stack: anyValue(String),
       }),
       database: {
         query: "select message, now() from health_check /* [REDACTED] */",
         parameters: [
           "health-check",
-          { password: "[REDACTED]", item: "trail-42" },
+          { password: "[REDACTED]", item: "learningPlan-42" },
         ],
         severity: "FATAL",
         detail: "PostgreSQL is shutting down",
@@ -435,7 +436,7 @@ describe("API request lifecycle", () => {
         }),
         params: {},
         query: {
-          trail: "retained-health",
+          learningPlan: "retained-health",
           access_token: "[REDACTED]",
         },
         body: "[undefined]",

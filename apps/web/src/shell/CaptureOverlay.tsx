@@ -16,7 +16,7 @@ interface CaptureOverlayProps {
  * The Capture composer (ADR-0014, design spec §3). A non-navigating overlay over
  * whatever surface opened it, carrying the one uniform intake (ADR-0007): required
  * title, an explicitly chosen Type, an optional Source stored verbatim. It files
- * the Item into the Library and nowhere else — no Label, no Stop — and does not
+ * the Item into the Library and nowhere else — no Label, no Stage — and does not
  * navigate, so the User stays where they were.
  *
  * A native `<dialog>` gives modal semantics for free: Escape closes it, focus is
@@ -77,7 +77,10 @@ function CaptureComposer({
     setSaving(true);
     setError(null);
     try {
-      await captureItem(user, { title, type, source });
+      await captureItem(
+        user,
+        source.length === 0 ? { title, type } : { title, type, source },
+      );
       onCaptured();
       onClose();
     } catch (caught: unknown) {
@@ -101,7 +104,7 @@ function CaptureComposer({
         </button>
       </div>
       <p className="capture-form__intro">
-        New items land in your Library — never directly in a Trail.
+        New Items land in your Library — never directly in a Learning Plan.
       </p>
       <label className="capture-form__field">
         Title

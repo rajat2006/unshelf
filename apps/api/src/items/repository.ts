@@ -1,15 +1,19 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { StatusMode } from "@unshelf/shared";
 import type {
   CreateItemRequest,
   Item,
+  ItemDetail,
   ItemId,
   Label,
   LabelId,
+  Part,
   Status,
   Type,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
 import { itemLabels, items, labels } from "../schema";
 
 export interface ItemRow {
@@ -17,8 +21,10 @@ export interface ItemRow {
   user_id: string;
   title: string;
   source: string | null;
+  created_at: Date;
   type: Type;
   status: Status;
+  status_mode: StatusMode;
   target_date: string | null;
   past_target: boolean;
   completed_at: Date | null;
@@ -28,8 +34,8 @@ export interface ItemRow {
 /**
  * Every read of an Item goes through this one projection, so *past target* is
  * computed the same way everywhere and can never disagree with itself. Reading an
- * Item inside a Stop is the same read as reading it in All — the Stop repository
- * imports this rather than writing its own, so a Stop can never show a User an
+ * Item inside a Stage is the same read as reading it in All — the Stage repository
+ * imports this rather than writing its own, so a Stage can never show a User an
  * Item that disagrees with All about its own state.
  *
  * It is derived here, in the read, rather than stored (ADR-0005): the state is a
@@ -38,7 +44,7 @@ export interface ItemRow {
  * stale. `COALESCE` makes a missing date simply not past, rather than unknown.
  * "Today" is the database's, the single clock all Users are compared against.
  *
- * Columns are qualified against `items`; Stop and Label membership stay in
+ * Columns are qualified against `items`; Stage and Label membership stay in
  * subqueries so this projection still reads the same shared Item at every seam.
  */
 export const ITEM_PROJECTION = {
@@ -46,8 +52,10 @@ export const ITEM_PROJECTION = {
   user_id: items.userId,
   title: items.title,
   source: items.source,
+  created_at: items.createdAt,
   type: items.type,
   status: items.status,
+  status_mode: items.statusMode,
   target_date: sql<string | null>`${items.targetDate}::text`,
   past_target: sql<boolean>`(
     coalesce(${items.targetDate} < current_date, false)
@@ -74,14 +82,51 @@ export const toItem = (row: ItemRow): Item => ({
   userId: row.user_id as UserId,
   title: row.title,
   source: row.source,
+  createdAt: row.created_at.toISOString(),
   type: row.type,
   status: row.status,
+  statusMode: row.status_mode,
   targetDate: row.target_date,
   pastTarget: row.past_target,
   completedAt: row.completed_at
     ? new Date(row.completed_at).toISOString()
     : null,
   labels: row.labels,
+});
+
+interface ItemDetailRow extends ItemRow {
+  parts: Part[];
+  part_percentage: number | null;
+}
+
+const ITEM_DETAIL_PROJECTION = {
+  ...ITEM_PROJECTION,
+  parts: sql<Part[]>`coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', parts.id,
+        'itemId', parts.item_id,
+        'title', parts.title,
+        'position', parts.position,
+        'completed', parts.completed
+      ) order by parts.position
+    )
+    from parts
+    where parts.item_id = items.id
+      and parts.user_id = items.user_id
+  ), '[]'::jsonb)`,
+  part_percentage: sql<number | null>`(
+    select round(100.0 * count(*) filter (where parts.completed) / nullif(count(*), 0))::integer
+    from parts
+    where parts.item_id = items.id
+      and parts.user_id = items.user_id
+  )`,
+} as const;
+
+const toItemDetail = (row: ItemDetailRow): ItemDetail => ({
+  ...toItem(row),
+  parts: row.parts,
+  partPercentage: row.part_percentage,
 });
 
 /**
@@ -102,20 +147,20 @@ export async function createItem(
     .insert(items)
     .values({ userId, title: input.title, source, type: input.type })
     .returning({ id: items.id });
-  return (await getItem(db, userId, rows[0].id as ItemId))!;
+  return (await getItemSummary(db, userId, rows[0].id as ItemId))!;
 }
 
-/** All for a User: every Item where `user_id = me`, and only that User's. */
+/** The User's Library, ordered as deterministic recently captured material. */
 export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   const rows = await db
     .select(ITEM_PROJECTION)
     .from(items)
-    .where(eq(items.userId, userId));
+    .where(eq(items.userId, userId))
+    .orderBy(desc(items.createdAt), asc(items.id));
   return rows.map(toItem);
 }
 
-/** Read one Item through both its stable identity and authenticated owner. */
-export async function getItem(
+async function getItemSummary(
   db: Database,
   userId: UserId,
   itemId: ItemId,
@@ -126,6 +171,20 @@ export async function getItem(
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .limit(1);
   return rows[0] ? toItem(rows[0]) : null;
+}
+
+/** Read one Item through both its stable identity and authenticated owner. */
+export async function getItem(
+  db: Database,
+  userId: UserId,
+  itemId: ItemId,
+): Promise<ItemDetail | null> {
+  const rows = await db
+    .select(ITEM_DETAIL_PROJECTION)
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .limit(1);
+  return rows[0] ? toItemDetail(rows[0]) : null;
 }
 
 /**
@@ -140,19 +199,31 @@ export async function updateItemStatus(
   itemId: ItemId,
   status: Status,
 ): Promise<Item | null> {
-  const rows = await db
-    .update(items)
-    .set({
-      completedAt: sql<Date | null>`case
-        when ${items.status} <> 'done' and ${status} = 'done' then now()
-        when ${items.status} = 'done' and ${status} <> 'done' then null
-        else ${items.completedAt}
-      end`,
-      status,
-    })
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
-    .returning({ id: items.id });
-  return rows[0] ? getItem(db, userId, itemId) : null;
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${itemId}, 0))`,
+    );
+    const rows = await tx
+      .update(items)
+      .set({
+        completedAt: sql<Date | null>`case
+          when ${items.status} <> 'done' and ${status} = 'done' then now()
+          when ${items.status} = 'done' and ${status} <> 'done' then null
+          else ${items.completedAt}
+        end`,
+        status,
+        statusMode: StatusMode.Manual,
+        activityAt: sql<Date>`case
+          when ${items.status} <> ${status} then now()
+          else ${items.activityAt}
+        end`,
+      })
+      .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+      .returning({ id: items.id });
+    if (!rows[0]) return null;
+    await refreshTodayEntrySnapshot(tx, { userId, itemId });
+    return getItemSummary(tx, userId, itemId);
+  });
 }
 
 /**
@@ -173,7 +244,7 @@ export async function updateItemTargetDate(
     .set({ targetDate })
     .where(and(eq(items.id, itemId), eq(items.userId, userId)))
     .returning({ id: items.id });
-  return rows[0] ? getItem(db, userId, itemId) : null;
+  return rows[0] ? getItemSummary(db, userId, itemId) : null;
 }
 
 /** Apply one owned Label to one owned Item; repeating the request is a no-op. */
@@ -196,7 +267,7 @@ export async function applyLabelToItem(
       set: { userId },
     })
     .returning({ itemId: itemLabels.itemId });
-  return rows.length > 0 ? getItem(db, userId, itemId) : null;
+  return rows.length > 0 ? getItemSummary(db, userId, itemId) : null;
 }
 
 /** Remove only Label membership; repeating removal preserves the requested set. */
@@ -223,5 +294,5 @@ export async function removeLabelFromItem(
         eq(itemLabels.userId, userId),
       ),
     );
-  return getItem(db, userId, itemId);
+  return getItemSummary(db, userId, itemId);
 }

@@ -1,9 +1,14 @@
 import { Router, type RequestHandler } from "express";
 import {
   createItemRequestSchema,
-  createStopWithItemRequestSchema,
+  createPartsRequestSchema,
+  createStageWithItemRequestSchema,
   itemIdSchema,
   labelIdSchema,
+  partIdSchema,
+  reorderPartsRequestSchema,
+  updatePartCompletionRequestSchema,
+  updatePartRequestSchema,
   updateItemStatusRequestSchema,
   updateItemTargetDateRequestSchema,
 } from "@unshelf/shared/validation";
@@ -11,7 +16,7 @@ import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
 import { respondToPlacementFailure } from "../placements/http";
 import {
-  createStopWithItem,
+  createStageWithItem,
   getItemPlacementCatalog,
 } from "../placements/service";
 import {
@@ -23,6 +28,13 @@ import {
   updateItemStatus,
   updateItemTargetDate,
 } from "./repository";
+import {
+  createParts,
+  removePart,
+  reorderParts,
+  updatePart,
+  updatePartCompletion,
+} from "../parts/service";
 
 /** Mount the authenticated Item HTTP interface at `/api/items`. */
 export function createItemsRouter(
@@ -39,6 +51,111 @@ export function createItemsRouter(
       const { body } = res.locals.validated;
       const item = await createItem(db, req.user!.id, body);
       res.status(201).json(item);
+    },
+  );
+
+  router.patch(
+    "/:itemId/parts/:partId/completion",
+    validateRequest(
+      {
+        body: updatePartCompletionRequestSchema,
+        params: { itemId: itemIdSchema, partId: partIdSchema },
+      },
+      "invalid_part_completion",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const item = await updatePartCompletion({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        partId: params.partId,
+        request: body,
+      });
+      if (!item) {
+        res.status(404).json({ error: "item or part not found" });
+        return;
+      }
+      res.json(item);
+    },
+  );
+
+  router.patch(
+    "/:itemId/parts/:partId",
+    validateRequest(
+      {
+        body: updatePartRequestSchema,
+        params: { itemId: itemIdSchema, partId: partIdSchema },
+      },
+      "invalid_part_title",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const item = await updatePart({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        partId: params.partId,
+        request: body,
+      });
+      if (!item) {
+        res.status(404).json({ error: "item or part not found" });
+        return;
+      }
+      res.json(item);
+    },
+  );
+
+  router.put(
+    "/:itemId/parts/order",
+    validateRequest(
+      {
+        body: reorderPartsRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_part_order",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await reorderParts({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        request: body,
+      });
+      if (!result.ok) {
+        if (result.error === "not_found") {
+          res.status(404).json({ error: "item not found" });
+        } else {
+          res.status(409).json({
+            error: "part order must contain every Item Part exactly once",
+          });
+        }
+        return;
+      }
+      res.json(result.item);
+    },
+  );
+
+  router.delete(
+    "/:itemId/parts/:partId",
+    validateRequest(
+      { params: { itemId: itemIdSchema, partId: partIdSchema } },
+      "missing_part_id",
+    ),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const item = await removePart({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        partId: params.partId,
+      });
+      if (!item) {
+        res.status(404).json({ error: "item or part not found" });
+        return;
+      }
+      res.json(item);
     },
   );
 
@@ -65,17 +182,39 @@ export function createItemsRouter(
   );
 
   router.post(
-    "/:itemId/placements",
+    "/:itemId/parts",
     validateRequest(
-      {
-        body: createStopWithItemRequestSchema,
-        params: { itemId: itemIdSchema },
-      },
-      "invalid_stop_name",
+      { body: createPartsRequestSchema, params: { itemId: itemIdSchema } },
+      "invalid_parts_create",
     ),
     async (req, res) => {
       const { body, params } = res.locals.validated;
-      const result = await createStopWithItem(db, {
+      const item = await createParts({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        request: body,
+      });
+      if (!item) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.status(201).json(item);
+    },
+  );
+
+  router.post(
+    "/:itemId/placements",
+    validateRequest(
+      {
+        body: createStageWithItemRequestSchema,
+        params: { itemId: itemIdSchema },
+      },
+      "invalid_stage_name",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await createStageWithItem(db, {
         userId: req.user!.id,
         itemId: params.itemId,
         placement: body,
@@ -84,11 +223,11 @@ export function createItemsRouter(
         respondToPlacementFailure({
           response: res,
           failure: result,
-          notFoundMessage: "item or trail not found",
+          notFoundMessage: "item or learning plan not found",
         });
         return;
       }
-      res.status(201).json(result.stop);
+      res.status(201).json(result.stage);
     },
   );
 

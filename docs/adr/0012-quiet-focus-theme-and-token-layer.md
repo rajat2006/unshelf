@@ -63,3 +63,36 @@ dark, until it reads tokens instead of literals.
   prototype (`apps/web/prototype-theme.html` →
   `apps/web/src/prototype/ThemePrototype.tsx`, `worktree-issue-55-theme-prototype`),
   never merged.
+
+## Update — the four-room workspace adopts the warm editorial direction (2026-08-12)
+
+PRD #302 and its selected Rooms + plan studio prototype supersede this ADR's
+cool-neutral palette and single-grotesque typography. The signed-in workspace
+now uses warm neutral surfaces, a forest-green primary accent, serif display
+type, and a readable system-ui body face.
+
+The reviewed prototypes are the normative visual references for this workspace,
+not merely palette inspiration:
+
+- issue #263, snapshot `51c60f6`, Variant D defines the four-room shell and the
+  composition, hierarchy, and compact density of Plans, Today, Library, and the
+  continuous Library–canvas–Today plan studio. The 2026-08-12 design review
+  confirmed this complete variant as the source of truth; later exploratory
+  alternatives are not normative.
+
+Production code may adapt these references for real data, keyboard and screen
+reader behavior, responsive constraints, and dark mode. It should preserve their
+visual hierarchy, layout relationships, density, surface treatment, and
+typographic character; a materially different composition requires an explicit
+design decision.
+
+The durable parts of this decision still stand: colours continue to flow through
+semantic custom properties; light and dark remain peers; completion stays green;
+past-target treatment stays quiet and non-alarming; and visible focus plus
+reduced-motion behavior remain required. The prototype's literals informed the
+direction but did not become a second styling system.
+
+The workspace opens in the selected prototype's calm light scheme by default,
+independent of the operating-system preference. A persistent Light / Dark / System
+control makes dark explicit while retaining System for Users who want the workspace
+to follow their device.

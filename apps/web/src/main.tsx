@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App } from "./App";
 import { AuthProvider } from "./auth";
+import { initializeThemePreference } from "./themePreference";
 import "./theme.css";
+
+initializeThemePreference();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

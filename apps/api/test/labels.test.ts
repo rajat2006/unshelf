@@ -202,23 +202,23 @@ describe("private Labels", () => {
     expect(unchanged.labels).toEqual([label]);
   });
 
-  it("changes only Label membership, leaving Item facts and Stop placement intact", async () => {
+  it("changes only Label membership, leaving Item facts and Stage placement intact", async () => {
     const user = "clerk_label_independent";
-    const trail = (
+    const learningPlan = (
       await request(app)
-        .post("/api/trails")
+        .post("/api/learning-plans")
         .set(TEST_USER_HEADER, user)
-        .send({ name: "Independent Trail" })
+        .send({ name: "Independent LearningPlan" })
     ).body as { id: string };
-    const stop = (
+    const stage = (
       await request(app)
-        .post(`/api/trails/${trail.id}/stops`)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
         .set(TEST_USER_HEADER, user)
-        .send({ name: "Independent Stop" })
+        .send({ name: "Independent Stage" })
     ).body as { id: string };
     const item = (await capture(user, "Unchanged Item")).body as Item;
     await request(app)
-      .post(`/api/stops/${stop.id}/items`)
+      .post(`/api/stages/${stage.id}/items`)
       .set(TEST_USER_HEADER, user)
       .send({ itemId: item.id });
     const label = (await createLabel(user, { name: "Independent Label" }))
@@ -227,13 +227,13 @@ describe("private Labels", () => {
     const changed = (await applyLabel(user, item.id, label.id)).body as Item;
     expect({ ...changed, labels: [] }).toEqual(item);
 
-    const stopAfter = (
+    const stageAfter = (
       await request(app)
-        .get(`/api/stops/${stop.id}`)
+        .get(`/api/stages/${stage.id}`)
         .set(TEST_USER_HEADER, user)
     ).body as { items: Item[] };
-    expect(stopAfter.items.map((member) => member.id)).toEqual([item.id]);
-    expect(stopAfter.items[0]?.labels).toEqual([label]);
+    expect(stageAfter.items.map((member) => member.id)).toEqual([item.id]);
+    expect(stageAfter.items[0]?.labels).toEqual([label]);
   });
 
   it("requires a non-blank name and authentication", async () => {

@@ -187,50 +187,53 @@ describe("expected API request failures", () => {
     expect(validationCode(logger.records)).toBe("invalid_label_name");
   });
 
-  it("classifies a missing Item id on a Stop membership request", async () => {
+  it("classifies a missing Item id on a Stage membership request", async () => {
     const { app, logger } = expectedFailureApp(
       "c1e56006-2a38-4f60-8734-e39a005d9e1b",
     );
 
     await request(app)
-      .post("/api/stops/b5a72490-1fba-4ca5-b78e-e7bb3bddb611/items")
+      .post("/api/stages/b5a72490-1fba-4ca5-b78e-e7bb3bddb611/items")
       .send({})
       .expect(400);
 
     expect(validationCode(logger.records)).toBe("missing_item_id");
   });
 
-  it("classifies an invalid Trail name", async () => {
+  it("classifies an invalid LearningPlan name", async () => {
     const { app, logger } = expectedFailureApp(
       "d04db2f7-2df1-4753-ac28-c27008e1fb60",
     );
 
-    await request(app).post("/api/trails").send({ name: "   " }).expect(400);
+    await request(app)
+      .post("/api/learning-plans")
+      .send({ name: "   " })
+      .expect(400);
 
-    expect(validationCode(logger.records)).toBe("invalid_trail_name");
+    expect(validationCode(logger.records)).toBe("invalid_learning_plan_name");
   });
 
-  it("classifies an invalid Stop name", async () => {
+  it("classifies an invalid Stage name", async () => {
     const { app, logger } = expectedFailureApp(
       "2522c0bf-0883-42a1-ac9b-022b3fb92796",
     );
 
     await request(app)
-      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/stops")
+      .post("/api/learning-plans/37626b0f-6586-4670-9d8e-744d64467497/stages")
       .send({ name: "   " })
       .expect(400);
 
-    expect(validationCode(logger.records)).toBe("invalid_stop_name");
+    expect(validationCode(logger.records)).toBe("invalid_stage_name");
   });
 
-  it("classifies invalid Trail edge endpoints", async () => {
+  it("classifies invalid LearningPlan edge endpoints", async () => {
     const { app, logger } = expectedFailureApp(
       "bbfbfa03-c721-49f3-bec8-d2d7fcc9fc83",
     );
 
     await request(app)
-      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges")
-      .send({ fromStopId: "not-a-stop-id" })
+      .post("/api/learning-plans/37626b0f-6586-4670-9d8e-744d64467497/edges")
+      .send({ fromNodeId: "not-a-stage-id" })
       .expect(400);
 
     expect(validationCode(logger.records)).toBe("invalid_edge_endpoints");
@@ -240,11 +243,11 @@ describe("expected API request failures", () => {
     const { app, logger } = expectedFailureApp(
       "eb2feab9-6c94-4db2-a813-456d9b4cb1b0",
     );
-    const stopId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
+    const stageId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
 
     await request(app)
-      .post("/api/trails/37626b0f-6586-4670-9d8e-744d64467497/edges")
-      .send({ fromStopId: stopId, toStopId: stopId })
+      .post("/api/learning-plans/37626b0f-6586-4670-9d8e-744d64467497/edges")
+      .send({ fromNodeId: stageId, toNodeId: stageId })
       .expect(400);
 
     expect(validationCode(logger.records)).toBe("self_edge");
@@ -311,22 +314,22 @@ describe("expected API request failures", () => {
     });
   });
 
-  it("preserves a Trail-cycle 409 with its failure snapshot", async () => {
-    const trailId = "37626b0f-6586-4670-9d8e-744d64467497";
-    const fromStopId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
-    const toStopId = "03c9a63d-0435-4f31-9682-e50a3890b102";
+  it("preserves a LearningPlan-cycle 409 with its failure snapshot", async () => {
+    const learningPlanId = "37626b0f-6586-4670-9d8e-744d64467497";
+    const fromNodeId = "ad6604d7-e690-4868-aa1e-e1bfa506da07";
+    const toNodeId = "03c9a63d-0435-4f31-9682-e50a3890b102";
     const { app, logger } = expectedFailureApp(
       "86c12c02-2103-425f-9f04-6f917c298f54",
-      cyclicTrailDatabase(),
+      cyclicLearningPlanDatabase(),
     );
 
     const response = await request(app)
-      .post(`/api/trails/${trailId}/edges`)
-      .send({ fromStopId, toStopId })
+      .post(`/api/learning-plans/${learningPlanId}/edges`)
+      .send({ fromNodeId, toNodeId })
       .expect(409);
 
     expect(response.body).toEqual({
-      error: "that link would create a cycle in the trail",
+      error: "that link would create a cycle in the learning plan",
     });
     expect(
       logger.records.find(
@@ -334,11 +337,11 @@ describe("expected API request failures", () => {
       ),
     ).toMatchObject({
       status: 409,
-      route: "/api/trails/:trailId/edges",
+      route: "/api/learning-plans/:learningPlanId/edges",
       request: {
-        path: `/api/trails/${trailId}/edges`,
-        params: { trailId },
-        body: { fromStopId, toStopId },
+        path: `/api/learning-plans/${learningPlanId}/edges`,
+        params: { learningPlanId },
+        body: { fromNodeId, toNodeId },
       },
     });
     expect(
@@ -380,7 +383,7 @@ function missingItemDatabase(): Database {
   } as unknown as Database;
 }
 
-function cyclicTrailDatabase(): Database {
+function cyclicLearningPlanDatabase(): Database {
   let executeCount = 0;
   const transaction = {
     select: () => ({
