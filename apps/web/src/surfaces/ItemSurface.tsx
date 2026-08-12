@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import type { Item, ItemId, LearningPlanId } from "@unshelf/shared";
+import type { Item, ItemId, LearningPlanId, StageId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSidebar } from "../items/ItemSidebar";
 import { readItemBackgroundLocation } from "../items/item-route-state";
@@ -26,8 +26,11 @@ export function ItemSurface() {
   const itemOverrides = Object.values(changedItems);
   const backgroundLocation = readItemBackgroundLocation(location.state);
   const backgroundLearningPlanId = backgroundLocation?.pathname.match(
-    /^\/plans\/([^/]+)$/,
+    /^\/plans\/([^/]+)(?:\/stages\/[^/]+)?$/,
   )?.[1] as LearningPlanId | undefined;
+  const backgroundStageId = backgroundLocation?.pathname.match(
+    /^\/plans\/[^/]+\/stages\/([^/]+)$/,
+  )?.[1] as StageId | undefined;
   const backgroundIsLibrary = backgroundLocation?.pathname === "/library";
   const backgroundLibrarySearch = backgroundIsLibrary
     ? backgroundLocation.search
@@ -44,6 +47,7 @@ export function ItemSurface() {
                 : "learningPlan"
             }:${placementVersion}`}
             learningPlanId={backgroundLearningPlanId}
+            stageId={backgroundStageId}
           />
         ) : (
           <LibrarySurface
@@ -75,7 +79,11 @@ export function ItemSurface() {
             setPlacementVersion((current) => current + 1)
           }
           onClose={() => {
-            void (backgroundLocation ? navigate(-1) : navigate("/library"));
+            void navigate(
+              backgroundLocation
+                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
+                : "/library",
+            );
           }}
         />
       )}

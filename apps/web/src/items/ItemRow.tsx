@@ -17,6 +17,7 @@ interface ItemRowProps {
    * take it out again inside a Stage. The only part of a row that varies.
    */
   children?: ReactNode;
+  detailBackgroundPath?: string;
 }
 
 /**
@@ -29,18 +30,21 @@ interface ItemRowProps {
  * Item, and a Stage cannot render a partial Item by omission, because there is
  * nowhere left to omit them from.
  */
-export function ItemRow({ item, user, onChanged, children }: ItemRowProps) {
+export function ItemRow({
+  item,
+  user,
+  onChanged,
+  children,
+  detailBackgroundPath,
+}: ItemRowProps) {
   const location = useLocation();
   const preservedBackground = readItemBackgroundLocation(location.state);
   const originLocation =
     location.pathname.startsWith("/items/") && preservedBackground
       ? preservedBackground
       : location;
-  const learningPlanPath = originLocation.pathname.match(
-    /^(\/plans\/[^/]+)\/stages\/[^/]+$/,
-  )?.[1];
-  const backgroundLocation = learningPlanPath
-    ? { ...originLocation, pathname: learningPlanPath, search: "", hash: "" }
+  const backgroundLocation = detailBackgroundPath
+    ? { pathname: detailBackgroundPath, search: "", hash: "" }
     : originLocation;
 
   return (

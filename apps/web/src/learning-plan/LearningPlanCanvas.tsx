@@ -335,9 +335,13 @@ export function LearningPlanCanvas({
   const rearranged = Object.keys(offsets).length > 0;
 
   return (
-    <section aria-label="Learning Plan journey">
+    <section
+      aria-label="Learning Plan journey"
+      className="learning-plan-journey"
+    >
       <div className="learning-plan-workbench">
         <LooseNodeRail
+          learningPlanId={learningPlanId}
           nodes={looseNodes}
           allNodes={nodes}
           busy={busy}
@@ -437,6 +441,7 @@ export function LearningPlanCanvas({
                 <Waypoint
                   key={n.id}
                   node={n}
+                  learningPlanId={learningPlanId}
                   x={here.x}
                   y={here.y}
                   isFrontier={frontier?.id === n.id}
@@ -555,6 +560,7 @@ interface SequenceBeforeInput {
 }
 
 function LooseNodeRail({
+  learningPlanId,
   nodes,
   allNodes,
   busy,
@@ -563,6 +569,7 @@ function LooseNodeRail({
   onSequence,
   onSequenceBefore,
 }: {
+  learningPlanId: LearningPlanId;
   nodes: LearningPlanNode[];
   allNodes: LearningPlanNode[];
   busy: boolean;
@@ -596,6 +603,13 @@ function LooseNodeRail({
                 {node.kind === PlanNodeKind.Item ? (
                   <Link
                     to={`/items/${node.item.id}`}
+                    state={{
+                      backgroundLocation: {
+                        pathname: `/plans/${learningPlanId}`,
+                        search: "",
+                        hash: "",
+                      },
+                    }}
                     aria-label={`Open ${name}`}
                     className="unsequenced-rail__stage"
                   >
@@ -719,6 +733,7 @@ function LooseNodeRail({
 
 interface WaypointProps {
   node: LearningPlanNode;
+  learningPlanId: LearningPlanId;
   x: number;
   y: number;
   isFrontier: boolean;
@@ -753,6 +768,7 @@ interface NodeWaypointControls {
  */
 function Waypoint({
   node,
+  learningPlanId,
   x,
   y,
   isFrontier,
@@ -798,6 +814,13 @@ function Waypoint({
       {node.kind === PlanNodeKind.Item ? (
         <Link
           to={`/items/${node.item.id}`}
+          state={{
+            backgroundLocation: {
+              pathname: `/plans/${learningPlanId}`,
+              search: "",
+              hash: "",
+            },
+          }}
           className="learning-plan-stage-link"
           aria-label={`Open ${name}`}
           title={progressLabel}

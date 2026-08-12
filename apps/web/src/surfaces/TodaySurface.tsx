@@ -46,7 +46,7 @@ export function TodaySurface() {
     if (state.status !== "ready") return [];
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return [];
-    const selected = new Set(state.focus.items.map((item) => item.id));
+    const selected = new Set(state.focus.entries.map((entry) => entry.item.id));
     return state.library.filter(
       (item) =>
         !selected.has(item.id) &&
@@ -83,15 +83,15 @@ export function TodaySurface() {
   const replaceItem = (changed: Item) => {
     setState((current) => {
       if (current.status !== "ready") return current;
-      const focusItems = current.focus.items.map((item) =>
-        item.id === changed.id ? changed : item,
+      const entries = current.focus.entries.map((entry) =>
+        entry.item.id === changed.id ? { ...entry, item: changed } : entry,
       );
       return {
         ...current,
         focus: {
           ...current.focus,
-          items: focusItems,
-          ...deriveItemCompletion(focusItems),
+          entries,
+          ...deriveItemCompletion(entries.map((entry) => entry.item)),
         },
         library: current.library.map((item) =>
           item.id === changed.id ? changed : item,
@@ -119,17 +119,30 @@ export function TodaySurface() {
             {state.focus.done} of {state.focus.total} done
           </p>
           <section aria-label="Today's Daily Focus">
-            {state.focus.items.length === 0 ? (
+            {state.focus.entries.length === 0 ? (
               <p className="quiet-copy">Choose what deserves your attention.</p>
             ) : (
               <ul className="library-list">
-                {state.focus.items.map((item) => (
+                {state.focus.entries.map(({ item, origin }) => (
                   <ItemRow
                     key={item.id}
                     item={item}
                     user={user}
                     onChanged={replaceItem}
+                    detailBackgroundPath={
+                      origin
+                        ? origin.stage
+                          ? `/plans/${origin.learningPlan.id}/stages/${origin.stage.id}`
+                          : `/plans/${origin.learningPlan.id}`
+                        : undefined
+                    }
                   >
+                    {origin && (
+                      <span className="quiet-copy">
+                        From {origin.learningPlan.name}
+                        {origin.stage ? ` · ${origin.stage.name}` : ""}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => void remove(state.focus, item)}

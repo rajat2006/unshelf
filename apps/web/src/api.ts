@@ -1,5 +1,6 @@
 import type {
   AddStageItemRequest,
+  AddDailyFocusItemRequest,
   ConnectLearningPlanNodesRequest,
   CreateItemRequest,
   CreatePartsRequest,
@@ -214,11 +215,13 @@ export async function fetchToday(user: CurrentUser): Promise<DailyFocus> {
 export async function addItemToToday(
   user: CurrentUser,
   itemId: ItemId,
+  origin?: AddDailyFocusItemRequest["origin"],
 ): Promise<DailyFocus> {
+  const body: AddDailyFocusItemRequest = { itemId, origin };
   return requestJson<DailyFocus>(user, "/api/daily-focus/today/items", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ itemId }),
+    body: JSON.stringify(body),
   });
 }
 

@@ -332,6 +332,16 @@ test("a desktop User places and removes a shared Library Item directly", async (
   await expect(itemLink).toBeVisible();
   await itemLink.click();
   await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Distributed systems" }),
+  ).toBeVisible();
+  await page
+    .getByRole("complementary", {
+      name: "Designing Data-Intensive Applications details",
+    })
+    .getByRole("button", { name: "Close details" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/plans/[0-9a-f-]{36}$`));
 
   await page.goto(deepLink);
   await drawer.getByLabel("Search Library").fill("data-intensive");
@@ -426,4 +436,83 @@ test("a phone User views connected Plan structure without authoring or overflow"
   await expect(itemLink).toBeVisible();
   await itemLink.click();
   await expect(page).toHaveURL(new RegExp(`/items/${item.id}$`));
+});
+
+test("a User adds direct and staged Plan Items to Today with durable origin context", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-plan-today-origin`;
+  const plan = (await (
+    await testApi(page, user, "/api/learning-plans", "POST", {
+      name: "Practical databases",
+    })
+  ).json()) as LearningPlan;
+  const directItem = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Read Database Internals",
+      type: "book",
+    })
+  ).json()) as Item;
+  const stagedItem = (await (
+    await testApi(page, user, "/api/items", "POST", {
+      title: "Practice query planning",
+      type: "course",
+    })
+  ).json()) as Item;
+  await testApi(page, user, `/api/learning-plans/${plan.id}/items`, "POST", {
+    itemId: directItem.id,
+  });
+  const stage = (await (
+    await testApi(page, user, `/api/learning-plans/${plan.id}/stages`, "POST", {
+      name: "Query engines",
+    })
+  ).json()) as Stage;
+  await testApi(page, user, `/api/stages/${stage.id}/items`, "POST", {
+    itemId: stagedItem.id,
+  });
+
+  await page.goto(testAppUrl(`/plans/${plan.id}`, user));
+  const sidecar = page.getByRole("complementary", { name: "Today sidecar" });
+  await sidecar
+    .getByRole("button", { name: `Add ${directItem.title} to Today` })
+    .click();
+  await sidecar
+    .getByRole("button", { name: `Add ${stagedItem.title} to Today` })
+    .click();
+  await expect(sidecar.getByText("2 Items in Today")).toBeVisible();
+
+  await page.reload();
+  await expect(
+    sidecar.getByRole("button", { name: `${directItem.title} is in Today` }),
+  ).toBeDisabled();
+  await expect(
+    sidecar.getByRole("button", { name: `${stagedItem.title} is in Today` }),
+  ).toBeDisabled();
+
+  await page.goto(testAppUrl("/today", user));
+  const focus = page.getByRole("region", { name: "Today's Daily Focus" });
+  await expect(
+    focus.getByText("From Practical databases · Query engines"),
+  ).toBeVisible();
+  await focus.getByRole("link", { name: stagedItem.title }).click();
+  await expect(page).toHaveURL(new RegExp(`/items/${stagedItem.id}$`));
+  await expect(
+    page.getByRole("complementary", { name: "Query engines details" }),
+  ).toBeVisible();
+  await page
+    .getByRole("complementary", { name: `${stagedItem.title} details` })
+    .getByRole("button", { name: "Close details" })
+    .click();
+  await expect(page).toHaveURL(
+    new RegExp(`/plans/${plan.id}/stages/${stage.id}$`),
+  );
+
+  if (testInfo.project.name === "phone") {
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+    await expect(
+      page.getByRole("button", { name: /^(Link from|Disconnect) / }),
+    ).toHaveCount(0);
+  }
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDailyFocusItemRequestSchema,
   addStageItemRequestSchema,
   connectLearningPlanNodesRequestSchema,
   createItemRequestSchema,
@@ -196,6 +197,25 @@ describe("identifier schemas", () => {
 });
 
 describe("identifier-bearing request schemas", () => {
+  it("validates optional Learning Plan and Stage origin for a Daily Focus Item", () => {
+    const stageId = "123e4567-e89b-42d3-a456-426614174001";
+    expect(
+      addDailyFocusItemRequestSchema.parse({
+        itemId: uuid,
+        origin: { learningPlanId: uuid, stageId },
+      }),
+    ).toEqual({
+      itemId: uuid,
+      origin: { learningPlanId: uuid, stageId },
+    });
+    expect(
+      addDailyFocusItemRequestSchema.safeParse({
+        itemId: uuid,
+        origin: { learningPlanId: uuid, stageId: "not-a-uuid" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("returns a validated Item before it can be added to a Stage", () => {
     expect(addStageItemRequestSchema.parse({ itemId: uuid })).toEqual({
       itemId: uuid,

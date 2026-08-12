@@ -23,10 +23,12 @@ export function createDailyFocusRouter(
       "invalid_daily_focus_item",
     ),
     async (req, res) => {
+      const { itemId, origin } = res.locals.validated.body;
       const result = await dailyFocusService.addTodayItem({
         db,
         userId: req.user!.id,
-        itemId: res.locals.validated.body.itemId,
+        itemId,
+        origin,
       });
       if (!result.ok) {
         res.status(404).json({ error: "item not found" });

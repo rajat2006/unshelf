@@ -1,9 +1,26 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { deriveItemCompletion } from "@unshelf/shared";
-import type { DailyFocus, DailyFocusId, ItemId, UserId } from "@unshelf/shared";
+import type {
+  AddDailyFocusItemRequest,
+  DailyFocus,
+  DailyFocusEntry,
+  DailyFocusId,
+  ItemId,
+  LearningPlanId,
+  StageId,
+  UserId,
+} from "@unshelf/shared";
 import type { Database } from "../db";
 import { ITEM_PROJECTION, toItem } from "../items/repository";
-import { dailyFocuses, dailyFocusItems, items } from "../schema";
+import {
+  dailyFocuses,
+  dailyFocusItemOrigins,
+  dailyFocusItems,
+  items,
+  learningPlanItemPlacements,
+  learningPlans,
+  stages,
+} from "../schema";
 
 interface DailyFocusIdentityRow {
   id: string;
@@ -35,13 +52,49 @@ async function readDailyFocus(
   row: DailyFocusIdentityRow,
 ): Promise<DailyFocus> {
   const itemRows = await db
-    .select(ITEM_PROJECTION)
+    .select({
+      ...ITEM_PROJECTION,
+      originLearningPlanId: learningPlans.id,
+      originLearningPlanName: learningPlans.name,
+      originStageId: stages.id,
+      originStageName: stages.name,
+    })
     .from(dailyFocusItems)
     .innerJoin(
       items,
       and(
         eq(items.id, dailyFocusItems.itemId),
         eq(items.userId, dailyFocusItems.userId),
+      ),
+    )
+    .leftJoin(
+      dailyFocusItemOrigins,
+      and(
+        eq(dailyFocusItemOrigins.dailyFocusId, dailyFocusItems.dailyFocusId),
+        eq(dailyFocusItemOrigins.userId, dailyFocusItems.userId),
+        eq(dailyFocusItemOrigins.itemId, dailyFocusItems.itemId),
+      ),
+    )
+    .leftJoin(
+      learningPlanItemPlacements,
+      and(
+        eq(learningPlanItemPlacements.id, dailyFocusItemOrigins.placementId),
+        eq(learningPlanItemPlacements.userId, dailyFocusItemOrigins.userId),
+        eq(learningPlanItemPlacements.itemId, dailyFocusItemOrigins.itemId),
+      ),
+    )
+    .leftJoin(
+      learningPlans,
+      and(
+        eq(learningPlans.id, learningPlanItemPlacements.learningPlanId),
+        eq(learningPlans.userId, learningPlanItemPlacements.userId),
+      ),
+    )
+    .leftJoin(
+      stages,
+      and(
+        eq(stages.id, learningPlanItemPlacements.stageId),
+        eq(stages.userId, learningPlanItemPlacements.userId),
       ),
     )
     .where(
@@ -51,12 +104,34 @@ async function readDailyFocus(
       ),
     )
     .orderBy(asc(dailyFocusItems.addedAt), asc(dailyFocusItems.itemId));
-  const focusItems = itemRows.map(toItem);
+  const entries = itemRows.map((itemRow): DailyFocusEntry => {
+    const item = toItem(itemRow);
+    return {
+      item,
+      origin:
+        itemRow.originLearningPlanId && itemRow.originLearningPlanName
+          ? {
+              learningPlan: {
+                id: itemRow.originLearningPlanId as LearningPlanId,
+                name: itemRow.originLearningPlanName,
+              },
+              stage:
+                itemRow.originStageId && itemRow.originStageName
+                  ? {
+                      id: itemRow.originStageId as StageId,
+                      name: itemRow.originStageName,
+                    }
+                  : null,
+            }
+          : null,
+    };
+  });
+  const focusItems = entries.map((entry) => entry.item);
   return {
     id: row.id as DailyFocusId,
     userId: row.user_id as UserId,
     date: row.date,
-    items: focusItems,
+    entries,
     ...deriveItemCompletion(focusItems),
   };
 }
@@ -70,10 +145,12 @@ export async function addTodayItem({
   db,
   userId,
   itemId,
+  origin,
 }: {
   db: Database;
   userId: UserId;
   itemId: ItemId;
+  origin: AddDailyFocusItemRequest["origin"];
 }): Promise<AddTodayItemResult> {
   return db.transaction(async (tx) => {
     const [ownedItem] = await tx
@@ -83,12 +160,61 @@ export async function addTodayItem({
       .limit(1);
     if (!ownedItem) return { ok: false, error: "not_found" };
 
+    const [originPlacement] = origin
+      ? await tx
+          .select({ id: learningPlanItemPlacements.id })
+          .from(learningPlanItemPlacements)
+          .innerJoin(
+            learningPlans,
+            and(
+              eq(learningPlans.id, learningPlanItemPlacements.learningPlanId),
+              eq(learningPlans.userId, learningPlanItemPlacements.userId),
+              isNull(learningPlans.archivedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(learningPlanItemPlacements.userId, userId),
+              eq(
+                learningPlanItemPlacements.learningPlanId,
+                origin.learningPlanId,
+              ),
+              eq(learningPlanItemPlacements.itemId, itemId),
+              origin.stageId
+                ? eq(learningPlanItemPlacements.stageId, origin.stageId)
+                : isNull(learningPlanItemPlacements.stageId),
+            ),
+          )
+          .limit(1)
+      : [];
+    if (origin && !originPlacement) {
+      return { ok: false, error: "not_found" };
+    }
+
     const focus = await ensureTodayFocus(tx, userId);
     const inserted = await tx
       .insert(dailyFocusItems)
       .values({ dailyFocusId: focus.id, userId, itemId })
       .onConflictDoNothing()
       .returning({ itemId: dailyFocusItems.itemId });
+
+    if (originPlacement) {
+      await tx
+        .insert(dailyFocusItemOrigins)
+        .values({
+          dailyFocusId: focus.id,
+          userId,
+          itemId,
+          placementId: originPlacement.id,
+        })
+        .onConflictDoUpdate({
+          target: [
+            dailyFocusItemOrigins.dailyFocusId,
+            dailyFocusItemOrigins.itemId,
+          ],
+          set: { placementId: originPlacement.id },
+        });
+    }
 
     return {
       ok: true,

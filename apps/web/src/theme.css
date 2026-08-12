@@ -699,9 +699,64 @@ body {
 
 .learning-plan-studio {
   display: grid;
-  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  grid-template-columns:
+    minmax(12rem, 16rem) minmax(0, 1fr)
+    minmax(12rem, 16rem);
   gap: var(--space-4);
   align-items: start;
+}
+
+.learning-plan-studio--with-detail {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.learning-plan-studio--with-detail > .plan-library-drawer {
+  grid-area: 1 / 1;
+}
+
+.learning-plan-studio--with-detail > .plan-today-sidecar {
+  grid-area: 1 / 2;
+}
+
+.learning-plan-studio--with-detail > .learning-plan-journey {
+  grid-area: 2 / 1 / auto / -1;
+}
+
+.plan-today-sidecar {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  max-height: 42rem;
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+
+.plan-today-sidecar h2,
+.plan-today-sidecar p {
+  margin: 0;
+}
+
+.plan-today-sidecar ul {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.plan-today-sidecar li {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-today-sidecar button,
+.plan-today-sidecar a {
+  min-height: 44px;
 }
 
 .plan-library-drawer {
@@ -1614,6 +1669,12 @@ body {
 
   .learning-plan-studio {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-plan-studio--with-detail > .plan-library-drawer,
+  .learning-plan-studio--with-detail > .plan-today-sidecar,
+  .learning-plan-studio--with-detail > .learning-plan-journey {
+    grid-area: auto;
   }
 
   .unsequenced-rail {

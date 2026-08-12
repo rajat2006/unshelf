@@ -45,12 +45,189 @@ describe("Daily Focus service", () => {
       id: addedFocus.id,
       done: 0,
       total: 1,
-      items: [{ id: item.id, title: item.title, status: "not_started" }],
+      entries: [
+        {
+          item: {
+            id: item.id,
+            title: item.title,
+            status: "not_started",
+          },
+          origin: null,
+        },
+      ],
     });
     const serverDate = await harness.pool.query<{ date: string }>(
       "select current_date::text as date",
     );
     expect(duplicateFocus.date).toBe(serverDate.rows[0]?.date);
+  });
+
+  it("retains an active direct Learning Plan placement as optional origin context", async () => {
+    const user = "daily-focus-direct-origin";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Study distributed systems", type: "course" })
+    ).body as Item;
+    const learningPlan = (
+      await request(app)
+        .post("/api/learning-plans")
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Become a systems engineer" })
+    ).body as { id: string; name: string };
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/items`)
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: item.id })
+      .expect(201);
+
+    const added = await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({
+        itemId: item.id,
+        origin: { learningPlanId: learningPlan.id },
+      });
+
+    expect(added.status).toBe(201);
+    expect(added.body).toMatchObject({
+      done: 0,
+      total: 1,
+      entries: [
+        {
+          item: { id: item.id, title: item.title },
+          origin: {
+            learningPlan: {
+              id: learningPlan.id,
+              name: learningPlan.name,
+            },
+            stage: null,
+          },
+        },
+      ],
+    });
+    const duplicate = await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({
+        itemId: item.id,
+        origin: { learningPlanId: learningPlan.id },
+      })
+      .expect(200);
+    expect(duplicate.body).toMatchObject({ total: 1 });
+  });
+
+  it("retains Stage context and drops only that context when the placement is removed", async () => {
+    const user = "daily-focus-stage-origin";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Work through query engines", type: "course" })
+    ).body as Item;
+    const learningPlan = (
+      await request(app)
+        .post("/api/learning-plans")
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Database foundations" })
+    ).body as { id: string; name: string };
+    const stage = (
+      await request(app)
+        .post(`/api/learning-plans/${learningPlan.id}/stages`)
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Execution" })
+    ).body as { id: string; name: string };
+    await request(app)
+      .post(`/api/stages/${stage.id}/items`)
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: item.id })
+      .expect(200);
+
+    const added = await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({
+        itemId: item.id,
+        origin: { learningPlanId: learningPlan.id, stageId: stage.id },
+      })
+      .expect(201);
+    expect(added.body).toMatchObject({
+      total: 1,
+      entries: [
+        {
+          item: { id: item.id },
+          origin: {
+            learningPlan: { id: learningPlan.id },
+            stage: { id: stage.id, name: stage.name },
+          },
+        },
+      ],
+    });
+
+    await request(app)
+      .delete(`/api/stages/${stage.id}/items/${item.id}`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+    const refreshed = await request(app)
+      .get("/api/daily-focus/today")
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+    expect(refreshed.body).toMatchObject({
+      total: 1,
+      entries: [{ item: { id: item.id }, origin: null }],
+    });
+  });
+
+  it("refuses stale and archived structural origins", async () => {
+    const user = "daily-focus-invalid-origin";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Origin validation", type: "article" })
+    ).body as Item;
+    const learningPlan = (
+      await request(app)
+        .post("/api/learning-plans")
+        .set(TEST_USER_HEADER, user)
+        .send({ name: "Origin plan" })
+    ).body as { id: string };
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/items`)
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: item.id })
+      .expect(201);
+
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({
+        itemId: item.id,
+        origin: {
+          learningPlanId: learningPlan.id,
+          stageId: "00000000-0000-0000-0000-000000000000",
+        },
+      })
+      .expect(404);
+    await request(app)
+      .post(`/api/learning-plans/${learningPlan.id}/archive`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({
+        itemId: item.id,
+        origin: { learningPlanId: learningPlan.id },
+      })
+      .expect(404);
+
+    const focus = await request(app)
+      .get("/api/daily-focus/today")
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+    expect(focus.body).toMatchObject({ total: 0, entries: [] });
   });
 
   it("removes only focus membership and derives completion from shared Item Status", async () => {
@@ -80,7 +257,7 @@ describe("Daily Focus service", () => {
       id: focus.id,
       done: 1,
       total: 1,
-      items: [{ id: item.id, status: "done" }],
+      entries: [{ item: { id: item.id, status: "done" }, origin: null }],
     });
 
     const removed = await request(app)
@@ -92,7 +269,7 @@ describe("Daily Focus service", () => {
       id: focus.id,
       done: 0,
       total: 0,
-      items: [],
+      entries: [],
     });
     expect(
       (
@@ -174,6 +351,38 @@ describe("Daily Focus service", () => {
       ),
     ).rejects.toThrow(/daily_focus_items_item_owner_fk/);
 
+    const intruderPlan = (
+      await request(app)
+        .post("/api/learning-plans")
+        .set(TEST_USER_HEADER, intruder)
+        .send({ name: "Intruder plan" })
+    ).body as { id: string };
+    await request(app)
+      .post(`/api/learning-plans/${intruderPlan.id}/items`)
+      .set(TEST_USER_HEADER, intruder)
+      .send({ itemId: intruderItem.id })
+      .expect(201);
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, owner)
+      .send({
+        itemId: ownerItem.id,
+        origin: { learningPlanId: intruderPlan.id },
+      })
+      .expect(404);
+    const intruderPlacement = await harness.pool.query<{ id: string }>(
+      "select id from learning_plan_item_placements where item_id = $1",
+      [intruderItem.id],
+    );
+    await expect(
+      harness.pool.query(
+        `insert into daily_focus_item_origins
+          (daily_focus_id, user_id, item_id, placement_id)
+         values ($1, $2, $3, $4)`,
+        [focus.id, focus.userId, ownerItem.id, intruderPlacement.rows[0].id],
+      ),
+    ).rejects.toThrow(/daily_focus_item_origins_placement_fk/);
+
     await request(app)
       .post("/api/items")
       .set(TEST_USER_HEADER, owner)
@@ -182,8 +391,8 @@ describe("Daily Focus service", () => {
       .get("/api/daily-focus/today")
       .set(TEST_USER_HEADER, owner);
     const refreshedFocus = refreshed.body as DailyFocus;
-    expect(refreshedFocus.items).toEqual([
-      expect.objectContaining({ id: ownerItem.id }),
-    ]);
+    expect(refreshedFocus.entries).toHaveLength(1);
+    expect(refreshedFocus.entries[0]?.item.id).toBe(ownerItem.id);
+    expect(refreshedFocus.entries[0]?.origin).toBeNull();
   });
 });

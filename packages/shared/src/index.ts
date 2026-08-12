@@ -203,9 +203,21 @@ export interface DailyFocus {
   id: DailyFocusId;
   userId: UserId;
   date: string;
-  items: Item[];
+  entries: DailyFocusEntry[];
   done: number;
   total: number;
+}
+
+/** Optional current Plan placement retained only to navigate from a focus entry. */
+export interface DailyFocusOrigin {
+  learningPlan: PlacementLearningPlan;
+  stage: PlacementStage | null;
+}
+
+/** One whole shared Item selected for a dated Daily Focus. */
+export interface DailyFocusEntry {
+  item: Item;
+  origin: DailyFocusOrigin | null;
 }
 
 /**

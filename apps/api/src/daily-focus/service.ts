@@ -1,4 +1,9 @@
-import type { DailyFocusId, ItemId, UserId } from "@unshelf/shared";
+import type {
+  AddDailyFocusItemRequest,
+  DailyFocusId,
+  ItemId,
+  UserId,
+} from "@unshelf/shared";
 import type { Database } from "../db";
 import * as dailyFocusRepository from "./repository";
 
@@ -6,11 +11,13 @@ export const addTodayItem = ({
   db,
   userId,
   itemId,
+  origin,
 }: {
   db: Database;
   userId: UserId;
   itemId: ItemId;
-}) => dailyFocusRepository.addTodayItem({ db, userId, itemId });
+  origin: AddDailyFocusItemRequest["origin"];
+}) => dailyFocusRepository.addTodayItem({ db, userId, itemId, origin });
 
 export const getTodayFocus = ({
   db,

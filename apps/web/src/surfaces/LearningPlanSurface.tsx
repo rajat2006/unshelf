@@ -16,6 +16,7 @@ import {
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LearningPlanCanvas } from "../learning-plan/LearningPlanCanvas";
 import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
+import { PlanTodaySidecar } from "../learning-plan/PlanTodaySidecar";
 import { usePhoneViewport } from "../learning-plan/usePhoneViewport";
 import { StageSidebar } from "../stages/StageSidebar";
 
@@ -36,14 +37,16 @@ import { StageSidebar } from "../stages/StageSidebar";
  */
 interface LearningPlanSurfaceProps {
   learningPlanId?: LearningPlanId;
+  stageId?: StageId;
 }
 
 export function LearningPlanSurface({
   learningPlanId: selectedLearningPlanId,
+  stageId: selectedStageId,
 }: LearningPlanSurfaceProps = {}) {
   const params = useParams();
   const learningPlanId = selectedLearningPlanId ?? params.learningPlanId;
-  const stageId = selectedLearningPlanId ? undefined : params.stageId;
+  const stageId = selectedStageId ?? params.stageId;
   const navigate = useNavigate();
   const user = useCurrentUser();
   const phoneReadOnly = usePhoneViewport();
@@ -161,7 +164,9 @@ export function LearningPlanSurface({
               </strong>
             </div>
           ) : (
-            <div className="learning-plan-studio">
+            <div
+              className={`learning-plan-studio${stageId ? " learning-plan-studio--with-detail" : ""}`}
+            >
               {!readOnly && (
                 <PlanLibraryDrawer
                   learningPlanId={learningPlanId as LearningPlanId}
@@ -182,6 +187,13 @@ export function LearningPlanSurface({
                 }}
                 readOnly={readOnly}
               />
+              {record && (
+                <PlanTodaySidecar
+                  learningPlan={record}
+                  topology={learningPlan}
+                  user={user}
+                />
+              )}
             </div>
           ))}
       </section>

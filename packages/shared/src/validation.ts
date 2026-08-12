@@ -50,6 +50,12 @@ export const updateItemTargetDateRequestSchema = z.strictObject({
 
 export const addDailyFocusItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
+  origin: z
+    .strictObject({
+      learningPlanId: learningPlanIdSchema,
+      stageId: stageIdSchema.optional(),
+    })
+    .optional(),
 });
 
 export const createPartsRequestSchema = z.strictObject({

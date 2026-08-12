@@ -163,6 +163,11 @@ export const dailyFocusItems = pgTable(
       columns: [table.itemId, table.userId],
       foreignColumns: [items.id, items.userId],
     }).onDelete("cascade"),
+    unique("daily_focus_items_identity_idx").on(
+      table.dailyFocusId,
+      table.userId,
+      table.itemId,
+    ),
     index("daily_focus_items_user_id_idx").on(table.userId),
   ],
 );
@@ -434,6 +439,11 @@ export const learningPlanItemPlacements = pgTable(
       table.userId,
       table.learningPlanId,
     ),
+    unique("learning_plan_item_placements_origin_identity_idx").on(
+      table.id,
+      table.userId,
+      table.itemId,
+    ),
     unique("learning_plan_item_placements_stage_identity_idx").on(
       table.id,
       table.userId,
@@ -458,6 +468,39 @@ export const learningPlanItemPlacements = pgTable(
         and ${table.nodeKind} = 'item'
       )`,
     ),
+  ],
+);
+
+/** Optional navigation context from a focus entry to its current Plan placement. */
+export const dailyFocusItemOrigins = pgTable(
+  "daily_focus_item_origins",
+  {
+    dailyFocusId: uuid("daily_focus_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    placementId: uuid("placement_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyFocusId, table.itemId] }),
+    foreignKey({
+      name: "daily_focus_item_origins_focus_item_fk",
+      columns: [table.dailyFocusId, table.userId, table.itemId],
+      foreignColumns: [
+        dailyFocusItems.dailyFocusId,
+        dailyFocusItems.userId,
+        dailyFocusItems.itemId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "daily_focus_item_origins_placement_fk",
+      columns: [table.placementId, table.userId, table.itemId],
+      foreignColumns: [
+        learningPlanItemPlacements.id,
+        learningPlanItemPlacements.userId,
+        learningPlanItemPlacements.itemId,
+      ],
+    }).onDelete("cascade"),
+    index("daily_focus_item_origins_user_id_idx").on(table.userId),
   ],
 );
 
