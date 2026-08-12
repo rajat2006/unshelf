@@ -5,6 +5,12 @@
 > the target model adds **multiple Trails** and a **labels** axis over the store.
 > This ADR still describes v1 as shipped; the departure and its downstream build live
 > in ADR-0014 and #74.
+>
+> **Sub-item check-off superseded by [the Structured Item and Part decision](https://github.com/rajat2006/unshelf/issues/267)
+> and implemented by [the manual learning-planning loop](https://github.com/rajat2006/unshelf/issues/302)
+> (2026-08-12).** The current model lets any Item own a flat, ordered Part list
+> while retaining one shared Item Status. This ADR describes the original v1 cut;
+> the current glossary and linked implementation issue hold the active rules.
 
 Unshelf v1 ships three of the founding brief's five verbs — **dump, organise,
 track** — and explicitly defers the other two. A User captures Items (paste a
