@@ -8,6 +8,8 @@ import type {
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
   DailyFocus,
+  DailyPlanning,
+  DailyPlanningQuery,
   Item,
   ItemDetail,
   ItemId,
@@ -56,6 +58,18 @@ async function requestJson<ResponseBody>(
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) throw new Error(`api responded ${response.status}`);
   return (await response.json()) as ResponseBody;
+}
+
+async function requestWithoutBody(
+  user: CurrentUser,
+  path: string,
+  init: RequestInit,
+): Promise<void> {
+  const token = await user.getToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(path, { ...init, headers });
+  if (!response.ok) throw new Error(`api responded ${response.status}`);
 }
 
 /** Fetch All — every Item belonging to the current User. */
@@ -209,6 +223,36 @@ export async function updateItemTargetDate(
 /** Read the authenticated User's editable focus for the database's current date. */
 export async function fetchToday(user: CurrentUser): Promise<DailyFocus> {
   return requestJson<DailyFocus>(user, "/api/daily-focus/today");
+}
+
+/** Read deterministic, explained candidates without changing today's focus. */
+export async function fetchDailyPlanning(
+  user: CurrentUser,
+  query: DailyPlanningQuery,
+): Promise<DailyPlanning> {
+  const search = new URLSearchParams();
+  if (query.query) search.set("query", query.query);
+  if (query.intention) search.set("intention", query.intention);
+  if (query.learningPlanId) {
+    search.set("learningPlanId", query.learningPlanId);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return requestJson<DailyPlanning>(
+    user,
+    `/api/daily-focus/today/planning${suffix}`,
+  );
+}
+
+/** Suppress one suggestion for only the database's current calendar date. */
+export async function suppressDailyPlanningItem(
+  user: CurrentUser,
+  itemId: ItemId,
+): Promise<void> {
+  return requestWithoutBody(user, "/api/daily-focus/today/suppressions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemId }),
+  });
 }
 
 /** Read one immutable Daily Focus by its elapsed server calendar date. */

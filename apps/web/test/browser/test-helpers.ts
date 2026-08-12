@@ -51,3 +51,24 @@ export async function elapseDailyFocus(
   expect(response.ok()).toBe(true);
   return ((await response.json()) as { date: string }).date;
 }
+
+/** Move one suppression behind the database date to model next-day eligibility. */
+export async function elapseDailyPlanningSuppression({
+  page,
+  user,
+  itemId,
+}: {
+  page: Page;
+  user: string;
+  itemId: string;
+}): Promise<void> {
+  const response = await page.request.post(
+    `${BROWSER_HARNESS_API_ORIGIN}/__test__/daily-planning/${itemId}/elapse-suppression`,
+    {
+      headers: {
+        Authorization: `Bearer ${testBearerToken(user as TestUserId)}`,
+      },
+    },
+  );
+  expect(response.ok()).toBe(true);
+}

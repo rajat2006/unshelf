@@ -91,6 +91,9 @@ export const items = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    activityAt: timestamp("activity_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     type: text("type", { enum: nonEmpty(ITEM_TYPES) }).notNull(),
     status: text("status", { enum: nonEmpty(ITEM_STATUSES) })
       .notNull()
@@ -180,6 +183,32 @@ export const dailyFocusItems = pgTable(
     check(
       "daily_focus_items_part_percentage_snapshot_check",
       sql`${table.partPercentageSnapshot} between 0 and 100`,
+    ),
+  ],
+);
+
+/** Date-scoped suggestion suppression; it is not a permanent preference. */
+export const dailyPlanningSuppressions = pgTable(
+  "daily_planning_suppressions",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    itemId: uuid("item_id").notNull(),
+    date: date("date")
+      .notNull()
+      .default(sql`current_date`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.itemId, table.date] }),
+    foreignKey({
+      name: "daily_planning_suppressions_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }).onDelete("cascade"),
+    index("daily_planning_suppressions_user_date_idx").on(
+      table.userId,
+      table.date,
     ),
   ],
 );

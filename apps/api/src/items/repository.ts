@@ -213,6 +213,10 @@ export async function updateItemStatus(
         end`,
         status,
         statusMode: StatusMode.Manual,
+        activityAt: sql<Date>`case
+          when ${items.status} <> ${status} then now()
+          else ${items.activityAt}
+        end`,
       })
       .where(and(eq(items.id, itemId), eq(items.userId, userId)))
       .returning({ id: items.id });

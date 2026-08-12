@@ -119,6 +119,8 @@ export type {
   UpdatePartCompletionRequest,
   UpdatePartRequest,
   AddDailyFocusItemRequest,
+  DailyPlanningQuery,
+  SuppressDailyPlanningItemRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */
@@ -223,6 +225,29 @@ export interface DailyFocusEntry {
     status: Status;
     partPercentage: number | null;
   };
+}
+
+/** The ordered, transparent signals that can place an Item in Daily Planning. */
+export type DailyPlanningSignal =
+  | "unfinished_yesterday"
+  | "selected_plan"
+  | "dormant_in_progress"
+  | "approaching_target"
+  | "recently_captured_uncommitted";
+
+/** One de-duplicated suggestion with the highest-priority reason it appears. */
+export interface DailyPlanningSuggestion {
+  item: Item;
+  signal: DailyPlanningSignal;
+  explanation: string;
+  /** Plan context retained when the selected Plan caused the suggestion. */
+  origin: DailyFocusOrigin | null;
+}
+
+/** A read-only projection used to choose Items for the current Daily Focus. */
+export interface DailyPlanning {
+  searchResults: Item[];
+  suggestions: DailyPlanningSuggestion[];
 }
 
 /**

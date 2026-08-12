@@ -3,7 +3,9 @@ import {
   addDailyFocusItemRequestSchema,
   dailyFocusDateSchema,
   dailyFocusIdSchema,
+  dailyPlanningQuerySchema,
   itemIdSchema,
+  suppressDailyPlanningItemRequestSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
@@ -36,6 +38,46 @@ export function createDailyFocusRouter(
         return;
       }
       res.status(result.added ? 201 : 200).json(result.focus);
+    },
+  );
+
+  router.get(
+    "/today/planning",
+    validateRequest(
+      { query: dailyPlanningQuerySchema },
+      "invalid_daily_planning_query",
+    ),
+    async (req, res) => {
+      const result = await dailyFocusService.getDailyPlanning({
+        db,
+        userId: req.user!.id,
+        query: res.locals.validated.query,
+      });
+      if (!result.ok) {
+        res.status(404).json({ error: "learning plan not found" });
+        return;
+      }
+      res.json(result.planning);
+    },
+  );
+
+  router.post(
+    "/today/suppressions",
+    validateRequest(
+      { body: suppressDailyPlanningItemRequestSchema },
+      "invalid_daily_focus_item",
+    ),
+    async (req, res) => {
+      const suppressed = await dailyFocusService.suppressDailyPlanningItem({
+        db,
+        userId: req.user!.id,
+        itemId: res.locals.validated.body.itemId,
+      });
+      if (!suppressed) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.status(204).send();
     },
   );
 

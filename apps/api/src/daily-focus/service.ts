@@ -1,11 +1,25 @@
 import type {
   AddDailyFocusItemRequest,
+  DailyPlanningQuery,
   DailyFocusId,
   ItemId,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import * as dailyFocusRepository from "./repository";
+import * as planningRepository from "./planning-repository";
+
+export const getDailyPlanning = (input: {
+  db: Database;
+  userId: UserId;
+  query: DailyPlanningQuery;
+}) => planningRepository.getDailyPlanning(input);
+
+export const suppressDailyPlanningItem = (input: {
+  db: Database;
+  userId: UserId;
+  itemId: ItemId;
+}) => planningRepository.suppressDailyPlanningItem(input);
 
 export const addTodayItem = ({
   db,

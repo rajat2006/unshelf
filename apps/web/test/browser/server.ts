@@ -64,6 +64,32 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse) {
     res.end(JSON.stringify(elapsed.rows[0]));
     return;
   }
+  const suppressionMatch = pathname.match(
+    /^\/__test__\/daily-planning\/([0-9a-f-]+)\/elapse-suppression$/,
+  );
+  if (req.method === "POST" && suppressionMatch) {
+    const user = testUserFromAuthorization(req.headers.authorization);
+    if (!user) {
+      res.writeHead(401).end();
+      return;
+    }
+    const elapsed = await testApp.pool.query(
+      `update daily_planning_suppressions
+       set date = current_date - 1
+       from users
+       where daily_planning_suppressions.item_id = $1
+         and daily_planning_suppressions.user_id = users.id
+         and users.clerk_user_id = $2
+         and daily_planning_suppressions.date = current_date`,
+      [suppressionMatch[1], user],
+    );
+    if (elapsed.rowCount !== 1) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(204).end();
+    return;
+  }
   testApp.app(req, res);
 }
 

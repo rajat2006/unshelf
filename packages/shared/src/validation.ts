@@ -61,6 +61,16 @@ export const addDailyFocusItemRequestSchema = z.strictObject({
     .optional(),
 });
 
+export const dailyPlanningQuerySchema = z.strictObject({
+  query: z.string().trim().optional(),
+  intention: z.string().trim().optional(),
+  learningPlanId: learningPlanIdSchema.optional(),
+});
+
+export const suppressDailyPlanningItemRequestSchema = z.strictObject({
+  itemId: itemIdSchema,
+});
+
 export const createPartsRequestSchema = z.strictObject({
   titles: z
     .array(z.string())
@@ -141,6 +151,10 @@ export type UpdateItemTargetDateRequest = z.infer<
 >;
 export type AddDailyFocusItemRequest = z.infer<
   typeof addDailyFocusItemRequestSchema
+>;
+export type DailyPlanningQuery = z.infer<typeof dailyPlanningQuerySchema>;
+export type SuppressDailyPlanningItemRequest = z.infer<
+  typeof suppressDailyPlanningItemRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;

@@ -39,6 +39,7 @@ export const VALIDATION_FAILURE_CODES = [
   "self_edge",
   "invalid_daily_focus_item",
   "invalid_daily_focus_date",
+  "invalid_daily_planning_query",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];
