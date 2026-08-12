@@ -71,6 +71,21 @@ cool-neutral palette and single-grotesque typography. The signed-in workspace
 now uses warm neutral surfaces, a forest-green primary accent, serif display
 type, and a readable system-ui body face.
 
+The reviewed prototypes are the normative visual references for this workspace,
+not merely palette inspiration:
+
+- issue #263, snapshot `51c60f6`, Variant D defines the four-room shell, Plans
+  index, and the continuous Library–canvas–Today plan studio;
+- issue #271, snapshot `d39e4e9`, Library B and Daily Planning D define the
+  faceted Library catalog and the agenda-with-planning-sidecar composition used
+  by Today.
+
+Production code may adapt these references for real data, keyboard and screen
+reader behavior, responsive constraints, and dark mode. It should preserve their
+visual hierarchy, layout relationships, density, surface treatment, and
+typographic character; a materially different composition requires an explicit
+design decision.
+
 The durable parts of this decision still stand: colours continue to flow through
 semantic custom properties; light and dark remain peers; completion stays green;
 past-target treatment stays quiet and non-alarming; and visible focus plus

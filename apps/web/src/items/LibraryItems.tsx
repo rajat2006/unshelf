@@ -8,6 +8,8 @@ interface LibraryItemsProps {
   labels: Label[];
   user: CurrentUser;
   onItemChanged: (item: Item) => void;
+  selectedItemId?: Item["id"];
+  onPreview?: (item: Item) => void;
 }
 
 /**
@@ -19,6 +21,8 @@ export function LibraryItems({
   labels,
   user,
   onItemChanged,
+  selectedItemId,
+  onPreview,
 }: LibraryItemsProps) {
   return (
     <ul className="library-list" aria-label="Library Items, newest first">
@@ -29,6 +33,16 @@ export function LibraryItems({
           user={user}
           onChanged={onItemChanged}
         >
+          {onPreview && (
+            <button
+              type="button"
+              className="library-item-preview"
+              aria-pressed={selectedItemId === item.id}
+              onClick={() => onPreview(item)}
+            >
+              Preview
+            </button>
+          )}
           <ItemLabels
             item={item}
             labels={labels}

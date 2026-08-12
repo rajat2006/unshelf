@@ -83,8 +83,16 @@ export function PlansSurface() {
   );
 
   return (
-    <section aria-labelledby="home-heading">
-      <h1 id="home-heading">Learning Plans</h1>
+    <section className="plans-surface" aria-labelledby="home-heading">
+      <header className="editorial-heading plans-surface__heading">
+        <div>
+          <p className="editorial-eyebrow">Durable commitments</p>
+          <h1 id="home-heading">Learning Plans</h1>
+          <p className="editorial-intro">
+            Shape selected material into a path toward something meaningful.
+          </p>
+        </div>
+      </header>
       <LearningPlansIndex
         state={state}
         creating={creating}

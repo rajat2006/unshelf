@@ -48,8 +48,15 @@ export function LearningPlansIndex({
     (learningPlan) => learningPlan.archivedAt !== null,
   );
   return (
-    <div>
-      <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+    <div className="learning-plans-index">
+      <aside className="learning-plans-index__composer">
+        <p className="editorial-eyebrow">Begin a path</p>
+        <h2>Start something worth finishing</h2>
+        <p className="quiet-copy">
+          Name the outcome. Add and arrange material inside the plan studio.
+        </p>
+        <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+      </aside>
       {learningPlans.length === 0 ? (
         <EmptyLearningPlans />
       ) : (
@@ -127,10 +134,14 @@ function progressLabel(learningPlan: LearningPlan): string {
 function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
   return (
     <Link to={`/plans/${learningPlan.id}`} className="learning-plan-card__link">
+      <span className="editorial-eyebrow">
+        {learningPlan.archivedAt ? "Archived plan" : "Active plan"}
+      </span>
       <span className="learning-plan-card__name">{learningPlan.name}</span>
       <span className="learning-plan-card__progress">
         {progressLabel(learningPlan)}
       </span>
+      <span className="learning-plan-card__open">Open plan →</span>
     </Link>
   );
 }

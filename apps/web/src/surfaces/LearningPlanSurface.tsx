@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import type {
   LearningPlan,
   LearningPlanId,
@@ -108,10 +108,46 @@ export function LearningPlanSurface({
         aria-labelledby="learning-plan-heading"
         className="learning-plan-surface"
       >
-        <h1 id="learning-plan-heading">{record?.name ?? "Learning Plan"}</h1>
-        {archived && <p className="quiet-copy">Archived · read-only</p>}
+        <header className="learning-plan-studio-header">
+          <div>
+            <Link to="/plans" className="learning-plan-studio-header__back">
+              ← All Learning Plans
+            </Link>
+            <p className="editorial-eyebrow">Plan studio</p>
+            <h1 id="learning-plan-heading">
+              {record?.name ?? "Learning Plan"}
+            </h1>
+            <p className="quiet-copy">
+              {archived
+                ? "Archived · read-only"
+                : "Arrange the path, draw from the Library, and choose what belongs in Today."}
+            </p>
+          </div>
+          {record && (
+            <div className="learning-plan-studio-header__progress">
+              <strong>
+                {record.total === 0
+                  ? "—"
+                  : `${Math.round((record.done / record.total) * 100)}%`}
+              </strong>
+              <span>
+                {record.done} of {record.total} Items done
+              </span>
+              <div aria-hidden="true">
+                <span
+                  style={{
+                    width: `${record.total === 0 ? 0 : (record.done / record.total) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </header>
         {record && !archived && (
-          <form onSubmit={(event) => void rename(event)}>
+          <form
+            className="learning-plan-rename"
+            onSubmit={(event) => void rename(event)}
+          >
             <label htmlFor="rename-learning-plan">Rename Learning Plan</label>
             <input
               id="rename-learning-plan"

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   deriveItemCompletion,
+  Status,
   type DailyFocus,
   type DailyPlanning,
   type Item,
@@ -172,10 +173,35 @@ export function TodaySurface() {
       };
     });
   };
+  const currentItemIndex =
+    state.status === "ready" ? currentDailyFocusIndex(state.focus) : -1;
 
   return (
     <section className="today-surface" aria-labelledby="today-heading">
-      <h1 id="today-heading">Today</h1>
+      <header className="editorial-heading today-surface__heading">
+        <div>
+          <p className="editorial-eyebrow">Daily Focus</p>
+          <h1 id="today-heading">Today</h1>
+          <p className="editorial-intro">
+            A deliberate working set for what deserves your attention now.
+          </p>
+        </div>
+        {state.status === "ready" && (
+          <div className="today-progress" aria-label="Today progress">
+            <strong>
+              {state.focus.done}/{state.focus.total}
+            </strong>
+            <span>Items done</span>
+            <div aria-hidden="true">
+              <span
+                style={{
+                  width: `${state.focus.total === 0 ? 0 : (state.focus.done / state.focus.total) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </header>
       {state.status === "loading" && <p role="status">Loading Today…</p>}
       {state.status === "error" && (
         <div role="alert">
@@ -187,168 +213,230 @@ export function TodaySurface() {
       )}
       {state.status === "ready" && (
         <>
-          <p className="quiet-copy">{state.focus.date}</p>
-          <Link
-            to={{
-              pathname: `/today/${previousCalendarDate(state.focus.date)}`,
-              search: location.search,
-            }}
-          >
-            Browse yesterday
-          </Link>
-          <p className="today-surface__completion">
-            {state.focus.done} of {state.focus.total} done
-          </p>
-          <section aria-label="Today's Daily Focus">
-            {state.focus.entries.length === 0 ? (
-              <p className="quiet-copy">Choose what deserves your attention.</p>
-            ) : (
-              <ul className="library-list">
-                {state.focus.entries.map(({ item, origin }) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    user={user}
-                    onChanged={replaceItem}
-                    detailBackgroundLocation={
-                      origin
-                        ? planItemBackgroundLocation({
-                            learningPlanId: origin.learningPlan.id,
-                            ...(origin.stage
-                              ? { stageId: origin.stage.id }
-                              : {}),
-                          })
-                        : undefined
-                    }
-                  >
-                    {origin && (
-                      <span className="quiet-copy">
-                        From {origin.learningPlan.name}
-                        {origin.stage ? ` · ${origin.stage.name}` : ""}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void remove(state.focus, item)}
-                      aria-label={`Remove ${item.title} from Today`}
-                    >
-                      Remove
-                    </button>
-                  </ItemRow>
-                ))}
-              </ul>
-            )}
-          </section>
-          <section
-            className="today-planning"
-            aria-labelledby="today-planning-heading"
-          >
-            <h2 id="today-planning-heading">Plan Today</h2>
-            <label>
-              <span>Find an Item</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>Learning intention</span>
-              <input
-                type="text"
-                value={intention}
-                onChange={(event) => setIntention(event.target.value)}
-                placeholder="What do you want to learn?"
-              />
-            </label>
-            <label>
-              <span>Learning Plan lens</span>
-              <select
-                value={learningPlanId ?? ""}
-                onChange={(event) =>
-                  setLearningPlanId(
-                    event.target.value
-                      ? (event.target.value as LearningPlanId)
-                      : undefined,
-                  )
-                }
-              >
-                <option value="">All Learning Plans</option>
-                {state.plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {query.trim() && state.planning.searchResults.length === 0 ? (
-              <p className="quiet-copy">No unselected Items match.</p>
-            ) : null}
-            {state.planning.searchResults.length > 0 && (
-              <section aria-label="Item search results">
-                <ul className="today-planning__results">
-                  {state.planning.searchResults.map((item) => (
-                    <li key={item.id}>
-                      <span>{item.title}</span>
-                      <button
-                        type="button"
-                        onClick={() => void add(item)}
-                        aria-label={`Add ${item.title} to Today`}
-                      >
-                        Add
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            <section aria-label="Suggestions">
-              <h3>Suggestions</h3>
-              {state.planning.suggestions.length === 0 ? (
-                <p className="quiet-copy">No suggestions for these inputs.</p>
+          <div className="today-layout">
+            <section className="today-agenda" aria-label="Today's Daily Focus">
+              <div className="today-agenda__heading">
+                <div>
+                  <p className="editorial-eyebrow">Your agenda</p>
+                  <h2>{state.focus.date}</h2>
+                </div>
+                <Link
+                  className="quiet-link"
+                  to={{
+                    pathname: `/today/${previousCalendarDate(state.focus.date)}`,
+                    search: location.search,
+                  }}
+                >
+                  Browse yesterday
+                </Link>
+              </div>
+              {state.focus.entries.length === 0 ? (
+                <div className="today-agenda__empty">
+                  <p>Choose what deserves your attention.</p>
+                  <span>Use Daily Planning to build a small working set.</span>
+                </div>
               ) : (
-                <ul className="today-planning__results">
-                  {state.planning.suggestions.map((suggestion) => (
-                    <li key={suggestion.item.id}>
-                      <div>
-                        <strong>{suggestion.item.title}</strong>
-                        <p className="quiet-copy">{suggestion.explanation}</p>
-                      </div>
+                <ol className="today-agenda__list">
+                  {state.focus.entries.map(({ item, origin }, index) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      user={user}
+                      onChanged={replaceItem}
+                      detailBackgroundLocation={
+                        origin
+                          ? planItemBackgroundLocation({
+                              learningPlanId: origin.learningPlan.id,
+                              ...(origin.stage
+                                ? { stageId: origin.stage.id }
+                                : {}),
+                            })
+                          : undefined
+                      }
+                    >
+                      {index === currentItemIndex && (
+                        <span className="today-agenda__current">
+                          Current focus
+                        </span>
+                      )}
+                      <span className="today-agenda__number" aria-hidden="true">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      {origin && (
+                        <span className="quiet-copy">
+                          From {origin.learningPlan.name}
+                          {origin.stage ? ` · ${origin.stage.name}` : ""}
+                        </span>
+                      )}
                       <button
                         type="button"
-                        onClick={() =>
-                          void add(
-                            suggestion.item,
-                            suggestion.origin
-                              ? {
-                                  learningPlanId:
-                                    suggestion.origin.learningPlan.id,
-                                  ...(suggestion.origin.stage
-                                    ? {
-                                        stageId: suggestion.origin.stage.id,
-                                      }
-                                    : {}),
-                                }
-                              : undefined,
-                          )
-                        }
-                        aria-label={`Add ${suggestion.item.title} to Today`}
+                        onClick={() => void remove(state.focus, item)}
+                        aria-label={`Remove ${item.title} from Today`}
                       >
-                        Add
+                        Remove
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void suppress(suggestion.item)}
-                        aria-label={`Not today for ${suggestion.item.title}`}
-                      >
-                        Not today
-                      </button>
-                    </li>
+                    </ItemRow>
                   ))}
-                </ul>
+                </ol>
               )}
             </section>
-          </section>
+            <section
+              className="today-planning"
+              aria-labelledby="today-planning-heading"
+            >
+              <p className="editorial-eyebrow">Shape your day</p>
+              <h2 id="today-planning-heading">Plan Today</h2>
+              <p className="today-planning__intro">
+                Search the Library or describe your intention. Only Add changes
+                Today.
+              </p>
+              <label>
+                <span>Find an Item</span>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Learning intention</span>
+                <input
+                  type="text"
+                  value={intention}
+                  onChange={(event) => setIntention(event.target.value)}
+                  placeholder="What do you want to learn?"
+                />
+              </label>
+              <label>
+                <span>Learning Plan lens</span>
+                <select
+                  value={learningPlanId ?? ""}
+                  onChange={(event) =>
+                    setLearningPlanId(
+                      event.target.value
+                        ? (event.target.value as LearningPlanId)
+                        : undefined,
+                    )
+                  }
+                >
+                  <option value="">All Learning Plans</option>
+                  {state.plans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {query.trim() && state.planning.searchResults.length === 0 ? (
+                <p className="quiet-copy">No unselected Items match.</p>
+              ) : null}
+              {state.planning.searchResults.length > 0 && (
+                <section aria-label="Item search results">
+                  <ul className="today-planning__results">
+                    {state.planning.searchResults.map((item) => (
+                      <li key={item.id}>
+                        <span>{item.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => void add(item)}
+                          aria-label={`Add ${item.title} to Today`}
+                        >
+                          Add
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              <section aria-label="Recently added">
+                <div className="today-planning__section-heading">
+                  <h3>Recently added</h3>
+                  <span>Newest uncommitted Items</span>
+                </div>
+                {recentPlanningSuggestions(state.planning).length === 0 ? (
+                  <p className="quiet-copy">No recent Items to suggest.</p>
+                ) : (
+                  <ul className="today-planning__results">
+                    {recentPlanningSuggestions(state.planning).map(
+                      (suggestion) => (
+                        <li key={suggestion.item.id}>
+                          <div>
+                            <strong>{suggestion.item.title}</strong>
+                            <p className="quiet-copy">
+                              {suggestion.explanation}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void add(suggestion.item)}
+                            aria-label={`Add ${suggestion.item.title} to Today`}
+                          >
+                            Add
+                          </button>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                )}
+              </section>
+              <section aria-label="Suggestions">
+                <div className="today-planning__section-heading">
+                  <h3>Suggested for you</h3>
+                  <span>Explained, never automatic</span>
+                </div>
+                {generalPlanningSuggestions(state.planning).length === 0 ? (
+                  <p className="quiet-copy">No suggestions for these inputs.</p>
+                ) : (
+                  <ul className="today-planning__results">
+                    {generalPlanningSuggestions(state.planning).map(
+                      (suggestion) => (
+                        <li key={suggestion.item.id}>
+                          <div>
+                            <strong>{suggestion.item.title}</strong>
+                            <p className="quiet-copy">
+                              {suggestion.explanation}
+                            </p>
+                          </div>
+                          <div className="today-planning__actions">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void add(
+                                  suggestion.item,
+                                  suggestion.origin
+                                    ? {
+                                        learningPlanId:
+                                          suggestion.origin.learningPlan.id,
+                                        ...(suggestion.origin.stage
+                                          ? {
+                                              stageId:
+                                                suggestion.origin.stage.id,
+                                            }
+                                          : {}),
+                                      }
+                                    : undefined,
+                                )
+                              }
+                              aria-label={`Add ${suggestion.item.title} to Today`}
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void suppress(suggestion.item)}
+                              aria-label={`Not today for ${suggestion.item.title}`}
+                            >
+                              Not today
+                            </button>
+                          </div>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                )}
+              </section>
+            </section>
+          </div>
           {mutationError && (
             <p role="alert">Couldn&apos;t update Today. Try again.</p>
           )}
@@ -382,8 +470,32 @@ function removePlanningSuggestion(
   };
 }
 
+function recentPlanningSuggestions(planning: DailyPlanning) {
+  return planning.suggestions.filter(
+    (suggestion) => suggestion.signal === "recently_captured_uncommitted",
+  );
+}
+
+function generalPlanningSuggestions(planning: DailyPlanning) {
+  const recentIds = new Set(
+    recentPlanningSuggestions(planning).map((suggestion) => suggestion.item.id),
+  );
+  return planning.suggestions.filter(
+    (suggestion) => !recentIds.has(suggestion.item.id),
+  );
+}
+
 function previousCalendarDate(date: string): string {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() - 1);
   return value.toISOString().slice(0, 10);
+}
+
+function currentDailyFocusIndex(focus: DailyFocus): number {
+  const inProgress = focus.entries.findIndex(
+    ({ item }) => item.status === Status.InProgress,
+  );
+  return inProgress >= 0
+    ? inProgress
+    : focus.entries.findIndex(({ item }) => item.status !== Status.Done);
 }
