@@ -53,6 +53,8 @@ manufacturing a meaningless one-Item Stage around every direct placement.
 
 The schema, shared types, routes, and UI now use Learning Plans whose current
 nodes are Stages. The migration preserves existing topology and stable identities
-while introducing the Plan Node seam needed for direct Item placements. The full
-product decision lives in
+while introducing the Plan Node seam needed for direct Item placements. The
+evidence for making Stages optional is recorded in
+[Learning-plan stage models](../research/learning-plan-stage-models.md), and the
+full product decision lives in
 [Choose the organisation primitives for the Library, plans, and daily focus](https://github.com/rajat2006/unshelf/issues/261).
