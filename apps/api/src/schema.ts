@@ -517,7 +517,9 @@ export const dailyFocusItemOrigins = pgTable(
   "daily_focus_item_origins",
   {
     dailyFocusId: uuid("daily_focus_id").notNull(),
-    userId: uuid("user_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
     itemId: uuid("item_id").notNull(),
     placementId: uuid("placement_id").notNull(),
   },
