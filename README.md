@@ -9,6 +9,9 @@ cp apps/web/.env.example apps/web/.env   # same publishable key as the api
 pnpm dev
 ```
 
+For local development, keep `PUBLIC_ORIGIN=http://localhost:5173` in
+`apps/api/.env`. Non-local deployments require an exact HTTPS origin.
+
 The api expects Postgres at `DATABASE_URL`. Tests need no `.env` at all —
 `pnpm test` spins up a throwaway Postgres via testcontainers (Docker required).
 API logs remain structured NDJSON by default. For human-friendly local output,

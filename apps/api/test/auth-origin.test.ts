@@ -18,8 +18,16 @@ describe("exact Clerk browser origin", () => {
     });
   });
 
+  it("accepts an exact HTTP localhost origin for local development", () => {
+    expect(parsePublicOrigin("http://localhost:5173")).toBe(
+      "http://localhost:5173",
+    );
+  });
+
   it.each([
     "http://generated.example.com",
+    "http://localhost.example.com:5173",
+    "http://localhost:5173/",
     "https://generated.example.com/",
     "https://generated.example.com/path",
     "https://generated.example.com?token=secret",
@@ -28,7 +36,7 @@ describe("exact Clerk browser origin", () => {
     "not-an-origin",
   ])("rejects a non-exact public origin: %s", (value) => {
     expect(() => parsePublicOrigin(value)).toThrow(
-      "PUBLIC_ORIGIN must be an exact HTTPS origin",
+      "PUBLIC_ORIGIN must be an exact HTTPS origin or an exact HTTP localhost origin",
     );
   });
 });
