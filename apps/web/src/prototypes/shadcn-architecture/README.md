@@ -21,14 +21,16 @@ ticket validates the architecture rather than choosing a design.
 pnpm --filter @unshelf/web prototype:architecture
 ```
 
-Open <http://127.0.0.1:5173/prototype/>.
+Open <http://127.0.0.1:5173/>. This command uses the standalone prototype
+configuration: it serves fixture data at the advertised root and needs no API,
+database, authentication, or environment credentials.
 
 ## State matrix
 
 - `?state=ready|loading|empty|error` selects the recurring presentation state.
 - `?theme=light|dark` selects a resolved appearance; Light is the default.
 - `?capture=open` opens the Radix-backed Capture dialog over the Library.
-- Selecting an Item navigates to `/prototype/items/:itemId` and opens its
+- Selecting an Item navigates to `/items/:itemId` and opens its
   Radix-backed Sheet while preserving the Library beneath it.
 - The development-only workbench cycles states with its controls or the Left
   and Right arrow keys. It does not intercept keys inside editable or composite

@@ -9,7 +9,7 @@
     "lint": "eslint src test playwright.config.ts vite.config.ts",
     "lint:fix": "eslint src test playwright.config.ts vite.config.ts --fix",
     "preview": "vite preview",
-    "prototype:architecture": "vite --host 127.0.0.1",
+    "prototype:architecture": "vite --config vite.prototype.config.ts --host 127.0.0.1",
     "prototype:architecture:build": "vite build --config vite.prototype.config.ts",
     "test": "vitest run --exclude 'test/browser/**'",
     "test:browser": "playwright test",

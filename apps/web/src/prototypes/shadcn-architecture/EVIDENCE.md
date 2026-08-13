@@ -18,7 +18,7 @@ target width and appearance.
 | Agent source clarity | `README.md`, `components.json`, `shadcn info`, one token file, generated primitives, one recurring domain component, and local composition boundaries are discoverable. Both fresh-agent trials found the right seams and invented no values; one also caught a product-contract conflict. Utility-heavy composition remains noisy; CLI preset metadata still reports Nova's Geist seed even though the actual token contract deliberately uses system UI. | Strong navigation; acceptable source density |
 | Accessibility | Radix Dialog/Sheet/Select/Tooltip, visible focus, persistent labels, colour-plus-words, shell-preserving states, responsive/coarse-pointer target rules, and reduced-motion rules are present. | Acceptable by inspection; browser/axe review pending |
 | Customization cost | Unshelf values fit in one 155-line contract. Ten generated primitives total 755 lines; the representative composition totals 1,421 TypeScript/CSS lines and contains 111 `className` sites. No raw colours, `dark:` colour overrides, or `!important` appear in TSX. | Acceptable, with material utility-source density |
-| Generated/runtime weight | Tailwind compiles to CSS with no browser runtime. The isolated full slice is 51.93 kB CSS / 9.76 kB gzip and 410.16 kB JS / 129.02 kB gzip. See attribution below. | Acceptable, not light |
+| Generated/runtime weight | Tailwind compiles to CSS with no browser runtime. The isolated full slice is 49.90 kB CSS / 9.47 kB gzip and 410.23 kB JS / 129.05 kB gzip. See attribution below. | Acceptable, not light |
 | Maintenance ergonomics | Current `shadcn add --diff` shows meaningful Unshelf changes concentrated in Button; Dialog is formatting-only and Sheet differs only by the generated client directive. Updates remain legible but are overwrite-and-reconcile operations. | Acceptable |
 
 ## Reproducible build evidence
@@ -39,8 +39,8 @@ resulted from the warning.
 The prototype-only production build emits:
 
 ```text
-CSS  51.93 kB raw / 9.76 kB gzip
-JS  410.16 kB raw / 129.02 kB gzip
+CSS  49.90 kB raw / 9.47 kB gzip
+JS  410.23 kB raw / 129.05 kB gzip
 ```
 
 Standalone tree-shaken minified estimates (React externalized where relevant):
