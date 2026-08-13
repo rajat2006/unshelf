@@ -13,6 +13,7 @@
     "src",
     "test",
     "playwright.config.ts",
+    "prototype-routing.ts",
     "vite.config.ts",
     "vite.prototype.config.ts"
   ]

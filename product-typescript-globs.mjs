@@ -6,4 +6,5 @@ export const productTypeScriptGlobs = [
   "apps/api/{drizzle,vitest}.config.ts",
   "apps/web/{src,test}/**/*.{ts,tsx}",
   "apps/web/{playwright,vite}.config.ts",
+  "apps/web/{prototype-routing,vite.prototype.config}.ts",
 ];
