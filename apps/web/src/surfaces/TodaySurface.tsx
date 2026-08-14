@@ -8,7 +8,36 @@ import {
   type LearningPlan,
   type LearningPlanId,
 } from "@unshelf/shared";
+import {
+  Check,
+  ChevronDown,
+  History,
+  Plus,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Link, useLocation } from "react-router";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToToday,
   fetchDailyPlanning,
@@ -20,10 +49,8 @@ import {
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { completionPercentage } from "../presentation/progress";
 import type { CurrentUser } from "../application-auth/types";
-import {
-  itemDetailRouteState,
-  planItemBackgroundLocation,
-} from "../items/item-route-state";
+import { planItemBackgroundLocation } from "../items/item-route-state";
+import { ItemSummary } from "../items/ItemSummary";
 import { useItemStatusMutation } from "../items/useItemStatusMutation";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
@@ -48,6 +75,10 @@ export function TodaySurface() {
     LearningPlanId | undefined
   >();
   const [mutationError, setMutationError] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    kind: "add" | "remove" | "suppress";
+    itemId: Item["id"];
+  }>();
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
@@ -101,6 +132,7 @@ export function TodaySurface() {
     origin?: Parameters<typeof addItemToToday>[2],
   ) => {
     setMutationError(false);
+    setPendingAction({ kind: "add", itemId: item.id });
     try {
       const focus = await addItemToToday(user, item.id, origin);
       setState((current) =>
@@ -114,11 +146,14 @@ export function TodaySurface() {
       );
     } catch {
       setMutationError(true);
+    } finally {
+      setPendingAction(undefined);
     }
   };
 
   const suppress = async (item: Item) => {
     setMutationError(false);
+    setPendingAction({ kind: "suppress", itemId: item.id });
     try {
       await suppressDailyPlanningItem(user, item.id);
       setState((current) =>
@@ -131,11 +166,14 @@ export function TodaySurface() {
       );
     } catch {
       setMutationError(true);
+    } finally {
+      setPendingAction(undefined);
     }
   };
 
   const remove = async (focus: DailyFocus, item: Item) => {
     setMutationError(false);
+    setPendingAction({ kind: "remove", itemId: item.id });
     try {
       const updated = await removeItemFromToday(user, focus.id, item.id);
       setState((current) =>
@@ -143,6 +181,8 @@ export function TodaySurface() {
       );
     } catch {
       setMutationError(true);
+    } finally {
+      setPendingAction(undefined);
     }
   };
 
@@ -179,250 +219,401 @@ export function TodaySurface() {
     });
   };
   return (
-    <section className="today-surface" aria-labelledby="today-heading">
-      <header className="editorial-heading today-surface__heading">
-        <div>
-          <p className="editorial-eyebrow">Variant D · Global room</p>
-          <h1 id="today-heading">Today</h1>
-          <p className="editorial-intro">
-            Daily Focus is a dated agenda, not a small Learning Plan.
+    <section
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      aria-labelledby="today-heading"
+      aria-busy={state.status === "loading"}
+    >
+      <header className="grid gap-5 border-b pb-6 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] sm:items-end">
+        <div className="grid gap-2">
+          <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+            Daily attention
+          </p>
+          <h1
+            id="today-heading"
+            className="m-0 font-serif text-4xl leading-none font-medium tracking-[-0.025em] sm:text-5xl"
+          >
+            Today
+          </h1>
+          <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            Choose a small working set, then let each Item&apos;s shared Status
+            record your progress everywhere.
           </p>
         </div>
         {state.status === "ready" && (
-          <div className="today-progress" aria-label="Today progress">
-            <div className="today-progress__summary">
-              <strong>
-                {Math.round(
-                  completionPercentage({
-                    done: state.focus.done,
-                    total: state.focus.total,
-                  }),
-                )}
-                %
+          <div
+            className="grid gap-2 rounded-[var(--radius-card)] border bg-card p-4"
+            aria-label="Today progress"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <strong className="font-serif text-3xl font-medium">
+                {Math.round(completionPercentage(state.focus))}%
               </strong>
-              <span>
-                {state.focus.done} of {state.focus.total} picks done
+              <span className="text-sm font-semibold">
+                {state.focus.done} of {state.focus.total} done
               </span>
             </div>
-            <div aria-hidden="true">
-              <span
-                style={{
-                  width: `${completionPercentage(state.focus)}%`,
-                }}
-              />
-            </div>
-            <small>
-              Derived from each Item&apos;s shared Status; nothing extra is
-              stored on Daily Focus.
-            </small>
+            <Progress
+              value={completionPercentage(state.focus)}
+              aria-label={`${state.focus.done} of ${state.focus.total} Today Items done`}
+            />
+            <p className="m-0 text-xs leading-relaxed text-muted-foreground">
+              Derived from shared Item Status.
+            </p>
           </div>
         )}
       </header>
-      {state.status === "loading" && <p role="status">Loading Today…</p>}
+
+      {state.status === "loading" && <TodayLoading />}
       {state.status === "error" && (
-        <div role="alert">
-          <p>Couldn&apos;t load Today</p>
-          <button type="button" onClick={() => void load()}>
+        <Alert className="grid gap-3">
+          <div>
+            <p className="m-0 font-semibold">Couldn&apos;t load Today</p>
+            <p className="mt-1 mb-0 text-sm">
+              Your Daily Focus and planning choices are unchanged.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-fit"
+            onClick={() => void load()}
+          >
             Retry
-          </button>
-        </div>
+          </Button>
+        </Alert>
       )}
       {state.status === "ready" && (
         <>
-          <div className="today-layout">
-            <section className="today-agenda" aria-label="Today's Daily Focus">
-              <div className="today-agenda__heading">
+          <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] lg:items-start">
+            <section
+              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-6"
+              aria-label="Today's Daily Focus"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="editorial-eyebrow">{state.focus.date}</p>
-                  <h2>Today&apos;s explicit picks</h2>
+                  <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                    {state.focus.date}
+                  </p>
+                  <h2 className="mt-1 mb-0 font-serif text-2xl font-medium">
+                    Today&apos;s Daily Focus
+                  </h2>
                 </div>
-                <Link
-                  className="quiet-link"
-                  to={{
-                    pathname: `/today/${previousCalendarDate(state.focus.date)}`,
-                    search: location.search,
-                  }}
-                >
-                  Browse yesterday
-                </Link>
+                <Button asChild variant="quiet" size="compact">
+                  <Link
+                    to={{
+                      pathname: `/today/${previousCalendarDate(state.focus.date)}`,
+                      search: location.search,
+                    }}
+                  >
+                    <History aria-hidden="true" />
+                    Browse yesterday
+                  </Link>
+                </Button>
               </div>
               {state.focus.entries.length === 0 ? (
-                <div className="today-agenda__empty">
-                  <p>Choose what deserves your attention.</p>
-                  <span>Use Daily Planning to build a small working set.</span>
+                <div className="rounded-[var(--radius-card)] border border-dashed bg-card p-8 text-center">
+                  <p className="m-0 font-serif text-xl font-medium">
+                    Choose what deserves your attention.
+                  </p>
+                  <p className="mt-2 mb-0 text-sm text-muted-foreground">
+                    Use Daily Planning to build a small working set.
+                  </p>
                 </div>
               ) : (
-                <ol className="today-agenda__list">
-                  {state.focus.entries.map(({ item, origin }, index) => (
-                    <li
-                      className={`today-agenda-row${item.status === Status.Done ? " is-done" : ""}`}
-                      key={item.id}
-                    >
-                      <span className="today-agenda__number" aria-hidden="true">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <span
-                        className={`today-agenda-row__status is-${item.status.replace("_", "-")}`}
-                        aria-hidden="true"
-                      />
-                      <div className="today-agenda-row__copy">
-                        <Link
-                          to={`/items/${item.id}`}
-                          state={itemDetailRouteState(
-                            origin
-                              ? planItemBackgroundLocation({
-                                  learningPlanId: origin.learningPlan.id,
-                                  ...(origin.stage
-                                    ? { stageId: origin.stage.id }
-                                    : {}),
-                                })
-                              : location,
-                          )}
-                        >
-                          {item.title}
-                        </Link>
-                        <small>
-                          {origin
-                            ? `${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
-                            : "From Library"}
-                        </small>
-                      </div>
-                      <TodayStatusButton
+                <ol className="grid list-none gap-3 p-0">
+                  {state.focus.entries.map(({ item, origin }) => (
+                    <li key={item.id}>
+                      <ItemSummary
                         item={item}
-                        user={user}
-                        onChanged={replaceItem}
+                        detailBackgroundLocation={
+                          origin
+                            ? planItemBackgroundLocation({
+                                learningPlanId: origin.learningPlan.id,
+                                ...(origin.stage
+                                  ? { stageId: origin.stage.id }
+                                  : {}),
+                              })
+                            : undefined
+                        }
+                        actions={
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                            <p className="m-0 text-sm text-muted-foreground">
+                              {origin
+                                ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
+                                : "From Library"}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <TodayStatusButton
+                                item={item}
+                                user={user}
+                                onChanged={replaceItem}
+                              />
+                              <Button
+                                type="button"
+                                variant="quiet"
+                                size="compact"
+                                className="min-h-11 sm:min-h-8"
+                                disabled={
+                                  pendingAction?.kind === "remove" &&
+                                  pendingAction.itemId === item.id
+                                }
+                                onClick={() => void remove(state.focus, item)}
+                                aria-label={`Remove ${item.title} from Today`}
+                              >
+                                <Trash2 aria-hidden="true" />
+                                {pendingAction?.kind === "remove" &&
+                                pendingAction.itemId === item.id
+                                  ? "Removing…"
+                                  : "Remove"}
+                              </Button>
+                            </div>
+                          </div>
+                        }
                       />
-                      <button
-                        type="button"
-                        className="today-agenda-row__remove"
-                        onClick={() => void remove(state.focus, item)}
-                        aria-label={`Remove ${item.title} from Today`}
-                        title="Remove from Today"
-                      >
-                        ×
-                      </button>
                     </li>
                   ))}
                 </ol>
               )}
             </section>
+
             <section
-              className="today-planning"
+              className="grid min-w-0 gap-5 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6"
               aria-labelledby="today-planning-heading"
             >
-              <p className="editorial-eyebrow">Search + suggestions</p>
-              <h2 id="today-planning-heading">Add only what fits</h2>
-              <p className="today-planning__intro">
-                Search the Library or describe your intention. Only Add changes
-                Today.
-              </p>
-              <label>
-                <span className="visually-hidden">Find an Item</span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Find an Item…"
-                />
-              </label>
-              <details className="today-planning__refine">
-                <summary>Refine suggestions</summary>
-                <label>
-                  <span>Learning intention</span>
-                  <input
-                    type="text"
-                    value={intention}
-                    onChange={(event) => setIntention(event.target.value)}
-                    placeholder="What do you want to learn?"
+              <div className="grid gap-1">
+                <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                  Search + suggestions
+                </p>
+                <h2
+                  id="today-planning-heading"
+                  className="m-0 font-serif text-2xl font-medium"
+                >
+                  Plan Today
+                </h2>
+                <p className="mt-1 mb-0 text-sm leading-relaxed text-muted-foreground">
+                  Search the Library or refine deterministic suggestions. Only
+                  Add changes Today.
+                </p>
+              </div>
+
+              <Field>
+                <FieldLabel htmlFor="today-item-search">
+                  Find an Item
+                </FieldLabel>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
                   />
-                </label>
-                <label>
-                  <span>Learning Plan lens</span>
-                  <select
-                    value={learningPlanId ?? ""}
-                    onChange={(event) =>
-                      setLearningPlanId(
-                        event.target.value
-                          ? (event.target.value as LearningPlanId)
-                          : undefined,
-                      )
-                    }
+                  <Input
+                    id="today-item-search"
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search exact Item titles…"
+                    className="pr-10 pl-9"
+                  />
+                  {query.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon-compact"
+                      className="absolute top-1/2 right-1 -translate-y-1/2"
+                      onClick={() => setQuery("")}
+                      aria-label="Clear Item search"
+                    >
+                      <X aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
+              </Field>
+
+              <Collapsible defaultOpen>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full justify-between"
                   >
-                    <option value="">All Learning Plans</option>
-                    {state.plans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </details>
-              {query.trim() && state.planning.searchResults.length === 0 ? (
-                <p className="quiet-copy">No unselected Items match.</p>
-              ) : null}
+                    Refine suggestions
+                    <ChevronDown aria-hidden="true" />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="grid gap-4 pt-4">
+                  <Field>
+                    <FieldLabel htmlFor="today-intention">
+                      Learning intention
+                    </FieldLabel>
+                    <Input
+                      id="today-intention"
+                      type="text"
+                      value={intention}
+                      onChange={(event) => setIntention(event.target.value)}
+                      placeholder="What do you want to learn?"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Learning Plan lens</FieldLabel>
+                    <Select
+                      value={learningPlanId ?? "all"}
+                      onValueChange={(value) =>
+                        setLearningPlanId(
+                          value === "all"
+                            ? undefined
+                            : (value as LearningPlanId),
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        className="w-full"
+                        aria-label="Learning Plan lens"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Learning Plans</SelectItem>
+                        {state.plans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.id}>
+                            {plan.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </CollapsibleContent>
+              </Collapsible>
+
+              {query.trim() && state.planning.searchResults.length === 0 && (
+                <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
+                  No unselected Items match.
+                </div>
+              )}
               {state.planning.searchResults.length > 0 && (
-                <section aria-label="Item search results">
-                  <ul className="today-planning__results">
+                <section className="grid gap-3" aria-label="Item search results">
+                  <h3 className="m-0 text-sm font-semibold">Search results</h3>
+                  <ul className="grid list-none gap-3 p-0">
                     {state.planning.searchResults.map((item) => (
                       <li key={item.id}>
-                        <span>{item.title}</span>
-                        <button
-                          type="button"
-                          onClick={() => void add(item)}
-                          aria-label={`Add ${item.title} to Today`}
-                        >
-                          Add
-                        </button>
+                        <ItemSummary
+                          item={item}
+                          actions={
+                            <Button
+                              type="button"
+                              size="compact"
+                              className="min-h-11 w-fit sm:min-h-8"
+                              disabled={
+                                pendingAction?.kind === "add" &&
+                                pendingAction.itemId === item.id
+                              }
+                              onClick={() => void add(item)}
+                              aria-label={`Add ${item.title} to Today`}
+                            >
+                              <Plus aria-hidden="true" />
+                              {pendingAction?.kind === "add" &&
+                              pendingAction.itemId === item.id
+                                ? "Adding…"
+                                : "Add"}
+                            </Button>
+                          }
+                        />
                       </li>
                     ))}
                   </ul>
                 </section>
               )}
-              <section aria-label="Suggestions">
-                <div className="today-planning__section-heading">
-                  <h3>Suggested from active plans</h3>
+
+              <section className="grid gap-3 border-t pt-5" aria-label="Suggestions">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
+                  <h3 className="m-0 text-sm font-semibold">
+                    Explained suggestions
+                  </h3>
                 </div>
-                {planningSuggestions(state.planning).length === 0 ? (
-                  <p className="quiet-copy">No suggestions for these inputs.</p>
+                {state.planning.suggestions.length === 0 ? (
+                  <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
+                    No suggestions for these inputs.
+                  </div>
                 ) : (
-                  <ul className="today-planning__results">
-                    {planningSuggestions(state.planning).map((suggestion) => (
+                  <ul className="grid list-none gap-3 p-0">
+                    {state.planning.suggestions.map((suggestion) => (
                       <li key={suggestion.item.id}>
-                        <div>
-                          <strong>{suggestion.item.title}</strong>
-                          <p className="quiet-copy">{suggestion.explanation}</p>
-                        </div>
-                        <div className="today-planning__actions">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void add(
-                                suggestion.item,
-                                suggestion.origin
-                                  ? {
-                                      learningPlanId:
-                                        suggestion.origin.learningPlan.id,
-                                      ...(suggestion.origin.stage
+                        <ItemSummary
+                          item={suggestion.item}
+                          detailBackgroundLocation={
+                            suggestion.origin
+                              ? planItemBackgroundLocation({
+                                  learningPlanId:
+                                    suggestion.origin.learningPlan.id,
+                                  ...(suggestion.origin.stage
+                                    ? { stageId: suggestion.origin.stage.id }
+                                    : {}),
+                                })
+                              : undefined
+                          }
+                          actions={
+                            <div className="grid gap-3 border-t pt-3">
+                              <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+                                {suggestion.explanation}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="compact"
+                                  className="min-h-11 sm:min-h-8"
+                                  disabled={
+                                    pendingAction?.kind === "add" &&
+                                    pendingAction.itemId === suggestion.item.id
+                                  }
+                                  onClick={() =>
+                                    void add(
+                                      suggestion.item,
+                                      suggestion.origin
                                         ? {
-                                            stageId: suggestion.origin.stage.id,
+                                            learningPlanId:
+                                              suggestion.origin.learningPlan.id,
+                                            ...(suggestion.origin.stage
+                                              ? {
+                                                  stageId:
+                                                    suggestion.origin.stage.id,
+                                                }
+                                              : {}),
                                           }
-                                        : {}),
-                                    }
-                                  : undefined,
-                              )
-                            }
-                            aria-label={`Add ${suggestion.item.title} to Today`}
-                          >
-                            Add
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void suppress(suggestion.item)}
-                            aria-label={`Not today for ${suggestion.item.title}`}
-                          >
-                            Not today
-                          </button>
-                        </div>
+                                        : undefined,
+                                    )
+                                  }
+                                  aria-label={`Add ${suggestion.item.title} to Today`}
+                                >
+                                  <Plus aria-hidden="true" />
+                                  {pendingAction?.kind === "add" &&
+                                  pendingAction.itemId === suggestion.item.id
+                                    ? "Adding…"
+                                    : "Add"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="quiet"
+                                  size="compact"
+                                  className="min-h-11 sm:min-h-8"
+                                  disabled={
+                                    pendingAction?.kind === "suppress" &&
+                                    pendingAction.itemId === suggestion.item.id
+                                  }
+                                  onClick={() =>
+                                    void suppress(suggestion.item)
+                                  }
+                                  aria-label={`Not today for ${suggestion.item.title}`}
+                                >
+                                  <X aria-hidden="true" />
+                                  {pendingAction?.kind === "suppress" &&
+                                  pendingAction.itemId === suggestion.item.id
+                                    ? "Updating…"
+                                    : "Not today"}
+                                </Button>
+                              </div>
+                            </div>
+                          }
+                        />
                       </li>
                     ))}
                   </ul>
@@ -431,11 +622,35 @@ export function TodaySurface() {
             </section>
           </div>
           {mutationError && (
-            <p role="alert">Couldn&apos;t update Today. Try again.</p>
+            <Alert>
+              Couldn&apos;t update Today. Your existing Daily Focus is unchanged;
+              try again.
+            </Alert>
           )}
         </>
       )}
     </section>
+  );
+}
+
+function TodayLoading() {
+  return (
+    <div
+      className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]"
+      role="status"
+      aria-label="Loading Today"
+    >
+      <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+      <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6">
+        <Skeleton className="h-8 w-36" />
+        <Skeleton className="h-11 w-full" />
+        <Skeleton className="h-36 w-full" />
+      </div>
+      <span className="sr-only">Loading Today…</span>
+    </div>
   );
 }
 
@@ -458,15 +673,22 @@ function TodayStatusButton({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant={item.status === Status.Done ? "secondary" : "primary"}
+        size="compact"
         disabled={saving}
         onClick={() => void changeStatus(nextStatus)}
       >
-        {item.status === Status.Done ? "Reopen" : "Mark done"}
-      </button>
+        {item.status === Status.Done ? (
+          <RotateCcw aria-hidden="true" />
+        ) : (
+          <Check aria-hidden="true" />
+        )}
+        {saving ? "Saving…" : item.status === Status.Done ? "Reopen" : "Done"}
+      </Button>
       {error && (
-        <span className="visually-hidden" role="alert">
+        <span className="sr-only" role="alert">
           Couldn&apos;t update Item status.
         </span>
       )}
@@ -496,10 +718,6 @@ function removePlanningSuggestion(
       (suggestion) => suggestion.item.id !== itemId,
     ),
   };
-}
-
-function planningSuggestions(planning: DailyPlanning) {
-  return planning.suggestions.filter((suggestion) => suggestion.origin);
 }
 
 function previousCalendarDate(date: string): string {
