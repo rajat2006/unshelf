@@ -30,10 +30,13 @@ export function ItemSummary({
 }: ItemSummaryProps) {
   const location = useLocation();
   const preservedBackground = readItemBackgroundLocation(location.state);
-  const originLocation =
-    location.pathname.startsWith("/items/") && preservedBackground
-      ? preservedBackground
-      : location;
+  const originLocation = location.pathname.startsWith("/items/")
+    ? (preservedBackground ?? {
+        pathname: "/library",
+        search: "",
+        hash: "",
+      })
+    : location;
   const backgroundLocation = detailBackgroundLocation ?? originLocation;
 
   return (

@@ -1,10 +1,16 @@
 import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
+import { Link, useLocation } from "react-router";
 import type { CurrentUser } from "../application-auth/types";
-import type { ItemBackgroundLocation } from "./item-route-state";
-import { ItemSummary } from "./ItemSummary";
+import {
+  itemDetailRouteState,
+  readItemBackgroundLocation,
+  type ItemBackgroundLocation,
+} from "./item-route-state";
+import { ItemSource } from "./ItemSource";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
+import { TYPE_LABELS } from "./presentation";
 
 interface ItemRowProps {
   item: Item;
@@ -35,19 +41,28 @@ export function ItemRow({
   children,
   detailBackgroundLocation,
 }: ItemRowProps) {
+  const location = useLocation();
+  const preservedBackground = readItemBackgroundLocation(location.state);
+  const originLocation =
+    location.pathname.startsWith("/items/") && preservedBackground
+      ? preservedBackground
+      : location;
+  const backgroundLocation = detailBackgroundLocation ?? originLocation;
+
   return (
-    <li className="min-w-0">
-      <ItemSummary
-        item={item}
-        detailBackgroundLocation={detailBackgroundLocation}
-        actions={
-          <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-            <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
-            <ItemTargetDate item={item} user={user} onChanged={onChanged} />
-            {children && <div className="sm:col-span-2">{children}</div>}
-          </div>
-        }
-      />
+    <li className="item-row">
+      <Link
+        className="item-row__title"
+        to={`/items/${item.id}`}
+        state={itemDetailRouteState(backgroundLocation)}
+      >
+        {item.title}
+      </Link>
+      <div className="item-row__type">{TYPE_LABELS[item.type]}</div>
+      <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
+      <ItemTargetDate item={item} user={user} onChanged={onChanged} />
+      {children}
+      {item.source && <ItemSource source={item.source} />}
     </li>
   );
 }

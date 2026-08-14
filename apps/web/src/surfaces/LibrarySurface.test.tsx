@@ -62,12 +62,12 @@ const auth: ApplicationAuth = {
   UserButton: () => <button type="button">Account</button>,
 };
 
-function renderLibrary(initialEntry = "/library") {
+function renderLibrary(initialEntry = "/library", labelFilterEnabled = true) {
   return render(
     <ApplicationAuthProvider auth={auth}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <CaptureProvider>
-          <LibrarySurface labelFilterEnabled />
+          <LibrarySurface labelFilterEnabled={labelFilterEnabled} />
           <LocationState />
         </CaptureProvider>
       </MemoryRouter>
@@ -214,5 +214,21 @@ describe("Library room", () => {
     expect(
       screen.queryByRole("link", { name: "Unlabelled course" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("uses Library as the context for another Item opened from a cold detail URL", async () => {
+    vi.mocked(fetchAll).mockResolvedValue([item]);
+    vi.mocked(fetchLabels).mockResolvedValue([label]);
+    renderLibrary("/items/00000000-0000-0000-0000-000000000099", false);
+
+    fireEvent.click(
+      await screen.findByRole("link", {
+        name: "Distributed systems handbook",
+      }),
+    );
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      '"pathname":"/library","search":"","hash":""',
+    );
   });
 });

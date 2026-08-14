@@ -12,10 +12,9 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import type { CurrentUser } from "../application-auth/types";
-import { STATUS_LABELS } from "./presentation";
+import { ItemStatusBadge } from "./ItemStatusBadge";
 import { useItemStatusMutation } from "./useItemStatusMutation";
 
 interface ItemStatusSelectProps {
@@ -50,12 +49,12 @@ export function ItemStatusSelect({
           aria-label={`Status for ${item.title}`}
           className="w-full"
         >
-          <SelectValue />
+          <ItemStatusBadge status={item.status} />
         </SelectTrigger>
         <SelectContent>
           {ITEM_STATUSES.map((status) => (
             <SelectItem key={status} value={status}>
-              {STATUS_LABELS[status]}
+              <ItemStatusBadge status={status} />
             </SelectItem>
           ))}
         </SelectContent>

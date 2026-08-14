@@ -211,7 +211,9 @@ export function LibrarySurface({
           </p>
         </div>
       </header>
-      {displayedState.status === "loading" && <LibrarySkeleton />}
+      {displayedState.status === "loading" && (
+        <LibrarySkeleton showFilters={labelFilterEnabled} />
+      )}
       {displayedState.status === "error" && (
         <Alert className="grid max-w-xl gap-3 p-4">
           <div>
@@ -433,20 +435,46 @@ function replaceItemInLibraryState(
     : state;
 }
 
-function LibrarySkeleton() {
+function LibrarySkeleton({ showFilters }: { showFilters: boolean }) {
   return (
-    <div className="grid gap-3" role="status" aria-label="Loading Library">
-      {[0, 1, 2].map((row) => (
-        <div
-          className="grid min-h-40 gap-3 rounded-[var(--radius-card)] border bg-card p-4"
-          aria-hidden="true"
-          key={row}
-        >
-          <Skeleton className="h-3 w-20" />
-          <Skeleton className="h-5 w-full max-w-96" />
-          <Skeleton className="h-4 w-full max-w-64" />
-        </div>
-      ))}
+    <div
+      className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]"
+      role="status"
+      aria-label="Loading Library"
+    >
+      <div className="grid min-w-0 gap-4" aria-hidden="true">
+        {showFilters && (
+          <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-10 w-full" />
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-8 w-16 rounded-full" />
+              <Skeleton className="h-8 w-24 rounded-full" />
+              <Skeleton className="h-8 w-20 rounded-full" />
+            </div>
+            <Skeleton className="h-10 w-full max-w-xs" />
+          </div>
+        )}
+        {[0, 1, 2].map((row) => (
+          <div
+            className="grid min-h-40 gap-3 rounded-[var(--radius-card)] border bg-card p-4"
+            key={row}
+          >
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-5 w-full max-w-96" />
+            <Skeleton className="h-4 w-full max-w-64" />
+          </div>
+        ))}
+      </div>
+      <div
+        className="grid min-h-80 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-5"
+        aria-hidden="true"
+      >
+        <Skeleton className="h-3 w-32" />
+        <Skeleton className="h-7 w-full max-w-64" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
     </div>
   );
 }
