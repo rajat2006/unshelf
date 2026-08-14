@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -18,8 +19,10 @@ import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
 import { ItemLabels } from "../items/ItemLabels";
+import { ItemSource } from "../items/ItemSource";
 import { ItemStatusSelect } from "../items/ItemStatusSelect";
 import { ItemTargetDate } from "../items/ItemTargetDate";
+import { TYPE_LABELS } from "../items/presentation";
 import { useCapture } from "../shell/useCapture";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
@@ -191,11 +194,11 @@ export function LibrarySurface({
 
   return (
     <section
-      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-5"
       aria-labelledby="library-heading"
       aria-busy={displayedState.status === "loading"}
     >
-      <header className="grid gap-2">
+      <header className="grid gap-2 border-b pb-6">
         <div className="grid gap-1">
           <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
             Your collection
@@ -247,18 +250,18 @@ export function LibrarySurface({
           </div>
         )}
       {displayedState.status === "ready" && displayedState.items.length > 0 && (
-        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]">
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.7fr)]">
           <section
-            className="grid min-w-0 gap-4"
+            className="min-w-0 overflow-hidden rounded-[var(--radius-panel)] border bg-card"
             aria-labelledby="library-items-heading"
           >
             <h2 id="library-items-heading" className="sr-only">
               Library Items
             </h2>
             {labelFilterEnabled && (
-              <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4">
-                <Field>
-                  <FieldLabel htmlFor="library-search">
+              <div className="flex min-w-0 flex-wrap items-end gap-2 border-b p-3">
+                <Field className="min-w-48 flex-1">
+                  <FieldLabel className="sr-only" htmlFor="library-search">
                     Search Library
                   </FieldLabel>
                   <div className="relative">
@@ -301,8 +304,8 @@ export function LibrarySurface({
                   ))}
                 </div>
                 {displayedState.labels.length > 0 && (
-                  <Field className="max-w-xs">
-                    <FieldLabel id="library-label-filter">
+                  <Field className="w-44 max-w-full">
+                    <FieldLabel className="sr-only" id="library-label-filter">
                       Filter by Label
                     </FieldLabel>
                     <Select
@@ -331,7 +334,7 @@ export function LibrarySurface({
               </div>
             )}
             {filteredEmptyMessage ? (
-              <div className="grid justify-items-start gap-3 rounded-[var(--radius-card)] border border-dashed bg-card p-6">
+              <div className="grid justify-items-start gap-3 p-6">
                 <p className="m-0 text-muted-foreground">
                   {filteredEmptyMessage}
                 </p>
@@ -368,15 +371,32 @@ export function LibrarySurface({
             >
               <div>
                 <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
-                  Shared Item details
+                  {TYPE_LABELS[selectedItem.type]}
                 </p>
                 <h2 className="mt-1 mb-0 font-serif text-2xl leading-tight">
                   {selectedItem.title}
                 </h2>
+                {selectedItem.source && (
+                  <div className="mt-2 min-w-0 text-sm text-muted-foreground">
+                    <ItemSource source={selectedItem.source} />
+                  </div>
+                )}
                 <p className="mt-2 mb-0 text-sm leading-relaxed text-muted-foreground">
                   Changes here appear everywhere this Item is used.
                 </p>
               </div>
+              {selectedItem.partPercentage !== null && (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>Parts</span>
+                    <span>{selectedItem.partPercentage}% complete</span>
+                  </div>
+                  <Progress
+                    value={selectedItem.partPercentage}
+                    aria-label={`${selectedItem.partPercentage}% of Parts complete`}
+                  />
+                </div>
+              )}
               <div className="grid gap-5">
                 <ItemStatusSelect
                   item={selectedItem}
@@ -444,7 +464,7 @@ function replaceItemInLibraryState(
 function LibrarySkeleton({ showFilters }: { showFilters: boolean }) {
   return (
     <div
-      className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]"
+      className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.7fr)]"
       role="status"
       aria-label="Loading Library"
     >
@@ -461,16 +481,18 @@ function LibrarySkeleton({ showFilters }: { showFilters: boolean }) {
             <Skeleton className="h-10 w-full max-w-xs" />
           </div>
         )}
-        {[0, 1, 2].map((row) => (
-          <div
-            className="grid min-h-40 gap-3 rounded-[var(--radius-card)] border bg-card p-4"
-            key={row}
-          >
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-5 w-full max-w-96" />
-            <Skeleton className="h-4 w-full max-w-64" />
-          </div>
-        ))}
+        <div className="overflow-hidden rounded-[var(--radius-panel)] border bg-card">
+          {[0, 1, 2].map((row) => (
+            <div
+              className="grid min-h-20 gap-2 border-b p-4 last:border-b-0"
+              key={row}
+            >
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-5 w-full max-w-96" />
+              <Skeleton className="h-3 w-full max-w-64" />
+            </div>
+          ))}
+        </div>
       </div>
       <div
         className="grid min-h-80 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-5"

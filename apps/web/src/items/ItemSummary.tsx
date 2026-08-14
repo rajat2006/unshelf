@@ -22,6 +22,8 @@ interface ItemSummaryProps {
   detailBackgroundLocation?: ItemBackgroundLocation;
   /** Item-owned editing controls used when the recurring row is operable. */
   editableFacts?: ReactNode;
+  /** Compact catalog rows preserve the Library and sidecar density. */
+  presentation?: "card" | "catalog";
 }
 
 /** Shared Item identity and facts for every recurring row. */
@@ -31,12 +33,47 @@ export function ItemSummary({
   className,
   detailBackgroundLocation,
   editableFacts,
+  presentation = "card",
 }: ItemSummaryProps) {
   const location = useLocation();
   const backgroundLocation = itemLinkBackgroundLocation(
     location,
     detailBackgroundLocation,
   );
+
+  if (presentation === "catalog") {
+    return (
+      <article
+        className={cn(
+          "grid min-w-0 gap-3 bg-card px-4 py-3 text-card-foreground sm:grid-cols-[5rem_minmax(0,1fr)_minmax(6rem,0.6fr)_auto] sm:items-center",
+          className,
+        )}
+      >
+        <p className="m-0 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          {TYPE_LABELS[item.type]}
+        </p>
+        <div className="min-w-0">
+          <h3 className="m-0 truncate text-sm leading-snug font-semibold">
+            <Link
+              className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+              to={`/items/${item.id}`}
+              state={itemDetailRouteState(backgroundLocation)}
+            >
+              {item.title}
+            </Link>
+          </h3>
+        </div>
+        <p className="m-0 truncate text-xs text-muted-foreground">
+          {item.labels.map((label) => label.name).join(" · ") || "Unlabelled"}
+        </p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+          {!editableFacts && <ItemStatusBadge status={item.status} />}
+          {editableFacts}
+          {actions}
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article

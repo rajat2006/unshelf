@@ -115,7 +115,7 @@ afterEach(() => {
 });
 
 describe("Today room", () => {
-  it("presents each current pick with the shared Item facts", async () => {
+  it("presents each current pick as a dated agenda row", async () => {
     vi.mocked(fetchToday).mockResolvedValue(focus);
     vi.mocked(fetchDailyPlanning).mockResolvedValue({
       searchResults: [],
@@ -132,20 +132,18 @@ describe("Today room", () => {
       name: item.title,
     });
     const itemPresentation = within(itemLink.closest("article")!);
-    expect(itemPresentation.getByText("Book")).toBeVisible();
-    expect(itemPresentation.getByText("In progress")).toBeVisible();
-    expect(itemPresentation.getByText("Systems")).toBeVisible();
-    expect(itemPresentation.getByText("Target Aug 1, 2026")).toBeVisible();
-    expect(itemPresentation.getByText("Past target")).toBeVisible();
-    expect(itemPresentation.getByText("50% of Parts complete")).toBeVisible();
-    expect(
-      itemPresentation.getByText("https://example.com/systems"),
-    ).toBeVisible();
+    expect(itemPresentation.getByText("01")).toBeVisible();
+    expect(itemPresentation.getByText("From Library")).toBeVisible();
     expect(
       itemPresentation.getByRole("button", {
         name: `Mark ${item.title} done`,
       }),
     ).toHaveClass("min-h-11");
+    expect(
+      itemPresentation.getByRole("button", {
+        name: `Remove ${item.title} from Today`,
+      }),
+    ).toBeVisible();
   });
 
   it("contains a planning failure beside an available Daily Focus and retries it", async () => {

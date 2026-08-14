@@ -19,9 +19,11 @@ import {
   removeDirectItemFromLearningPlan,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
-import { ItemSummary } from "../items/ItemSummary";
-import { planItemBackgroundLocation } from "../items/item-route-state";
-import { useCapture } from "../shell/useCapture";
+import {
+  itemDetailRouteState,
+  planItemBackgroundLocation,
+} from "../items/item-route-state";
+import { TYPE_LABELS } from "../items/presentation";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
 interface PlanLibraryDrawerProps {
@@ -36,7 +38,6 @@ export function PlanLibraryDrawer({
   user,
   onLearningPlanChanged,
 }: PlanLibraryDrawerProps) {
-  const capture = useCapture();
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<
     LearningPlanItemCandidate[] | null
@@ -97,18 +98,21 @@ export function PlanLibraryDrawer({
       <header className="grid gap-1 border-b pb-4">
         <p className="m-0 flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
           <LibraryBig aria-hidden="true" className="size-4" />
-          Library
+          Library placement drawer
         </p>
         <h2 className="m-0 font-serif text-2xl leading-tight font-semibold">
-          Place Items
+          Add existing Items
         </h2>
         <p className="m-0 text-sm leading-relaxed text-muted-foreground">
-          Draw from material you already kept, or Capture something new.
+          Discovery is intentionally absent. Keep happens in the Discover room
+          first.
         </p>
       </header>
 
       <Field>
-        <FieldLabel htmlFor="plan-library-search">Search Library</FieldLabel>
+        <FieldLabel className="sr-only" htmlFor="plan-library-search">
+          Search Library
+        </FieldLabel>
         <div className="relative">
           <Search
             aria-hidden="true"
@@ -119,7 +123,7 @@ export function PlanLibraryDrawer({
             type="search"
             value={query}
             className="pl-9"
-            placeholder="Search by title…"
+            placeholder="Find in Library…"
             disabled={busyItemId !== null}
             onChange={(event) => {
               requestVersion.current += 1;
@@ -143,97 +147,85 @@ export function PlanLibraryDrawer({
       )}
 
       {candidates?.length === 0 && !error && (
-        <div className="grid justify-items-start gap-3 rounded-[var(--radius-card)] border border-dashed bg-background/65 p-4">
+        <div className="rounded-[var(--radius-card)] border border-dashed bg-background/65 p-4">
           <p className="m-0 text-sm text-muted-foreground">
             {query ? `No matching Items for “${query}”.` : "No matching Items."}
           </p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="compact"
-            className="min-h-11 sm:min-h-8"
-            onClick={capture.open}
-          >
-            <Plus aria-hidden="true" />
-            Capture an Item
-          </Button>
         </div>
       )}
 
       {candidates && candidates.length > 0 && (
         <ul
-          className="grid min-w-0 list-none gap-3 p-0"
+          className="grid min-w-0 list-none gap-2 p-0"
           aria-label="Library placement results"
         >
           {candidates.map((candidate) => {
             const pending = busyItemId === candidate.item.id;
             return (
               <li key={candidate.item.id} className="min-w-0">
-                <ItemSummary
-                  item={candidate.item}
-                  detailBackgroundLocation={planItemBackgroundLocation({
-                    learningPlanId,
-                    ...(candidate.kind === "stage"
-                      ? { stageId: candidate.stage.id }
-                      : {}),
-                  })}
-                  className="bg-background p-3"
-                  actions={
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 border-t pt-3">
-                      {candidate.kind === "available" ? (
+                <article className="flex min-w-0 items-center gap-2 rounded-[var(--radius-card)] border bg-background p-3">
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      className="block truncate text-sm font-semibold text-foreground underline-offset-4 hover:text-primary hover:underline"
+                      to={`/items/${candidate.item.id}`}
+                      state={itemDetailRouteState(
+                        planItemBackgroundLocation({ learningPlanId }),
+                      )}
+                    >
+                      {candidate.item.title}
+                    </Link>
+                    <p className="mt-1 mb-0 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                      {TYPE_LABELS[candidate.item.type]}
+                      {candidate.item.partPercentage !== null
+                        ? ` · ${candidate.item.partPercentage}% Parts`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {candidate.kind === "available" ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        className="min-h-11 sm:min-h-8"
+                        disabled={busyItemId !== null}
+                        aria-label={
+                          pending
+                            ? `Placing ${candidate.item.title}…`
+                            : `Plan ${candidate.item.title}`
+                        }
+                        loading={pending}
+                        loadingLabel="Placing…"
+                        onClick={() => void changeDirectPlacement(candidate)}
+                      >
+                        <Plus aria-hidden="true" />
+                        Plan
+                      </Button>
+                    ) : candidate.kind === "direct" ? (
+                      <>
+                        <Badge variant="neutral">
+                          <Check aria-hidden="true" />
+                          Placed
+                        </Badge>
                         <Button
                           type="button"
-                          size="compact"
+                          variant="quiet-destructive"
+                          size="icon-compact"
                           className="min-h-11 sm:min-h-8"
                           disabled={busyItemId !== null}
                           loading={pending}
-                          loadingLabel="Placing…"
+                          loadingLabel="Removing…"
+                          aria-label={`Remove ${candidate.item.title} from this Learning Plan`}
                           onClick={() => void changeDirectPlacement(candidate)}
                         >
-                          <Plus aria-hidden="true" />
-                          Place directly
+                          <Trash2 aria-hidden="true" />
                         </Button>
-                      ) : candidate.kind === "direct" ? (
-                        <>
-                          <Badge variant="current">
-                            <Check aria-hidden="true" />
-                            Placed directly
-                          </Badge>
-                          <Button
-                            type="button"
-                            variant="quiet-destructive"
-                            size="compact"
-                            className="min-h-11 sm:min-h-8"
-                            disabled={busyItemId !== null}
-                            loading={pending}
-                            loadingLabel="Removing…"
-                            aria-label={`Remove ${candidate.item.title} from this Learning Plan`}
-                            onClick={() =>
-                              void changeDirectPlacement(candidate)
-                            }
-                          >
-                            <Trash2 aria-hidden="true" />
-                            Remove
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          asChild
-                          variant="secondary"
-                          size="compact"
-                          className="min-h-11 max-w-full sm:min-h-8"
-                        >
-                          <Link
-                            to={`/plans/${learningPlanId}/stages/${candidate.stage.id}`}
-                            aria-label={`Open ${candidate.stage.name}`}
-                          >
-                            In {candidate.stage.name}
-                          </Link>
-                        </Button>
-                      )}
-                    </div>
-                  }
-                />
+                      </>
+                    ) : (
+                      <Badge variant="neutral">Placed</Badge>
+                    )}
+                  </div>
+                </article>
               </li>
             );
           })}

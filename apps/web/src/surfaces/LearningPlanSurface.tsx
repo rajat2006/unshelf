@@ -6,12 +6,11 @@ import {
   type FormEvent,
 } from "react";
 import { ArrowLeft, Pencil } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import type {
   LearningPlan,
   LearningPlanId,
   LearningPlanView,
-  StageId,
 } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -31,27 +30,22 @@ import {
   updateLearningPlan,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
-import { LearningPlanCanvas } from "../learning-plan/LearningPlanCanvas";
+import { LearningPlanItems } from "../learning-plan/LearningPlanItems";
 import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
 import { PlanTodaySidecar } from "../learning-plan/PlanTodaySidecar";
 import { usePhoneViewport } from "../learning-plan/usePhoneViewport";
 import { completionPercentage } from "../presentation/progress";
-import { StageSidebar } from "../stages/StageSidebar";
 
 interface LearningPlanSurfaceProps {
   learningPlanId?: LearningPlanId;
-  stageId?: StageId;
 }
 
-/** The routed Library–canvas–Today workspace for one durable Learning Plan. */
+/** The routed Library–Items–Today workspace for one durable Learning Plan. */
 export function LearningPlanSurface({
   learningPlanId: selectedLearningPlanId,
-  stageId: selectedStageId,
 }: LearningPlanSurfaceProps = {}) {
   const params = useParams();
   const learningPlanId = selectedLearningPlanId ?? params.learningPlanId;
-  const stageId = selectedStageId ?? params.stageId;
-  const navigate = useNavigate();
   const user = useCurrentUser();
   const phoneReadOnly = usePhoneViewport();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -65,6 +59,7 @@ export function LearningPlanSurface({
   const [renaming, setRenaming] = useState(false);
   const [renameFailed, setRenameFailed] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [studioVersion, setStudioVersion] = useState(0);
   const archived = record?.archivedAt != null;
   const readOnly = phoneReadOnly || archived;
 
@@ -94,10 +89,16 @@ export function LearningPlanSurface({
   const acceptDrawerChange = useCallback(
     (changed: LearningPlanView) => {
       setLearningPlan(changed);
+      setStudioVersion((version) => version + 1);
       void refresh();
     },
     [refresh],
   );
+
+  const acceptStudioChange = useCallback(() => {
+    setStudioVersion((version) => version + 1);
+    void refresh();
+  }, [refresh]);
 
   const rename = async (event: FormEvent) => {
     event.preventDefault();
@@ -129,61 +130,43 @@ export function LearningPlanSurface({
   };
 
   return (
-    <div
-      className={
-        stageId
-          ? "grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]"
-          : "min-w-0"
-      }
-    >
+    <div className="min-w-0">
       <section
         aria-labelledby="learning-plan-heading"
         aria-busy={!learningPlan && !loadError}
         className="learning-plan-surface grid min-w-0 overflow-hidden bg-background"
       >
         <header className="grid min-w-0 gap-5 border-b bg-quiet-panel px-4 py-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:px-8 lg:px-12">
-          <div className="grid min-w-0 gap-2">
+          <div className="grid min-w-0 gap-1.5">
             <Link
               to="/plans"
-              className="inline-flex min-h-11 w-fit items-center gap-1 rounded-[var(--radius-small)] text-sm font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30 sm:min-h-8"
+              className="inline-flex min-h-11 w-fit items-center gap-1 rounded-[var(--radius-small)] text-sm font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30 sm:min-h-5"
             >
               <ArrowLeft aria-hidden="true" className="size-4" />
               All Learning Plans
             </Link>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1
-                id="learning-plan-heading"
-                className="m-0 min-w-0 font-serif text-3xl leading-tight font-semibold tracking-tight break-words sm:text-4xl"
-              >
-                {record?.name ?? "Learning Plan"}
-              </h1>
-              {record && (
-                <Badge variant="neutral">
-                  {archived ? "Archived · read-only" : "Active"}
-                </Badge>
-              )}
-            </div>
-            <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
-              {archived
-                ? "This commitment is preserved for consultation. Restore it from Plans to change its structure."
-                : phoneReadOnly
-                  ? "Consult the plan, open Items, and choose Today’s focus. Use a wider screen to author the path."
-                  : "Arrange the path, draw from the Library, and choose what belongs in Today."}
-            </p>
-
-            {record && !archived && (
+            {record && !archived ? (
               <Collapsible open={renameOpen} onOpenChange={setRenameOpen}>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="compact"
-                    className="min-h-11 w-fit sm:min-h-8"
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h1
+                    id="learning-plan-heading"
+                    className="m-0 min-w-0 font-serif text-3xl leading-tight font-semibold tracking-tight break-words sm:text-4xl"
                   >
-                    <Pencil aria-hidden="true" />
-                    Rename
-                  </Button>
-                </CollapsibleTrigger>
+                    {record.name}
+                  </h1>
+                  <Badge variant="neutral">Active</Badge>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="compact"
+                      className="min-h-11 w-fit sm:min-h-8"
+                    >
+                      <Pencil aria-hidden="true" />
+                      Rename
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
                 <CollapsibleContent className="pt-3">
                   <form
                     className="grid max-w-xl gap-3 rounded-[var(--radius-card)] border bg-background p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
@@ -225,11 +208,30 @@ export function LearningPlanSurface({
                   </form>
                 </CollapsibleContent>
               </Collapsible>
+            ) : (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h1
+                  id="learning-plan-heading"
+                  className="m-0 min-w-0 font-serif text-3xl leading-tight font-semibold tracking-tight break-words sm:text-4xl"
+                >
+                  {record?.name ?? "Learning Plan"}
+                </h1>
+                {record && (
+                  <Badge variant="neutral">Archived · read-only</Badge>
+                )}
+              </div>
             )}
+            <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {archived
+                ? "This commitment is preserved for consultation. Restore it from Plans to change its structure."
+                : phoneReadOnly
+                  ? "Consult the plan, open Items, and choose Today’s focus. Use a wider screen to add Items."
+                  : "Build a focused Item list from the Library, then choose what belongs in Today."}
+            </p>
           </div>
 
           {record && (
-            <div className="grid min-w-56 gap-2 rounded-[var(--radius-card)] border bg-background/75 p-4">
+            <div className="grid min-w-56 gap-2">
               <div className="flex items-baseline justify-between gap-3">
                 <strong
                   className={`font-serif text-3xl font-semibold ${
@@ -288,7 +290,7 @@ export function LearningPlanSurface({
 
         {learningPlan && learningPlanId && (
           <div
-            className={`grid min-w-0 items-start md:grid-cols-[minmax(14rem,0.65fr)_minmax(24rem,1.5fr)] ${readOnly ? "lg:grid-cols-[minmax(28rem,1.5fr)_minmax(16rem,0.6fr)]" : "lg:grid-cols-[minmax(14rem,0.62fr)_minmax(28rem,1.7fr)_minmax(16rem,0.68fr)]"}`}
+            className={`grid min-h-[calc(100svh-13rem)] min-w-0 md:grid-cols-[minmax(14rem,0.65fr)_minmax(24rem,1.35fr)] ${readOnly ? "lg:grid-cols-[minmax(30rem,1.35fr)_minmax(18rem,0.78fr)]" : "lg:grid-cols-[minmax(14rem,0.65fr)_minmax(30rem,1.35fr)_minmax(18rem,0.78fr)]"}`}
           >
             {!readOnly && (
               <PlanLibraryDrawer
@@ -297,40 +299,34 @@ export function LearningPlanSurface({
                 onLearningPlanChanged={acceptDrawerChange}
               />
             )}
-            <LearningPlanCanvas
-              learningPlanId={learningPlanId as LearningPlanId}
-              learningPlan={learningPlan}
-              user={user}
-              onLearningPlanChanged={setLearningPlan}
-              onRefresh={refresh}
-              onOpenStage={(selectedStageId) => {
-                void navigate(
-                  `/plans/${learningPlanId}/stages/${selectedStageId}`,
-                );
-              }}
-              readOnly={readOnly}
-            />
+            <div className="grid min-w-0 content-start gap-4 bg-background p-4 lg:p-7">
+              <div className="flex items-baseline justify-between gap-4 border-b pb-3">
+                <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+                  Local workspace
+                </p>
+                <h2 className="m-0 font-serif text-sm font-medium text-muted-foreground">
+                  Plan structure
+                </h2>
+              </div>
+              <LearningPlanItems
+                learningPlanId={learningPlanId as LearningPlanId}
+                topology={learningPlan}
+                user={user}
+                refreshVersion={studioVersion}
+                onStudioChanged={acceptStudioChange}
+              />
+            </div>
             {record && (
               <PlanTodaySidecar
                 learningPlan={record}
-                topology={learningPlan}
                 user={user}
+                refreshVersion={studioVersion}
+                onStudioChanged={acceptStudioChange}
               />
             )}
           </div>
         )}
       </section>
-
-      {stageId && learningPlanId && (
-        <StageSidebar
-          stageId={stageId as StageId}
-          learningPlanId={learningPlanId as LearningPlanId}
-          user={user}
-          onClose={() => void navigate(`/plans/${learningPlanId}`)}
-          onLearningPlanChanged={refresh}
-          structuralReadOnly={readOnly}
-        />
-      )}
     </div>
   );
 }

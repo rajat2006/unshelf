@@ -11,7 +11,6 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import {
-  PlanNodeKind,
   Status,
   StatusMode,
   Type,
@@ -21,25 +20,21 @@ import {
   type ItemId,
   type LearningPlan,
   type LearningPlanId,
-  type LearningPlanView,
-  type StageDetail,
   type StageId,
   type UserId,
 } from "@unshelf/shared";
-import { addItemToToday, fetchLearningPlanStage, fetchToday } from "../api";
+import { fetchToday, removeItemFromToday } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { PlanTodaySidecar } from "./PlanTodaySidecar";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
-  addItemToToday: vi.fn(),
-  fetchLearningPlanStage: vi.fn(),
   fetchToday: vi.fn(),
+  removeItemFromToday: vi.fn(),
 }));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const learningPlanId = "00000000-0000-0000-0000-000000000002" as LearningPlanId;
-const stageId = "00000000-0000-0000-0000-000000000003" as StageId;
 const originLearningPlanId =
   "00000000-0000-0000-0000-000000000006" as LearningPlanId;
 const originStageId = "00000000-0000-0000-0000-000000000007" as StageId;
@@ -66,25 +61,6 @@ const learningPlan: LearningPlan = {
   archivedAt: null,
   done: 0,
   total: 1,
-};
-const topology: LearningPlanView = {
-  nodes: [
-    {
-      kind: PlanNodeKind.Stage,
-      id: stageId,
-      name: "Query engines",
-      done: 0,
-      total: 1,
-    },
-  ],
-  edges: [],
-};
-const stage: StageDetail = {
-  id: stageId,
-  userId,
-  learningPlanId,
-  name: "Query engines",
-  items: [item],
 };
 const emptyFocus: DailyFocus = {
   id: "00000000-0000-0000-0000-000000000005" as DailyFocusId,
@@ -120,82 +96,74 @@ describe("Learning Plan Today sidecar", () => {
       ],
       total: 1,
     });
-    vi.mocked(fetchLearningPlanStage).mockResolvedValue(stage);
+    render(
+      <MemoryRouter>
+        <PlanTodaySidecar learningPlan={learningPlan} user={user} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("From Compiler study")).toBeVisible();
+    expect(screen.queryByText("Parsing")).not.toBeInTheDocument();
+  });
+
+  it("keeps picking controls out of the current-picks rail", async () => {
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
 
     render(
       <MemoryRouter>
-        <PlanTodaySidecar
-          learningPlan={learningPlan}
-          topology={topology}
-          user={user}
-        />
+        <PlanTodaySidecar learningPlan={learningPlan} user={user} />
       </MemoryRouter>,
     );
 
     expect(
-      await screen.findByText("Today from Compiler study · Parsing"),
+      await screen.findByText("Nothing selected for Today yet."),
     ).toBeVisible();
     expect(
-      screen.getByRole("link", { name: "Current placement: Query engines" }),
-    ).toHaveAttribute("href", `/plans/${learningPlanId}/stages/${stageId}`);
+      screen.queryByRole("heading", { name: "Add from this plan" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("adds a staged Item with its origin and communicates progress", async () => {
-    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
-    vi.mocked(fetchLearningPlanStage).mockResolvedValue(stage);
-    let finishAdd!: (focus: DailyFocus) => void;
-    vi.mocked(addItemToToday).mockReturnValue(
-      new Promise((resolve) => {
-        finishAdd = resolve;
-      }),
-    );
+  it("removes a current pick without changing its plan placement", async () => {
+    vi.mocked(fetchToday).mockResolvedValue({
+      ...emptyFocus,
+      entries: [
+        {
+          item,
+          origin: null,
+          snapshot: { status: item.status, partPercentage: null },
+        },
+      ],
+      total: 1,
+    });
+    vi.mocked(removeItemFromToday).mockResolvedValue(emptyFocus);
+    const onStudioChanged = vi.fn();
 
     render(
       <MemoryRouter>
         <PlanTodaySidecar
           learningPlan={learningPlan}
-          topology={topology}
           user={user}
+          onStudioChanged={onStudioChanged}
         />
       </MemoryRouter>,
     );
 
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `Add ${item.title} to Today`,
+        name: `Remove ${item.title} from Today`,
       }),
     );
-
-    expect(
-      screen.getByRole("button", {
-        name: `Adding ${item.title} to Today…`,
-      }),
-    ).toBeDisabled();
-    expect(addItemToToday).toHaveBeenCalledWith(user, item.id, {
-      learningPlanId,
-      stageId,
-    });
-
-    finishAdd({
-      ...emptyFocus,
-      entries: [
-        {
-          item,
-          origin: {
-            learningPlan: { id: learningPlanId, name: learningPlan.name },
-            stage: { id: stageId, name: stage.name },
-          },
-          snapshot: { status: item.status, partPercentage: null },
-        },
-      ],
-      done: 0,
-      total: 1,
-    });
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: `${item.title} is in Today` }),
-      ).toBeDisabled(),
+      expect(removeItemFromToday).toHaveBeenCalledWith(
+        user,
+        emptyFocus.id,
+        item.id,
+      ),
     );
+    expect(
+      await screen.findByText("Nothing selected for Today yet."),
+    ).toBeVisible();
+    expect(onStudioChanged).toHaveBeenCalledOnce();
   });
 });

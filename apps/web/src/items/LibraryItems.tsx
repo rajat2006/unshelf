@@ -19,17 +19,15 @@ export function LibraryItems({
   onPreview,
 }: LibraryItemsProps) {
   return (
-    <ul
-      className="grid list-none gap-3 p-0"
-      aria-label="Library Items, newest first"
-    >
+    <ul className="grid list-none p-0" aria-label="Library Items, newest first">
       {items.map((item) => (
-        <li key={item.id}>
+        <li key={item.id} className="border-b last:border-b-0">
           <ItemSummary
             item={item}
+            presentation="catalog"
             className={
               selectedItemId === item.id
-                ? "border-primary shadow-[inset_3px_0_0_var(--primary)]"
+                ? "bg-accent/65 shadow-[inset_3px_0_0_var(--primary)]"
                 : undefined
             }
             actions={
@@ -37,7 +35,7 @@ export function LibraryItems({
                 type="button"
                 variant="secondary"
                 size="compact"
-                className="w-fit"
+                className="w-fit min-h-11 sm:min-h-8"
                 aria-pressed={selectedItemId === item.id}
                 onClick={() => onPreview(item)}
                 aria-label={`Edit ${item.title}`}

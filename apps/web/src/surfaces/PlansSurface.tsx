@@ -84,11 +84,11 @@ export function PlansSurface() {
 
   return (
     <section
-      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-5"
       aria-labelledby="home-heading"
       aria-busy={state.status === "loading"}
     >
-      <header className="grid gap-2">
+      <header className="grid gap-2 border-b pb-6">
         <div className="grid gap-1">
           <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
             Your commitments

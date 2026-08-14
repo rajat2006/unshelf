@@ -8,17 +8,7 @@ import {
   type LearningPlan,
   type LearningPlanId,
 } from "@unshelf/shared";
-import {
-  Check,
-  ChevronDown,
-  History,
-  Plus,
-  RotateCcw,
-  Search,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ChevronDown, History, Plus, Search, Trash2, X } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -48,11 +38,13 @@ import {
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { completionPercentage } from "../presentation/progress";
-import type { CurrentUser } from "../application-auth/types";
-import { planItemBackgroundLocation } from "../items/item-route-state";
+import {
+  itemDetailRouteState,
+  planItemBackgroundLocation,
+} from "../items/item-route-state";
+import { ItemDoneToggle } from "../items/ItemDoneToggle";
 import { ItemSummary } from "../items/ItemSummary";
 import { STATUS_LABELS } from "../items/presentation";
-import { useItemStatusMutation } from "../items/useItemStatusMutation";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
 type TodayState =
@@ -332,10 +324,7 @@ export function TodaySurface() {
           </p>
         </div>
         {state.status === "ready" && (
-          <div
-            className="grid gap-2 rounded-[var(--radius-card)] border bg-card p-4"
-            aria-label="Today progress"
-          >
+          <div className="grid gap-2" aria-label="Today progress">
             <div className="flex items-baseline justify-between gap-3">
               <strong className="font-serif text-3xl font-medium">
                 {Math.round(completionPercentage(state.focus))}%
@@ -358,9 +347,9 @@ export function TodaySurface() {
       {state.status === "loading" && <TodayLoading />}
       {state.status !== "loading" && (
         <>
-          <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] lg:items-start">
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.65fr)] lg:items-start">
             <section
-              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-6"
+              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6"
               aria-label="Today's Daily Focus"
             >
               {state.status === "focus-error" ? (
@@ -423,56 +412,67 @@ export function TodaySurface() {
                       </p>
                     </div>
                   ) : (
-                    <ol className="grid list-none gap-3 p-0">
-                      {state.focus.entries.map(({ item, origin }) => (
-                        <li key={item.id}>
-                          <ItemSummary
-                            item={item}
-                            detailBackgroundLocation={
-                              origin
-                                ? planItemBackgroundLocation({
-                                    learningPlanId: origin.learningPlan.id,
-                                    ...(origin.stage
-                                      ? { stageId: origin.stage.id }
-                                      : {}),
-                                  })
-                                : undefined
-                            }
-                            actions={
-                              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                                <p className="m-0 text-sm text-muted-foreground">
-                                  {origin
-                                    ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
-                                    : "From Library"}
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                  <TodayStatusButton
-                                    item={item}
-                                    user={user}
-                                    onChanged={replaceItem}
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant="quiet"
-                                    size="compact"
-                                    className="min-h-11 min-w-28 sm:min-h-8"
-                                    loading={
-                                      pendingAction?.kind === "remove" &&
-                                      pendingAction.itemId === item.id
-                                    }
-                                    loadingLabel="Removing…"
-                                    onClick={() =>
-                                      void remove(state.focus, item)
-                                    }
-                                    aria-label={`Remove ${item.title} from Today`}
-                                  >
-                                    <Trash2 aria-hidden="true" />
-                                    Remove
-                                  </Button>
-                                </div>
-                              </div>
-                            }
-                          />
+                    <ol className="grid list-none overflow-hidden border-t p-0">
+                      {state.focus.entries.map(({ item, origin }, index) => (
+                        <li key={item.id} className="border-b last:border-b-0">
+                          <article className="flex min-w-0 flex-wrap items-center gap-3 py-4 sm:flex-nowrap">
+                            <span className="w-7 shrink-0 font-serif text-lg text-muted-foreground">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                            <span
+                              className={`size-2.5 shrink-0 rounded-full border ${item.status === Status.Done ? "border-status-completed bg-status-completed" : item.status === Status.InProgress ? "border-status-progress bg-status-progress" : "border-muted-foreground"}`}
+                              aria-hidden="true"
+                            />
+                            <span className="sr-only">
+                              {STATUS_LABELS[item.status]}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <Link
+                                className="font-semibold text-foreground underline-offset-4 hover:text-primary hover:underline"
+                                to={`/items/${item.id}`}
+                                state={itemDetailRouteState(
+                                  origin
+                                    ? planItemBackgroundLocation({
+                                        learningPlanId: origin.learningPlan.id,
+                                        ...(origin.stage
+                                          ? { stageId: origin.stage.id }
+                                          : {}),
+                                      })
+                                    : location,
+                                )}
+                              >
+                                {item.title}
+                              </Link>
+                              <p className="mt-1 mb-0 text-xs text-muted-foreground">
+                                {origin
+                                  ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
+                                  : "From Library"}
+                              </p>
+                            </div>
+                            <div className="ml-auto flex flex-wrap gap-2">
+                              <ItemDoneToggle
+                                item={item}
+                                user={user}
+                                onChanged={replaceItem}
+                              />
+                              <Button
+                                type="button"
+                                variant="quiet"
+                                size="compact"
+                                className="min-h-11 min-w-28 sm:min-h-8"
+                                loading={
+                                  pendingAction?.kind === "remove" &&
+                                  pendingAction.itemId === item.id
+                                }
+                                loadingLabel="Removing…"
+                                onClick={() => void remove(state.focus, item)}
+                                aria-label={`Remove ${item.title} from Today`}
+                              >
+                                <Trash2 aria-hidden="true" />
+                                Remove
+                              </Button>
+                            </div>
+                          </article>
                         </li>
                       ))}
                     </ol>
@@ -482,7 +482,7 @@ export function TodaySurface() {
             </section>
 
             <section
-              className="grid min-w-0 gap-5 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6"
+              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-5"
               aria-label="Daily Planning"
             >
               <div className="grid gap-1">
@@ -493,11 +493,11 @@ export function TodaySurface() {
                   id="today-planning-heading"
                   className="m-0 font-serif text-2xl font-medium"
                 >
-                  Plan Today
+                  Add only what fits
                 </h2>
                 <p className="mt-1 mb-0 text-sm leading-relaxed text-muted-foreground">
-                  Search the Library or refine deterministic suggestions. Only
-                  Add changes Today.
+                  Search the Library or choose from suggestions. Only Add
+                  changes Today.
                 </p>
               </div>
 
@@ -525,7 +525,7 @@ export function TodaySurface() {
               )}
 
               <Field>
-                <FieldLabel htmlFor="today-item-search">
+                <FieldLabel className="sr-only" htmlFor="today-item-search">
                   Find an Item
                 </FieldLabel>
                 <div className="relative">
@@ -556,14 +556,15 @@ export function TodaySurface() {
                 </div>
               </Field>
 
-              <Collapsible defaultOpen>
+              <Collapsible>
                 <CollapsibleTrigger asChild>
                   <Button
                     type="button"
-                    variant="secondary"
-                    className="min-h-11 w-full justify-between sm:min-h-10"
+                    variant="quiet"
+                    size="compact"
+                    className="min-h-11 w-fit sm:min-h-8"
                   >
-                    Refine suggestions
+                    More filters
                     <ChevronDown aria-hidden="true" />
                   </Button>
                 </CollapsibleTrigger>
@@ -622,11 +623,13 @@ export function TodaySurface() {
                   aria-label="Item search results"
                 >
                   <h3 className="m-0 text-sm font-semibold">Search results</h3>
-                  <ul className="grid list-none gap-3 p-0">
+                  <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
                     {state.planning.searchResults.map((item) => (
-                      <li key={item.id}>
+                      <li key={item.id} className="border-b last:border-b-0">
                         <ItemSummary
                           item={item}
+                          presentation="catalog"
+                          className="bg-background p-3 sm:grid-cols-1"
                           actions={
                             <PlanningAddButton
                               item={item}
@@ -648,25 +651,22 @@ export function TodaySurface() {
                 className="grid gap-3 border-t pt-5"
                 aria-label="Suggestions"
               >
-                <div className="flex items-center gap-2">
-                  <Sparkles
-                    className="size-4 text-primary"
-                    aria-hidden="true"
-                  />
-                  <h3 className="m-0 text-sm font-semibold">
-                    Explained suggestions
-                  </h3>
-                </div>
+                <h3 className="m-0 text-sm font-semibold">Suggestions</h3>
                 {state.planning.suggestions.length === 0 ? (
                   <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
                     No suggestions for these inputs.
                   </div>
                 ) : (
-                  <ul className="grid list-none gap-3 p-0">
+                  <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
                     {state.planning.suggestions.map((suggestion) => (
-                      <li key={suggestion.item.id}>
+                      <li
+                        key={suggestion.item.id}
+                        className="border-b last:border-b-0"
+                      >
                         <ItemSummary
                           item={suggestion.item}
+                          presentation="catalog"
+                          className="bg-background p-3 sm:grid-cols-1"
                           detailBackgroundLocation={
                             suggestion.origin
                               ? planItemBackgroundLocation({
@@ -679,8 +679,8 @@ export function TodaySurface() {
                               : undefined
                           }
                           actions={
-                            <div className="grid gap-3 border-t pt-3">
-                              <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+                            <div className="grid gap-2">
+                              <p className="m-0 text-xs leading-relaxed text-muted-foreground">
                                 {suggestion.explanation}
                               </p>
                               <div className="flex flex-wrap gap-2">
@@ -750,7 +750,7 @@ export function TodaySurface() {
 function TodayLoading() {
   return (
     <div
-      className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]"
+      className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.65fr)]"
       role="status"
       aria-label="Loading Today"
     >
@@ -790,55 +790,6 @@ function PlanningAddButton({
       <Plus aria-hidden="true" />
       Add
     </Button>
-  );
-}
-
-function TodayStatusButton({
-  item,
-  user,
-  onChanged,
-}: {
-  item: Item;
-  user: CurrentUser;
-  onChanged: (item: Item) => void;
-}) {
-  const nextStatus =
-    item.status === Status.Done ? Status.NotStarted : Status.Done;
-  const { changeStatus, error, saving } = useItemStatusMutation({
-    item,
-    user,
-    onChanged,
-  });
-
-  return (
-    <>
-      <Button
-        type="button"
-        variant={item.status === Status.Done ? "secondary" : "primary"}
-        size="compact"
-        className="min-h-11 min-w-28 sm:min-h-8"
-        loading={saving}
-        loadingLabel="Saving…"
-        onClick={() => void changeStatus(nextStatus)}
-        aria-label={
-          item.status === Status.Done
-            ? `Reopen ${item.title}`
-            : `Mark ${item.title} done`
-        }
-      >
-        {item.status === Status.Done ? (
-          <RotateCcw aria-hidden="true" />
-        ) : (
-          <Check aria-hidden="true" />
-        )}
-        {item.status === Status.Done ? "Reopen" : "Done"}
-      </Button>
-      {error && (
-        <span className="sr-only" role="alert">
-          Couldn&apos;t update Item status.
-        </span>
-      )}
-    </>
   );
 }
 

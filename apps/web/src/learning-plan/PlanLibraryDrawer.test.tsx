@@ -93,14 +93,15 @@ describe("Learning Plan Library placement drawer", () => {
     expect(fetchLearningPlanItemCandidates).toHaveBeenCalledTimes(2);
   });
 
-  it("opens global Capture when the Library has no Item to place", async () => {
+  it("keeps an empty placement search inside the existing Library boundary", async () => {
     vi.mocked(fetchLearningPlanItemCandidates).mockResolvedValue([]);
     const { openCapture } = renderDrawer();
 
-    await screen.findByText("No matching Items.");
-    fireEvent.click(screen.getByRole("button", { name: "Capture an Item" }));
-
-    expect(openCapture).toHaveBeenCalledOnce();
+    expect(await screen.findByText("No matching Items.")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Capture an Item" }),
+    ).not.toBeInTheDocument();
+    expect(openCapture).not.toHaveBeenCalled();
   });
 
   it("communicates direct placement progress and publishes the changed plan", async () => {
@@ -129,10 +130,16 @@ describe("Learning Plan Library placement drawer", () => {
     );
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Place directly" }),
+      await screen.findByRole("button", {
+        name: "Plan Database Internals",
+      }),
     );
 
-    expect(screen.getByRole("button", { name: "Placing…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", {
+        name: "Placing Database Internals…",
+      }),
+    ).toBeDisabled();
 
     const changed: LearningPlanView = { nodes: [], edges: [] };
     finishPlacement(changed);
@@ -142,7 +149,7 @@ describe("Learning Plan Library placement drawer", () => {
     );
   });
 
-  it("links Item and Stage placements to their canonical details", async () => {
+  it("keeps legacy Stage placements visually folded into the plan", async () => {
     const stageId = "00000000-0000-0000-0000-000000000004" as StageId;
     vi.mocked(fetchLearningPlanItemCandidates).mockResolvedValue([
       {
@@ -156,8 +163,7 @@ describe("Learning Plan Library placement drawer", () => {
     expect(
       await screen.findByRole("link", { name: "Database Internals" }),
     ).toHaveAttribute("href", `/items/${item.id}`);
-    expect(
-      screen.getByRole("link", { name: "Open Storage engines" }),
-    ).toHaveAttribute("href", `/plans/${learningPlanId}/stages/${stageId}`);
+    expect(screen.getByText("Placed")).toBeVisible();
+    expect(screen.queryByText("Storage engines")).not.toBeInTheDocument();
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import {
   PlanNodeKind,
   type LearningPlan,
@@ -37,27 +37,9 @@ let phoneViewport = false;
 vi.mock("../learning-plan/usePhoneViewport", () => ({
   usePhoneViewport: () => phoneViewport,
 }));
-vi.mock("../learning-plan/LearningPlanCanvas", () => ({
-  LearningPlanCanvas: ({
-    onOpenStage,
-    readOnly,
-  }: {
-    onOpenStage: (stageId: StageId) => void;
-    readOnly: boolean;
-  }) => (
-    <section
-      aria-label="Learning Plan canvas"
-      data-authoring={readOnly ? "withheld" : "available"}
-    >
-      <button
-        type="button"
-        onClick={() =>
-          onOpenStage("00000000-0000-0000-0000-000000000003" as StageId)
-        }
-      >
-        Open Foundations
-      </button>
-    </section>
+vi.mock("../learning-plan/LearningPlanItems", () => ({
+  LearningPlanItems: () => (
+    <section aria-label="Learning Plan Items">Items</section>
   ),
 }));
 vi.mock("../learning-plan/PlanLibraryDrawer", () => ({
@@ -80,16 +62,6 @@ vi.mock("../learning-plan/PlanLibraryDrawer", () => ({
 vi.mock("../learning-plan/PlanTodaySidecar", () => ({
   PlanTodaySidecar: () => <aside aria-label="Today sidecar">Today</aside>,
 }));
-vi.mock("../stages/StageSidebar", () => ({
-  StageSidebar: ({ onClose }: { onClose: () => void }) => (
-    <aside aria-label="Foundations details">
-      <button type="button" onClick={onClose}>
-        Close details
-      </button>
-    </aside>
-  ),
-}));
-
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const learningPlanId = "00000000-0000-0000-0000-000000000002" as LearningPlanId;
 const stageId = "00000000-0000-0000-0000-000000000003" as StageId;
@@ -121,18 +93,15 @@ const topology: LearningPlanView = {
   edges: [],
 };
 
-function LocationPath() {
-  return <output aria-label="Current route">{useLocation().pathname}</output>;
-}
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   phoneViewport = false;
 });
 
-describe("Learning Plan Stage route", () => {
-  it("opens and closes Stage detail while retaining its Learning Plan context", async () => {
+describe("Learning Plan route", () => {
+  it("keeps the plan and Today consultable on a phone", async () => {
+    phoneViewport = true;
     vi.mocked(fetchLearningPlanRecord).mockResolvedValue(record);
     vi.mocked(fetchLearningPlan).mockResolvedValue(topology);
 
@@ -144,56 +113,6 @@ describe("Learning Plan Stage route", () => {
               path="/plans/:learningPlanId"
               element={<LearningPlanSurface />}
             />
-            <Route
-              path="/plans/:learningPlanId/stages/:stageId"
-              element={<LearningPlanSurface />}
-            />
-          </Routes>
-          <LocationPath />
-        </MemoryRouter>
-      </ApplicationAuthProvider>,
-    );
-
-    expect(
-      await screen.findByRole("heading", { name: "Distributed systems" }),
-    ).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Open Foundations" }));
-
-    expect(screen.getByLabelText("Current route")).toHaveTextContent(
-      `/plans/${learningPlanId}/stages/${stageId}`,
-    );
-    expect(
-      screen.getByRole("heading", { name: "Distributed systems" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("complementary", { name: "Foundations details" }),
-    ).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close details" }));
-
-    expect(screen.getByLabelText("Current route")).toHaveTextContent(
-      `/plans/${learningPlanId}`,
-    );
-    expect(
-      screen.getByRole("heading", { name: "Distributed systems" }),
-    ).toBeVisible();
-  });
-
-  it("keeps the plan and Today available beside Stage detail on a phone", async () => {
-    phoneViewport = true;
-    vi.mocked(fetchLearningPlanRecord).mockResolvedValue(record);
-    vi.mocked(fetchLearningPlan).mockResolvedValue(topology);
-
-    render(
-      <ApplicationAuthProvider auth={auth}>
-        <MemoryRouter
-          initialEntries={[`/plans/${learningPlanId}/stages/${stageId}`]}
-        >
-          <Routes>
-            <Route
-              path="/plans/:learningPlanId/stages/:stageId"
-              element={<LearningPlanSurface />}
-            />
           </Routes>
         </MemoryRouter>
       </ApplicationAuthProvider>,
@@ -203,13 +122,10 @@ describe("Learning Plan Stage route", () => {
       await screen.findByRole("heading", { name: "Distributed systems" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("region", { name: "Learning Plan canvas" }),
-    ).toHaveAttribute("data-authoring", "withheld");
+      screen.getByRole("region", { name: "Learning Plan Items" }),
+    ).toBeVisible();
     expect(
       screen.getByRole("complementary", { name: "Today sidecar" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("complementary", { name: "Foundations details" }),
     ).toBeVisible();
     expect(
       screen.queryByRole("complementary", {
@@ -256,7 +172,7 @@ describe("Learning Plan Stage route", () => {
     );
     expect(name).toHaveValue("Database foundations");
     expect(
-      screen.getByRole("region", { name: "Learning Plan canvas" }),
+      screen.getByRole("region", { name: "Learning Plan Items" }),
     ).toBeVisible();
     await waitFor(() => expect(updateLearningPlan).toHaveBeenCalledOnce());
   });
@@ -309,8 +225,8 @@ describe("Learning Plan Stage route", () => {
 
     expect(await screen.findByText("Archived · read-only")).toBeVisible();
     expect(
-      screen.getByRole("region", { name: "Learning Plan canvas" }),
-    ).toHaveAttribute("data-authoring", "withheld");
+      screen.getByRole("region", { name: "Learning Plan Items" }),
+    ).toBeVisible();
     expect(
       screen.getByRole("complementary", { name: "Today sidecar" }),
     ).toBeVisible();
@@ -350,7 +266,7 @@ describe("Learning Plan Stage route", () => {
       await screen.findByRole("heading", { name: "Distributed systems" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("region", { name: "Learning Plan canvas" }),
+      screen.getByRole("region", { name: "Learning Plan Items" }),
     ).toBeVisible();
   });
 });

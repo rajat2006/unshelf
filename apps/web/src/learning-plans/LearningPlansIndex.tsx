@@ -47,22 +47,19 @@ export function LearningPlansIndex({
   return (
     <div className="grid min-w-0 gap-8">
       <section
-        className="grid gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-5 sm:p-6"
+        className="grid max-w-xl gap-3"
         aria-labelledby="new-learning-plan-heading"
       >
         <div className="grid gap-1">
           <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
-            Begin a commitment
+            New Learning Plan
           </p>
-          <h2
-            id="new-learning-plan-heading"
-            className="m-0 font-serif text-2xl leading-tight font-semibold"
-          >
+          <h2 id="new-learning-plan-heading" className="sr-only">
             Start a new Learning Plan
           </h2>
           <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Name the outcome now. You can add and arrange Library Items inside
-            the plan studio.
+            Name an outcome, then shape it from existing Library Items in the
+            plan studio.
           </p>
         </div>
         <NewLearningPlanForm creating={creating} onCreate={onCreate} />
@@ -128,7 +125,7 @@ function LearningPlanGroup({
           {emptyMessage}
         </p>
       ) : (
-        <ul className="grid min-w-0 list-none gap-4 p-0 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid max-w-xl min-w-0 list-none gap-3 p-0">
           {learningPlans.map((learningPlan) => (
             <LearningPlanListItem
               key={learningPlan.id}
@@ -175,17 +172,19 @@ function LearningPlanListItem({
   return (
     <li className="min-w-0">
       <article
-        className={`flex h-full min-w-0 flex-col gap-4 rounded-[var(--radius-card)] border p-5 ${archived ? "border-dashed bg-muted/45" : "bg-card"}`}
+        className={`grid min-w-0 gap-3 rounded-[var(--radius-card)] border p-5 ${archived ? "border-dashed bg-muted/45" : "bg-card"}`}
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
-          <Badge variant="neutral">{archived ? "Archived" : "Active"}</Badge>
+          <Badge variant="neutral" className="w-fit">
+            {archived ? "Archived" : "Active"}
+          </Badge>
           <Button
             type="button"
             variant="quiet"
             size="compact"
             loading={pending}
             loadingLabel={`${pendingLabel}…`}
-            className="-mt-1 -mr-2 h-11 min-w-32 sm:h-8"
+            className="min-h-11 w-fit sm:min-h-8"
             aria-label={
               pending
                 ? `${pendingLabel} ${learningPlan.name}…`
@@ -197,8 +196,7 @@ function LearningPlanListItem({
             {actionLabel}
           </Button>
         </div>
-
-        <div className="grid min-w-0 flex-1 content-start gap-2">
+        <div className="grid min-w-0 content-start gap-2">
           <Link
             to={`/plans/${learningPlan.id}`}
             aria-label={learningPlan.name}
@@ -341,19 +339,19 @@ function LearningPlansSkeleton() {
       aria-label="Loading Learning Plans"
       className="grid gap-8"
     >
-      <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-5 sm:p-6">
+      <div className="grid max-w-xl gap-4">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-8 w-full max-w-sm" />
         <Skeleton className="h-11 w-full max-w-3xl" />
       </div>
       <div className="grid gap-4">
         <Skeleton className="h-8 w-52" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid max-w-xl gap-3">
           {[0, 1, 2].map((key) => (
             <div
               key={key}
               aria-hidden="true"
-              className="grid min-h-56 gap-4 rounded-[var(--radius-card)] border bg-card p-5"
+              className="grid min-h-36 gap-4 rounded-[var(--radius-card)] border bg-card p-5"
             >
               <Skeleton className="h-5 w-20" />
               <Skeleton className="h-7 w-3/4" />

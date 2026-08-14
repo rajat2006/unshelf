@@ -170,14 +170,21 @@ describe("Library room", () => {
       "/items/00000000-0000-0000-0000-000000000003",
     );
     const itemPresentation = within(itemLink.closest("article")!);
-    expect(
-      itemPresentation.getByText("https://example.com/systems"),
-    ).toBeVisible();
+    expect(itemPresentation.getByText("Book")).toBeVisible();
     expect(itemPresentation.getByText("Systems")).toBeVisible();
     expect(itemPresentation.getByText("In progress")).toBeVisible();
-    expect(itemPresentation.getByText("Target Aug 1, 2026")).toBeVisible();
-    expect(itemPresentation.getByText("Past target")).toBeVisible();
-    expect(itemPresentation.getByText("50% of Parts complete")).toBeVisible();
+    const detail = within(
+      screen.getByRole("complementary", {
+        name: "Edit Distributed systems handbook",
+      }),
+    );
+    expect(detail.getByText("https://example.com/systems")).toBeVisible();
+    expect(detail.getByText("Past target")).toBeVisible();
+    expect(
+      detail.getByRole("progressbar", {
+        name: "50% of Parts complete",
+      }),
+    ).toBeVisible();
     expect(screen.queryByText(/Variant D/)).not.toBeInTheDocument();
 
     fireEvent.click(itemLink);
