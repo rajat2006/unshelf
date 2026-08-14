@@ -5,7 +5,7 @@ description: Unshelf coding standards for writing or reviewing code. Use when co
 
 # Coding standards
 
-Before writing code, load the reference or references matching the layers being changed. For questions about coding standards, load the references matching the subject; for repository-wide questions, load all five. For code review or work spanning the stack, load all five references and check the complete diff against them.
+Before writing code, load the reference or references matching the layers being changed. For questions about coding standards, load the references matching the subject; for repository-wide questions, load every reference. For code review or work spanning the stack, load every reference and check the complete diff against them.
 
 ## References
 

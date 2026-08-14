@@ -29,18 +29,16 @@ Ownership is layered:
 4. Rooms and features own unique composition, product behavior, and
    behavior-coupled geometry, including the Learning Plan topology.
 
-Generic complex interactions use a matching Radix-backed local catalogue
-component. Feature code imports that catalogue rather than Radix directly.
-Product-specific interactions stay local when a generic primitive would change
-their behavior; visual resemblance alone does not move ownership. Lucide remains
-the canonical icon source.
+Radix is the base for generic complex interactions in the local catalogue.
+Product-specific interactions stay local when generic primitive behavior would
+change their contract; visual resemblance alone does not move ownership. The
+Frontend and UI coding standard owns the operational discovery, import, and
+extension workflow at this boundary.
 
 Exact current values, catalogue APIs, and variants live only in executable
-production sources. `apps/web/components.json` is the discovery entry point for
-the production stylesheet and aliases. The Frontend and UI coding standard routes
-agents from there through **discover → reuse → extend** to components, usages, and
-tests. No permanent styling guide, Storybook, or component gallery mirrors those
-sources.
+production sources. The Frontend and UI coding standard is the operational route
+from `apps/web/components.json` to those sources. No permanent styling guide,
+Storybook, or component gallery mirrors them.
 
 ## Accepted costs and constraints
 
