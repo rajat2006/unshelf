@@ -51,7 +51,7 @@ export function ItemStatusSelect({
         >
           <ItemStatusBadge status={item.status} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper">
           {ITEM_STATUSES.map((status) => (
             <SelectItem key={status} value={status}>
               <ItemStatusBadge status={status} />

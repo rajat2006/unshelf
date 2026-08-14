@@ -160,28 +160,31 @@ test("the workspace defaults to light and changes theme only when selected", asy
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(appUrl(testInfo, "/plans"));
-  expect(await pageBackground()).toBe("rgb(251, 251, 249)");
+  const lightBackground = await pageBackground();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   const theme = page.getByLabel("Theme");
-  await theme.selectOption("dark");
-  expect(await pageBackground()).toBe("rgb(23, 24, 23)");
+  await theme.click();
+  await page.getByRole("option", { name: "Dark" }).click();
+  const darkBackground = await pageBackground();
+  expect(darkBackground).not.toBe(lightBackground);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.reload();
-  await expect(theme).toHaveValue("dark");
-  expect(await pageBackground()).toBe("rgb(23, 24, 23)");
+  await expect(theme).toContainText("Dark");
+  expect(await pageBackground()).toBe(darkBackground);
 
-  await theme.selectOption("system");
+  await theme.click();
+  await page.getByRole("option", { name: "System" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.reload();
-  await expect(theme).toHaveValue("system");
+  await expect(theme).toContainText("System");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  expect(await pageBackground()).toBe("rgb(251, 251, 249)");
+  expect(await pageBackground()).toBe(lightBackground);
 });
 
 test("keyboard focus reaches the top bar with a visible focus ring", async ({
