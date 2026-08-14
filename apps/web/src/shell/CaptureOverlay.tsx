@@ -196,15 +196,24 @@ function CaptureComposer({
           type="submit"
           size="touch"
           disabled={saving}
-          className="min-w-40 justify-self-start sm:h-10"
+          className="grid min-w-40 grid-cols-1 justify-self-start sm:h-10"
         >
-          {saving && (
+          <span
+            aria-hidden={saving}
+            className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${saving ? "invisible" : ""}`}
+          >
+            Add to Library
+          </span>
+          <span
+            aria-hidden={!saving}
+            className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${saving ? "" : "invisible"}`}
+          >
             <LoaderCircle
               aria-hidden="true"
               className="animate-spin motion-reduce:animate-none"
             />
-          )}
-          {saving ? "Adding to Library…" : "Add to Library"}
+            Adding to Library…
+          </span>
         </Button>
       </form>
     </DialogContent>
