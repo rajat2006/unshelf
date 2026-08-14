@@ -1,15 +1,24 @@
-# Unshelf web UI — design spec (locked)
+# Unshelf web UI — historical design spec
 
-The locked presentation spec for the Unshelf web app (`apps/web`): its **theme**,
-its **information architecture**, its **navigation**, its **routing**, its
-**signed-out experience**, and its per-surface **states**. It is the destination of
+> **Historical design record.** This document no longer directs production
+> styling. ADR-0019 records the current visual architecture, and the production
+> sources reached through `apps/web/components.json` own exact values, component
+> APIs, and variants. The decisions and prototypes below remain historical
+> rationale where later ADRs have not superseded their product, routing, or domain
+> conclusions.
+
+This was the locked presentation spec for the Unshelf web app (`apps/web`): its
+**theme**, **information architecture**, **navigation**, **routing**,
+**signed-out experience**, and per-surface **states**. It was the destination of
 the wayfinder map [_Redesign the Unshelf web UI_](https://github.com/rajat2006/unshelf/issues/53)
 — an index of decisions already made, each resolved on its own ticket and, where
-load-bearing, recorded as an ADR. This doc is the single place a build effort reads
-to know what the redesigned UI *is*.
+load-bearing, recorded as an ADR. It served as the consolidated build record for
+that redesign.
 
-**Status: locked.** Presentation only — no feature changes are decided here. The
-redesign is **not built here**; that is a downstream effort.
+**Status: retired as active presentation guidance.** Presentation only — no
+feature changes are decided here. The redesign was a downstream effort; current
+implementation guidance starts from the coding standards and executable
+production sources.
 
 ## What this spec is, and is not
 
@@ -70,7 +79,7 @@ bookish, **not** map-themed.
 
 ### Token palette (Direction C · Quiet Focus)
 
-The complete locked palette — builders read this, not the throwaway prototype:
+The complete palette locked for that historical direction was:
 
 | Token | Role | Light | Dark |
 |-------|------|-------|------|
