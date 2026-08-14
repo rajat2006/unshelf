@@ -248,7 +248,13 @@ export function LibrarySurface({
         )}
       {displayedState.status === "ready" && displayedState.items.length > 0 && (
         <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]">
-          <section className="grid min-w-0 gap-4" aria-label="Library catalog">
+          <section
+            className="grid min-w-0 gap-4"
+            aria-labelledby="library-items-heading"
+          >
+            <h2 id="library-items-heading" className="sr-only">
+              Library Items
+            </h2>
             {labelFilterEnabled && (
               <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4">
                 <Field>

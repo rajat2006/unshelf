@@ -157,6 +157,9 @@ describe("Library room", () => {
       await screen.findByRole("heading", { level: 1, name: "Library" }),
     ).toBeVisible();
     expect(
+      screen.getByRole("heading", { level: 2, name: "Library Items" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("searchbox", { name: "Search Library" }),
     ).toHaveValue("systems");
     const itemLink = screen.getByRole("link", {

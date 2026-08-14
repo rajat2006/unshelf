@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Check, Trash2 } from "lucide-react";
 import type { ItemDetail, Part } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldDescription,
@@ -223,13 +224,12 @@ function PartRow({
   return (
     <li className="grid min-w-0 gap-3 rounded-[var(--radius-card)] border bg-background p-3">
       <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm font-medium">
-        <input
-          className="size-5 shrink-0 accent-primary focus-visible:ring-3 focus-visible:ring-ring/30"
-          type="checkbox"
+        <Checkbox
+          className="size-5"
           checked={part.completed}
           disabled={busy}
-          onChange={(event) =>
-            void runRowMutation(() => onCompletion(event.target.checked))
+          onCheckedChange={(checked) =>
+            void runRowMutation(() => onCompletion(checked === true))
           }
         />
         <span
