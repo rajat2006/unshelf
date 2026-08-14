@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import type { Item } from "@unshelf/shared";
+import { CalendarClock, ListChecks } from "lucide-react";
 import { Link, useLocation } from "react-router";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import type { CurrentUser } from "../application-auth/types";
 import {
   itemDetailRouteState,
@@ -16,24 +19,12 @@ interface ItemRowProps {
   item: Item;
   user: CurrentUser;
   onChanged: (item: Item) => void;
-  /**
-   * What this particular list does with the Item — pull it into a Stage in Library,
-   * take it out again inside a Stage. The only part of a row that varies.
-   */
+  /** Placement and ordering actions owned by the containing feature. */
   children?: ReactNode;
   detailBackgroundLocation?: ItemBackgroundLocation;
 }
 
-/**
- * One Item, rendered the same way everywhere it appears.
- *
- * This exists because an Item in a Stage and an Item in Library are the *same record*
- * seen twice, not two records (ADR-0003, ADR-0004) — so showing it two different
- * ways would be the UI quietly disagreeing with the model. One component makes
- * that structural: the Status and the Target date are shared facts about the
- * Item, and a Stage cannot render a partial Item by omission, because there is
- * nowhere left to omit them from.
- */
+/** Shared editable Item facts, with feature-owned actions supplied as children. */
 export function ItemRow({
   item,
   user,
@@ -48,19 +39,70 @@ export function ItemRow({
   );
 
   return (
-    <li className="item-row">
-      <Link
-        className="item-row__title"
-        to={`/items/${item.id}`}
-        state={itemDetailRouteState(backgroundLocation)}
-      >
-        {item.title}
-      </Link>
-      <div className="item-row__type">{TYPE_LABELS[item.type]}</div>
-      <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
-      <ItemTargetDate item={item} user={user} onChanged={onChanged} />
-      {children}
-      {item.source && <ItemSource source={item.source} />}
+    <li className="grid min-w-0 gap-4 rounded-[var(--radius-card)] border bg-background p-4">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="m-0 mb-1 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            {TYPE_LABELS[item.type]}
+          </p>
+          <h3 className="m-0 text-base leading-snug font-semibold break-words">
+            <Link
+              className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+              to={`/items/${item.id}`}
+              state={itemDetailRouteState(backgroundLocation)}
+            >
+              {item.title}
+            </Link>
+          </h3>
+        </div>
+        {item.pastTarget && (
+          <Badge variant="past">
+            <CalendarClock aria-hidden="true" />
+            Past target
+          </Badge>
+        )}
+      </div>
+
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+        <ItemStatusSelect item={item} user={user} onChanged={onChanged} />
+        <ItemTargetDate item={item} user={user} onChanged={onChanged} />
+      </div>
+
+      {item.partPercentage !== null && (
+        <div className="grid gap-2" aria-label="Structured Item progress">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <ListChecks aria-hidden="true" className="size-4" />
+            {item.partPercentage}% of Parts complete
+          </div>
+          <Progress
+            value={item.partPercentage}
+            aria-label={`${item.partPercentage}% of Parts complete`}
+          />
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        {item.labels.length > 0 ? (
+          item.labels.map((label) => (
+            <Badge
+              key={label.id}
+              className="max-w-full whitespace-normal break-words"
+            >
+              {label.name}
+            </Badge>
+          ))
+        ) : (
+          <span>No Labels</span>
+        )}
+        <span aria-hidden="true">·</span>
+        {item.source ? (
+          <ItemSource source={item.source} />
+        ) : (
+          <span>No Source</span>
+        )}
+      </div>
+
+      {children && <div className="border-t pt-3">{children}</div>}
     </li>
   );
 }
