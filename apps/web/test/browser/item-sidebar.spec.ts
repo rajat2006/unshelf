@@ -83,11 +83,13 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   await expect(
     sidebar.getByRole("heading", { level: 2, name: item.title }),
   ).toBeVisible();
-  await expect(
-    sidebar
-      .getByRole("group", { name: `Status for ${item.title}` })
-      .getByRole("button", { name: "In progress" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const status = sidebar.getByLabel(`Status for ${item.title}`);
+  await expect(status).toContainText("In progress");
+  await status.click();
+  const doneOption = page.getByRole("option", { name: "Done" });
+  await expect(doneOption).toBeInViewport();
+  await doneOption.click();
+  await expect(status).toContainText("Done");
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
     "2099-06-15",
   );

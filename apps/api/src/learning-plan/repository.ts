@@ -134,6 +134,17 @@ async function selectLearningPlan(
     .select({ node_id: learningPlanItemPlacements.nodeId, ...ITEM_PROJECTION })
     .from(learningPlanItemPlacements)
     .innerJoin(
+      learningPlanNodes,
+      and(
+        eq(learningPlanNodes.id, learningPlanItemPlacements.nodeId),
+        eq(learningPlanNodes.userId, learningPlanItemPlacements.userId),
+        eq(
+          learningPlanNodes.learningPlanId,
+          learningPlanItemPlacements.learningPlanId,
+        ),
+      ),
+    )
+    .innerJoin(
       items,
       and(
         eq(items.id, learningPlanItemPlacements.itemId),
@@ -147,7 +158,7 @@ async function selectLearningPlan(
         isNotNull(learningPlanItemPlacements.nodeId),
       ),
     )
-    .orderBy(asc(items.title), asc(items.id));
+    .orderBy(asc(learningPlanNodes.createdAt), asc(learningPlanNodes.id));
   const edges: EdgeRow[] = await db
     .select({
       user_id: learningPlanEdges.userId,

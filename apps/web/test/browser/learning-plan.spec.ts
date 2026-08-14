@@ -71,7 +71,7 @@ async function addAndSequenceStage({
   name: string;
   predecessorName: string;
 }): Promise<void> {
-  await page.getByRole("button", { name: "＋ Add another Stage" }).click();
+  await page.getByRole("button", { name: "Add another Stage" }).click();
   const field = page.getByPlaceholder("Name another stage");
   await field.fill(name);
   await field.press("Enter");
@@ -81,9 +81,8 @@ async function addAndSequenceStage({
     .getByRole("listitem")
     .filter({ hasText: name });
   await looseStage.getByRole("button", { name: `Sequence ${name}` }).click();
-  await looseStage
-    .getByLabel("Follows")
-    .selectOption({ label: predecessorName });
+  await looseStage.getByLabel("Follows").click();
+  await page.getByRole("option", { name: predecessorName }).click();
   await looseStage
     .getByRole("button", { name: "Sequence", exact: true })
     .click();
@@ -233,7 +232,8 @@ test("a desktop User forks and rejoins mixed Plan Nodes through keyboard-operabl
       name: "Link from Parallel reading to another node",
     })
     .click();
-  await looseItem.getByLabel("Before").selectOption({ label: "Main branch" });
+  await looseItem.getByLabel("Before").click();
+  await page.getByRole("option", { name: "Main branch" }).click();
   await looseItem.getByRole("button", { name: "Link", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(
     "Linked Parallel reading to Main branch",

@@ -1,5 +1,7 @@
 import type { Item } from "@unshelf/shared";
-import { STATUS_LABELS, TYPE_LABELS } from "./presentation";
+import { Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ItemSummary } from "./ItemSummary";
 
 interface LibraryItemsProps {
   items: Item[];
@@ -17,28 +19,32 @@ export function LibraryItems({
   onPreview,
 }: LibraryItemsProps) {
   return (
-    <ul className="library-list" aria-label="Library Items, newest first">
+    <ul className="grid list-none p-0" aria-label="Library Items, newest first">
       {items.map((item) => (
-        <li key={item.id}>
-          <button
-            type="button"
-            className="library-catalog-row"
-            aria-pressed={selectedItemId === item.id}
-            onClick={() => onPreview(item)}
-            aria-label={`Preview ${item.title}`}
-          >
-            <span>{TYPE_LABELS[item.type]}</span>
-            <strong>{item.title}</strong>
-            <span>
-              {item.labels.map((label) => label.name).join(" · ") ||
-                "Unlabelled"}
-            </span>
-            <span
-              className={`library-catalog-row__status is-${item.status.replace("_", "-")}`}
-            >
-              {STATUS_LABELS[item.status]}
-            </span>
-          </button>
+        <li key={item.id} className="border-b last:border-b-0">
+          <ItemSummary
+            item={item}
+            presentation="catalog"
+            className={
+              selectedItemId === item.id
+                ? "bg-accent/65 shadow-[inset_3px_0_0_var(--primary)]"
+                : undefined
+            }
+            actions={
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                className="w-fit min-h-11 sm:min-h-8"
+                aria-pressed={selectedItemId === item.id}
+                onClick={() => onPreview(item)}
+                aria-label={`Edit ${item.title}`}
+              >
+                <Eye aria-hidden="true" />
+                {selectedItemId === item.id ? "Editing" : "Edit details"}
+              </Button>
+            }
+          />
         </li>
       ))}
     </ul>

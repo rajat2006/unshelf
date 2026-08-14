@@ -74,7 +74,11 @@ test("a User explicitly chooses and edits today's shared Library Items", async (
       exact: true,
     }),
   ).toBeVisible();
-  await focus.getByRole("button", { name: "Done" }).click();
+  await focus
+    .getByRole("button", {
+      name: "Mark Read Designing Data-Intensive Applications done",
+    })
+    .click();
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 
   await focus
@@ -248,13 +252,11 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
     suggestions.getByText("Already selected suggestion noise"),
   ).toHaveCount(0);
 
-  await page
-    .getByRole("combobox", { name: "Learning Plan lens" })
-    .selectOption(plan.id);
+  await page.getByRole("combobox", { name: "Learning Plan lens" }).click();
+  await page.getByRole("option", { name: "Database foundations" }).click();
   await expect(suggestions.getByText("In Database foundations")).toBeVisible();
   const suggestionTitles = await suggestions
-    .getByRole("listitem")
-    .locator("strong")
+    .getByRole("link")
     .allTextContents();
   expect(suggestionTitles.slice(0, 5)).toEqual([
     "Continue yesterday's indexes",

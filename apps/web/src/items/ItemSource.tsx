@@ -13,11 +13,11 @@ export function ItemSource({ source }: { source: string }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="item-source item-source--link"
+      className="inline-flex min-h-11 min-w-11 max-w-full items-center text-primary underline decoration-primary/35 underline-offset-4 [overflow-wrap:anywhere] hover:decoration-primary"
     >
       {source}
     </a>
   ) : (
-    <div className="item-source item-source--muted">{source}</div>
+    <div className="max-w-full text-muted-foreground break-words">{source}</div>
   );
 }

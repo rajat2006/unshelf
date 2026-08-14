@@ -1,227 +1,203 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { CalendarCheck, X } from "lucide-react";
 import { Link } from "react-router";
-import {
-  PlanNodeKind,
-  type DailyFocus,
-  type Item,
-  type LearningPlan,
-  type LearningPlanView,
-  type StageId,
+import type {
+  DailyFocus,
+  DailyFocusOrigin,
+  Item,
+  LearningPlan,
 } from "@unshelf/shared";
-import { addItemToToday, fetchLearningPlanStage, fetchToday } from "../api";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { fetchToday, removeItemFromToday } from "../api";
 import type { CurrentUser } from "../application-auth/types";
+import { ItemDoneToggle } from "../items/ItemDoneToggle";
 import {
   itemDetailRouteState,
   planItemBackgroundLocation,
 } from "../items/item-route-state";
-import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
-
-interface PlannedItem {
-  item: Item;
-  stage: { id: StageId; name: string } | null;
-}
 
 interface PlanTodaySidecarProps {
   learningPlan: LearningPlan;
-  topology: LearningPlanView;
   user: CurrentUser;
+  refreshVersion?: number;
+  onStudioChanged?: () => void;
 }
 
-/** Explicit Daily Focus selection inside one open Learning Plan studio. */
+function todayOriginLabel(origin: DailyFocusOrigin | null): string {
+  if (!origin) return "From Library";
+  return `From ${origin.learningPlan.name}`;
+}
+
+/** The open-plan rail shows current global picks only; picking happens in the plan list. */
 export function PlanTodaySidecar({
   learningPlan,
-  topology,
   user,
+  refreshVersion = 0,
+  onStudioChanged,
 }: PlanTodaySidecarProps) {
   const [focus, setFocus] = useState<DailyFocus | null>(null);
-  const [plannedItems, setPlannedItems] = useState<PlannedItem[] | null>(null);
-  const [error, setError] = useState<"load" | "mutation" | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [mutationError, setMutationError] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
-  const [addingId, setAddingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<Item["id"] | null>(null);
 
   useEffect(() => {
     let active = true;
-    const load = async () => {
-      setError(null);
-      try {
-        const stageNodes = topology.nodes.filter(
-          (node) => node.kind === PlanNodeKind.Stage,
-        );
-        const [nextFocus, ...stageDetails] = await Promise.all([
-          fetchToday(user),
-          ...stageNodes.map((stage) =>
-            fetchLearningPlanStage(user, learningPlan.id, stage.id),
-          ),
-        ]);
-        if (!active) return;
-        const directItems: PlannedItem[] = topology.nodes
-          .filter((node) => node.kind === PlanNodeKind.Item)
-          .map((node) => ({ item: node.item, stage: null }));
-        const stagedItems = stageDetails.flatMap((stage) =>
-          stage.items.map((item) => ({
-            item,
-            stage: { id: stage.id, name: stage.name },
-          })),
-        );
-        setFocus(nextFocus);
-        setPlannedItems([...directItems, ...stagedItems]);
-      } catch {
-        if (active) setError("load");
-      }
-    };
-    void load();
+    setLoadError(false);
+    void fetchToday(user)
+      .then((nextFocus) => {
+        if (active) setFocus(nextFocus);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
     return () => {
       active = false;
     };
-  }, [learningPlan.id, loadVersion, topology, user]);
+  }, [loadVersion, refreshVersion, user]);
 
-  const selectedIds = useMemo(
-    () => new Set(focus?.entries.map((entry) => entry.item.id) ?? []),
-    [focus],
-  );
-  const previewItem = useMemo(() => {
-    if (!plannedItems) return null;
-    return (
-      plannedItems.find(({ item }) => selectedIds.has(item.id)) ??
-      plannedItems[0] ??
-      null
-    );
-  }, [plannedItems, selectedIds]);
-
-  const add = async ({ item, stage }: PlannedItem) => {
-    setAddingId(item.id);
-    setError(null);
+  const remove = async (item: Item) => {
+    if (!focus || removingId) return;
+    setRemovingId(item.id);
+    setMutationError(false);
     try {
-      setFocus(
-        await addItemToToday(user, item.id, {
-          learningPlanId: learningPlan.id,
-          ...(stage ? { stageId: stage.id } : {}),
-        }),
-      );
+      setFocus(await removeItemFromToday(user, focus.id, item.id));
+      onStudioChanged?.();
     } catch {
-      setError("mutation");
+      setMutationError(true);
     } finally {
-      setAddingId(null);
+      setRemovingId(null);
     }
   };
 
+  const replaceItem = (changed: Item) => {
+    setFocus((current) =>
+      current
+        ? {
+            ...current,
+            entries: current.entries.map((entry) =>
+              entry.item.id === changed.id
+                ? {
+                    ...entry,
+                    item: changed,
+                    snapshot: { ...entry.snapshot, status: changed.status },
+                  }
+                : entry,
+            ),
+          }
+        : current,
+    );
+    onStudioChanged?.();
+  };
+
   return (
-    <aside className="plan-today-sidecar" aria-label="Today sidecar">
-      <span className="editorial-eyebrow">Global Daily Focus</span>
-      <h2>Today&apos;s picks</h2>
-      <p className="quiet-copy">
-        Picks may come from this plan or directly from the Library.
-      </p>
-      {!focus || !plannedItems ? (
-        error ? null : (
-          <p role="status">Loading Today…</p>
-        )
-      ) : (
-        <>
-          <p className="visually-hidden">
-            {focus.total} {focus.total === 1 ? "Item" : "Items"} in Today
-          </p>
-          {plannedItems.length === 0 ? (
-            <p className="quiet-copy">No Items on this Learning Plan yet.</p>
-          ) : (
-            <ul>
-              {plannedItems.map((plannedItem) => {
-                const { item, stage } = plannedItem;
-                const selected = selectedIds.has(item.id);
-                const backgroundLocation = planItemBackgroundLocation({
-                  learningPlanId: learningPlan.id,
-                  ...(stage ? { stageId: stage.id } : {}),
-                });
-                return (
-                  <li key={item.id}>
-                    <div>
-                      <strong>{item.title}</strong>
-                      {stage && <small>{stage.name}</small>}
-                    </div>
-                    {selected ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          aria-label={`${item.title} is in Today`}
-                        >
-                          In Today
-                        </button>
-                        <Link
-                          to={`/items/${item.id}`}
-                          state={itemDetailRouteState(backgroundLocation)}
-                          aria-label={`Open ${item.title} from Today`}
-                        >
-                          Open
-                        </Link>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={addingId !== null}
-                        onClick={() => void add(plannedItem)}
-                        aria-label={`Add ${item.title} to Today`}
-                      >
-                        Add
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {previewItem ? (
-            <article className="plan-today-sidecar__item-detail">
-              <span className="editorial-eyebrow">
-                {TYPE_LABELS[previewItem.item.type]}
-              </span>
-              <h3>{previewItem.item.title}</h3>
-              <p>{STATUS_LABELS[previewItem.item.status]}</p>
-              <div>
-                {selectedIds.has(previewItem.item.id) ? (
-                  <span>In Today</span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={addingId !== null}
-                    onClick={() => void add(previewItem)}
-                  >
-                    + Today
-                  </button>
-                )}
-                <Link
-                  to={`/items/${previewItem.item.id}`}
-                  state={itemDetailRouteState(
-                    planItemBackgroundLocation({
-                      learningPlanId: learningPlan.id,
-                      ...(previewItem.stage
-                        ? { stageId: previewItem.stage.id }
-                        : {}),
-                    }),
-                  )}
-                >
-                  Open Item
-                </Link>
-                <span>{STATUS_LABELS[previewItem.item.status]}</span>
-              </div>
-            </article>
-          ) : null}
-        </>
-      )}
-      {error && (
-        <div role="alert">
-          <p>
-            {error === "load"
-              ? "Couldn’t load Today."
-              : "Couldn’t update Today."}
-          </p>
-          <button
+    <aside
+      className="grid min-w-0 content-start gap-4 overflow-hidden border-t bg-muted/45 p-4 text-foreground md:col-span-2 md:max-h-[calc(100dvh-9rem)] md:overflow-y-auto lg:col-span-1 lg:border-t-0 lg:border-l lg:p-5"
+      aria-label="Today sidecar"
+      aria-busy={!focus && !loadError}
+    >
+      <header className="grid gap-1 border-b pb-4">
+        <p className="m-0 flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+          <CalendarCheck aria-hidden="true" className="size-4" />
+          Global Daily Focus
+        </p>
+        <h2 className="m-0 font-serif text-2xl leading-tight font-semibold">
+          Today&apos;s picks
+        </h2>
+        <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+          Picks may come from this plan or directly from the Library.
+        </p>
+      </header>
+
+      {loadError && (
+        <Alert className="grid gap-3 p-4">
+          <p className="m-0 text-sm">Couldn&apos;t load Today&apos;s picks.</p>
+          <Button
             type="button"
-            onClick={() => setLoadVersion((current) => current + 1)}
+            variant="secondary"
+            size="compact"
+            className="w-fit"
+            onClick={() => setLoadVersion((version) => version + 1)}
           >
             Retry
-          </button>
+          </Button>
+        </Alert>
+      )}
+
+      {!focus && !loadError && (
+        <div
+          className="grid gap-3"
+          role="status"
+          aria-label="Loading Today's picks"
+        >
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </div>
+      )}
+
+      {focus && (
+        <>
+          {focus.entries.length === 0 ? (
+            <p className="m-0 rounded-[var(--radius-card)] border border-dashed bg-background/65 p-4 text-sm text-muted-foreground">
+              Nothing selected for Today yet.
+            </p>
+          ) : (
+            <ul
+              className="grid min-w-0 list-none gap-2 p-0"
+              aria-label="Today's picks"
+            >
+              {focus.entries.map((entry) => (
+                <li key={entry.item.id}>
+                  <article className="flex min-w-0 items-center gap-2 rounded-[var(--radius-card)] border bg-background p-3">
+                    <ItemDoneToggle
+                      item={entry.item}
+                      user={user}
+                      iconOnly
+                      onChanged={replaceItem}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        className="block truncate text-sm font-semibold text-foreground underline-offset-4 hover:text-primary hover:underline"
+                        to={`/items/${entry.item.id}`}
+                        state={itemDetailRouteState(
+                          planItemBackgroundLocation({
+                            learningPlanId: learningPlan.id,
+                          }),
+                        )}
+                      >
+                        {entry.item.title}
+                      </Link>
+                      <p className="mt-1 mb-0 truncate text-xs text-muted-foreground">
+                        {todayOriginLabel(entry.origin)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon-compact"
+                      className="min-h-11 sm:min-h-8"
+                      loading={removingId === entry.item.id}
+                      loadingLabel="Removing…"
+                      disabled={removingId !== null}
+                      aria-label={`Remove ${entry.item.title} from Today`}
+                      onClick={() => void remove(entry.item)}
+                    >
+                      <X aria-hidden="true" />
+                    </Button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {mutationError && (
+        <Alert>
+          Couldn&apos;t change Today. Your current picks are still shown above.
+        </Alert>
       )}
     </aside>
   );

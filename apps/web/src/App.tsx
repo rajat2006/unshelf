@@ -7,6 +7,7 @@ import {
   type Location,
   useLocation,
   useNavigate,
+  useParams,
 } from "react-router";
 import { useApplicationAuth } from "./application-auth/useApplicationAuth";
 import { AuthPlaceholder } from "./shell/AuthPlaceholder";
@@ -56,7 +57,7 @@ export function App() {
           />
           <Route
             path="plans/:learningPlanId/stages/:stageId"
-            element={<LearningPlanSurface />}
+            element={<StagePlanRedirect />}
           />
           <Route path="items/:itemId" element={<ItemSurface />} />
           <Route path="*" element={<NotFound />} />
@@ -64,6 +65,12 @@ export function App() {
       </Route>
     </Routes>
   );
+}
+
+/** Legacy Stage URLs collapse into the current flat Learning Plan workspace. */
+function StagePlanRedirect() {
+  const { learningPlanId } = useParams();
+  return <Navigate to={`/plans/${learningPlanId}`} replace />;
 }
 
 /**

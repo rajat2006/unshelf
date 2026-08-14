@@ -1,24 +1,31 @@
-import { useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { useRef, useState, type FormEvent } from "react";
 import type { LearningPlan } from "@unshelf/shared";
+import { Archive, ArchiveRestore, ArrowRight, Plus } from "lucide-react";
+import { Link } from "react-router";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { completionPercentage } from "../presentation/progress";
 
-/**
- * The Learning Plans index in the Plans room. It is Learning Plans-only: the
- * User's plans as progress cards, plus one quiet action to start another; no
- * label filters and no capture line live here (both were tried and dropped —
- * capture is global chrome, labels live in the Library).
- *
- * This is the presentational surface: it is handed the fetched state and renders
- * each of the surface's own shapes — the card-shaped loading skeleton, the
- * inline-scoped error with Retry, the empty "No Learning Plans yet" prompt, and the card
- * grid. The container above owns the fetch and the create call.
- */
 export type LearningPlansIndexState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; learningPlans: LearningPlan[] };
 
+interface LearningPlansIndexProps {
+  state: LearningPlansIndexState;
+  creating: boolean;
+  onCreate: (name: string) => Promise<void>;
+  onArchive: (learningPlan: LearningPlan) => Promise<void>;
+  onRestore: (learningPlan: LearningPlan) => Promise<void>;
+  onRetry: () => void;
+}
+
+/** The Plans room index over active and archived Learning Plan commitments. */
 export function LearningPlansIndex({
   state,
   creating,
@@ -26,61 +33,60 @@ export function LearningPlansIndex({
   onArchive,
   onRestore,
   onRetry,
-}: {
-  state: LearningPlansIndexState;
-  creating: boolean;
-  onCreate: (name: string) => Promise<void>;
-  onArchive: (learningPlan: LearningPlan) => Promise<void>;
-  onRestore: (learningPlan: LearningPlan) => Promise<void>;
-  onRetry: () => void;
-}) {
-  if (state.status === "loading") {
-    return <LearningPlansSkeleton />;
-  }
-  if (state.status === "error") {
-    return <LearningPlansError onRetry={onRetry} />;
-  }
+}: LearningPlansIndexProps) {
+  if (state.status === "loading") return <LearningPlansSkeleton />;
+  if (state.status === "error") return <LearningPlansError onRetry={onRetry} />;
 
-  const { learningPlans } = state;
-  const activePlans = learningPlans.filter(
+  const activePlans = state.learningPlans.filter(
     (learningPlan) => learningPlan.archivedAt === null,
   );
-  const archivedPlans = learningPlans.filter(
+  const archivedPlans = state.learningPlans.filter(
     (learningPlan) => learningPlan.archivedAt !== null,
   );
+
   return (
-    <div className="learning-plans-index">
-      <details className="learning-plans-index__composer">
-        <summary>＋ New Learning Plan</summary>
-        <div>
-          <p className="editorial-eyebrow">Begin a path</p>
-          <h2>Start something worth finishing</h2>
-          <p className="quiet-copy">
-            Name the outcome. Add and arrange material inside the plan studio.
+    <div className="grid min-w-0 gap-8">
+      <section
+        className="grid max-w-xl gap-3"
+        aria-labelledby="new-learning-plan-heading"
+      >
+        <div className="grid gap-1">
+          <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+            New Learning Plan
           </p>
-          <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+          <h2 id="new-learning-plan-heading" className="sr-only">
+            Start a new Learning Plan
+          </h2>
+          <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Name an outcome, then shape it from existing Library Items in the
+            plan studio.
+          </p>
         </div>
-      </details>
-      {learningPlans.length === 0 ? (
+        <NewLearningPlanForm creating={creating} onCreate={onCreate} />
+      </section>
+
+      {state.learningPlans.length === 0 ? (
         <EmptyLearningPlans />
       ) : (
-        <>
+        <div className="grid gap-10">
           <LearningPlanGroup
-            heading="Active Plans"
+            heading="Active Learning Plans"
+            description="Current commitments you can continue shaping."
             learningPlans={activePlans}
-            emptyMessage="No active Learning Plans."
+            emptyMessage="No active Learning Plans. Restore one below or start a new commitment."
             actionLabel="Archive"
             onAction={onArchive}
           />
           {archivedPlans.length > 0 && (
             <LearningPlanGroup
-              heading="Archived Plans"
+              heading="Archived Learning Plans"
+              description="Archived Learning Plans are read-only until restored."
               learningPlans={archivedPlans}
               actionLabel="Restore"
               onAction={onRestore}
             />
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -88,44 +94,45 @@ export function LearningPlansIndex({
 
 function LearningPlanGroup({
   heading,
+  description,
   learningPlans,
   emptyMessage,
   actionLabel,
   onAction,
 }: {
   heading: string;
+  description: string;
   learningPlans: LearningPlan[];
   emptyMessage?: string;
   actionLabel: "Archive" | "Restore";
   onAction: (learningPlan: LearningPlan) => Promise<void>;
 }) {
+  const headingId = `${actionLabel.toLowerCase()}-plans`;
+
   return (
-    <section
-      className="learning-plan-group"
-      aria-labelledby={`${actionLabel}-plans`}
-    >
-      <h2
-        id={`${actionLabel}-plans`}
-        className={actionLabel === "Archive" ? "visually-hidden" : undefined}
-      >
-        {heading}
-      </h2>
+    <section className="grid min-w-0 gap-4" aria-labelledby={headingId}>
+      <div className="grid gap-1 border-b pb-3">
+        <h2
+          id={headingId}
+          className="m-0 font-serif text-2xl leading-tight font-semibold"
+        >
+          {heading}
+        </h2>
+        <p className="m-0 text-sm text-muted-foreground">{description}</p>
+      </div>
       {learningPlans.length === 0 ? (
-        <p className="quiet-copy">{emptyMessage}</p>
+        <p className="m-0 rounded-[var(--radius-card)] border border-dashed bg-muted/35 p-5 text-sm text-muted-foreground">
+          {emptyMessage}
+        </p>
       ) : (
-        <ul className="learning-plan-card-grid">
+        <ul className="grid max-w-xl min-w-0 list-none gap-3 p-0">
           {learningPlans.map((learningPlan) => (
-            <li key={learningPlan.id} className="learning-plan-card">
-              <LearningPlanCard learningPlan={learningPlan} />
-              <button
-                type="button"
-                className="quiet-button"
-                aria-label={`${actionLabel} ${learningPlan.name}`}
-                onClick={() => void onAction(learningPlan)}
-              >
-                {actionLabel}
-              </button>
-            </li>
+            <LearningPlanListItem
+              key={learningPlan.id}
+              learningPlan={learningPlan}
+              actionLabel={actionLabel}
+              onAction={onAction}
+            />
           ))}
         </ul>
       )}
@@ -133,52 +140,119 @@ function LearningPlanGroup({
   );
 }
 
-/** How a LearningPlan's derived progress reads on its card — never a bare 0/0. */
+function LearningPlanListItem({
+  learningPlan,
+  actionLabel,
+  onAction,
+}: {
+  learningPlan: LearningPlan;
+  actionLabel: "Archive" | "Restore";
+  onAction: (learningPlan: LearningPlan) => Promise<void>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const archiving = actionLabel === "Archive";
+  const pendingLabel = archiving ? "Archiving" : "Restoring";
+  const ActionIcon = archiving ? Archive : ArchiveRestore;
+  const archived = learningPlan.archivedAt !== null;
+
+  async function runLifecycleAction() {
+    if (pending) return;
+    setPending(true);
+    setFailed(false);
+    try {
+      await onAction(learningPlan);
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <li className="min-w-0">
+      <article
+        className={`grid min-w-0 gap-3 rounded-[var(--radius-card)] border p-5 ${archived ? "border-dashed bg-muted/45" : "bg-card"}`}
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <Badge variant="neutral" className="w-fit">
+            {archived ? "Archived" : "Active"}
+          </Badge>
+          <Button
+            type="button"
+            variant="quiet"
+            size="compact"
+            loading={pending}
+            loadingLabel={`${pendingLabel}…`}
+            className="min-h-11 w-fit sm:min-h-8"
+            aria-label={
+              pending
+                ? `${pendingLabel} ${learningPlan.name}…`
+                : `${actionLabel} ${learningPlan.name}`
+            }
+            onClick={() => void runLifecycleAction()}
+          >
+            <ActionIcon aria-hidden="true" />
+            {actionLabel}
+          </Button>
+        </div>
+        <div className="grid min-w-0 content-start gap-2">
+          <Link
+            to={`/plans/${learningPlan.id}`}
+            aria-label={learningPlan.name}
+            className="w-fit max-w-full rounded-[var(--radius-small)] font-serif text-xl leading-snug font-semibold break-words text-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+          >
+            {learningPlan.name}
+            <ArrowRight aria-hidden="true" className="ml-1 inline size-4" />
+          </Link>
+          <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+            {archived
+              ? "Preserved for reference; restore it to change its structure."
+              : "Arrange shared Library Items and choose what belongs in Today."}
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <Progress
+            value={completionPercentage(learningPlan)}
+            aria-label={`${learningPlan.name} progress`}
+            aria-valuetext={progressLabel(learningPlan)}
+          />
+          <p className="m-0 text-xs font-semibold text-muted-foreground">
+            {progressLabel(learningPlan)}
+          </p>
+        </div>
+
+        {failed && (
+          <Alert>
+            Couldn&apos;t {actionLabel.toLowerCase()} {learningPlan.name}. Check
+            your connection and try again.
+          </Alert>
+        )}
+      </article>
+    </li>
+  );
+}
+
 function progressLabel(learningPlan: LearningPlan): string {
-  if (learningPlan.total === 0) return "No items added yet";
+  if (learningPlan.total === 0) return "No Items added yet";
   return `${learningPlan.done} of ${learningPlan.total} done`;
 }
 
-/** One LearningPlan as a card that opens the LearningPlan at its opaque, stable URL. */
-function LearningPlanCard({ learningPlan }: { learningPlan: LearningPlan }) {
-  return (
-    <Link to={`/plans/${learningPlan.id}`} className="learning-plan-card__link">
-      <span className="editorial-eyebrow">
-        {learningPlan.archivedAt ? "Archived plan" : "Active plan"}
-      </span>
-      <span className="learning-plan-card__name">{learningPlan.name}</span>
-      <span className="learning-plan-card__description">
-        Arrange selected material into a path and choose what belongs in Today.
-      </span>
-      <span className="visually-hidden">Open plan</span>
-      <span className="learning-plan-card__meter" aria-hidden="true">
-        <span
-          style={{
-            width: `${completionPercentage(learningPlan)}%`,
-          }}
-        />
-      </span>
-      <span className="learning-plan-card__progress">
-        {progressLabel(learningPlan)} →
-      </span>
-    </Link>
-  );
-}
-
-/** The empty index: a quiet prompt whose only action starts the first LearningPlan. */
 function EmptyLearningPlans() {
   return (
-    <p className="learning-plans-empty">
-      No Learning Plans yet — name one above to start.
-    </p>
+    <section className="grid justify-items-start gap-2 rounded-[var(--radius-panel)] border border-dashed bg-card p-6 sm:p-8">
+      <h2 className="m-0 font-serif text-2xl font-semibold">
+        No Learning Plans yet
+      </h2>
+      <p className="m-0 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        Name an outcome above to turn selected Library Items into a durable
+        commitment.
+      </p>
+    </section>
   );
 }
 
-/**
- * Name and create a LearningPlan. Deliberately not autofocused: the global Capture
- * shortcuts (`c` / `⌘K`) must keep working on a freshly loaded Plans room, which they
- * only do while focus is not already in an editable control.
- */
 function NewLearningPlanForm({
   creating,
   onCreate,
@@ -186,73 +260,130 @@ function NewLearningPlanForm({
   creating: boolean;
   onCreate: (name: string) => Promise<void>;
 }) {
+  const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
-  const trimmed = name.trim();
+  const [nameError, setNameError] = useState<string>();
+  const [requestFailed, setRequestFailed] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!trimmed || creating) return;
-    await onCreate(trimmed);
-    setName("");
+    if (creating) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameError("Enter a Learning Plan name.");
+      nameRef.current?.focus();
+      return;
+    }
+
+    setRequestFailed(false);
+    try {
+      await onCreate(trimmed);
+      setName("");
+    } catch {
+      setRequestFailed(true);
+    }
   }
 
   return (
     <form
+      noValidate
       onSubmit={(event) => void submit(event)}
-      className="new-learning-plan-form"
+      className="grid max-w-3xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
     >
-      <label htmlFor="new-learning-plan-name">Learning Plan name</label>
-      <div className="new-learning-plan-form__controls">
-        <input
+      <Field data-invalid={Boolean(nameError)}>
+        <FieldLabel htmlFor="new-learning-plan-name">
+          Learning Plan name
+        </FieldLabel>
+        <Input
+          ref={nameRef}
           id="new-learning-plan-name"
           value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="e.g. Learn Rust"
-          className="new-learning-plan-form__input"
+          onChange={(event) => {
+            setName(event.target.value);
+            setNameError(undefined);
+          }}
+          placeholder="e.g. Learn distributed systems"
+          aria-invalid={Boolean(nameError)}
+          aria-describedby={
+            nameError ? "new-learning-plan-name-error" : undefined
+          }
         />
-        <button
-          type="submit"
-          disabled={!trimmed || creating}
-          className="quiet-button quiet-button--primary"
-        >
-          Start a Learning Plan
-        </button>
-      </div>
+        {nameError && (
+          <FieldError id="new-learning-plan-name-error">{nameError}</FieldError>
+        )}
+      </Field>
+      <Button
+        type="submit"
+        size="touch"
+        loading={creating}
+        loadingLabel="Creating Learning Plan…"
+        className="min-w-48 sm:h-10"
+      >
+        <Plus aria-hidden="true" />
+        Start a Learning Plan
+      </Button>
+      {requestFailed && (
+        <Alert className="sm:col-span-2">
+          Couldn&apos;t create this Learning Plan. Check your connection and try
+          again.
+        </Alert>
+      )}
     </form>
   );
 }
 
-/** Card-shaped skeletons, not a spinner (design spec §6): layout stays stable. */
 function LearningPlansSkeleton() {
   return (
     <div
       role="status"
       aria-label="Loading Learning Plans"
-      className="learning-plan-card-grid"
+      className="grid gap-8"
     >
-      {[0, 1, 2].map((key) => (
-        <div
-          key={key}
-          aria-hidden="true"
-          className="learning-plan-card-skeleton"
-        />
-      ))}
+      <div className="grid max-w-xl gap-4">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-8 w-full max-w-sm" />
+        <Skeleton className="h-11 w-full max-w-3xl" />
+      </div>
+      <div className="grid gap-4">
+        <Skeleton className="h-8 w-52" />
+        <div className="grid max-w-xl gap-3">
+          {[0, 1, 2].map((key) => (
+            <div
+              key={key}
+              aria-hidden="true"
+              className="grid min-h-36 gap-4 rounded-[var(--radius-card)] border bg-card p-5"
+            >
+              <Skeleton className="h-5 w-20" />
+              <Skeleton className="h-7 w-3/4" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="mt-auto h-2 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-/** The surface-scoped error: it never removes the shell — just the body. */
 function LearningPlansError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div role="alert" className="surface-error-panel">
-      <p>Couldn't load this</p>
-      <button
+    <Alert className="grid max-w-xl gap-3 p-4">
+      <div>
+        <p className="m-0 font-semibold">
+          Couldn&apos;t load your Learning Plans
+        </p>
+        <p className="mt-1 mb-0 text-destructive/85">
+          Your other rooms are still available. Try loading this room again.
+        </p>
+      </div>
+      <Button
+        className="w-fit"
         type="button"
+        variant="secondary"
         onClick={onRetry}
-        className="quiet-button quiet-button--primary"
       >
         Retry
-      </button>
-    </div>
+      </Button>
+    </Alert>
   );
 }

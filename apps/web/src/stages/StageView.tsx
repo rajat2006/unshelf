@@ -1,7 +1,16 @@
 import { useState } from "react";
-import type { Item, ItemId, StageDetail, StageId } from "@unshelf/shared";
 import {
-  fetchStage,
+  Status,
+  type Item,
+  type ItemId,
+  type StageDetail,
+  type StageId,
+} from "@unshelf/shared";
+import { ArrowDown, ArrowUp, CornerDownLeft, Trash2 } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import {
   moveLearningPlanItem,
   removeItemFromStage,
   reorderStageItems,
@@ -9,6 +18,8 @@ import {
 import type { CurrentUser } from "../application-auth/types";
 import { ItemRow } from "../items/ItemRow";
 import { StageItemIntake } from "./StageItemIntake";
+import { StageRefreshFailure, useStageRefresh } from "./StageRefresh";
+import { completionPercentage } from "../presentation/progress";
 
 interface StageViewProps {
   stage: StageDetail;
@@ -18,31 +29,34 @@ interface StageViewProps {
   onClose: () => void;
   closeLabel?: string;
   headingLevel?: 2 | 3;
+  showHeading?: boolean;
   structuralReadOnly?: boolean;
 }
 
-/**
- * One Stage's contents: its Items, each shown exactly as All shows them — the same
- * `ItemRow`, so the same Status and the same Target date (story 33). A Stage
- * displays progress without owning any of it; changing it here changes the Item,
- * which is why it lands in every other Stage at the same time.
- *
- * The list exposes keyboard-operable local-order controls. This order belongs
- * inside the Stage; graph sequencing still operates on the Stage as one Plan Node.
- */
+/** Ordered shared Items and derived progress for one optional Stage. */
 export function StageView({
   stage,
   user,
   onStageChanged,
   onItemChanged,
   onClose,
-  closeLabel = "← All stages",
+  closeLabel = "All stages",
   headingLevel = 3,
+  showHeading = true,
   structuralReadOnly = false,
 }: StageViewProps) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
   const [orderingItemId, setOrderingItemId] = useState<ItemId | null>(null);
-  const [orderError, setOrderError] = useState<string | null>(null);
+  const [orderFailed, setOrderFailed] = useState(false);
+  const done = stage.items.filter((item) => item.status === Status.Done).length;
+  const percentage = completionPercentage({
+    done,
+    total: stage.items.length,
+  });
+  const progressLabel =
+    stage.items.length === 0
+      ? "No Items added yet"
+      : `${done} of ${stage.items.length} Items done`;
 
   async function moveInOrder(itemId: ItemId, offset: -1 | 1) {
     const index = stage.items.findIndex((item) => item.id === itemId);
@@ -55,30 +69,55 @@ export function StageView({
       itemIds[index],
     ];
     setOrderingItemId(itemId);
-    setOrderError(null);
+    setOrderFailed(false);
     try {
       onStageChanged(await reorderStageItems(user, stage.id, itemIds));
-    } catch (caught: unknown) {
-      setOrderError(String(caught));
+    } catch {
+      setOrderFailed(true);
     } finally {
       setOrderingItemId(null);
     }
   }
-  return (
-    <div>
-      <div className="stage-view__heading">
-        <Heading>{stage.name}</Heading>
-        <button type="button" onClick={onClose} className="quiet-button">
-          {closeLabel}
-        </button>
-      </div>
 
-      {stage.items.length === 0 && (
-        <p className="quiet-copy">No items added to this Stage yet.</p>
+  return (
+    <div className="grid min-w-0 gap-5">
+      {showHeading && (
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <Heading className="m-0 font-serif text-xl leading-tight font-semibold break-words">
+            {stage.name}
+          </Heading>
+          <Button type="button" variant="quiet" onClick={onClose}>
+            {closeLabel}
+          </Button>
+        </div>
       )}
 
-      {stage.items.length > 0 && (
-        <ul className="stage-view__items">
+      <div className="grid gap-2 rounded-[var(--radius-card)] bg-muted/35 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-sm font-semibold">Stage progress</span>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {progressLabel}
+          </span>
+        </div>
+        <Progress
+          value={percentage}
+          aria-label={`${stage.name} progress`}
+          aria-valuetext={progressLabel}
+        />
+      </div>
+
+      {stage.items.length === 0 ? (
+        <div className="rounded-[var(--radius-card)] border border-dashed bg-background p-5">
+          <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+            No Items added to this Stage yet. Search your Library below to give
+            this optional grouping meaningful structure.
+          </p>
+        </div>
+      ) : (
+        <ul
+          className="grid min-w-0 list-none gap-4 p-0"
+          aria-label={`Items in ${stage.name}`}
+        >
           {stage.items.map((item, index) => (
             <ItemRow
               key={item.id}
@@ -87,58 +126,68 @@ export function StageView({
               onChanged={onItemChanged}
             >
               {!structuralReadOnly && (
-                <div>
-                  <button
-                    type="button"
-                    className="quiet-button"
-                    aria-label={`Move ${item.title} up`}
-                    disabled={orderingItemId !== null || index === 0}
-                    onClick={() => void moveInOrder(item.id, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="quiet-button"
-                    aria-label={`Move ${item.title} down`}
-                    disabled={
-                      orderingItemId !== null ||
-                      index === stage.items.length - 1
-                    }
-                    onClick={() => void moveInOrder(item.id, 1)}
-                  >
-                    ↓
-                  </button>
-                </div>
-              )}
-              {!structuralReadOnly && (
-                <>
-                  <RemoveFromStage
-                    stageId={stage.id}
-                    itemId={item.id}
-                    user={user}
-                    onStageChanged={onStageChanged}
-                  />
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="flex items-center rounded-[var(--radius-control)] border bg-background p-0.5">
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon-compact"
+                      className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
+                      aria-label={`Move ${item.title} up`}
+                      disabled={orderingItemId !== null || index === 0}
+                      loading={orderingItemId === item.id}
+                      loadingLabel={<span className="sr-only">Moving…</span>}
+                      onClick={() => void moveInOrder(item.id, -1)}
+                    >
+                      <ArrowUp aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon-compact"
+                      className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
+                      aria-label={`Move ${item.title} down`}
+                      disabled={
+                        orderingItemId !== null ||
+                        index === stage.items.length - 1
+                      }
+                      loading={orderingItemId === item.id}
+                      loadingLabel={<span className="sr-only">Moving…</span>}
+                      onClick={() => void moveInOrder(item.id, 1)}
+                    >
+                      <ArrowDown aria-hidden="true" />
+                    </Button>
+                  </div>
                   <MoveDirectly
                     stage={stage}
                     itemId={item.id}
                     user={user}
                     onStageChanged={onStageChanged}
                   />
-                </>
+                  <RemoveFromStage
+                    stageId={stage.id}
+                    itemId={item.id}
+                    user={user}
+                    onStageChanged={onStageChanged}
+                  />
+                </div>
               )}
             </ItemRow>
           ))}
         </ul>
       )}
-      {orderError && (
-        <div role="alert" className="surface-error">
-          Could not reorder this Stage: {orderError}
-        </div>
+
+      {orderFailed && (
+        <Alert>
+          Couldn&apos;t reorder this Stage. Nothing changed; check your
+          connection and try again.
+        </Alert>
       )}
+
       {!structuralReadOnly && (
         <StageItemIntake
           stageId={stage.id}
+          learningPlanId={stage.learningPlanId}
           user={user}
           onStageChanged={onStageChanged}
         />
@@ -159,32 +208,53 @@ function MoveDirectly({
   onStageChanged: (stage: StageDetail) => void;
 }) {
   const [moving, setMoving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [moved, setMoved] = useState(false);
+  const { refreshStage, refreshFailed } = useStageRefresh({
+    stageId: stage.id,
+    user,
+    onStageChanged,
+  });
 
   async function move() {
+    if (moving) return;
     setMoving(true);
-    setError(null);
+    setFailed(false);
     try {
       await moveLearningPlanItem(user, stage.learningPlanId, itemId, null);
-      onStageChanged(await fetchStage(user, stage.id));
-    } catch (caught: unknown) {
-      setError(String(caught));
+      setMoved(true);
+    } catch {
+      setFailed(true);
+      setMoving(false);
+      return;
     } finally {
       setMoving(false);
     }
+    await refreshStage();
   }
 
   return (
-    <div>
-      <button
+    <div className="grid gap-2">
+      <Button
         type="button"
-        className="quiet-button"
-        disabled={moving}
+        variant="secondary"
+        size="compact"
+        className="min-h-11 sm:min-h-8"
+        disabled={moving || moved}
+        loading={moving}
+        loadingLabel="Moving…"
         onClick={() => void move()}
       >
-        {moving ? "Moving…" : "Move directly in plan"}
-      </button>
-      {error && <span role="alert">Could not move this Item: {error}</span>}
+        <CornerDownLeft aria-hidden="true" />
+        {moved ? "Moved directly" : "Move directly in plan"}
+      </Button>
+      {failed && <Alert>Couldn&apos;t move this Item. Nothing changed.</Alert>}
+      {refreshFailed && (
+        <StageRefreshFailure onRetry={refreshStage}>
+          Item moved directly in the plan. Couldn&apos;t refresh the Stage
+          details.
+        </StageRefreshFailure>
+      )}
     </div>
   );
 }
@@ -196,11 +266,7 @@ interface RemoveFromStageProps {
   onStageChanged: (stage: StageDetail) => void;
 }
 
-/**
- * Take one Item out of this Stage. It unfiles, it does not delete: the Item keeps
- * its Status and its place in All and in every other Stage — which is what makes
- * reorganising free (story 32), and why this needs no confirmation.
- */
+/** Remove only this placement; the shared Item remains in the Library. */
 function RemoveFromStage({
   stageId,
   itemId,
@@ -208,34 +274,39 @@ function RemoveFromStage({
   onStageChanged,
 }: RemoveFromStageProps) {
   const [removing, setRemoving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   async function remove() {
+    if (removing) return;
     setRemoving(true);
-    setError(null);
+    setFailed(false);
     try {
       onStageChanged(await removeItemFromStage(user, stageId, itemId));
-    } catch (caught: unknown) {
-      setError(String(caught));
+    } catch {
+      setFailed(true);
     } finally {
       setRemoving(false);
     }
   }
 
   return (
-    <div className="stage-view__remove">
-      <button
+    <div className="grid gap-2">
+      <Button
         type="button"
-        disabled={removing}
+        variant="quiet-destructive"
+        size="compact"
+        className="min-h-11 sm:min-h-8"
+        loading={removing}
+        loadingLabel="Removing…"
         onClick={() => void remove()}
-        className="quiet-button"
       >
-        {removing ? "Removing…" : "Remove from stage"}
-      </button>
-      {error && (
-        <div role="alert" className="surface-error">
-          Could not remove from the stage: {error}
-        </div>
+        <Trash2 aria-hidden="true" />
+        Remove from stage
+      </Button>
+      {failed && (
+        <Alert>
+          Couldn&apos;t remove this Item from the Stage. Nothing changed.
+        </Alert>
       )}
     </div>
   );

@@ -40,10 +40,12 @@ export function applyThemePreference({
   preference: ThemePreference;
   systemPrefersDark: boolean;
 }): void {
-  document.documentElement.dataset.theme = resolvedTheme({
+  const theme = resolvedTheme({
     preference,
     systemPrefersDark,
   });
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
 export function persistThemePreference(preference: ThemePreference): void {

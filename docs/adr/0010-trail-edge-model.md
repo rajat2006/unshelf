@@ -1,5 +1,11 @@
 # The Trail persists as an adjacency edge list; layout is derived, not stored
 
+> **Canvas styling superseded.** ADR-0019 and the production sources reached
+> through `apps/web/components.json` now own current canvas presentation. The
+> Adventure map and Quiet Focus styling notes below are historical; the topology,
+> derived-layout, and behavior-coupled geometry decisions continue through the
+> Learning Plan model recorded in ADR-0018.
+
 The Trail is a topology of Stops — sequence with parallel forks, a DAG, no dates,
 one Trail per User (ADR-0004, the #14 PRD, glossary *Trail*). The PRD deferred the
 Trail's edge/DAG persistence shape and its authoring interaction to a throwaway
