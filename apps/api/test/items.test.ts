@@ -669,6 +669,27 @@ describe("GET /api/items — All", () => {
     expect(titles).toContain("Two");
   });
 
+  it("includes derived Structured Item progress for Library presentations", async () => {
+    const clerkUserId = "clerk_all_structured_progress";
+    const item = (
+      await capture(clerkUserId, { title: "Structured course", type: "course" })
+    ).body as Item;
+    const structured = await request(app)
+      .post(`/api/items/${item.id}/parts`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ titles: ["First", "Second"] });
+    await request(app)
+      .patch(
+        `/api/items/${item.id}/parts/${structured.body.parts[0].id}/completion`,
+      )
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ completed: true });
+
+    const listed = (await listAll(clerkUserId)).body as Item[];
+
+    expect(listed[0].partPercentage).toBe(50);
+  });
+
   it("lists recently captured Items first with stable identity as the tie-breaker", async () => {
     const clerkUserId = "clerk_all_recent";
     const first = (

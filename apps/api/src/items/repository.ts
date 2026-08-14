@@ -29,6 +29,7 @@ export interface ItemRow {
   past_target: boolean;
   completed_at: Date | null;
   labels: Label[];
+  part_percentage: number | null;
 }
 
 /**
@@ -75,6 +76,12 @@ export const ITEM_PROJECTION = {
     where item_labels.item_id = items.id
       and item_labels.user_id = items.user_id
   ), '[]'::jsonb)`,
+  part_percentage: sql<number | null>`(
+    select round(100.0 * count(*) filter (where parts.completed) / nullif(count(*), 0))::integer
+    from parts
+    where parts.item_id = items.id
+      and parts.user_id = items.user_id
+  )`,
 } as const;
 
 export const toItem = (row: ItemRow): Item => ({
@@ -92,11 +99,11 @@ export const toItem = (row: ItemRow): Item => ({
     ? new Date(row.completed_at).toISOString()
     : null,
   labels: row.labels,
+  partPercentage: row.part_percentage,
 });
 
 interface ItemDetailRow extends ItemRow {
   parts: Part[];
-  part_percentage: number | null;
 }
 
 const ITEM_DETAIL_PROJECTION = {
@@ -115,18 +122,11 @@ const ITEM_DETAIL_PROJECTION = {
     where parts.item_id = items.id
       and parts.user_id = items.user_id
   ), '[]'::jsonb)`,
-  part_percentage: sql<number | null>`(
-    select round(100.0 * count(*) filter (where parts.completed) / nullif(count(*), 0))::integer
-    from parts
-    where parts.item_id = items.id
-      and parts.user_id = items.user_id
-  )`,
 } as const;
 
 const toItemDetail = (row: ItemDetailRow): ItemDetail => ({
   ...toItem(row),
   parts: row.parts,
-  partPercentage: row.part_percentage,
 });
 
 /**

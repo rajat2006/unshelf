@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Status, type Item, type Label, type LabelId } from "@unshelf/shared";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Search } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
 import { ItemLabels } from "../items/ItemLabels";
-import { ItemSource } from "../items/ItemSource";
 import { ItemStatusSelect } from "../items/ItemStatusSelect";
 import { ItemTargetDate } from "../items/ItemTargetDate";
-import { itemDetailRouteState } from "../items/item-route-state";
-import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
 import { useCapture } from "../shell/useCapture";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
@@ -55,7 +65,6 @@ export function LibrarySurface({
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
-  const location = useLocation();
   const [routeSearchParams, setRouteSearchParams] = useSearchParams();
   const searchParams = useMemo(
     () =>
@@ -181,60 +190,98 @@ export function LibrarySurface({
   );
 
   return (
-    <section className="library-surface" aria-labelledby="library-heading">
-      <header className="editorial-heading library-surface__heading">
-        <div>
-          <p className="editorial-eyebrow">Variant D · Global room</p>
-          <h1 id="library-heading">Library</h1>
-          <p className="editorial-intro">
+    <section
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      aria-labelledby="library-heading"
+      aria-busy={displayedState.status === "loading"}
+    >
+      <header className="grid gap-2">
+        <div className="grid gap-1">
+          <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+            Your collection
+          </p>
+          <h1
+            id="library-heading"
+            className="m-0 font-serif text-4xl leading-tight font-semibold tracking-tight sm:text-5xl"
+          >
+            Library
+          </h1>
+          <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
             A passive catalog of every Item, whether committed or not.
           </p>
         </div>
       </header>
       {displayedState.status === "loading" && <LibrarySkeleton />}
       {displayedState.status === "error" && (
-        <div role="alert">
-          <p>Couldn&apos;t load this</p>
-          <button type="button" onClick={() => void load()}>
+        <Alert className="grid max-w-xl gap-3 p-4">
+          <div>
+            <p className="m-0 font-semibold">Couldn&apos;t load your Library</p>
+            <p className="mt-1 mb-0 text-destructive/85">
+              Your other rooms are still available. Try loading this room again.
+            </p>
+          </div>
+          <Button
+            className="w-fit"
+            type="button"
+            variant="secondary"
+            onClick={() => void load()}
+          >
             Retry
-          </button>
-        </div>
+          </Button>
+        </Alert>
       )}
       {displayedState.status === "ready" &&
         displayedState.items.length === 0 && (
-          <div className="library-empty">
-            <p>Nothing captured yet</p>
-            <button type="button" onClick={capture.open}>
+          <div className="grid justify-items-start gap-3 rounded-[var(--radius-panel)] border bg-card p-6 sm:p-8">
+            <div>
+              <h2 className="m-0 font-serif text-2xl">Nothing captured yet</h2>
+              <p className="mt-2 mb-0 text-muted-foreground">
+                Capture your first Item to begin a durable learning collection.
+              </p>
+            </div>
+            <Button type="button" onClick={capture.open}>
               Capture your first Item
-            </button>
+            </Button>
           </div>
         )}
       {displayedState.status === "ready" && displayedState.items.length > 0 && (
-        <div className="library-catalog">
-          <section
-            className="library-catalog__results"
-            aria-label="Library catalog"
-          >
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]">
+          <section className="grid min-w-0 gap-4" aria-label="Library catalog">
             {labelFilterEnabled && (
-              <div className="library-catalog__toolbar">
-                <label>
-                  <span className="visually-hidden">Search Library</span>
-                  <input
-                    type="search"
-                    value={rawQuery}
-                    onChange={(event) => searchLibrary(event.target.value)}
-                    placeholder="Search every Item…"
-                    aria-label="Search Library"
-                  />
-                </label>
+              <div className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4">
+                <Field>
+                  <FieldLabel htmlFor="library-search">
+                    Search Library
+                  </FieldLabel>
+                  <div className="relative">
+                    <Search
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      id="library-search"
+                      type="search"
+                      value={rawQuery}
+                      onChange={(event) => searchLibrary(event.target.value)}
+                      placeholder="Search every Item…"
+                      className="pl-9"
+                    />
+                  </div>
+                </Field>
                 <div
-                  className="library-catalog__view-chips"
+                  className="flex max-w-full flex-wrap gap-2"
                   aria-label="Library views"
                 >
                   {LIBRARY_VIEWS.map((view) => (
-                    <button
+                    <Button
                       type="button"
                       key={view.id}
+                      variant={
+                        activeLabelId === null && activeView === view.id
+                          ? "primary"
+                          : "secondary"
+                      }
+                      size="compact"
                       aria-label={`Show ${view.label}`}
                       aria-pressed={
                         activeLabelId === null && activeView === view.id
@@ -242,45 +289,60 @@ export function LibrarySurface({
                       onClick={() => selectView(view.id)}
                     >
                       {view.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 {displayedState.labels.length > 0 && (
-                  <details className="library-catalog__label-filters">
-                    <summary>
-                      {activeLabel ? activeLabel.name : "Labels"}
-                    </summary>
-                    <div>
-                      <button type="button" onClick={() => selectLabel(null)}>
-                        All labels
-                      </button>
-                      {displayedState.labels.map((label) => (
-                        <button
-                          type="button"
-                          key={label.id}
-                          aria-label={`Filter by ${label.name}`}
-                          aria-pressed={label.id === activeLabel?.id}
-                          onClick={() => selectLabel(label.id)}
-                        >
-                          {label.name}
-                        </button>
-                      ))}
-                    </div>
-                  </details>
+                  <Field className="max-w-xs">
+                    <FieldLabel id="library-label-filter">
+                      Filter by Label
+                    </FieldLabel>
+                    <Select
+                      value={activeLabel?.id ?? "all"}
+                      onValueChange={(value) =>
+                        selectLabel(value === "all" ? null : (value as LabelId))
+                      }
+                    >
+                      <SelectTrigger
+                        className="w-full"
+                        aria-labelledby="library-label-filter"
+                      >
+                        <SelectValue placeholder="All Labels" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Labels</SelectItem>
+                        {displayedState.labels.map((label) => (
+                          <SelectItem key={label.id} value={label.id}>
+                            {label.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                 )}
               </div>
             )}
             {filteredEmptyMessage ? (
-              <div className="library-empty">
-                <p>{filteredEmptyMessage}</p>
+              <div className="grid justify-items-start gap-3 rounded-[var(--radius-card)] border border-dashed bg-card p-6">
+                <p className="m-0 text-muted-foreground">
+                  {filteredEmptyMessage}
+                </p>
                 {query.length > 0 ? (
-                  <button type="button" onClick={() => searchLibrary("")}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => searchLibrary("")}
+                  >
                     Clear search
-                  </button>
+                  </Button>
                 ) : (
-                  <button type="button" onClick={() => selectLabel(null)}>
-                    Clear filter
-                  </button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => selectLabel(null)}
+                  >
+                    Clear Label filter
+                  </Button>
                 )}
               </div>
             ) : (
@@ -293,50 +355,38 @@ export function LibrarySurface({
           </section>
           {selectedItem && (
             <aside
-              className="library-catalog__preview"
-              aria-label="Item preview"
+              className="grid min-w-0 gap-5 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-5 lg:sticky lg:top-24"
+              aria-label={`Edit ${selectedItem.title}`}
             >
-              <span>{TYPE_LABELS[selectedItem.type]}</span>
-              <h2>{selectedItem.title}</h2>
-              <p className="library-catalog__preview-summary">
-                {STATUS_LABELS[selectedItem.status]}
-                {selectedItem.targetDate
-                  ? ` · Target ${selectedItem.targetDate}`
-                  : ""}
-              </p>
-              <div className="library-catalog__preview-actions">
-                <Link
-                  to={`/items/${selectedItem.id}`}
-                  state={itemDetailRouteState(location)}
-                >
-                  Open Item
-                </Link>
-                <span>{STATUS_LABELS[selectedItem.status]}</span>
+              <div>
+                <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                  Shared Item details
+                </p>
+                <h2 className="mt-1 mb-0 font-serif text-2xl leading-tight">
+                  {selectedItem.title}
+                </h2>
+                <p className="mt-2 mb-0 text-sm leading-relaxed text-muted-foreground">
+                  Changes here appear everywhere this Item is used.
+                </p>
               </div>
-              <details className="library-catalog__preview-editor">
-                <summary>Edit Item details</summary>
-                <div className="library-catalog__preview-controls">
-                  <ItemStatusSelect
-                    item={selectedItem}
-                    user={user}
-                    onChanged={replaceItem}
-                  />
-                  <ItemTargetDate
-                    item={selectedItem}
-                    user={user}
-                    onChanged={replaceItem}
-                  />
-                  <ItemLabels
-                    item={selectedItem}
-                    labels={displayedState.labels}
-                    user={user}
-                    onItemChanged={replaceItem}
-                  />
-                </div>
-              </details>
-              {selectedItem.source && (
-                <ItemSource source={selectedItem.source} />
-              )}
+              <div className="grid gap-5">
+                <ItemStatusSelect
+                  item={selectedItem}
+                  user={user}
+                  onChanged={replaceItem}
+                />
+                <ItemTargetDate
+                  item={selectedItem}
+                  user={user}
+                  onChanged={replaceItem}
+                />
+                <ItemLabels
+                  item={selectedItem}
+                  labels={displayedState.labels}
+                  user={user}
+                  onItemChanged={replaceItem}
+                />
+              </div>
             </aside>
           )}
         </div>
@@ -385,16 +435,16 @@ function replaceItemInLibraryState(
 
 function LibrarySkeleton() {
   return (
-    <div
-      className="library-skeleton"
-      role="status"
-      aria-label="Loading Library"
-    >
+    <div className="grid gap-3" role="status" aria-label="Loading Library">
       {[0, 1, 2].map((row) => (
-        <div className="library-skeleton__row" aria-hidden="true" key={row}>
-          <span />
-          <span />
-          <span />
+        <div
+          className="grid min-h-40 gap-3 rounded-[var(--radius-card)] border bg-card p-4"
+          aria-hidden="true"
+          key={row}
+        >
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-5 w-full max-w-96" />
+          <Skeleton className="h-4 w-full max-w-64" />
         </div>
       ))}
     </div>

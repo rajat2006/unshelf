@@ -16,19 +16,22 @@ export function useItemStatusMutation({
   onChanged,
 }: ItemStatusMutationInput) {
   const [saving, setSaving] = useState(false);
+  const [failedStatus, setFailedStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const changeStatus = async (status: Status) => {
     setSaving(true);
+    setFailedStatus(null);
     setError(null);
     try {
       onChanged(await updateItemStatus(user, item.id, status));
     } catch (caught: unknown) {
+      setFailedStatus(status);
       setError(String(caught));
     } finally {
       setSaving(false);
     }
   };
 
-  return { changeStatus, error, saving };
+  return { changeStatus, error, failedStatus, saving };
 }

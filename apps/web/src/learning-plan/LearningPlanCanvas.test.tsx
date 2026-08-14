@@ -49,6 +49,7 @@ const directItemNode = ({
     pastTarget: false,
     completedAt: null,
     labels: [],
+    partPercentage: null,
   },
 });
 

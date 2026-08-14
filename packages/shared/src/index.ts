@@ -172,6 +172,8 @@ export interface Item {
   completedAt: string | null;
   /** The private Labels currently applied to this Item. */
   labels: Label[];
+  /** Derived completion percentage for a Structured Item, or null without Parts. */
+  partPercentage: number | null;
 }
 
 /** One lightweight checklist entry owned by an Item. */
@@ -186,7 +188,6 @@ export interface Part {
 /** Canonical Item detail, including structure that is not a Library row. */
 export interface ItemDetail extends Item {
   parts: Part[];
-  partPercentage: number | null;
 }
 
 /** Derive completion for any current selection of shared Items. */

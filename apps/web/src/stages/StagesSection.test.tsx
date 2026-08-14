@@ -47,6 +47,7 @@ const item: Item = {
   pastTarget: false,
   completedAt: null,
   labels: [],
+  partPercentage: null,
 };
 
 const renderStages = (openStage: StageDetail | null) =>

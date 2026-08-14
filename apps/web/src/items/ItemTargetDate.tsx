@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import { CalendarClock } from "lucide-react";
 import type { Item } from "@unshelf/shared";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { updateItemTargetDate } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 
@@ -19,56 +25,77 @@ interface ItemTargetDateProps {
  * stages: no red, no warning icon, no count of days. Unshelf never nags.
  */
 export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
+  const inputId = useId();
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failedTargetDate, setFailedTargetDate] = useState<string | null>();
 
   async function change(targetDate: string | null) {
     setSaving(true);
-    setError(null);
+    setFailedTargetDate(undefined);
     try {
       onChanged(await updateItemTargetDate(user, item.id, targetDate));
-    } catch (caught: unknown) {
-      setError(String(caught));
+    } catch {
+      setFailedTargetDate(targetDate);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="item-control-row">
-      <label className="item-control-label">
-        <span className="item-control-caption">Target date</span>
-        <input
+    <Field>
+      <FieldLabel htmlFor={inputId}>Target date</FieldLabel>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id={inputId}
           aria-label={`Target date for ${item.title}`}
           type="date"
           value={item.targetDate ?? ""}
           disabled={saving}
           onChange={(event) => void change(event.target.value || null)}
-          className="item-control-input"
+          className="w-auto min-w-40"
         />
         {item.targetDate && (
-          <button
+          <Button
             type="button"
+            variant="quiet"
+            size="compact"
             disabled={saving}
             onClick={() => void change(null)}
-            className="item-control-button"
           >
             Clear
-          </button>
+          </Button>
         )}
         {item.pastTarget && <PastTarget />}
-        {saving && <span className="item-control-caption">Saving…</span>}
-      </label>
-      {error && (
-        <div role="alert" className="item-control-error">
-          Could not change the Target date: {error}
-        </div>
+      </div>
+      {saving && (
+        <FieldDescription role="status">Saving Target date…</FieldDescription>
       )}
-    </div>
+      {failedTargetDate !== undefined && (
+        <Alert className="grid gap-2">
+          <span>
+            Couldn’t update Target date. Your previous date is unchanged.
+          </span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="compact"
+            className="w-fit"
+            onClick={() => void change(failedTargetDate)}
+          >
+            Retry Target date
+          </Button>
+        </Alert>
+      )}
+    </Field>
   );
 }
 
 /** The derived past-target state: something you notice, not something that shouts. */
 function PastTarget() {
-  return <span className="past-target">Past target</span>;
+  return (
+    <Badge variant="past">
+      <CalendarClock aria-hidden="true" />
+      Past target
+    </Badge>
+  );
 }

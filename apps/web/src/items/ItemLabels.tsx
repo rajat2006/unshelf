@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import type { Item, Label, LabelId } from "@unshelf/shared";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { CurrentUser } from "../application-auth/types";
 import { applyLabelToItem, removeLabelFromItem } from "../api";
 
@@ -54,18 +64,19 @@ export function ItemLabels({
 
   return (
     <fieldset
-      className="item-labels"
+      className="grid min-w-0 gap-2 border-0 p-0"
       aria-label={`Labels for ${item.title}`}
       disabled={pending}
     >
-      <legend>Labels</legend>
-      <div className="item-labels__applied">
+      <legend className="mb-2 text-sm font-medium">Labels</legend>
+      <div className="flex flex-wrap gap-2">
         {item.labels.length === 0 && (
-          <span className="item-control-caption">No Labels</span>
+          <span className="text-sm text-muted-foreground">No Labels</span>
         )}
         {item.labels.map((label) => (
-          <button
-            className="item-label-chip"
+          <Button
+            variant="secondary"
+            size="compact"
             type="button"
             key={label.id}
             aria-label={`Remove ${label.name}`}
@@ -76,36 +87,49 @@ export function ItemLabels({
               )
             }
           >
-            {label.name} <span aria-hidden="true">×</span>
-          </button>
+            {label.name} <X aria-hidden="true" />
+          </Button>
         ))}
       </div>
-      <div className="item-labels__control">
-        <select
-          aria-label={`Add a Label to ${item.title}`}
+      <div className="flex min-w-0 flex-wrap gap-2">
+        <Select
           value={selectedId ?? ""}
-          onChange={(event) =>
-            setSelectedId(
-              event.target.value ? (event.target.value as LabelId) : null,
-            )
-          }
+          disabled={pending || available.length === 0}
+          onValueChange={(value) => setSelectedId(value as LabelId)}
         >
-          <option value="">Choose Label</option>
-          {available.map((label) => (
-            <option value={label.id} key={label.id}>
-              {label.name}
-            </option>
-          ))}
-        </select>
-        <button
+          <SelectTrigger
+            className="min-w-0 flex-1"
+            aria-label={`Add a Label to ${item.title}`}
+          >
+            <SelectValue
+              placeholder={
+                available.length > 0 ? "Choose Label" : "No Labels available"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {available.map((label) => (
+              <SelectItem value={label.id} key={label.id}>
+                {label.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
           type="button"
+          variant="secondary"
           disabled={!selectedId}
           onClick={() => void applySelected()}
         >
           Apply Label
-        </button>
+        </Button>
       </div>
-      {failed && <p role="alert">Couldn&apos;t update Labels</p>}
+      {pending && (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Updating Labels…
+        </p>
+      )}
+      {failed && <Alert>Couldn&apos;t update Labels. Try again.</Alert>}
     </fieldset>
   );
 }
