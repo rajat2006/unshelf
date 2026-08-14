@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Check,
-  LibraryBig,
-  LoaderCircle,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Check, LibraryBig, Plus, Search, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import type {
   ItemId,
@@ -193,17 +186,12 @@ export function PlanLibraryDrawer({
                           size="compact"
                           className="min-h-11 sm:min-h-8"
                           disabled={busyItemId !== null}
+                          loading={pending}
+                          loadingLabel="Placing…"
                           onClick={() => void changeDirectPlacement(candidate)}
                         >
-                          {pending ? (
-                            <LoaderCircle
-                              aria-hidden="true"
-                              className="animate-spin motion-reduce:animate-none"
-                            />
-                          ) : (
-                            <Plus aria-hidden="true" />
-                          )}
-                          {pending ? "Placing…" : "Place directly"}
+                          <Plus aria-hidden="true" />
+                          Place directly
                         </Button>
                       ) : candidate.kind === "direct" ? (
                         <>
@@ -217,20 +205,15 @@ export function PlanLibraryDrawer({
                             size="compact"
                             className="min-h-11 text-destructive hover:bg-destructive/8 hover:text-destructive sm:min-h-8"
                             disabled={busyItemId !== null}
+                            loading={pending}
+                            loadingLabel="Removing…"
                             aria-label={`Remove ${candidate.item.title} from this Learning Plan`}
                             onClick={() =>
                               void changeDirectPlacement(candidate)
                             }
                           >
-                            {pending ? (
-                              <LoaderCircle
-                                aria-hidden="true"
-                                className="animate-spin motion-reduce:animate-none"
-                              />
-                            ) : (
-                              <Trash2 aria-hidden="true" />
-                            )}
-                            {pending ? "Removing…" : "Remove"}
+                            <Trash2 aria-hidden="true" />
+                            Remove
                           </Button>
                         </>
                       ) : (

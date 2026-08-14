@@ -24,4 +24,18 @@ describe("Button", () => {
     expect(normal).toContain('data-size="default"');
     expect(compact).toContain('data-size="compact"');
   });
+
+  it("keeps a loading action sized, announced, and unavailable", () => {
+    const markup = renderToStaticMarkup(
+      <Button loading loadingLabel="Saving changes…">
+        Save changes
+      </Button>,
+    );
+
+    expect(markup).toContain("Save changes");
+    expect(markup).toContain("Saving changes…");
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("motion-reduce:animate-none");
+  });
 });

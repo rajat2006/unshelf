@@ -1,12 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import type { LearningPlan } from "@unshelf/shared";
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowRight,
-  LoaderCircle,
-  Plus,
-} from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Plus } from "lucide-react";
 import { Link } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -190,7 +184,9 @@ function LearningPlanListItem({
             variant="quiet"
             size="compact"
             disabled={pending}
-            className="-mt-1 -mr-2 grid h-11 min-w-32 grid-cols-1 sm:h-8"
+            loading={pending}
+            loadingLabel={`${pendingLabel}…`}
+            className="-mt-1 -mr-2 h-11 min-w-32 sm:h-8"
             aria-label={
               pending
                 ? `${pendingLabel} ${learningPlan.name}…`
@@ -198,23 +194,8 @@ function LearningPlanListItem({
             }
             onClick={() => void runLifecycleAction()}
           >
-            <span
-              aria-hidden={pending}
-              className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${pending ? "invisible" : ""}`}
-            >
-              <ActionIcon aria-hidden="true" />
-              {actionLabel}
-            </span>
-            <span
-              aria-hidden={!pending}
-              className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${pending ? "" : "invisible"}`}
-            >
-              <LoaderCircle
-                aria-hidden="true"
-                className="animate-spin motion-reduce:animate-none"
-              />
-              {pendingLabel}…
-            </span>
+            <ActionIcon aria-hidden="true" />
+            {actionLabel}
           </Button>
         </div>
 
@@ -343,25 +324,12 @@ function NewLearningPlanForm({
         type="submit"
         size="touch"
         disabled={creating}
-        className="grid min-w-48 grid-cols-1 sm:h-10"
+        loading={creating}
+        loadingLabel="Creating Learning Plan…"
+        className="min-w-48 sm:h-10"
       >
-        <span
-          aria-hidden={creating}
-          className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${creating ? "invisible" : ""}`}
-        >
-          <Plus aria-hidden="true" />
-          Start a Learning Plan
-        </span>
-        <span
-          aria-hidden={!creating}
-          className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${creating ? "" : "invisible"}`}
-        >
-          <LoaderCircle
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-          />
-          Creating Learning Plan…
-        </span>
+        <Plus aria-hidden="true" />
+        Start a Learning Plan
       </Button>
       {requestFailed && (
         <Alert className="sm:col-span-2">

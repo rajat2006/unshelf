@@ -6,13 +6,7 @@ import {
   type StageDetail,
   type StageId,
 } from "@unshelf/shared";
-import {
-  ArrowDown,
-  ArrowUp,
-  CornerDownLeft,
-  LoaderCircle,
-  Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, CornerDownLeft, Trash2 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -143,16 +137,11 @@ export function StageView({
                       className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"
                       aria-label={`Move ${item.title} up`}
                       disabled={orderingItemId !== null || index === 0}
+                      loading={orderingItemId === item.id}
+                      loadingLabel={<span className="sr-only">Moving…</span>}
                       onClick={() => void moveInOrder(item.id, -1)}
                     >
-                      {orderingItemId === item.id ? (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      ) : (
-                        <ArrowUp aria-hidden="true" />
-                      )}
+                      <ArrowUp aria-hidden="true" />
                     </Button>
                     <Button
                       type="button"
@@ -164,16 +153,11 @@ export function StageView({
                         orderingItemId !== null ||
                         index === stage.items.length - 1
                       }
+                      loading={orderingItemId === item.id}
+                      loadingLabel={<span className="sr-only">Moving…</span>}
                       onClick={() => void moveInOrder(item.id, 1)}
                     >
-                      {orderingItemId === item.id ? (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      ) : (
-                        <ArrowDown aria-hidden="true" />
-                      )}
+                      <ArrowDown aria-hidden="true" />
                     </Button>
                   </div>
                   <MoveDirectly
@@ -259,21 +243,12 @@ function MoveDirectly({
         size="compact"
         className="min-h-11 sm:min-h-8"
         disabled={moving || moved}
+        loading={moving}
+        loadingLabel="Moving…"
         onClick={() => void move()}
       >
-        {moving ? (
-          <LoaderCircle
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-          />
-        ) : (
-          <CornerDownLeft aria-hidden="true" />
-        )}
-        {moving
-          ? "Moving…"
-          : moved
-            ? "Moved directly"
-            : "Move directly in plan"}
+        <CornerDownLeft aria-hidden="true" />
+        {moved ? "Moved directly" : "Move directly in plan"}
       </Button>
       {failed && <Alert>Couldn&apos;t move this Item. Nothing changed.</Alert>}
       {refreshFailed && (
@@ -324,17 +299,12 @@ function RemoveFromStage({
         size="compact"
         className="min-h-11 text-destructive hover:bg-destructive/8 hover:text-destructive sm:min-h-8"
         disabled={removing}
+        loading={removing}
+        loadingLabel="Removing…"
         onClick={() => void remove()}
       >
-        {removing ? (
-          <LoaderCircle
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-          />
-        ) : (
-          <Trash2 aria-hidden="true" />
-        )}
-        {removing ? "Removing…" : "Remove from stage"}
+        <Trash2 aria-hidden="true" />
+        Remove from stage
       </Button>
       {failed && (
         <Alert>

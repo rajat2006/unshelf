@@ -6,14 +6,7 @@ import type {
   StageId,
   StageItemCandidate,
 } from "@unshelf/shared";
-import {
-  ArrowRightLeft,
-  Check,
-  LoaderCircle,
-  Plus,
-  RotateCcw,
-  Search,
-} from "lucide-react";
+import { ArrowRightLeft, Check, Plus, RotateCcw, Search } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -281,17 +274,12 @@ export function StageItemIntake({
                         size="compact"
                         className="min-h-11 sm:min-h-8"
                         disabled={pendingItemId !== null}
+                        loading={isPending}
+                        loadingLabel="Undoing…"
                         onClick={() => void undo()}
                       >
-                        {isPending ? (
-                          <LoaderCircle
-                            aria-hidden="true"
-                            className="animate-spin motion-reduce:animate-none"
-                          />
-                        ) : (
-                          <RotateCcw aria-hidden="true" />
-                        )}
-                        {isPending ? "Undoing…" : "Undo"}
+                        <RotateCcw aria-hidden="true" />
+                        Undo
                       </Button>
                     </>
                   ) : conflict ? (
@@ -301,17 +289,12 @@ export function StageItemIntake({
                       size="compact"
                       className="min-h-11 sm:min-h-8"
                       disabled={pendingItemId !== null}
+                      loading={isPending}
+                      loadingLabel="Moving…"
                       onClick={() => void moveHere(candidate)}
                     >
-                      {isPending ? (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      ) : (
-                        <ArrowRightLeft aria-hidden="true" />
-                      )}
-                      {isPending ? "Moving…" : "Move to this Stage"}
+                      <ArrowRightLeft aria-hidden="true" />
+                      Move to this Stage
                     </Button>
                   ) : (
                     <Button
@@ -319,17 +302,12 @@ export function StageItemIntake({
                       size="compact"
                       className="min-h-11 sm:min-h-8"
                       disabled={pendingItemId !== null}
+                      loading={isPending}
+                      loadingLabel="Adding…"
                       onClick={() => void add(candidate)}
                     >
-                      {isPending ? (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      ) : (
-                        <Plus aria-hidden="true" />
-                      )}
-                      {isPending ? "Adding…" : "Add to this Stage"}
+                      <Plus aria-hidden="true" />
+                      Add to this Stage
                     </Button>
                   )}
 

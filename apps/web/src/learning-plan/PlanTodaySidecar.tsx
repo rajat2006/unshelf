@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Check, LoaderCircle, Plus } from "lucide-react";
+import { CalendarCheck, Check, Plus } from "lucide-react";
 import { Link } from "react-router";
 import {
   PlanNodeKind,
@@ -194,6 +194,8 @@ export function PlanTodaySidecar({
                               size="compact"
                               className="min-h-11 sm:min-h-8"
                               disabled={addingId !== null}
+                              loading={pending}
+                              loadingLabel="Adding…"
                               aria-label={
                                 pending
                                   ? `Adding ${item.title} to Today…`
@@ -201,15 +203,8 @@ export function PlanTodaySidecar({
                               }
                               onClick={() => void add(plannedItem)}
                             >
-                              {pending ? (
-                                <LoaderCircle
-                                  aria-hidden="true"
-                                  className="animate-spin motion-reduce:animate-none"
-                                />
-                              ) : (
-                                <Plus aria-hidden="true" />
-                              )}
-                              {pending ? "Adding…" : "Add to Today"}
+                              <Plus aria-hidden="true" />
+                              Add to Today
                             </Button>
                           )}
                           {selected && (

@@ -115,9 +115,7 @@ export function DailyFocusHistorySurface({
           onSubmit={browse}
         >
           <Field className="sm:w-52">
-            <FieldLabel htmlFor="daily-focus-date">
-              Daily Focus date
-            </FieldLabel>
+            <FieldLabel htmlFor="daily-focus-date">Daily Focus date</FieldLabel>
             <Input
               id="daily-focus-date"
               type="date"
@@ -216,13 +214,13 @@ export function DailyFocusHistorySurface({
                                 size="compact"
                                 className="min-h-11 min-w-32 sm:min-h-8"
                                 disabled={addingItemId === item.id}
+                                loading={addingItemId === item.id}
+                                loadingLabel="Adding…"
                                 onClick={() => void reconsider(item.id)}
                                 aria-label={`Add ${item.title} to Today`}
                               >
                                 <Plus aria-hidden="true" />
-                                {addingItemId === item.id
-                                  ? "Adding…"
-                                  : "Add to Today"}
+                                Add to Today
                               </Button>
                             ))}
                         </div>

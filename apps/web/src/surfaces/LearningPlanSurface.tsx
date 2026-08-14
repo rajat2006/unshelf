@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { ArrowLeft, LoaderCircle, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import type {
   LearningPlan,
@@ -211,15 +211,11 @@ export function LearningPlanSurface({
                       type="submit"
                       variant="secondary"
                       disabled={renaming}
+                      loading={renaming}
+                      loadingLabel="Renaming…"
                       className="min-w-32"
                     >
-                      {renaming && (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      )}
-                      {renaming ? "Renaming…" : "Save name"}
+                      Save name
                     </Button>
                     {renameFailed && (
                       <Alert className="sm:col-span-2">

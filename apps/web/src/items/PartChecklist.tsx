@@ -183,8 +183,10 @@ export function PartChecklist({ item, user, onChanged }: PartChecklistProps) {
           variant="secondary"
           className="min-h-11 w-fit sm:min-h-10"
           disabled={adding}
+          loading={adding}
+          loadingLabel="Adding Parts…"
         >
-          {adding ? "Adding Parts…" : "Add Parts"}
+          Add Parts
         </Button>
       </form>
     </section>

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { LoaderCircle } from "lucide-react";
 import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
@@ -37,10 +38,16 @@ function Button({
   variant = "primary",
   size = "default",
   asChild = false,
+  children,
+  disabled,
+  loading = false,
+  loadingLabel,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    loading?: boolean;
+    loadingLabel?: React.ReactNode;
   }) {
   const Component = asChild ? Slot.Root : "button";
 
@@ -50,8 +57,39 @@ function Button({
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       {...props}
-    />
+    >
+      {loadingLabel === undefined ? (
+        children
+      ) : (
+        <span className="grid grid-cols-1">
+          <span
+            aria-hidden={loading || undefined}
+            className={cn(
+              "col-start-1 row-start-1 inline-flex items-center justify-center gap-2",
+              loading && "invisible",
+            )}
+          >
+            {children}
+          </span>
+          <span
+            aria-hidden={!loading || undefined}
+            className={cn(
+              "col-start-1 row-start-1 inline-flex items-center justify-center gap-2",
+              !loading && "invisible",
+            )}
+          >
+            <LoaderCircle
+              aria-hidden="true"
+              className="animate-spin motion-reduce:animate-none"
+            />
+            {loadingLabel}
+          </span>
+        </span>
+      )}
+    </Component>
   );
 }
 

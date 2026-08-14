@@ -379,9 +379,11 @@ export function TodaySurface() {
                     variant="secondary"
                     className="min-w-24 w-fit"
                     disabled={focusRetrying}
+                    loading={focusRetrying}
+                    loadingLabel="Retrying…"
                     onClick={() => void retryFocus()}
                   >
-                    {focusRetrying ? "Retrying…" : "Retry"}
+                    Retry
                   </Button>
                 </Alert>
               ) : (
@@ -459,16 +461,18 @@ export function TodaySurface() {
                                       pendingAction?.kind === "remove" &&
                                       pendingAction.itemId === item.id
                                     }
+                                    loading={
+                                      pendingAction?.kind === "remove" &&
+                                      pendingAction.itemId === item.id
+                                    }
+                                    loadingLabel="Removing…"
                                     onClick={() =>
                                       void remove(state.focus, item)
                                     }
                                     aria-label={`Remove ${item.title} from Today`}
                                   >
                                     <Trash2 aria-hidden="true" />
-                                    {pendingAction?.kind === "remove" &&
-                                    pendingAction.itemId === item.id
-                                      ? "Removing…"
-                                      : "Remove"}
+                                    Remove
                                   </Button>
                                 </div>
                               </div>
@@ -517,9 +521,11 @@ export function TodaySurface() {
                     variant="secondary"
                     className="min-w-24 w-fit"
                     disabled={planningRetrying}
+                    loading={planningRetrying}
+                    loadingLabel="Retrying…"
                     onClick={() => void retryPlanning()}
                   >
-                    {planningRetrying ? "Retrying…" : "Retry"}
+                    Retry
                   </Button>
                 </Alert>
               )}
@@ -717,14 +723,16 @@ export function TodaySurface() {
                                     pendingAction?.kind === "suppress" &&
                                     pendingAction.itemId === suggestion.item.id
                                   }
+                                  loading={
+                                    pendingAction?.kind === "suppress" &&
+                                    pendingAction.itemId === suggestion.item.id
+                                  }
+                                  loadingLabel="Updating…"
                                   onClick={() => void suppress(suggestion.item)}
                                   aria-label={`Not today for ${suggestion.item.title}`}
                                 >
                                   <X aria-hidden="true" />
-                                  {pendingAction?.kind === "suppress" &&
-                                  pendingAction.itemId === suggestion.item.id
-                                    ? "Updating…"
-                                    : "Not today"}
+                                  Not today
                                 </Button>
                               </div>
                             </div>
@@ -785,11 +793,13 @@ function PlanningAddButton({
       size="compact"
       className="min-h-11 min-w-24 sm:min-h-8"
       disabled={pending}
+      loading={pending}
+      loadingLabel="Adding…"
       onClick={onAdd}
       aria-label={`Add ${item.title} to Today`}
     >
       <Plus aria-hidden="true" />
-      {pending ? "Adding…" : "Add"}
+      Add
     </Button>
   );
 }
@@ -819,6 +829,8 @@ function TodayStatusButton({
         size="compact"
         className="min-h-11 min-w-28 sm:min-h-8"
         disabled={saving}
+        loading={saving}
+        loadingLabel="Saving…"
         onClick={() => void changeStatus(nextStatus)}
         aria-label={
           item.status === Status.Done
@@ -831,7 +843,7 @@ function TodayStatusButton({
         ) : (
           <Check aria-hidden="true" />
         )}
-        {saving ? "Saving…" : item.status === Status.Done ? "Reopen" : "Done"}
+        {item.status === Status.Done ? "Reopen" : "Done"}
       </Button>
       {error && (
         <span className="sr-only" role="alert">

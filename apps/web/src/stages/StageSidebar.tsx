@@ -12,7 +12,7 @@ import type {
   StageId,
   LearningPlanId,
 } from "@unshelf/shared";
-import { LoaderCircle, Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -243,17 +243,12 @@ export function StageSidebar({
                 type="submit"
                 variant="secondary"
                 disabled={renaming}
+                loading={renaming}
+                loadingLabel="Renaming…"
                 className="w-fit min-w-36"
               >
-                {renaming ? (
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="animate-spin motion-reduce:animate-none"
-                  />
-                ) : (
-                  <Pencil aria-hidden="true" />
-                )}
-                {renaming ? "Renaming…" : "Rename Stage"}
+                <Pencil aria-hidden="true" />
+                Rename Stage
               </Button>
               {renameFailed && (
                 <Alert>
@@ -304,14 +299,10 @@ export function StageSidebar({
                       type="button"
                       variant="destructive"
                       disabled={removing}
+                      loading={removing}
+                      loadingLabel="Removing Items…"
                       onClick={() => void remove("remove_from_plan")}
                     >
-                      {removing && (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="animate-spin motion-reduce:animate-none"
-                        />
-                      )}
                       Remove Items from plan
                     </Button>
                     <Button

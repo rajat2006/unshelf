@@ -1,6 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
-import { LoaderCircle } from "lucide-react";
 import { captureItem } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { Alert } from "../components/ui/alert";
@@ -196,24 +195,11 @@ function CaptureComposer({
           type="submit"
           size="touch"
           disabled={saving}
-          className="grid min-w-40 grid-cols-1 justify-self-start sm:h-10"
+          loading={saving}
+          loadingLabel="Adding to Library…"
+          className="min-w-40 justify-self-start sm:h-10"
         >
-          <span
-            aria-hidden={saving}
-            className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${saving ? "invisible" : ""}`}
-          >
-            Add to Library
-          </span>
-          <span
-            aria-hidden={!saving}
-            className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-2 ${saving ? "" : "invisible"}`}
-          >
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin motion-reduce:animate-none"
-            />
-            Adding to Library…
-          </span>
+          Add to Library
         </Button>
       </form>
     </DialogContent>

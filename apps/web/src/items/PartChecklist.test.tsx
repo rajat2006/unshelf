@@ -18,7 +18,7 @@ import {
   type PartId,
   type UserId,
 } from "@unshelf/shared";
-import { createParts, updatePart } from "../api";
+import { createParts, updatePart, updatePartCompletion } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { PartChecklist } from "./PartChecklist";
 
@@ -26,6 +26,7 @@ vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   createParts: vi.fn(),
   updatePart: vi.fn(),
+  updatePartCompletion: vi.fn(),
 }));
 
 const itemId = "00000000-0000-0000-0000-000000000001" as ItemId;
@@ -132,5 +133,29 @@ describe("Part checklist", () => {
     expect(title).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByText("Enter a Part title.")).toBeVisible();
     expect(updatePart).not.toHaveBeenCalled();
+  });
+
+  it("checks off a Part through the catalogue completion control", async () => {
+    vi.mocked(updatePartCompletion).mockResolvedValue({
+      ...item,
+      parts: [{ ...item.parts[0], completed: true }],
+      partPercentage: 100,
+    });
+    const onChanged = vi.fn();
+    render(<PartChecklist item={item} user={user} onChanged={onChanged} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Foundations" }));
+
+    await waitFor(() =>
+      expect(updatePartCompletion).toHaveBeenCalledWith(
+        user,
+        item.id,
+        item.parts[0].id,
+        true,
+      ),
+    );
+    expect(onChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ partPercentage: 100 }),
+    );
   });
 });
