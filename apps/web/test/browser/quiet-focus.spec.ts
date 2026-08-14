@@ -187,11 +187,15 @@ test("reduced motion removes LearningPlan progress transitions", async ({
 
   expect(
     await page
-      .locator("circle[stroke-dasharray]")
+      .getByRole("progressbar")
       .first()
-      .evaluate((element) =>
-        Number.parseFloat(getComputedStyle(element).transitionDuration),
-      ),
+      .evaluate((element) => {
+        const durations = [element, ...element.querySelectorAll("*")].map(
+          (candidate) =>
+            Number.parseFloat(getComputedStyle(candidate).transitionDuration),
+        );
+        return Math.max(...durations);
+      }),
   ).toBeLessThanOrEqual(0.00001);
 });
 

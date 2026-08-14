@@ -1,4 +1,5 @@
 import {
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -366,7 +367,16 @@ export function LearningPlanCanvas({
 
   if (nodes.length === 0) {
     return (
-      <div className="grid min-h-48 place-items-center rounded-[var(--radius-panel)] border border-dashed bg-muted/40 p-6 text-center">
+      <div
+        aria-busy={busy}
+        className="grid min-h-48 place-items-center rounded-[var(--radius-panel)] border border-dashed bg-muted/40 p-6 text-center"
+      >
+        {busy && (
+          <Badge variant="neutral">
+            <LoaderCircle className="animate-spin motion-reduce:animate-none" />
+            Creating Stage…
+          </Badge>
+        )}
         {draft ? (
           <DraftForm
             busy={busy}
@@ -572,28 +582,31 @@ export function LearningPlanCanvas({
                 const toName = nodeName(nodeById.get(e.toNodeId)!);
                 const accessibleLabel = `Disconnect ${fromName} from ${toName}`;
                 return (
-                  <Button
+                  <Tip
                     key={`x-${e.fromNodeId}-${e.toNodeId}`}
-                    type="button"
-                    title={accessibleLabel}
-                    aria-label={accessibleLabel}
-                    disabled={busy}
-                    variant="secondary"
-                    size="icon"
-                    onPointerDown={(ev) => ev.stopPropagation()}
-                    onClick={() =>
-                      unlink({ from: e.fromNodeId, to: e.toNodeId })
-                    }
-                    className="absolute left-(--learning-plan-x) top-(--learning-plan-y) rounded-full bg-background"
-                    style={
-                      {
-                        "--learning-plan-x": `${(fromPosition.x + toPosition.x) / 2 - 22}px`,
-                        "--learning-plan-y": `${(fromPosition.y + toPosition.y) / 2 - 22}px`,
-                      } as CSSProperties
-                    }
+                    label={accessibleLabel}
                   >
-                    <Unlink />
-                  </Button>
+                    <Button
+                      type="button"
+                      aria-label={accessibleLabel}
+                      disabled={busy}
+                      variant="secondary"
+                      size="icon"
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      onClick={() =>
+                        unlink({ from: e.fromNodeId, to: e.toNodeId })
+                      }
+                      className="absolute left-(--learning-plan-x) top-(--learning-plan-y) rounded-full bg-background"
+                      style={
+                        {
+                          "--learning-plan-x": `${(fromPosition.x + toPosition.x) / 2 - 22}px`,
+                          "--learning-plan-y": `${(fromPosition.y + toPosition.y) / 2 - 22}px`,
+                        } as CSSProperties
+                      }
+                    >
+                      <Unlink />
+                    </Button>
+                  </Tip>
                 );
               })}
           </div>
@@ -1080,6 +1093,7 @@ function WaypointContents({
               stroke={5}
               progress={progressOf(node)}
               track="var(--input)"
+              accessibleLabel={`${name} progress`}
               fill={
                 isFrontier || underway
                   ? "var(--status-progress)"
@@ -1119,6 +1133,7 @@ function DraftForm({
   onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
+  const inputId = useId();
   const [name, setName] = useState("");
   const submit = () => {
     const trimmed = name.trim();
@@ -1132,17 +1147,23 @@ function DraftForm({
       }}
       className="flex max-w-full items-center gap-1"
     >
-      <Input
-        autoFocus
-        value={name}
-        placeholder={placeholder}
-        disabled={busy}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onCancel();
-        }}
-        className="w-36 text-sm"
-      />
+      <Field className="w-36 gap-1 text-left">
+        <FieldLabel htmlFor={inputId} className="text-xs">
+          Stage name
+        </FieldLabel>
+        <Input
+          id={inputId}
+          autoFocus
+          value={name}
+          placeholder={placeholder}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onCancel();
+          }}
+          className="text-sm"
+        />
+      </Field>
       <Button
         type="submit"
         disabled={busy}

@@ -13,6 +13,7 @@ export function ProgressRing({
   track,
   fill,
   center,
+  accessibleLabel,
 }: {
   size: number;
   stroke: number;
@@ -21,12 +22,22 @@ export function ProgressRing({
   track: string;
   fill: string;
   center?: ReactNode;
+  accessibleLabel: string;
 }) {
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, progress));
   return (
-    <svg width={size} height={size} className="block" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      className="block"
+      role="progressbar"
+      aria-label={accessibleLabel}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(clamped * 100)}
+    >
       <circle
         cx={size / 2}
         cy={size / 2}
