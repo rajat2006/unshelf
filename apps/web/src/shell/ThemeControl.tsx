@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import {
   applyThemePreference,
   parseThemePreference,
   persistThemePreference,
@@ -11,6 +18,12 @@ import {
 export function ThemeControl() {
   const [preference, setPreference] =
     useState<ThemePreference>(readThemePreference);
+  const preferenceLabel =
+    preference === "light"
+      ? "Light"
+      : preference === "dark"
+        ? "Dark"
+        : "System";
 
   useEffect(() => {
     const systemTheme = window.matchMedia(SYSTEM_DARK_QUERY);
@@ -29,18 +42,18 @@ export function ThemeControl() {
   }, [preference]);
 
   return (
-    <label className="theme-control">
-      <span className="visually-hidden">Theme</span>
-      <select
-        value={preference}
-        onChange={(event) =>
-          setPreference(parseThemePreference(event.currentTarget.value))
-        }
-      >
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="system">System</option>
-      </select>
-    </label>
+    <Select
+      value={preference}
+      onValueChange={(value) => setPreference(parseThemePreference(value))}
+    >
+      <SelectTrigger aria-label="Theme" size="sm" className="w-[6.5rem]">
+        <SelectValue>{preferenceLabel}</SelectValue>
+      </SelectTrigger>
+      <SelectContent align="end">
+        <SelectItem value="light">Light</SelectItem>
+        <SelectItem value="dark">Dark</SelectItem>
+        <SelectItem value="system">System</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }

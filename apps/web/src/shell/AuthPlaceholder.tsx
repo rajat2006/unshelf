@@ -10,7 +10,7 @@ export function AuthPlaceholder() {
     <div
       role="status"
       aria-label="Loading Unshelf"
-      className="auth-placeholder"
+      className="grid min-h-svh place-items-center p-6"
     >
       <Wordmark />
     </div>

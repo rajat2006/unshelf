@@ -4,7 +4,7 @@ import { BrowserRouter } from "react-router";
 import { App } from "../../src/App";
 import { ApplicationAuthProvider } from "../../src/application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../../src/application-auth/types";
-import "../../src/theme.css";
+import "../../src/styles/globals.css";
 import { selectedTestUser, testBearerToken } from "./harness";
 
 /**
