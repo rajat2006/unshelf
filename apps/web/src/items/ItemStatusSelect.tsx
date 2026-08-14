@@ -47,7 +47,7 @@ export function ItemStatusSelect({
       >
         <SelectTrigger
           aria-label={`Status for ${item.title}`}
-          className="w-full"
+          className="min-h-11 w-full sm:min-h-10"
         >
           <ItemStatusBadge status={item.status} />
         </SelectTrigger>
@@ -78,7 +78,7 @@ export function ItemStatusSelect({
             type="button"
             variant="secondary"
             size="compact"
-            className="w-fit"
+            className="min-h-11 w-fit sm:min-h-8"
             onClick={() => void changeStatus(failedStatus)}
           >
             Retry Status

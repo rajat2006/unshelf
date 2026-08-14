@@ -77,6 +77,7 @@ export function ItemLabels({
           <Button
             variant="secondary"
             size="compact"
+            className="min-h-11 sm:min-h-8"
             type="button"
             key={label.id}
             aria-label={`Remove ${label.name}`}
@@ -98,7 +99,7 @@ export function ItemLabels({
           onValueChange={(value) => setSelectedId(value as LabelId)}
         >
           <SelectTrigger
-            className="min-w-0 flex-1"
+            className="min-h-11 min-w-0 flex-1 sm:min-h-10"
             aria-label={`Add a Label to ${item.title}`}
           >
             <SelectValue
@@ -118,6 +119,7 @@ export function ItemLabels({
         <Button
           type="button"
           variant="secondary"
+          className="min-h-11 sm:min-h-10"
           disabled={!selectedId}
           onClick={() => void applySelected()}
         >

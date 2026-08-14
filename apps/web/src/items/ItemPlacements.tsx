@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import type {
   ItemId,
@@ -7,6 +8,24 @@ import type {
   StageId,
   LearningPlanId,
 } from "@unshelf/shared";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToStage,
   createStageWithItem,
@@ -46,6 +65,7 @@ export function ItemPlacements({
     learningPlanId: LearningPlanId;
     stage: PlacementStage;
   } | null>(null);
+  const headingId = useId();
 
   const load = useCallback(async () => {
     const nextCatalog = await fetchItemPlacements(user, itemId);
@@ -57,8 +77,8 @@ export function ItemPlacements({
     setCatalog(null);
     setError(null);
     setRetryAction(null);
-    void load().catch((caught: unknown) => {
-      setError(String(caught));
+    void load().catch(() => {
+      setError("Couldn’t load Learning Plan placements.");
       setRetryAction(() => async () => {
         await load();
       });
@@ -78,8 +98,8 @@ export function ItemPlacements({
     setRetryAction(null);
     try {
       await action();
-    } catch (caught: unknown) {
-      setError(String(caught));
+    } catch {
+      setError("Couldn’t update this placement.");
       let retryStillApplies = true;
       try {
         const reconciled = await load();
@@ -94,25 +114,59 @@ export function ItemPlacements({
     }
   };
 
-  const place = (stageId: StageId) =>
-    runPlacementMutation(async () => {
-      await addItemToStage(user, stageId, itemId);
-      await load();
-      onChanged?.();
-    });
-  const remove = (stageId: StageId) =>
-    runPlacementMutation(async () => {
-      await removeItemFromStage(user, stageId, itemId);
-      await load();
-      onChanged?.();
-    });
+  const place = (learningPlanId: LearningPlanId, stageId: StageId) =>
+    runPlacementMutation(
+      async () => {
+        await addItemToStage(user, stageId, itemId);
+        await load();
+        onChanged?.();
+      },
+      {
+        retryStillAppliesAfterReconciliation: (reconciled) =>
+          reconciled.learningPlans.some(
+            (state) =>
+              state.learningPlan.id === learningPlanId &&
+              state.kind === "available",
+          ),
+      },
+    );
+  const remove = (learningPlanId: LearningPlanId, stageId: StageId) =>
+    runPlacementMutation(
+      async () => {
+        await removeItemFromStage(user, stageId, itemId);
+        await load();
+        onChanged?.();
+      },
+      {
+        retryStillAppliesAfterReconciliation: (reconciled) =>
+          reconciled.learningPlans.some(
+            (state) =>
+              state.learningPlan.id === learningPlanId &&
+              state.kind === "placed" &&
+              state.stage.id === stageId,
+          ),
+      },
+    );
   const removeDirect = (learningPlanId: LearningPlanId) =>
-    runPlacementMutation(async () => {
-      await removeDirectItemFromLearningPlan(user, learningPlanId, itemId);
-      await load();
-      onChanged?.();
-    });
-  const create = (learningPlanId: LearningPlanId, name: string) =>
+    runPlacementMutation(
+      async () => {
+        await removeDirectItemFromLearningPlan(user, learningPlanId, itemId);
+        await load();
+        onChanged?.();
+      },
+      {
+        retryStillAppliesAfterReconciliation: (reconciled) =>
+          reconciled.learningPlans.some(
+            (state) =>
+              state.learningPlan.id === learningPlanId &&
+              state.kind === "placed_direct",
+          ),
+      },
+    );
+  const createStageWithPlacement = (
+    learningPlanId: LearningPlanId,
+    name: string,
+  ) =>
     runPlacementMutation(
       async () => {
         const stage = await createStageWithItem(user, itemId, {
@@ -144,9 +198,9 @@ export function ItemPlacements({
         onChanged?.();
         try {
           await load();
-        } catch (caught: unknown) {
+        } catch {
           setError(
-            `Could not refresh Learning Plan placements: ${String(caught)}`,
+            "The placement changed, but its refreshed details couldn’t load.",
           );
           setRetryAction(() => async () => {
             await load();
@@ -165,16 +219,22 @@ export function ItemPlacements({
 
   if (!catalog) {
     return (
-      <section
-        className="item-placements"
-        aria-labelledby="item-placements-title"
-      >
-        <h3 id="item-placements-title">Learning Plan placements</h3>
+      <section className="grid gap-4 border-t pt-6" aria-labelledby={headingId}>
+        <h3 id={headingId} className="font-serif text-xl">
+          Learning Plan placements
+        </h3>
         {!error ? (
-          <p role="status">Loading Learning Plan placements…</p>
+          <div
+            className="grid gap-2"
+            role="status"
+            aria-label="Loading Learning Plan placements"
+          >
+            <Skeleton className="h-14 w-full" aria-hidden="true" />
+            <Skeleton className="h-10 w-2/3" aria-hidden="true" />
+          </div>
         ) : (
           <PlacementError
-            message={`Could not load Learning Plan placements: ${error}`}
+            message={error}
             retryAction={retryAction}
             onRetry={runPlacementMutation}
           />
@@ -192,43 +252,60 @@ export function ItemPlacements({
 
   return (
     <section
-      className="item-placements"
-      aria-labelledby="item-placements-title"
+      className="grid min-w-0 gap-4 border-t pt-6"
+      aria-labelledby={headingId}
     >
-      <h3 id="item-placements-title">Learning Plan placements</h3>
+      <h3 id={headingId} className="font-serif text-xl">
+        Learning Plan placements
+      </h3>
       {placed.length === 0 ? (
-        <p>Not on a Learning Plan</p>
+        <p className="text-sm text-muted-foreground">Not on a Learning Plan</p>
       ) : (
-        <ul aria-label="Current Learning Plan placements">
+        <ul
+          className="grid gap-2"
+          aria-label="Current Learning Plan placements"
+        >
           {placed.map((state) => (
-            <li key={state.learningPlan.id}>
-              <span>
-                {state.learningPlan.name}
-                {state.kind === "placed" ? ` · ${state.stage.name}` : ""}
-                {state.kind === "archived" &&
-                state.placement !== null &&
-                state.placement !== "direct"
-                  ? ` · ${state.placement.name}`
-                  : ""}
-                {state.kind === "archived" ? " · Archived" : ""}
+            <li
+              key={state.learningPlan.id}
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border bg-background p-3"
+            >
+              <span className="grid min-w-0 gap-1 text-sm">
+                <strong className="wrap-break-word font-medium">
+                  {state.learningPlan.name}
+                </strong>
+                <span className="text-muted-foreground">
+                  {state.kind === "placed"
+                    ? state.stage.name
+                    : state.kind === "archived" &&
+                        state.placement !== null &&
+                        state.placement !== "direct"
+                      ? state.placement.name
+                      : "Placed directly"}
+                </span>
+                {state.kind === "archived" && <Badge>Archived</Badge>}
               </span>
-              <span className="item-placement-actions">
+              <span className="flex flex-wrap items-center gap-2">
                 {state.kind === "placed" &&
                   lastCreated?.learningPlanId === state.learningPlan.id &&
                   lastCreated.stage.id === state.stage.id && (
                     <Link
                       to={`/plans/${state.learningPlan.id}/stages/${state.stage.id}`}
+                      className="inline-flex min-h-11 items-center text-sm font-semibold text-primary underline underline-offset-4 sm:min-h-8"
                     >
                       Open Stage
                     </Link>
                   )}
                 {state.kind !== "archived" && (
-                  <button
+                  <Button
                     type="button"
+                    variant="quiet"
+                    size="icon"
+                    className="size-11 text-destructive hover:text-destructive sm:size-8"
                     disabled={busy}
                     onClick={() =>
                       state.kind === "placed"
-                        ? void remove(state.stage.id)
+                        ? void remove(state.learningPlan.id, state.stage.id)
                         : void removeDirect(state.learningPlan.id)
                     }
                     aria-label={
@@ -237,8 +314,8 @@ export function ItemPlacements({
                         : `Remove from ${state.learningPlan.name}`
                     }
                   >
-                    Remove
-                  </button>
+                    <Trash2 aria-hidden="true" />
+                  </Button>
                 )}
               </span>
             </li>
@@ -247,79 +324,127 @@ export function ItemPlacements({
       )}
 
       {catalog.learningPlans.length === 0 ? (
-        <p>
+        <p className="text-sm text-muted-foreground">
           No Learning Plans yet.{" "}
-          <Link to="/plans">Create a Learning Plan first</Link>.
+          <Link
+            className="text-primary underline underline-offset-4"
+            to="/plans"
+          >
+            Create a Learning Plan first
+          </Link>
+          .
         </p>
       ) : (
-        <details>
-          <summary>Add to Learning Plan…</summary>
-          <ul className="item-placement-destinations">
-            {catalog.learningPlans.map((state) => (
-              <li key={state.learningPlan.id}>
-                <strong>{state.learningPlan.name}</strong>
-                {state.kind === "archived" ? (
-                  <span>Archived · read-only</span>
-                ) : state.kind === "placed" ? (
-                  <span>Already in {state.stage.name}</span>
-                ) : state.kind === "placed_direct" ? (
-                  <span>Already placed directly</span>
-                ) : (
-                  <div className="item-placement-choice">
-                    {state.stages.length > 0 && (
-                      <select
-                        aria-label={`Add to ${state.learningPlan.name}`}
-                        value=""
+        <Collapsible className="rounded-[var(--radius-card)] border bg-background">
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="quiet"
+              className="group min-h-11 w-full justify-between rounded-[var(--radius-card)] sm:min-h-10"
+            >
+              Add to Learning Plan
+              <ChevronDown
+                aria-hidden="true"
+                className="transition-transform group-aria-expanded:rotate-180"
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul
+              className="grid gap-3 border-t p-3"
+              aria-label="Learning Plan destinations"
+            >
+              {catalog.learningPlans.map((state) => (
+                <li
+                  key={state.learningPlan.id}
+                  aria-label={state.learningPlan.name}
+                  className="grid min-w-0 gap-2 rounded-[var(--radius-small)] bg-muted/45 p-3"
+                >
+                  <strong className="wrap-break-word text-sm font-medium">
+                    {state.learningPlan.name}
+                  </strong>
+                  {state.kind === "archived" ? (
+                    <span className="text-sm text-muted-foreground">
+                      Archived · read-only
+                    </span>
+                  ) : state.kind === "placed" ? (
+                    <span className="text-sm text-muted-foreground">
+                      Already in {state.stage.name}
+                    </span>
+                  ) : state.kind === "placed_direct" ? (
+                    <span className="text-sm text-muted-foreground">
+                      Already placed directly
+                    </span>
+                  ) : (
+                    <div className="grid min-w-0 gap-2">
+                      {state.stages.length > 0 && (
+                        <Select
+                          disabled={busy}
+                          onValueChange={(value) =>
+                            void place(state.learningPlan.id, value as StageId)
+                          }
+                        >
+                          <SelectTrigger
+                            className="min-h-11 w-full sm:min-h-10"
+                            aria-label={`Add to ${state.learningPlan.name}`}
+                          >
+                            <SelectValue placeholder="Choose a Stage…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {state.stages.map((stage) => (
+                              <SelectItem key={stage.id} value={stage.id}>
+                                {stage.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="min-h-11 w-fit sm:min-h-10"
                         disabled={busy}
-                        onChange={(event) =>
-                          void place(event.target.value as StageId)
-                        }
+                        onClick={() => {
+                          setCreatingOn(state.learningPlan.id);
+                          setNewStageName(itemTitle);
+                        }}
                       >
-                        <option value="" disabled>
-                          Choose a Stage…
-                        </option>
-                        {state.stages.map((stage) => (
-                          <option key={stage.id} value={stage.id}>
-                            {stage.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setCreatingOn(state.learningPlan.id);
-                        setNewStageName(itemTitle);
-                      }}
-                    >
-                      New Stage
-                    </button>
-                    {creatingOn === state.learningPlan.id && (
-                      <NewStageForm
-                        learningPlanName={state.learningPlan.name}
-                        name={newStageName}
-                        existingStages={state.stages}
-                        busy={busy}
-                        onNameChange={setNewStageName}
-                        onCancel={() => setCreatingOn(null)}
-                        onSubmit={(name) =>
-                          void create(state.learningPlan.id, name)
-                        }
-                      />
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
+                        <Plus aria-hidden="true" />
+                        New Stage
+                      </Button>
+                      {creatingOn === state.learningPlan.id && (
+                        <NewStageForm
+                          learningPlanName={state.learningPlan.name}
+                          name={newStageName}
+                          existingStages={state.stages}
+                          busy={busy}
+                          onNameChange={setNewStageName}
+                          onCancel={() => setCreatingOn(null)}
+                          onSubmit={(name) =>
+                            void createStageWithPlacement(
+                              state.learningPlan.id,
+                              name,
+                            )
+                          }
+                        />
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
-      {busy && <p role="status">Updating placement…</p>}
+      {busy && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Updating placement…
+        </p>
+      )}
       {error && (
         <PlacementError
-          message={`Could not load or update this placement: ${error}`}
+          message={error}
           retryAction={retryAction}
           onRetry={runPlacementMutation}
         />
@@ -347,6 +472,7 @@ function NewStageForm({
   onCancel,
   onSubmit,
 }: NewStageFormProps) {
+  const fieldId = useId();
   const trimmedName = name.trim();
   const repeatsName = existingStages.some(
     (stage) => stage.name === trimmedName,
@@ -354,35 +480,48 @@ function NewStageForm({
 
   return (
     <form
-      className="item-new-stage-form"
+      className="grid gap-3 border-t pt-3"
       onSubmit={(event) => {
         event.preventDefault();
         if (trimmedName) onSubmit(trimmedName);
       }}
     >
-      <label>
-        Stage name on {learningPlanName}
-        <input
+      <Field>
+        <FieldLabel htmlFor={fieldId}>
+          Stage name on {learningPlanName}
+        </FieldLabel>
+        <Input
+          id={fieldId}
           autoFocus
           required
           value={name}
           disabled={busy}
           onChange={(event) => onNameChange(event.target.value)}
         />
-      </label>
+      </Field>
       {repeatsName && (
-        <p role="status">
+        <FieldDescription role="status">
           A Stage on this Learning Plan already has this name. You can still
           create another.
-        </p>
+        </FieldDescription>
       )}
-      <span>
-        <button type="submit" disabled={busy || !trimmedName}>
+      <span className="flex flex-wrap gap-2">
+        <Button
+          type="submit"
+          className="min-h-11 sm:min-h-10"
+          disabled={busy || !trimmedName}
+        >
           Create Stage
-        </button>
-        <button type="button" disabled={busy} onClick={onCancel}>
+        </Button>
+        <Button
+          type="button"
+          variant="quiet"
+          className="min-h-11 sm:min-h-10"
+          disabled={busy}
+          onClick={onCancel}
+        >
           Cancel
-        </button>
+        </Button>
       </span>
     </form>
   );
@@ -400,13 +539,19 @@ function PlacementError({
   onRetry,
 }: PlacementErrorProps) {
   return (
-    <div role="alert">
-      <p>{message}</p>
+    <Alert className="grid gap-3">
+      <span>{message}</span>
       {retryAction && (
-        <button type="button" onClick={() => void onRetry(retryAction)}>
+        <Button
+          type="button"
+          variant="secondary"
+          size="compact"
+          className="min-h-11 w-fit sm:min-h-8"
+          onClick={() => void onRetry(retryAction)}
+        >
           Retry
-        </button>
+        </Button>
       )}
-    </div>
+    </Alert>
   );
 }

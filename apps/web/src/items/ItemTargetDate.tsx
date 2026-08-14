@@ -59,6 +59,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
             type="button"
             variant="quiet"
             size="compact"
+            className="min-h-11 sm:min-h-8"
             disabled={saving}
             onClick={() => void change(null)}
           >
@@ -79,7 +80,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
             type="button"
             variant="secondary"
             size="compact"
-            className="w-fit"
+            className="min-h-11 w-fit sm:min-h-8"
             onClick={() => void change(failedTargetDate)}
           >
             Retry Target date

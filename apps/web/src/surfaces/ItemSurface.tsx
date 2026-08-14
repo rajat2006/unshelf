@@ -38,7 +38,7 @@ export function ItemSurface() {
       : "";
 
   return (
-    <div className="item-detail-layout">
+    <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
       {backgroundLocation ? (
         backgroundSurface.kind === "plan" ? (
           <LearningPlanSurface
