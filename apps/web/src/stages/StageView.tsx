@@ -101,7 +101,6 @@ export function StageView({
         </div>
         <Progress
           value={percentage}
-          variant={percentage === 100 ? "completed" : "progress"}
           aria-label={`${stage.name} progress`}
           aria-valuetext={progressLabel}
         />

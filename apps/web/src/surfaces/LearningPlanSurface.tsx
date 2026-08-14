@@ -252,11 +252,6 @@ export function LearningPlanSurface({
               </div>
               <Progress
                 value={completionPercentage(record)}
-                variant={
-                  completionPercentage(record) === 100
-                    ? "completed"
-                    : "progress"
-                }
                 aria-label={`${record.name} progress`}
                 aria-valuetext={
                   record.total === 0

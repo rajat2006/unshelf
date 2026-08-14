@@ -6,12 +6,10 @@ import { cn } from "@/lib/utils";
 function Progress({
   className,
   value,
-  variant = "progress",
   ...props
-}: React.ComponentProps<typeof ProgressPrimitive.Root> & {
-  variant?: "progress" | "completed";
-}) {
+}: React.ComponentProps<typeof ProgressPrimitive.Root>) {
   const percentage = Math.max(0, Math.min(100, value ?? 0));
+  const variant = percentage === 100 ? "completed" : "progress";
 
   return (
     <ProgressPrimitive.Root
