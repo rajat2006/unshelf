@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSummary } from "../items/ItemSummary";
+import { completionPercentage } from "../presentation/progress";
 
 type HistoryState =
   | { status: "loading" }
@@ -170,7 +171,7 @@ export function DailyFocusHistorySurface({
               </p>
             </div>
             <Progress
-              value={historyCompletionPercentage(state.focus)}
+              value={completionPercentage(state.focus)}
               aria-label={`${state.focus.done} of ${state.focus.total} done at day end`}
             />
 
@@ -213,7 +214,7 @@ export function DailyFocusHistorySurface({
                               <Button
                                 type="button"
                                 size="compact"
-                                className="min-h-11 sm:min-h-8"
+                                className="min-h-11 min-w-32 sm:min-h-8"
                                 disabled={addingItemId === item.id}
                                 onClick={() => void reconsider(item.id)}
                                 aria-label={`Add ${item.title} to Today`}
@@ -257,10 +258,6 @@ function HistoryLoading() {
       <span className="sr-only">Loading history…</span>
     </div>
   );
-}
-
-function historyCompletionPercentage({ done, total }: DailyFocus): number {
-  return total === 0 ? 0 : (done / total) * 100;
 }
 
 function itemAtDayEnd(

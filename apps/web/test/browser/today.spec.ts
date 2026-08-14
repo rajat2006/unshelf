@@ -74,7 +74,11 @@ test("a User explicitly chooses and edits today's shared Library Items", async (
       exact: true,
     }),
   ).toBeVisible();
-  await focus.getByRole("button", { name: "Done" }).click();
+  await focus
+    .getByRole("button", {
+      name: "Mark Read Designing Data-Intensive Applications done",
+    })
+    .click();
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 
   await focus

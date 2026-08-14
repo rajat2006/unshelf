@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
@@ -18,6 +25,7 @@ import {
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import {
+  addItemToToday,
   fetchDailyFocusHistory,
   fetchDailyPlanning,
   fetchLearningPlans,
@@ -29,6 +37,7 @@ import { TodaySurface } from "./TodaySurface";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
+  addItemToToday: vi.fn(),
   fetchDailyFocusHistory: vi.fn(),
   fetchDailyPlanning: vi.fn(),
   fetchLearningPlans: vi.fn(),
@@ -102,7 +111,7 @@ function renderHistory() {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("Today room", () => {
@@ -132,6 +141,39 @@ describe("Today room", () => {
     expect(
       itemPresentation.getByText("https://example.com/systems"),
     ).toBeVisible();
+    expect(
+      itemPresentation.getByRole("button", {
+        name: `Mark ${item.title} done`,
+      }),
+    ).toHaveClass("min-h-11");
+  });
+
+  it("contains a planning failure beside an available Daily Focus and retries it", async () => {
+    vi.mocked(fetchToday).mockResolvedValue(focus);
+    vi.mocked(fetchDailyPlanning)
+      .mockRejectedValueOnce(new Error("planning unavailable"))
+      .mockResolvedValueOnce({ searchResults: [], suggestions: [] });
+    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
+
+    renderToday();
+
+    const focusRegion = await screen.findByRole("region", {
+      name: "Today's Daily Focus",
+    });
+    expect(within(focusRegion).getByText(item.title)).toBeVisible();
+    const planning = screen.getByRole("region", { name: "Daily Planning" });
+    expect(
+      within(planning).getByText("Couldn't update Daily Planning"),
+    ).toBeVisible();
+
+    fireEvent.click(within(planning).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() =>
+      expect(
+        within(planning).queryByText("Couldn't update Daily Planning"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(fetchDailyPlanning).toHaveBeenCalledTimes(2);
   });
 
   it("presents explained suggestions even without a Learning Plan origin", async () => {
@@ -174,6 +216,34 @@ describe("Today room", () => {
         name: `Not today for ${item.title}`,
       }),
     ).toBeVisible();
+  });
+
+  it("announces an Item added from planning", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning).mockResolvedValue({
+      searchResults: [item],
+      suggestions: [],
+    });
+    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
+    vi.mocked(addItemToToday).mockResolvedValue(focus);
+
+    renderToday();
+
+    const searchResults = await screen.findByRole("region", {
+      name: "Item search results",
+    });
+    fireEvent.click(
+      within(searchResults).getByRole("button", {
+        name: `Add ${item.title} to Today`,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("status", {
+        name: `Added ${item.title} to Today`,
+      }),
+    ).toBeInTheDocument();
   });
 });
 

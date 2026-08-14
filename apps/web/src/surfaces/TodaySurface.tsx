@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deriveItemCompletion,
   Status,
@@ -51,6 +51,7 @@ import { completionPercentage } from "../presentation/progress";
 import type { CurrentUser } from "../application-auth/types";
 import { planItemBackgroundLocation } from "../items/item-route-state";
 import { ItemSummary } from "../items/ItemSummary";
+import { STATUS_LABELS } from "../items/presentation";
 import { useItemStatusMutation } from "../items/useItemStatusMutation";
 import { useCaptureListener } from "../shell/useCaptureListener";
 
@@ -75,6 +76,9 @@ export function TodaySurface() {
     LearningPlanId | undefined
   >();
   const [mutationError, setMutationError] = useState(false);
+  const [planningError, setPlanningError] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const skipPlanningRefresh = useRef(false);
   const [pendingAction, setPendingAction] = useState<{
     kind: "add" | "remove" | "suppress";
     itemId: Item["id"];
@@ -82,21 +86,28 @@ export function TodaySurface() {
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
-    try {
-      const [focus, planning, plans] = await Promise.all([
-        fetchToday(user),
-        fetchDailyPlanning(user, {}),
-        fetchLearningPlans(user),
-      ]);
-      setState({
-        status: "ready",
-        focus,
-        planning,
-        plans,
-      });
-    } catch {
+    const [focus, planning, plans] = await Promise.allSettled([
+      fetchToday(user),
+      fetchDailyPlanning(user, {}),
+      fetchLearningPlans(user),
+    ]);
+    if (focus.status === "rejected") {
       setState({ status: "error" });
+      return;
     }
+    skipPlanningRefresh.current = true;
+    setPlanningError(
+      planning.status === "rejected" || plans.status === "rejected",
+    );
+    setState({
+      status: "ready",
+      focus: focus.value,
+      planning:
+        planning.status === "fulfilled"
+          ? planning.value
+          : { searchResults: [], suggestions: [] },
+      plans: plans.status === "fulfilled" ? plans.value : [],
+    });
   }, [user]);
 
   useEffect(() => {
@@ -104,9 +115,39 @@ export function TodaySurface() {
   }, [load]);
   useCaptureListener(load);
 
+  const retryPlanning = useCallback(async () => {
+    setPlanningError(false);
+    try {
+      const [planning, plans] = await Promise.all([
+        fetchDailyPlanning(user, {
+          query: query.trim() || undefined,
+          intention: intention.trim() || undefined,
+          learningPlanId,
+        }),
+        fetchLearningPlans(user),
+      ]);
+      setState((value) =>
+        value.status === "ready" ? { ...value, planning, plans } : value,
+      );
+    } catch {
+      setPlanningError(true);
+    }
+  }, [intention, learningPlanId, query, user]);
+
   useEffect(() => {
     if (state.status !== "ready") return;
+    if (skipPlanningRefresh.current) {
+      skipPlanningRefresh.current = false;
+      if (
+        query.trim() === "" &&
+        intention.trim() === "" &&
+        learningPlanId === undefined
+      ) {
+        return;
+      }
+    }
     let isActive = true;
+    setPlanningError(false);
     void fetchDailyPlanning(user, {
       query: query.trim() || undefined,
       intention: intention.trim() || undefined,
@@ -114,13 +155,14 @@ export function TodaySurface() {
     })
       .then((planning) => {
         if (isActive) {
+          setPlanningError(false);
           setState((value) =>
             value.status === "ready" ? { ...value, planning } : value,
           );
         }
       })
       .catch(() => {
-        if (isActive) setMutationError(true);
+        if (isActive) setPlanningError(true);
       });
     return () => {
       isActive = false;
@@ -132,6 +174,7 @@ export function TodaySurface() {
     origin?: Parameters<typeof addItemToToday>[2],
   ) => {
     setMutationError(false);
+    setAnnouncement("");
     setPendingAction({ kind: "add", itemId: item.id });
     try {
       const focus = await addItemToToday(user, item.id, origin);
@@ -144,6 +187,7 @@ export function TodaySurface() {
             }
           : current,
       );
+      setAnnouncement(`Added ${item.title} to Today`);
     } catch {
       setMutationError(true);
     } finally {
@@ -153,6 +197,7 @@ export function TodaySurface() {
 
   const suppress = async (item: Item) => {
     setMutationError(false);
+    setAnnouncement("");
     setPendingAction({ kind: "suppress", itemId: item.id });
     try {
       await suppressDailyPlanningItem(user, item.id);
@@ -164,6 +209,7 @@ export function TodaySurface() {
             }
           : current,
       );
+      setAnnouncement(`Set Not today for ${item.title}`);
     } catch {
       setMutationError(true);
     } finally {
@@ -173,12 +219,14 @@ export function TodaySurface() {
 
   const remove = async (focus: DailyFocus, item: Item) => {
     setMutationError(false);
+    setAnnouncement("");
     setPendingAction({ kind: "remove", itemId: item.id });
     try {
       const updated = await removeItemFromToday(user, focus.id, item.id);
       setState((current) =>
         current.status === "ready" ? { ...current, focus: updated } : current,
       );
+      setAnnouncement(`Removed ${item.title} from Today`);
     } catch {
       setMutationError(true);
     } finally {
@@ -217,6 +265,9 @@ export function TodaySurface() {
         },
       };
     });
+    setAnnouncement(
+      `${changed.title} Status changed to ${STATUS_LABELS[changed.status]}`,
+    );
   };
   return (
     <section
@@ -224,6 +275,13 @@ export function TodaySurface() {
       aria-labelledby="today-heading"
       aria-busy={state.status === "loading"}
     >
+      <span
+        className="sr-only"
+        role="status"
+        aria-label={announcement || undefined}
+      >
+        {announcement}
+      </span>
       <header className="grid gap-5 border-b pb-6 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] sm:items-end">
         <div className="grid gap-2">
           <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
@@ -299,7 +357,12 @@ export function TodaySurface() {
                     Today&apos;s Daily Focus
                   </h2>
                 </div>
-                <Button asChild variant="quiet" size="compact">
+                <Button
+                  asChild
+                  variant="quiet"
+                  size="compact"
+                  className="min-h-11 sm:min-h-8"
+                >
                   <Link
                     to={{
                       pathname: `/today/${previousCalendarDate(state.focus.date)}`,
@@ -353,7 +416,7 @@ export function TodaySurface() {
                                 type="button"
                                 variant="quiet"
                                 size="compact"
-                                className="min-h-11 sm:min-h-8"
+                                className="min-h-11 min-w-28 sm:min-h-8"
                                 disabled={
                                   pendingAction?.kind === "remove" &&
                                   pendingAction.itemId === item.id
@@ -379,7 +442,7 @@ export function TodaySurface() {
 
             <section
               className="grid min-w-0 gap-5 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6"
-              aria-labelledby="today-planning-heading"
+              aria-label="Daily Planning"
             >
               <div className="grid gap-1">
                 <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
@@ -396,6 +459,27 @@ export function TodaySurface() {
                   Add changes Today.
                 </p>
               </div>
+
+              {planningError && (
+                <Alert className="grid gap-3">
+                  <div>
+                    <p className="m-0 font-semibold">
+                      Couldn&apos;t update Daily Planning
+                    </p>
+                    <p className="mt-1 mb-0 text-sm">
+                      Today remains available. Try the planning request again.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-fit"
+                    onClick={() => void retryPlanning()}
+                  >
+                    Retry
+                  </Button>
+                </Alert>
+              )}
 
               <Field>
                 <FieldLabel htmlFor="today-item-search">
@@ -419,7 +503,7 @@ export function TodaySurface() {
                       type="button"
                       variant="quiet"
                       size="icon-compact"
-                      className="absolute top-1/2 right-1 -translate-y-1/2"
+                      className="absolute top-1/2 right-1 min-h-11 min-w-11 -translate-y-1/2 sm:min-h-8 sm:min-w-8"
                       onClick={() => setQuery("")}
                       aria-label="Clear Item search"
                     >
@@ -498,23 +582,14 @@ export function TodaySurface() {
                         <ItemSummary
                           item={item}
                           actions={
-                            <Button
-                              type="button"
-                              size="compact"
-                              className="min-h-11 w-fit sm:min-h-8"
-                              disabled={
+                            <PlanningAddButton
+                              item={item}
+                              pending={
                                 pendingAction?.kind === "add" &&
                                 pendingAction.itemId === item.id
                               }
-                              onClick={() => void add(item)}
-                              aria-label={`Add ${item.title} to Today`}
-                            >
-                              <Plus aria-hidden="true" />
-                              {pendingAction?.kind === "add" &&
-                              pendingAction.itemId === item.id
-                                ? "Adding…"
-                                : "Add"}
-                            </Button>
+                              onAdd={() => void add(item)}
+                            />
                           }
                         />
                       </li>
@@ -557,15 +632,13 @@ export function TodaySurface() {
                                 {suggestion.explanation}
                               </p>
                               <div className="flex flex-wrap gap-2">
-                                <Button
-                                  type="button"
-                                  size="compact"
-                                  className="min-h-11 sm:min-h-8"
-                                  disabled={
+                                <PlanningAddButton
+                                  item={suggestion.item}
+                                  pending={
                                     pendingAction?.kind === "add" &&
                                     pendingAction.itemId === suggestion.item.id
                                   }
-                                  onClick={() =>
+                                  onAdd={() =>
                                     void add(
                                       suggestion.item,
                                       suggestion.origin
@@ -582,19 +655,12 @@ export function TodaySurface() {
                                         : undefined,
                                     )
                                   }
-                                  aria-label={`Add ${suggestion.item.title} to Today`}
-                                >
-                                  <Plus aria-hidden="true" />
-                                  {pendingAction?.kind === "add" &&
-                                  pendingAction.itemId === suggestion.item.id
-                                    ? "Adding…"
-                                    : "Add"}
-                                </Button>
+                                />
                                 <Button
                                   type="button"
                                   variant="quiet"
                                   size="compact"
-                                  className="min-h-11 sm:min-h-8"
+                                  className="min-h-11 min-w-28 sm:min-h-8"
                                   disabled={
                                     pendingAction?.kind === "suppress" &&
                                     pendingAction.itemId === suggestion.item.id
@@ -654,6 +720,30 @@ function TodayLoading() {
   );
 }
 
+function PlanningAddButton({
+  item,
+  pending,
+  onAdd,
+}: {
+  item: Item;
+  pending: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      size="compact"
+      className="min-h-11 min-w-24 sm:min-h-8"
+      disabled={pending}
+      onClick={onAdd}
+      aria-label={`Add ${item.title} to Today`}
+    >
+      <Plus aria-hidden="true" />
+      {pending ? "Adding…" : "Add"}
+    </Button>
+  );
+}
+
 function TodayStatusButton({
   item,
   user,
@@ -677,8 +767,14 @@ function TodayStatusButton({
         type="button"
         variant={item.status === Status.Done ? "secondary" : "primary"}
         size="compact"
+        className="min-h-11 min-w-28 sm:min-h-8"
         disabled={saving}
         onClick={() => void changeStatus(nextStatus)}
+        aria-label={
+          item.status === Status.Done
+            ? `Reopen ${item.title}`
+            : `Mark ${item.title} done`
+        }
       >
         {item.status === Status.Done ? (
           <RotateCcw aria-hidden="true" />
