@@ -83,13 +83,25 @@ export function PlansSurface() {
   );
 
   return (
-    <section className="plans-surface" aria-labelledby="home-heading">
-      <header className="editorial-heading plans-surface__heading">
-        <div>
-          <p className="editorial-eyebrow">Variant D · Global room</p>
-          <h1 id="home-heading">Learning Plans</h1>
-          <p className="editorial-intro">
-            Durable commitments are listed here; no plan is the whole app.
+    <section
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      aria-labelledby="home-heading"
+      aria-busy={state.status === "loading"}
+    >
+      <header className="grid gap-2">
+        <div className="grid gap-1">
+          <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+            Your commitments
+          </p>
+          <h1
+            id="home-heading"
+            className="m-0 font-serif text-4xl leading-tight font-semibold tracking-tight sm:text-5xl"
+          >
+            Learning Plans
+          </h1>
+          <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
+            Shape Library Items into outcomes, follow their shared progress, and
+            set finished commitments aside without losing them.
           </p>
         </div>
       </header>
