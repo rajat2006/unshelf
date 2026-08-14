@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyThemePreference,
   parseThemePreference,
+  persistThemePreference,
+  readThemePreference,
   resolvedTheme,
 } from "./themePreference";
 
@@ -25,6 +27,23 @@ describe("theme preference", () => {
     expect(
       resolvedTheme({ preference: "system", systemPrefersDark: true }),
     ).toBe("dark");
+    expect(
+      resolvedTheme({ preference: "system", systemPrefersDark: false }),
+    ).toBe("light");
+  });
+
+  it("persists and restores an explicit User preference", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+
+    persistThemePreference("system");
+
+    expect(readThemePreference()).toBe("system");
   });
 
   it("applies the resolved appearance to the document root", () => {

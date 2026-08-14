@@ -47,7 +47,7 @@ export function TopBar() {
         <NavLink
           to="/today"
           aria-label="Unshelf — go to Today"
-          className="group shrink-0 rounded-[var(--radius-small)] pr-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+          className="group inline-flex min-h-11 shrink-0 items-center rounded-[var(--radius-small)] pr-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
           end
         >
           <Wordmark />
@@ -55,7 +55,6 @@ export function TopBar() {
 
         <NavigationMenu
           aria-label="Primary rooms"
-          viewport={false}
           className="order-3 w-full max-w-none justify-start overflow-x-auto border-t pt-2 lg:order-none lg:w-auto lg:overflow-visible lg:border-0 lg:pt-0"
         >
           <NavigationMenuList className="w-max justify-start gap-1">
@@ -90,7 +89,7 @@ export function TopBar() {
             <span className="sm:hidden">Add</span>
             <span className="sr-only sm:hidden"> Item</span>
           </Button>
-          <div className="grid min-h-10 min-w-10 place-items-center rounded-full focus-within:ring-3 focus-within:ring-ring/30 [&_button]:min-h-10 [&_button]:min-w-10">
+          <div className="grid min-h-11 min-w-11 place-items-center rounded-full focus-within:ring-3 focus-within:ring-ring/30 [&_button]:min-h-11 [&_button]:min-w-11">
             <UserButton />
           </div>
         </div>
