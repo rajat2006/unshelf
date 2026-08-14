@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
+import { CalendarCheck, Check, LoaderCircle, Plus } from "lucide-react";
 import { Link } from "react-router";
 import {
   PlanNodeKind,
   type DailyFocus,
+  type DailyFocusOrigin,
   type Item,
+  type ItemId,
   type LearningPlan,
   type LearningPlanView,
   type StageId,
 } from "@unshelf/shared";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchLearningPlanStage, fetchToday } from "../api";
 import type { CurrentUser } from "../application-auth/types";
-import {
-  itemDetailRouteState,
-  planItemBackgroundLocation,
-} from "../items/item-route-state";
-import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
+import { ItemSummary } from "../items/ItemSummary";
+import { planItemBackgroundLocation } from "../items/item-route-state";
 
 interface PlannedItem {
   item: Item;
@@ -27,6 +31,11 @@ interface PlanTodaySidecarProps {
   user: CurrentUser;
 }
 
+function todayOriginLabel(origin: DailyFocusOrigin | null): string {
+  if (!origin) return "Today from Library";
+  return `Today from ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`;
+}
+
 /** Explicit Daily Focus selection inside one open Learning Plan studio. */
 export function PlanTodaySidecar({
   learningPlan,
@@ -37,7 +46,7 @@ export function PlanTodaySidecar({
   const [plannedItems, setPlannedItems] = useState<PlannedItem[] | null>(null);
   const [error, setError] = useState<"load" | "mutation" | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
-  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addingId, setAddingId] = useState<ItemId | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -75,20 +84,16 @@ export function PlanTodaySidecar({
     };
   }, [learningPlan.id, loadVersion, topology, user]);
 
-  const selectedIds = useMemo(
-    () => new Set(focus?.entries.map((entry) => entry.item.id) ?? []),
+  const todayOriginByItemId = useMemo(
+    () =>
+      new Map(
+        focus?.entries.map((entry) => [entry.item.id, entry.origin]) ?? [],
+      ),
     [focus],
   );
-  const previewItem = useMemo(() => {
-    if (!plannedItems) return null;
-    return (
-      plannedItems.find(({ item }) => selectedIds.has(item.id)) ??
-      plannedItems[0] ??
-      null
-    );
-  }, [plannedItems, selectedIds]);
 
   const add = async ({ item, stage }: PlannedItem) => {
+    if (addingId) return;
     setAddingId(item.id);
     setError(null);
     try {
@@ -105,122 +110,150 @@ export function PlanTodaySidecar({
     }
   };
 
+  const loading = !focus || !plannedItems;
+
   return (
-    <aside className="plan-today-sidecar" aria-label="Today sidecar">
-      <span className="editorial-eyebrow">Global Daily Focus</span>
-      <h2>Today&apos;s picks</h2>
-      <p className="quiet-copy">
-        Picks may come from this plan or directly from the Library.
-      </p>
-      {!focus || !plannedItems ? (
-        error ? null : (
-          <p role="status">Loading Today…</p>
-        )
-      ) : (
+    <aside
+      className="grid min-w-0 content-start gap-5 overflow-hidden border-t bg-muted/45 p-4 text-foreground md:col-span-2 md:max-h-[calc(100dvh-9rem)] md:overflow-y-auto lg:col-span-1 lg:border-t-0 lg:border-l lg:p-5"
+      aria-label="Today sidecar"
+      aria-busy={loading && !error}
+    >
+      <header className="grid gap-1 border-b pb-4">
+        <p className="m-0 flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
+          <CalendarCheck aria-hidden="true" className="size-4" />
+          Daily Focus
+        </p>
+        <h2 className="m-0 font-serif text-2xl leading-tight font-semibold">
+          Today
+        </h2>
+        <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+          Explicitly choose which Items from this plan deserve attention now.
+        </p>
+      </header>
+
+      {loading && !error && (
+        <div className="grid gap-3" role="status" aria-label="Loading Today">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-36 w-full" />
+          <Skeleton className="h-36 w-full" />
+        </div>
+      )}
+
+      {!loading && focus && plannedItems && (
         <>
-          <p className="visually-hidden">
-            {focus.total} {focus.total === 1 ? "Item" : "Items"} in Today
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="m-0 text-sm font-semibold">
+              {focus.total} {focus.total === 1 ? "Item" : "Items"} in Today
+            </p>
+            <Button asChild variant="quiet" size="compact">
+              <Link to="/today">Open Today</Link>
+            </Button>
+          </div>
+
           {plannedItems.length === 0 ? (
-            <p className="quiet-copy">No Items on this Learning Plan yet.</p>
+            <p className="m-0 rounded-[var(--radius-card)] border border-dashed bg-background/65 p-4 text-sm text-muted-foreground">
+              No Items on this Learning Plan yet.
+            </p>
           ) : (
-            <ul>
+            <ul
+              className="grid min-w-0 list-none gap-3 p-0"
+              aria-label="Learning Plan Items for Today"
+            >
               {plannedItems.map((plannedItem) => {
                 const { item, stage } = plannedItem;
-                const selected = selectedIds.has(item.id);
+                const selected = todayOriginByItemId.has(item.id);
+                const todayOrigin = todayOriginByItemId.get(item.id) ?? null;
+                const pending = addingId === item.id;
                 const backgroundLocation = planItemBackgroundLocation({
                   learningPlanId: learningPlan.id,
                   ...(stage ? { stageId: stage.id } : {}),
                 });
                 return (
-                  <li key={item.id}>
-                    <div>
-                      <strong>{item.title}</strong>
-                      {stage && <small>{stage.name}</small>}
-                    </div>
-                    {selected ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          aria-label={`${item.title} is in Today`}
-                        >
-                          In Today
-                        </button>
-                        <Link
-                          to={`/items/${item.id}`}
-                          state={itemDetailRouteState(backgroundLocation)}
-                          aria-label={`Open ${item.title} from Today`}
-                        >
-                          Open
-                        </Link>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={addingId !== null}
-                        onClick={() => void add(plannedItem)}
-                        aria-label={`Add ${item.title} to Today`}
-                      >
-                        Add
-                      </button>
-                    )}
+                  <li key={item.id} className="min-w-0">
+                    <ItemSummary
+                      item={item}
+                      detailBackgroundLocation={backgroundLocation}
+                      className="bg-background p-3"
+                      actions={
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 border-t pt-3">
+                          {selected ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="compact"
+                              className="min-h-11 sm:min-h-8"
+                              disabled
+                              aria-label={`${item.title} is in Today`}
+                            >
+                              <Check aria-hidden="true" />
+                              In Today
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="compact"
+                              className="min-h-11 sm:min-h-8"
+                              disabled={addingId !== null}
+                              aria-label={
+                                pending
+                                  ? `Adding ${item.title} to Today…`
+                                  : `Add ${item.title} to Today`
+                              }
+                              onClick={() => void add(plannedItem)}
+                            >
+                              {pending ? (
+                                <LoaderCircle
+                                  aria-hidden="true"
+                                  className="animate-spin motion-reduce:animate-none"
+                                />
+                              ) : (
+                                <Plus aria-hidden="true" />
+                              )}
+                              {pending ? "Adding…" : "Add to Today"}
+                            </Button>
+                          )}
+                          {selected && (
+                            <Badge variant="neutral">
+                              {todayOriginLabel(todayOrigin)}
+                            </Badge>
+                          )}
+                          {stage ? (
+                            <Button asChild variant="quiet" size="compact">
+                              <Link
+                                to={`/plans/${learningPlan.id}/stages/${stage.id}`}
+                                aria-label={`Current placement: ${stage.name}`}
+                              >
+                                Placed in {stage.name}
+                              </Link>
+                            </Button>
+                          ) : (
+                            <Badge variant="neutral">Direct placement</Badge>
+                          )}
+                        </div>
+                      }
+                    />
                   </li>
                 );
               })}
             </ul>
           )}
-          {previewItem ? (
-            <article className="plan-today-sidecar__item-detail">
-              <span className="editorial-eyebrow">
-                {TYPE_LABELS[previewItem.item.type]}
-              </span>
-              <h3>{previewItem.item.title}</h3>
-              <p>{STATUS_LABELS[previewItem.item.status]}</p>
-              <div>
-                {selectedIds.has(previewItem.item.id) ? (
-                  <span>In Today</span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={addingId !== null}
-                    onClick={() => void add(previewItem)}
-                  >
-                    + Today
-                  </button>
-                )}
-                <Link
-                  to={`/items/${previewItem.item.id}`}
-                  state={itemDetailRouteState(
-                    planItemBackgroundLocation({
-                      learningPlanId: learningPlan.id,
-                      ...(previewItem.stage
-                        ? { stageId: previewItem.stage.id }
-                        : {}),
-                    }),
-                  )}
-                >
-                  Open Item
-                </Link>
-                <span>{STATUS_LABELS[previewItem.item.status]}</span>
-              </div>
-            </article>
-          ) : null}
         </>
       )}
+
       {error && (
-        <div role="alert">
-          <p>
+        <div className="grid justify-items-start gap-3">
+          <Alert>
             {error === "load"
-              ? "Couldn’t load Today."
-              : "Couldn’t update Today."}
-          </p>
-          <button
+              ? "Couldn’t load Today. The Learning Plan remains available."
+              : "Couldn’t update Today. This Item is still available in the plan."}
+          </Alert>
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => setLoadVersion((current) => current + 1)}
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
     </aside>
