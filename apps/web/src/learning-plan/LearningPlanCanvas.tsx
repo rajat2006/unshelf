@@ -620,7 +620,7 @@ export function LearningPlanCanvas({
         </Badge>
         <span>Solid path: walked</span>
         <span>Dotted path: ahead</span>
-        <Badge variant="progress">Current · You are here</Badge>
+        <Badge variant="current">Current · You are here</Badge>
         <span>
           {readOnly
             ? "Drag the map to pan. Open on a wider screen to arrange it."
@@ -931,7 +931,7 @@ function Waypoint({
         } as CSSProperties
       }
     >
-      {isFrontier && <Badge variant="progress">Current · You are here</Badge>}
+      {isFrontier && <Badge variant="current">Current · You are here</Badge>}
       {isLinkSource && <Badge variant="neutral">Link source</Badge>}
 
       {node.kind === PlanNodeKind.Item ? (

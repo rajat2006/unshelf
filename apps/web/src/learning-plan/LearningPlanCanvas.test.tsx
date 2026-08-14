@@ -120,6 +120,7 @@ describe("Learning Plan canvas", () => {
 
     expect(markup).toContain('data-slot="button"');
     expect(markup).toContain('data-slot="badge"');
+    expect(markup).toContain('data-variant="current"');
     expect(markup).toContain("Current");
     expect(markup).toContain("Completed");
   });
