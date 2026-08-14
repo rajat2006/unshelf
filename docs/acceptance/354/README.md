@@ -23,28 +23,17 @@ styling specification. Current values and component APIs remain owned by
 - [x] Reviewed the real routed React application behind its application-auth
       boundary, using the repository's local API/database fixture to create
       populated User-owned data without external accounts.
-- [x] Captured every route, persistent panel, and overlay below at 390, 768, and
+- [x] Reviewed every route, persistent panel, and overlay below at 390, 768, and
       1440 CSS pixels in resolved Light and Dark: 66 full-page observations.
-- [x] Asserted `documentElement.scrollWidth <= clientWidth` before every capture.
+- [x] Asserted `documentElement.scrollWidth <= clientWidth` during every review.
 - [x] Exercised mutations through current accessible controls rather than treating
       screenshots or implementation markup as workflow evidence.
 - [x] Used focused axe, reduced-motion, focus, and overflow checks as supporting
       evidence. The historical Playwright suite is not the acceptance authority.
 
-The contact sheets provide the complete visual index:
-
-- 390 px: [Light](contact-390-light.png), [Dark](contact-390-dark.png)
-- 768 px: [Light](contact-768-light.png), [Dark](contact-768-dark.png)
-- 1440 px: [Light](contact-1440-light.png), [Dark](contact-1440-dark.png)
-
-Larger representative frames:
-
-- [Phone Light — Today](representative-phone-light-today.png)
-- [Phone Dark — Learning Plan](representative-phone-dark-learning-plan.png)
-- [Tablet Light — Capture](representative-tablet-light-capture.png)
-- [Tablet Dark — Daily Focus history](representative-tablet-dark-history.png)
-- [Desktop Light — Stage detail](representative-desktop-light-stage-detail.png)
-- [Desktop Dark — canonical Item detail](representative-desktop-dark-item-detail.png)
+Generated screenshots are not retained in the repository. The production source
+and executable checks remain the current authority; this document records the
+historical review method and finding dispositions only.
 
 ## Route, panel, and overlay matrix
 
