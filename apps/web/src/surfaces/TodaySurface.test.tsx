@@ -149,10 +149,16 @@ describe("Today room", () => {
   });
 
   it("contains a planning failure beside an available Daily Focus and retries it", async () => {
+    let resolvePlanning:
+      ((planning: { searchResults: []; suggestions: [] }) => void) | undefined;
     vi.mocked(fetchToday).mockResolvedValue(focus);
     vi.mocked(fetchDailyPlanning)
       .mockRejectedValueOnce(new Error("planning unavailable"))
-      .mockResolvedValueOnce({ searchResults: [], suggestions: [] });
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePlanning = resolve;
+        }),
+      );
     vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
@@ -166,7 +172,12 @@ describe("Today room", () => {
       within(planning).getByText("Couldn't update Daily Planning"),
     ).toBeVisible();
 
-    fireEvent.click(within(planning).getByRole("button", { name: "Retry" }));
+    const retry = within(planning).getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveTextContent("Retrying…");
+    resolvePlanning?.({ searchResults: [], suggestions: [] });
 
     await waitFor(() =>
       expect(
@@ -174,6 +185,27 @@ describe("Today room", () => {
       ).not.toBeInTheDocument(),
     );
     expect(fetchDailyPlanning).toHaveBeenCalledTimes(2);
+  });
+
+  it("contains a Daily Focus failure without discarding Daily Planning", async () => {
+    vi.mocked(fetchToday).mockRejectedValue(new Error("focus unavailable"));
+    vi.mocked(fetchDailyPlanning).mockResolvedValue({
+      searchResults: [item],
+      suggestions: [],
+    });
+    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
+
+    renderToday();
+
+    const focusRegion = await screen.findByRole("region", {
+      name: "Today's Daily Focus",
+    });
+    expect(
+      within(focusRegion).getByText("Couldn't load today's Daily Focus"),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Item search results" }),
+    ).toHaveTextContent(item.title);
   });
 
   it("presents explained suggestions even without a Learning Plan origin", async () => {

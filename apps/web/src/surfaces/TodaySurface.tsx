@@ -57,7 +57,11 @@ import { useCaptureListener } from "../shell/useCaptureListener";
 
 type TodayState =
   | { status: "loading" }
-  | { status: "error" }
+  | {
+      status: "focus-error";
+      planning: DailyPlanning;
+      plans: LearningPlan[];
+    }
   | {
       status: "ready";
       focus: DailyFocus;
@@ -77,6 +81,8 @@ export function TodaySurface() {
   >();
   const [mutationError, setMutationError] = useState(false);
   const [planningError, setPlanningError] = useState(false);
+  const [focusRetrying, setFocusRetrying] = useState(false);
+  const [planningRetrying, setPlanningRetrying] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const skipPlanningRefresh = useRef(false);
   const [pendingAction, setPendingAction] = useState<{
@@ -91,22 +97,28 @@ export function TodaySurface() {
       fetchDailyPlanning(user, {}),
       fetchLearningPlans(user),
     ]);
-    if (focus.status === "rejected") {
-      setState({ status: "error" });
-      return;
-    }
     skipPlanningRefresh.current = true;
     setPlanningError(
       planning.status === "rejected" || plans.status === "rejected",
     );
+    const loadedPlanning =
+      planning.status === "fulfilled"
+        ? planning.value
+        : { searchResults: [], suggestions: [] };
+    const loadedPlans = plans.status === "fulfilled" ? plans.value : [];
+    if (focus.status === "rejected") {
+      setState({
+        status: "focus-error",
+        planning: loadedPlanning,
+        plans: loadedPlans,
+      });
+      return;
+    }
     setState({
       status: "ready",
       focus: focus.value,
-      planning:
-        planning.status === "fulfilled"
-          ? planning.value
-          : { searchResults: [], suggestions: [] },
-      plans: plans.status === "fulfilled" ? plans.value : [],
+      planning: loadedPlanning,
+      plans: loadedPlans,
     });
   }, [user]);
 
@@ -115,8 +127,25 @@ export function TodaySurface() {
   }, [load]);
   useCaptureListener(load);
 
+  const retryFocus = useCallback(async () => {
+    setFocusRetrying(true);
+    try {
+      const focus = await fetchToday(user);
+      skipPlanningRefresh.current = true;
+      setState((value) =>
+        value.status === "focus-error"
+          ? { ...value, status: "ready", focus }
+          : value,
+      );
+    } catch {
+      // The panel remains in its recoverable error state.
+    } finally {
+      setFocusRetrying(false);
+    }
+  }, [user]);
+
   const retryPlanning = useCallback(async () => {
-    setPlanningError(false);
+    setPlanningRetrying(true);
     try {
       const [planning, plans] = await Promise.all([
         fetchDailyPlanning(user, {
@@ -127,15 +156,18 @@ export function TodaySurface() {
         fetchLearningPlans(user),
       ]);
       setState((value) =>
-        value.status === "ready" ? { ...value, planning, plans } : value,
+        value.status === "loading" ? value : { ...value, planning, plans },
       );
+      setPlanningError(false);
     } catch {
       setPlanningError(true);
+    } finally {
+      setPlanningRetrying(false);
     }
   }, [intention, learningPlanId, query, user]);
 
   useEffect(() => {
-    if (state.status !== "ready") return;
+    if (state.status === "loading") return;
     if (skipPlanningRefresh.current) {
       skipPlanningRefresh.current = false;
       if (
@@ -157,7 +189,7 @@ export function TodaySurface() {
         if (isActive) {
           setPlanningError(false);
           setState((value) =>
-            value.status === "ready" ? { ...value, planning } : value,
+            value.status === "loading" ? value : { ...value, planning },
           );
         }
       })
@@ -179,9 +211,10 @@ export function TodaySurface() {
     try {
       const focus = await addItemToToday(user, item.id, origin);
       setState((current) =>
-        current.status === "ready"
+        current.status !== "loading"
           ? {
               ...current,
+              status: "ready",
               focus,
               planning: removePlanningItem(current.planning, item.id),
             }
@@ -202,7 +235,7 @@ export function TodaySurface() {
     try {
       await suppressDailyPlanningItem(user, item.id);
       setState((current) =>
-        current.status === "ready"
+        current.status !== "loading"
           ? {
               ...current,
               planning: removePlanningSuggestion(current.planning, item.id),
@@ -323,120 +356,129 @@ export function TodaySurface() {
       </header>
 
       {state.status === "loading" && <TodayLoading />}
-      {state.status === "error" && (
-        <Alert className="grid gap-3">
-          <div>
-            <p className="m-0 font-semibold">Couldn&apos;t load Today</p>
-            <p className="mt-1 mb-0 text-sm">
-              Your Daily Focus and planning choices are unchanged.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-fit"
-            onClick={() => void load()}
-          >
-            Retry
-          </Button>
-        </Alert>
-      )}
-      {state.status === "ready" && (
+      {state.status !== "loading" && (
         <>
           <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] lg:items-start">
             <section
               className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-6"
               aria-label="Today's Daily Focus"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
-                    {state.focus.date}
-                  </p>
-                  <h2 className="mt-1 mb-0 font-serif text-2xl font-medium">
-                    Today&apos;s Daily Focus
-                  </h2>
-                </div>
-                <Button
-                  asChild
-                  variant="quiet"
-                  size="compact"
-                  className="min-h-11 sm:min-h-8"
-                >
-                  <Link
-                    to={{
-                      pathname: `/today/${previousCalendarDate(state.focus.date)}`,
-                      search: location.search,
-                    }}
+              {state.status === "focus-error" ? (
+                <Alert className="grid gap-3">
+                  <div>
+                    <p className="m-0 font-semibold">
+                      Couldn&apos;t load today&apos;s Daily Focus
+                    </p>
+                    <p className="mt-1 mb-0 text-sm">
+                      Daily Planning is still available. Try the focus request
+                      again.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="min-w-24 w-fit"
+                    disabled={focusRetrying}
+                    onClick={() => void retryFocus()}
                   >
-                    <History aria-hidden="true" />
-                    Browse yesterday
-                  </Link>
-                </Button>
-              </div>
-              {state.focus.entries.length === 0 ? (
-                <div className="rounded-[var(--radius-card)] border border-dashed bg-card p-8 text-center">
-                  <p className="m-0 font-serif text-xl font-medium">
-                    Choose what deserves your attention.
-                  </p>
-                  <p className="mt-2 mb-0 text-sm text-muted-foreground">
-                    Use Daily Planning to build a small working set.
-                  </p>
-                </div>
+                    {focusRetrying ? "Retrying…" : "Retry"}
+                  </Button>
+                </Alert>
               ) : (
-                <ol className="grid list-none gap-3 p-0">
-                  {state.focus.entries.map(({ item, origin }) => (
-                    <li key={item.id}>
-                      <ItemSummary
-                        item={item}
-                        detailBackgroundLocation={
-                          origin
-                            ? planItemBackgroundLocation({
-                                learningPlanId: origin.learningPlan.id,
-                                ...(origin.stage
-                                  ? { stageId: origin.stage.id }
-                                  : {}),
-                              })
-                            : undefined
-                        }
-                        actions={
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                            <p className="m-0 text-sm text-muted-foreground">
-                              {origin
-                                ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
-                                : "From Library"}
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              <TodayStatusButton
-                                item={item}
-                                user={user}
-                                onChanged={replaceItem}
-                              />
-                              <Button
-                                type="button"
-                                variant="quiet"
-                                size="compact"
-                                className="min-h-11 min-w-28 sm:min-h-8"
-                                disabled={
-                                  pendingAction?.kind === "remove" &&
-                                  pendingAction.itemId === item.id
-                                }
-                                onClick={() => void remove(state.focus, item)}
-                                aria-label={`Remove ${item.title} from Today`}
-                              >
-                                <Trash2 aria-hidden="true" />
-                                {pendingAction?.kind === "remove" &&
-                                pendingAction.itemId === item.id
-                                  ? "Removing…"
-                                  : "Remove"}
-                              </Button>
-                            </div>
-                          </div>
-                        }
-                      />
-                    </li>
-                  ))}
-                </ol>
+                <>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                        {state.focus.date}
+                      </p>
+                      <h2 className="mt-1 mb-0 font-serif text-2xl font-medium">
+                        Today&apos;s Daily Focus
+                      </h2>
+                    </div>
+                    <Button
+                      asChild
+                      variant="quiet"
+                      size="compact"
+                      className="min-h-11 sm:min-h-8"
+                    >
+                      <Link
+                        to={{
+                          pathname: `/today/${previousCalendarDate(state.focus.date)}`,
+                          search: location.search,
+                        }}
+                      >
+                        <History aria-hidden="true" />
+                        Browse yesterday
+                      </Link>
+                    </Button>
+                  </div>
+                  {state.focus.entries.length === 0 ? (
+                    <div className="rounded-[var(--radius-card)] border border-dashed bg-card p-8 text-center">
+                      <p className="m-0 font-serif text-xl font-medium">
+                        Choose what deserves your attention.
+                      </p>
+                      <p className="mt-2 mb-0 text-sm text-muted-foreground">
+                        Use Daily Planning to build a small working set.
+                      </p>
+                    </div>
+                  ) : (
+                    <ol className="grid list-none gap-3 p-0">
+                      {state.focus.entries.map(({ item, origin }) => (
+                        <li key={item.id}>
+                          <ItemSummary
+                            item={item}
+                            detailBackgroundLocation={
+                              origin
+                                ? planItemBackgroundLocation({
+                                    learningPlanId: origin.learningPlan.id,
+                                    ...(origin.stage
+                                      ? { stageId: origin.stage.id }
+                                      : {}),
+                                  })
+                                : undefined
+                            }
+                            actions={
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                                <p className="m-0 text-sm text-muted-foreground">
+                                  {origin
+                                    ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
+                                    : "From Library"}
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  <TodayStatusButton
+                                    item={item}
+                                    user={user}
+                                    onChanged={replaceItem}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="quiet"
+                                    size="compact"
+                                    className="min-h-11 min-w-28 sm:min-h-8"
+                                    disabled={
+                                      pendingAction?.kind === "remove" &&
+                                      pendingAction.itemId === item.id
+                                    }
+                                    onClick={() =>
+                                      void remove(state.focus, item)
+                                    }
+                                    aria-label={`Remove ${item.title} from Today`}
+                                  >
+                                    <Trash2 aria-hidden="true" />
+                                    {pendingAction?.kind === "remove" &&
+                                    pendingAction.itemId === item.id
+                                      ? "Removing…"
+                                      : "Remove"}
+                                  </Button>
+                                </div>
+                              </div>
+                            }
+                          />
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </>
               )}
             </section>
 
@@ -473,10 +515,11 @@ export function TodaySurface() {
                   <Button
                     type="button"
                     variant="secondary"
-                    className="w-fit"
+                    className="min-w-24 w-fit"
+                    disabled={planningRetrying}
                     onClick={() => void retryPlanning()}
                   >
-                    Retry
+                    {planningRetrying ? "Retrying…" : "Retry"}
                   </Button>
                 </Alert>
               )}
@@ -518,7 +561,7 @@ export function TodaySurface() {
                   <Button
                     type="button"
                     variant="secondary"
-                    className="w-full justify-between"
+                    className="min-h-11 w-full justify-between sm:min-h-10"
                   >
                     Refine suggestions
                     <ChevronDown aria-hidden="true" />
@@ -574,7 +617,10 @@ export function TodaySurface() {
                 </div>
               )}
               {state.planning.searchResults.length > 0 && (
-                <section className="grid gap-3" aria-label="Item search results">
+                <section
+                  className="grid gap-3"
+                  aria-label="Item search results"
+                >
                   <h3 className="m-0 text-sm font-semibold">Search results</h3>
                   <ul className="grid list-none gap-3 p-0">
                     {state.planning.searchResults.map((item) => (
@@ -598,9 +644,15 @@ export function TodaySurface() {
                 </section>
               )}
 
-              <section className="grid gap-3 border-t pt-5" aria-label="Suggestions">
+              <section
+                className="grid gap-3 border-t pt-5"
+                aria-label="Suggestions"
+              >
                 <div className="flex items-center gap-2">
-                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
+                  <Sparkles
+                    className="size-4 text-primary"
+                    aria-hidden="true"
+                  />
                   <h3 className="m-0 text-sm font-semibold">
                     Explained suggestions
                   </h3>
@@ -665,9 +717,7 @@ export function TodaySurface() {
                                     pendingAction?.kind === "suppress" &&
                                     pendingAction.itemId === suggestion.item.id
                                   }
-                                  onClick={() =>
-                                    void suppress(suggestion.item)
-                                  }
+                                  onClick={() => void suppress(suggestion.item)}
                                   aria-label={`Not today for ${suggestion.item.title}`}
                                 >
                                   <X aria-hidden="true" />
@@ -689,8 +739,8 @@ export function TodaySurface() {
           </div>
           {mutationError && (
             <Alert>
-              Couldn&apos;t update Today. Your existing Daily Focus is unchanged;
-              try again.
+              Couldn&apos;t update Today. Your existing Daily Focus is
+              unchanged; try again.
             </Alert>
           )}
         </>
