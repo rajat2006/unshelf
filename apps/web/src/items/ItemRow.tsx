@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router";
 import type { CurrentUser } from "../application-auth/types";
 import {
   itemDetailRouteState,
-  readItemBackgroundLocation,
+  itemLinkBackgroundLocation,
   type ItemBackgroundLocation,
 } from "./item-route-state";
 import { ItemSource } from "./ItemSource";
@@ -42,12 +42,10 @@ export function ItemRow({
   detailBackgroundLocation,
 }: ItemRowProps) {
   const location = useLocation();
-  const preservedBackground = readItemBackgroundLocation(location.state);
-  const originLocation =
-    location.pathname.startsWith("/items/") && preservedBackground
-      ? preservedBackground
-      : location;
-  const backgroundLocation = detailBackgroundLocation ?? originLocation;
+  const backgroundLocation = itemLinkBackgroundLocation(
+    location,
+    detailBackgroundLocation,
+  );
 
   return (
     <li className="item-row">

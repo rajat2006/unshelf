@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
   itemDetailRouteState,
-  readItemBackgroundLocation,
+  itemLinkBackgroundLocation,
   type ItemBackgroundLocation,
 } from "./item-route-state";
 import { ItemSource } from "./ItemSource";
@@ -29,15 +29,10 @@ export function ItemSummary({
   detailBackgroundLocation,
 }: ItemSummaryProps) {
   const location = useLocation();
-  const preservedBackground = readItemBackgroundLocation(location.state);
-  const originLocation = location.pathname.startsWith("/items/")
-    ? (preservedBackground ?? {
-        pathname: "/library",
-        search: "",
-        hash: "",
-      })
-    : location;
-  const backgroundLocation = detailBackgroundLocation ?? originLocation;
+  const backgroundLocation = itemLinkBackgroundLocation(
+    location,
+    detailBackgroundLocation,
+  );
 
   return (
     <article

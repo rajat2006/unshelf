@@ -48,6 +48,23 @@ export function readItemBackgroundLocation(
     : null;
 }
 
+/** Resolve the surface an Item link should retain beneath canonical detail. */
+export function itemLinkBackgroundLocation(
+  location: Pick<Location, "pathname" | "search" | "hash" | "state">,
+  explicitBackground?: ItemBackgroundLocation,
+): ItemBackgroundLocation {
+  if (explicitBackground) return explicitBackground;
+  if (!location.pathname.startsWith("/items/")) return location;
+
+  return (
+    readItemBackgroundLocation(location.state) ?? {
+      pathname: "/library",
+      search: "",
+      hash: "",
+    }
+  );
+}
+
 /** Classify the room retained beneath canonical Item detail in one place. */
 export function itemBackgroundSurface(
   backgroundLocation: ItemBackgroundLocation | null,
