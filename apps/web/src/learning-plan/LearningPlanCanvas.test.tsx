@@ -115,6 +115,15 @@ describe("Learning Plan canvas", () => {
     expect(markup).toContain("Disconnect Learn CSS from Build the API");
   });
 
+  it("presents topology actions and state cues through the production catalogue", () => {
+    const markup = render(false);
+
+    expect(markup).toContain('data-slot="button"');
+    expect(markup).toContain('data-slot="badge"');
+    expect(markup).toContain("Current");
+    expect(markup).toContain("Completed");
+  });
+
   it("offers graph authoring controls on direct Item nodes", () => {
     const view: LearningPlanView = {
       nodes: [
@@ -201,9 +210,7 @@ describe("Learning Plan canvas", () => {
     const markup = render(true, view);
 
     expect(markup).toContain("Empty checkpoint: No items added yet");
-    expect(markup).toContain(
-      'class="learning-plan-progress-label">Empty</span>',
-    );
+    expect(markup).toContain(">Empty</span>");
     expect(markup).not.toContain("＋");
     expect(markup).not.toContain("0 of 0 items done");
   });

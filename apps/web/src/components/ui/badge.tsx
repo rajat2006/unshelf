@@ -10,10 +10,10 @@ const badgeVariants = cva(
       variant: {
         neutral: "border-border bg-muted text-muted-foreground",
         progress:
-          "border-status-progress/35 bg-status-progress/12 text-status-progress",
+          "border-status-progress/50 bg-status-progress/12 text-foreground",
         completed:
-          "border-status-completed/35 bg-status-completed/12 text-status-completed",
-        past: "border-status-past/35 bg-status-past/12 text-status-past",
+          "border-status-completed/50 bg-status-completed/12 text-foreground",
+        past: "border-status-past/50 bg-status-past/12 text-foreground",
       },
     },
     defaultVariants: { variant: "neutral" },

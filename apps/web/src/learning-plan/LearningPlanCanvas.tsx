@@ -5,6 +5,17 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Link } from "react-router";
+import {
+  ArrowRight,
+  Check,
+  GitBranch,
+  Link2,
+  LoaderCircle,
+  Plus,
+  RotateCcw,
+  Unlink,
+  X,
+} from "lucide-react";
 import { PlanNodeKind, Status } from "@unshelf/shared";
 import type {
   PlanNodeId,
@@ -29,7 +40,27 @@ import {
   itemDetailRouteState,
   planItemBackgroundLocation,
 } from "../items/item-route-state";
-import { STATUS_LABELS, TYPE_LABELS } from "../items/presentation";
+import { ItemStatusBadge } from "../items/ItemStatusBadge";
+import { STATUS_LABELS } from "../items/presentation";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 /**
  * The Learning Plan canvas — ADR-0010's topology-as-journey on the warm
@@ -118,9 +149,6 @@ export function LearningPlanCanvas({
     node,
     ...topologyLayout.byId.get(node.id)!,
   }));
-  const orderedSequencedNodes = [...placedNodes]
-    .sort((left, right) => left.depth - right.depth || left.lane - right.lane)
-    .map(({ node }) => node);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
   const [busy, setBusy] = useState(false);
@@ -338,7 +366,7 @@ export function LearningPlanCanvas({
 
   if (nodes.length === 0) {
     return (
-      <div className="learning-plan-empty">
+      <div className="grid min-h-48 place-items-center rounded-[var(--radius-panel)] border border-dashed bg-muted/40 p-6 text-center">
         {draft ? (
           <DraftForm
             busy={busy}
@@ -348,18 +376,18 @@ export function LearningPlanCanvas({
           />
         ) : (
           !readOnly && (
-            <button
+            <Button
               type="button"
               disabled={busy}
               onClick={() => setDraft({ from: null, mode: "start" })}
-              className="quiet-button quiet-button--primary"
             >
-              ＋ Start your Learning Plan
-            </button>
+              <Plus />
+              Start your Learning Plan
+            </Button>
           )
         )}
         {readOnly && (
-          <p className="quiet-copy">
+          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
             No Stages on your Learning Plan yet. Add some on a wider screen to
             arrange them.
           </p>
@@ -374,38 +402,38 @@ export function LearningPlanCanvas({
   return (
     <section
       aria-label="Learning Plan journey"
-      className="learning-plan-journey"
+      aria-busy={busy}
+      className="min-w-0 space-y-3"
     >
-      <div className="learning-plan-workbench">
-        <LooseNodeRail
-          learningPlanId={learningPlanId}
-          nodes={looseNodes}
-          allNodes={nodes}
-          busy={busy}
-          readOnly={readOnly}
-          onOpen={onOpenStage}
-          onSequence={sequence}
-          onSequenceBefore={sequenceBefore}
-        />
-        {orderedSequencedNodes.length > 0 && (
-          <PlanStructurePath
+      {busy && (
+        <Badge variant="neutral">
+          <LoaderCircle className="animate-spin motion-reduce:animate-none" />
+          Updating plan…
+        </Badge>
+      )}
+      <div className="grid min-w-0 items-start gap-3 md:grid-cols-[minmax(11rem,14rem)_minmax(0,1fr)]">
+        {looseNodes.length > 0 && (
+          <LooseNodeRail
             learningPlanId={learningPlanId}
-            nodes={orderedSequencedNodes}
-            frontierId={frontier?.id}
-            onOpenStage={onOpenStage}
+            nodes={looseNodes}
+            allNodes={nodes}
+            busy={busy}
+            readOnly={readOnly}
+            onOpen={onOpenStage}
+            onSequence={sequence}
+            onSequenceBefore={sequenceBefore}
           />
-        )}
-        {orderedSequencedNodes.length > 0 && !readOnly && (
-          <details className="learning-plan-topology-toggle">
-            <summary>Edit connections</summary>
-          </details>
         )}
         <div
           ref={canvasRef}
           role="region"
           aria-label="Learning Plan canvas"
           tabIndex={0}
-          className={`learning-plan-canvas${grabbing ? " is-grabbing" : ""}`}
+          className={cn(
+            "relative h-(--learning-plan-height) min-h-48 w-full min-w-0 overflow-auto rounded-[var(--radius-panel)] border bg-background select-none [overscroll-behavior:contain] [touch-action:pan-x_pan-y] md:col-span-1",
+            looseNodes.length === 0 && "md:col-span-2",
+            grabbing ? "cursor-grabbing" : "cursor-grab",
+          )}
           onPointerDown={onPanDown}
           onPointerMove={onPanMove}
           onPointerUp={onPanUp}
@@ -417,7 +445,7 @@ export function LearningPlanCanvas({
           }
         >
           <div
-            className="learning-plan-canvas__ground"
+            className="relative h-(--learning-plan-content-height) min-h-full w-(--learning-plan-width) min-w-full bg-background [background-image:linear-gradient(var(--border)_1px,transparent_1px),linear-gradient(90deg,var(--border)_1px,transparent_1px)] [background-size:40px_40px]"
             style={
               {
                 "--learning-plan-width": `${width}px`,
@@ -429,7 +457,7 @@ export function LearningPlanCanvas({
             <svg
               width={width}
               height={height}
-              className="learning-plan-canvas__edges"
+              className="pointer-events-none absolute inset-0"
               aria-hidden="true"
             >
               {edges.map((e) => (
@@ -438,7 +466,7 @@ export function LearningPlanCanvas({
                   positions={positions}
                   from={e.fromNodeId}
                   to={e.toNodeId}
-                  stroke="var(--line)"
+                  stroke="var(--border)"
                   width={3.5}
                   dotted
                 />
@@ -451,7 +479,7 @@ export function LearningPlanCanvas({
                     positions={positions}
                     from={e.fromNodeId}
                     to={e.toNodeId}
-                    stroke="var(--done)"
+                    stroke="var(--status-completed)"
                     width={5}
                   />
                 ))}
@@ -459,10 +487,12 @@ export function LearningPlanCanvas({
 
             {sequencedNodes.length === 0 && (
               <div
-                className="learning-plan-canvas__empty"
+                className="absolute top-1/2 left-1/2 grid -translate-1/2 justify-items-center gap-2 text-center text-sm text-muted-foreground"
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                <p>Sequence a Stage to place it on the canvas.</p>
+                <p className="m-0">
+                  Sequence a Stage to place it on the canvas.
+                </p>
                 {!readOnly &&
                   (draft?.from === null ? (
                     <DraftForm
@@ -472,14 +502,15 @@ export function LearningPlanCanvas({
                       onSubmit={(name) => void createAndLink(name, null)}
                     />
                   ) : (
-                    <button
+                    <Button
                       type="button"
                       disabled={busy}
-                      className="quiet-button"
+                      variant="secondary"
                       onClick={() => setDraft({ from: null, mode: "start" })}
                     >
-                      ＋ Add another Stage
-                    </button>
+                      <Plus />
+                      Add another Stage
+                    </Button>
                   ))}
               </div>
             )}
@@ -541,17 +572,19 @@ export function LearningPlanCanvas({
                 const toName = nodeName(nodeById.get(e.toNodeId)!);
                 const accessibleLabel = `Disconnect ${fromName} from ${toName}`;
                 return (
-                  <button
+                  <Button
                     key={`x-${e.fromNodeId}-${e.toNodeId}`}
                     type="button"
                     title={accessibleLabel}
                     aria-label={accessibleLabel}
                     disabled={busy}
+                    variant="secondary"
+                    size="icon"
                     onPointerDown={(ev) => ev.stopPropagation()}
                     onClick={() =>
                       unlink({ from: e.fromNodeId, to: e.toNodeId })
                     }
-                    className="learning-plan-edge-remove"
+                    className="absolute left-(--learning-plan-x) top-(--learning-plan-y) rounded-full bg-background"
                     style={
                       {
                         "--learning-plan-x": `${(fromPosition.x + toPosition.x) / 2 - 22}px`,
@@ -559,109 +592,45 @@ export function LearningPlanCanvas({
                       } as CSSProperties
                     }
                   >
-                    ✕
-                  </button>
+                    <Unlink />
+                  </Button>
                 );
               })}
           </div>
 
           {rearranged && (
-            <button
+            <Button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setOffsets({})}
-              className="learning-plan-reset quiet-button"
+              variant="secondary"
+              size="compact"
+              className="sticky bottom-3 left-[calc(100%-9rem)]"
             >
-              ↺ reset layout
-            </button>
+              <RotateCcw />
+              Reset layout
+            </Button>
           )}
         </div>
       </div>
 
-      <p className="learning-plan-legend">
-        <strong>
-          <span aria-hidden="true">✓</span> Completed stage
-        </strong>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs leading-normal text-muted-foreground">
+        <Badge variant="completed">
+          <Check /> Completed stage
+        </Badge>
         <span>Solid path: walked</span>
         <span>Dotted path: ahead</span>
-        <span>Ring + “You are here”: current frontier</span>.{" "}
-        {readOnly
-          ? "Drag the map to pan. Open on a wider screen to arrange it."
-          : "Drag to pan; ＋ adds the next stage, ⑃ forks a branch, ⇢ links to another, ✕ removes a link."}
-      </p>
+        <Badge variant="progress">Current · You are here</Badge>
+        <span>
+          {readOnly
+            ? "Drag the map to pan. Open on a wider screen to arrange it."
+            : "Drag to pan; the labelled controls add, fork, connect, or disconnect nodes."}
+        </span>
+      </div>
       {errorLine}
-      <p role="status" className="visually-hidden">
+      <p role="status" className="sr-only">
         {announcement}
       </p>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-function PlanStructurePath({
-  learningPlanId,
-  nodes,
-  frontierId,
-  onOpenStage,
-}: {
-  learningPlanId: LearningPlanId;
-  nodes: LearningPlanNode[];
-  frontierId?: PlanNodeId;
-  onOpenStage: (stageId: StageId) => void;
-}) {
-  return (
-    <section className="plan-structure-path" aria-label="Plan structure">
-      <header>
-        <span>Local workspace</span>
-        <strong>Plan structure</strong>
-      </header>
-      <ol>
-        {nodes.map((node, index) => (
-          <li
-            key={node.id}
-            className={frontierId === node.id ? "is-current" : undefined}
-          >
-            <span className="plan-structure-path__marker">{index + 1}</span>
-            <article>
-              <span className="plan-structure-path__kind">
-                {node.kind === PlanNodeKind.Stage ? "Stage" : "Direct Item"}
-              </span>
-              {node.kind === PlanNodeKind.Stage ? (
-                <button type="button" onClick={() => onOpenStage(node.id)}>
-                  {node.name}
-                </button>
-              ) : (
-                <div className="plan-structure-path__item">
-                  <span
-                    className={`plan-structure-path__status is-${node.item.status.replace("_", "-")}`}
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <Link
-                      to={`/items/${node.item.id}`}
-                      state={itemDetailRouteState(
-                        planItemBackgroundLocation({ learningPlanId }),
-                      )}
-                    >
-                      {node.item.title}
-                    </Link>
-                    <small>
-                      {TYPE_LABELS[node.item.type]} ·{" "}
-                      {STATUS_LABELS[node.item.status]}
-                    </small>
-                  </div>
-                </div>
-              )}
-              {node.kind === PlanNodeKind.Stage ? (
-                <small>
-                  {node.done}/${node.total} Items done
-                </small>
-              ) : null}
-            </article>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }
@@ -705,150 +674,183 @@ function LooseNodeRail({
 
   return (
     <aside
-      className={`unsequenced-rail${nodes.length === 0 ? " is-empty" : ""}`}
+      className="max-h-56 min-w-0 overflow-y-auto rounded-[var(--radius-panel)] border bg-card p-3 [overscroll-behavior:contain] md:max-h-[35rem]"
       aria-labelledby="unsequenced-title"
     >
-      <h2 id="unsequenced-title">
-        <span>Local workspace</span>
-        <strong>Plan structure</strong>
-        <small>
-          Unsequenced <b>{nodes.length}</b>
-        </small>
+      <h2
+        id="unsequenced-title"
+        className="mb-3 grid grid-cols-[1fr_auto] items-center gap-2"
+      >
+        <span className="col-span-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          Local workspace
+        </span>
+        <strong className="font-serif text-lg font-medium">
+          Plan structure
+        </strong>
+        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          Unsequenced <Badge variant="neutral">{nodes.length}</Badge>
+        </span>
       </h2>
-      {nodes.length === 0 ? (
-        <p>Loose Items and Stages will wait here.</p>
-      ) : (
-        <ul>
-          {nodes.map((node) => {
-            const candidates = allNodes.filter(
-              (candidate) => candidate.id !== node.id,
-            );
-            const name = nodeName(node);
-            return (
-              <li key={node.id}>
-                {node.kind === PlanNodeKind.Item ? (
+      <ul className="m-0 grid list-none gap-3 p-0">
+        {nodes.map((node) => {
+          const candidates = allNodes.filter(
+            (candidate) => candidate.id !== node.id,
+          );
+          const name = nodeName(node);
+          return (
+            <li
+              key={node.id}
+              className="grid min-w-0 gap-2 border-b pb-3 last:border-b-0 last:pb-0"
+            >
+              {node.kind === PlanNodeKind.Item ? (
+                <Button
+                  variant="quiet"
+                  className="h-auto justify-start px-0 text-left whitespace-normal"
+                  asChild
+                >
                   <Link
                     to={`/items/${node.item.id}`}
                     state={itemDetailRouteState(
                       planItemBackgroundLocation({ learningPlanId }),
                     )}
                     aria-label={`Open ${name}`}
-                    className="unsequenced-rail__stage"
                   >
                     {name}
                   </Link>
-                ) : (
-                  <button
-                    type="button"
-                    className="unsequenced-rail__stage"
-                    onClick={() => onOpen(node.id)}
-                  >
-                    {name}
-                  </button>
-                )}
-                {node.kind === PlanNodeKind.Item && (
-                  <span>{node.item.status.replace("_", " ")}</span>
-                )}
-                {!readOnly && draft?.nodeId === node.id ? (
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (draft.otherNodeId) {
-                        if (draft.mode === "after") {
-                          onSequence({
-                            nodeId: node.id,
-                            predecessorId: draft.otherNodeId,
-                          });
-                        } else {
-                          onSequenceBefore({
-                            nodeId: node.id,
-                            successorId: draft.otherNodeId,
-                          });
-                        }
-                        setDraft(null);
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="quiet"
+                  className="h-auto justify-start px-0 text-left whitespace-normal"
+                  onClick={() => onOpen(node.id)}
+                >
+                  {name}
+                </Button>
+              )}
+              {node.kind === PlanNodeKind.Item && (
+                <ItemStatusBadge status={node.item.status} />
+              )}
+              {!readOnly && draft?.nodeId === node.id ? (
+                <form
+                  className="grid gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (draft.otherNodeId) {
+                      if (draft.mode === "after") {
+                        onSequence({
+                          nodeId: node.id,
+                          predecessorId: draft.otherNodeId,
+                        });
+                      } else {
+                        onSequenceBefore({
+                          nodeId: node.id,
+                          successorId: draft.otherNodeId,
+                        });
                       }
-                    }}
-                  >
-                    <label>
+                      setDraft(null);
+                    }
+                  }}
+                >
+                  <Field>
+                    <FieldLabel>
                       {draft.mode === "after" ? "Follows" : "Before"}
-                      <select
-                        value={draft.otherNodeId}
-                        disabled={busy || candidates.length === 0}
-                        onChange={(event) =>
-                          setDraft({
-                            nodeId: node.id,
-                            mode: draft.mode,
-                            otherNodeId: event.target.value as PlanNodeId,
-                          })
+                    </FieldLabel>
+                    <Select
+                      value={draft.otherNodeId}
+                      disabled={busy || candidates.length === 0}
+                      onValueChange={(value) =>
+                        setDraft({
+                          nodeId: node.id,
+                          mode: draft.mode,
+                          otherNodeId: value as PlanNodeId,
+                        })
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label={
+                          draft.mode === "after" ? "Follows" : "Before"
                         }
+                        className="w-full"
                       >
-                        <option value="" disabled>
-                          Choose a Plan Node…
-                        </option>
+                        <SelectValue placeholder="Choose a Plan Node…" />
+                      </SelectTrigger>
+                      <SelectContent>
                         {candidates.map((candidate) => (
-                          <option key={candidate.id} value={candidate.id}>
+                          <SelectItem key={candidate.id} value={candidate.id}>
                             {nodeName(candidate)}
-                          </option>
+                          </SelectItem>
                         ))}
-                      </select>
-                    </label>
-                    {candidates.length === 0 && (
-                      <p>Add another node before sequencing this one.</p>
-                    )}
-                    <span>
-                      <button
-                        type="submit"
-                        disabled={busy || !draft.otherNodeId}
-                      >
-                        {draft.mode === "after" ? "Sequence" : "Link"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setDraft(null)}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  </form>
-                ) : !readOnly ? (
-                  <span>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      aria-label={`Sequence ${name}`}
-                      onClick={() =>
-                        setDraft({
-                          nodeId: node.id,
-                          mode: "after",
-                          otherNodeId: "",
-                        })
-                      }
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {candidates.length === 0 && (
+                    <FieldDescription>
+                      Add another node before sequencing this one.
+                    </FieldDescription>
+                  )}
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="submit"
+                      size="compact"
+                      disabled={busy || !draft.otherNodeId}
                     >
-                      Sequence this{" "}
-                      {node.kind === PlanNodeKind.Item ? "Item" : "Stage"}
-                    </button>
-                    <button
+                      {draft.mode === "after" ? "Sequence" : "Link"}
+                    </Button>
+                    <Button
                       type="button"
+                      variant="quiet"
+                      size="compact"
                       disabled={busy}
-                      aria-label={`Link from ${name} to another node`}
-                      onClick={() =>
-                        setDraft({
-                          nodeId: node.id,
-                          mode: "before",
-                          otherNodeId: "",
-                        })
-                      }
+                      onClick={() => setDraft(null)}
                     >
-                      Link forward
-                    </button>
+                      Cancel
+                    </Button>
                   </span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                </form>
+              ) : !readOnly ? (
+                <span className="grid gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="compact"
+                    disabled={busy}
+                    aria-label={`Sequence ${name}`}
+                    onClick={() =>
+                      setDraft({
+                        nodeId: node.id,
+                        mode: "after",
+                        otherNodeId: "",
+                      })
+                    }
+                  >
+                    <ArrowRight />
+                    Sequence this{" "}
+                    {node.kind === PlanNodeKind.Item ? "Item" : "Stage"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="compact"
+                    disabled={busy}
+                    aria-label={`Link from ${name} to another node`}
+                    onClick={() =>
+                      setDraft({
+                        nodeId: node.id,
+                        mode: "before",
+                        otherNodeId: "",
+                      })
+                    }
+                  >
+                    <Link2 />
+                    Link forward
+                  </Button>
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
     </aside>
   );
 }
@@ -909,7 +911,7 @@ function Waypoint({
   const name = nodeName(node);
   const progressLabel =
     node.kind === PlanNodeKind.Item
-      ? node.item.status.replace("_", " ")
+      ? STATUS_LABELS[node.item.status]
       : node.total === 0
         ? "No items added yet"
         : `${node.done} of ${node.total} items done`;
@@ -921,7 +923,7 @@ function Waypoint({
         e.stopPropagation();
         onPointerDown(e);
       }}
-      className="learning-plan-waypoint"
+      className="absolute left-(--learning-plan-x) top-(--learning-plan-y) flex w-48 touch-none cursor-grab flex-col items-center gap-2"
       style={
         {
           "--learning-plan-x": `${x - 96}px`,
@@ -929,33 +931,38 @@ function Waypoint({
         } as CSSProperties
       }
     >
-      {isFrontier && (
-        <div className="learning-plan-waypoint__frontier">You are here</div>
-      )}
+      {isFrontier && <Badge variant="progress">Current · You are here</Badge>}
+      {isLinkSource && <Badge variant="neutral">Link source</Badge>}
 
       {node.kind === PlanNodeKind.Item ? (
-        <Link
-          to={`/items/${node.item.id}`}
-          state={itemDetailRouteState(
-            planItemBackgroundLocation({ learningPlanId }),
-          )}
-          className="learning-plan-stage-link"
-          aria-label={`Open ${name}`}
-          title={progressLabel}
-          onPointerDown={(event) => event.stopPropagation()}
+        <Button
+          variant="quiet"
+          className="h-auto min-h-11 min-w-11 flex-col whitespace-normal px-2 py-1"
+          asChild
         >
-          <WaypointContents
-            node={node}
-            name={name}
-            done={done}
-            isFrontier={isFrontier}
-            underway={underway}
-          />
-        </Link>
+          <Link
+            to={`/items/${node.item.id}`}
+            state={itemDetailRouteState(
+              planItemBackgroundLocation({ learningPlanId }),
+            )}
+            aria-label={`Open ${name}`}
+            title={progressLabel}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <WaypointContents
+              node={node}
+              name={name}
+              done={done}
+              isFrontier={isFrontier}
+              underway={underway}
+            />
+          </Link>
+        </Button>
       ) : (
-        <button
+        <Button
           type="button"
-          className="learning-plan-stage-link"
+          variant="quiet"
+          className="h-auto min-h-11 min-w-11 flex-col whitespace-normal px-2 py-1"
           aria-label={`Open ${name}`}
           title={progressLabel}
           onPointerDown={(event) => event.stopPropagation()}
@@ -968,7 +975,7 @@ function Waypoint({
             isFrontier={isFrontier}
             underway={underway}
           />
-        </button>
+        </Button>
       )}
 
       {!readOnly && (
@@ -998,18 +1005,18 @@ function Waypoint({
               busy={busy}
             />
           ) : linking ? null : (
-            <div className="learning-plan-authoring-row">
+            <div className="flex items-center gap-1">
               <Tip label="Add the next stage in sequence">
                 <IconButton
-                  label="＋"
-                  accessibleLabel="Add next Stage"
+                  icon={<Plus />}
+                  accessibleLabel="Add the next stage in sequence"
                   onClick={controls.onNext}
                   busy={busy}
                 />
               </Tip>
               <Tip label="Fork a parallel branch">
                 <IconButton
-                  label="⑃"
+                  icon={<GitBranch />}
                   accessibleLabel="Fork a parallel branch"
                   onClick={controls.onFork}
                   busy={busy}
@@ -1017,7 +1024,7 @@ function Waypoint({
               </Tip>
               <Tip label="Link to another node">
                 <IconButton
-                  label="⇢"
+                  icon={<Link2 />}
                   accessibleLabel={`Link from ${name} to another node`}
                   onClick={controls.onStartLink}
                   busy={busy}
@@ -1057,21 +1064,29 @@ function WaypointContents({
         : `${node.done}/${node.total}`;
   return (
     <>
-      <span className="learning-plan-medallion">
+      <span className="rounded-full">
         {done ? (
           <Seal />
         ) : (
           <span
-            className={`learning-plan-medallion__ring${isFrontier ? " is-frontier" : ""}`}
+            className={cn(
+              "flex size-[58px] items-center justify-center rounded-full border bg-card",
+              isFrontier &&
+                "outline-3 outline-offset-2 outline-double outline-primary",
+            )}
           >
             <ProgressRing
               size={R * 2 - 8}
               stroke={5}
               progress={progressOf(node)}
-              track="var(--field-line)"
-              fill={isFrontier || underway ? "var(--accent)" : "var(--muted)"}
+              track="var(--input)"
+              fill={
+                isFrontier || underway
+                  ? "var(--status-progress)"
+                  : "var(--muted-foreground)"
+              }
               center={
-                <span className="learning-plan-progress-label">
+                <span className="text-xs font-bold text-foreground tabular-nums">
                   {progressText}
                 </span>
               }
@@ -1079,7 +1094,13 @@ function WaypointContents({
           </span>
         )}
       </span>
-      <span className={`learning-plan-waypoint__name${done ? " is-done" : ""}`}>
+      <span
+        className={cn(
+          "text-center text-sm leading-tight font-semibold tracking-wide text-foreground [overflow-wrap:anywhere]",
+          done &&
+            "decoration-3 underline decoration-status-completed underline-offset-4",
+        )}
+      >
         {name}
       </span>
     </>
@@ -1109,9 +1130,9 @@ function DraftForm({
         e.preventDefault();
         submit();
       }}
-      className="learning-plan-draft"
+      className="flex max-w-full items-center gap-1"
     >
-      <input
+      <Input
         autoFocus
         value={name}
         placeholder={placeholder}
@@ -1120,25 +1141,26 @@ function DraftForm({
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
         }}
-        className="learning-plan-draft__input"
+        className="w-36 text-sm"
       />
-      <button
+      <Button
         type="submit"
         disabled={busy}
-        className="learning-plan-draft__button"
+        size="icon"
         aria-label="Create Stage"
       >
-        ✓
-      </button>
-      <button
+        <Check />
+      </Button>
+      <Button
         type="button"
         disabled={busy}
         onClick={onCancel}
-        className="learning-plan-draft__button"
+        variant="quiet"
+        size="icon"
         aria-label="Cancel new Stage"
       >
-        ✕
-      </button>
+        <X />
+      </Button>
     </form>
   );
 }
@@ -1149,9 +1171,9 @@ function DraftForm({
  */
 function Seal() {
   return (
-    <div className="learning-plan-seal">
-      <span aria-hidden="true">✓</span>
-      <span className="visually-hidden">Completed stage</span>
+    <div className="grid size-[58px] place-items-center rounded-full border-4 border-double border-primary-foreground bg-status-completed text-primary-foreground">
+      <Check aria-hidden="true" />
+      <span className="sr-only">Completed stage</span>
     </div>
   );
 }
@@ -1188,26 +1210,27 @@ function LearningPlanSeg({
 }
 
 function IconButton({
-  label,
+  icon,
   accessibleLabel,
   onClick,
   busy,
 }: {
-  label: string;
+  icon: React.ReactNode;
   accessibleLabel: string;
   onClick: () => void;
   busy: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
       disabled={busy}
       onClick={onClick}
-      className="learning-plan-icon-button"
+      variant="secondary"
+      size="icon-compact"
       aria-label={accessibleLabel}
     >
-      {label}
-    </button>
+      {icon}
+    </Button>
   );
 }
 
@@ -1223,15 +1246,16 @@ function RowButton({
   busy: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
       disabled={busy}
       onClick={onClick}
-      className="learning-plan-row-button"
+      variant="secondary"
+      size="compact"
       aria-label={accessibleLabel}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -1245,12 +1269,18 @@ function ErrorLine({
   onRetry: () => void;
 }) {
   return (
-    <div role="alert" className="surface-error">
-      <p>Could not change the Learning Plan: {error}</p>
-      <button type="button" disabled={busy} onClick={onRetry}>
+    <Alert className="flex flex-wrap items-center justify-between gap-3">
+      <p className="m-0">Could not change the Learning Plan: {error}</p>
+      <Button
+        type="button"
+        variant="secondary"
+        size="compact"
+        disabled={busy}
+        onClick={onRetry}
+      >
         Retry
-      </button>
-    </div>
+      </Button>
+    </Alert>
   );
 }
 
@@ -1262,9 +1292,11 @@ function Tip({
   children: React.ReactNode;
 }) {
   return (
-    <span className="tw-tip">
-      {children}
-      <span className="tw-tip-label">{label}</span>
-    </span>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

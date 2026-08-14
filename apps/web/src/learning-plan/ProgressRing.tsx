@@ -26,12 +26,7 @@ export function ProgressRing({
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, progress));
   return (
-    <svg
-      width={size}
-      height={size}
-      className="progress-ring"
-      aria-hidden="true"
-    >
+    <svg width={size} height={size} className="block" aria-hidden="true">
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -51,11 +46,13 @@ export function ProgressRing({
         strokeDasharray={circumference}
         strokeDashoffset={circumference * (1 - clamped)}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        className="progress-ring__value"
+        className="transition-[stroke-dashoffset] duration-300 motion-reduce:transition-none"
       />
       {center !== undefined && (
         <foreignObject x={0} y={0} width={size} height={size}>
-          <div className="progress-ring__center">{center}</div>
+          <div className="flex size-full items-center justify-center">
+            {center}
+          </div>
         </foreignObject>
       )}
     </svg>
