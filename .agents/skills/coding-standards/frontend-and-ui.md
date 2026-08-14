@@ -13,10 +13,9 @@ Follow **discover → reuse → extend**:
 
 1. Search the configured catalogue alias, usages, and neighboring tests; reuse a
    component's public API and supported variant when its behavior matches.
-2. Add recurring generic behavior at that catalogue source. Add a recurring
-   Unshelf presentation beside its owning domain and representative usages.
-3. Leave unique composition, product interactions, and behavior-coupled geometry
-   at the owning room or feature seam.
+2. Before extending, identify the owning layer from ADR-0019's ownership model.
+3. Change the executable source at that layer, then check its representative
+   usages and focused tests.
 
 Import generic controls through the configured local catalogue alias, not directly
 from its primitive dependency. When the available primitive behavior differs from
