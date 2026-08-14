@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ItemId,
+  LearningPlanId,
   StageDetail,
   StageId,
   StageItemCandidate,
@@ -21,16 +22,17 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToStage,
-  fetchStage,
   fetchStageItemCandidates,
   moveLearningPlanItem,
   removeItemFromStage,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { TYPE_LABELS } from "../items/presentation";
+import { StageRefreshFailure, useStageRefresh } from "./StageRefresh";
 
 interface StageItemIntakeProps {
   stageId: StageId;
+  learningPlanId: LearningPlanId;
   user: CurrentUser;
   onStageChanged: (stage: StageDetail) => void;
 }
@@ -40,6 +42,7 @@ type AvailableCandidate = Extract<StageItemCandidate, { kind: "available" }>;
 /** Server-searched Library intake for one open Stage. */
 export function StageItemIntake({
   stageId,
+  learningPlanId,
   user,
   onStageChanged,
 }: StageItemIntakeProps) {
@@ -51,6 +54,11 @@ export function StageItemIntake({
   const [failedItemId, setFailedItemId] = useState<ItemId | null>(null);
   const [moved, setMoved] = useState<AvailableCandidate | null>(null);
   const requestVersion = useRef(0);
+  const { refreshStage, refreshFailed } = useStageRefresh({
+    stageId,
+    user,
+    onStageChanged,
+  });
 
   const search = useCallback(
     async (titleQuery: string) => {
@@ -127,20 +135,20 @@ export function StageItemIntake({
     setPendingItemId(candidate.id);
     setFailedItemId(null);
     try {
-      const currentStage = await fetchStage(user, stageId);
-      await moveLearningPlanItem(
-        user,
-        currentStage.learningPlanId,
-        candidate.id,
-        stageId,
-      );
-      onStageChanged(await fetchStage(user, stageId));
-      await search(query);
+      await moveLearningPlanItem(user, learningPlanId, candidate.id, stageId);
     } catch {
       setFailedItemId(candidate.id);
-    } finally {
       setPendingItemId(null);
+      return;
     }
+
+    setResults(
+      (current) =>
+        current?.filter((result) => result.id !== candidate.id) ?? current,
+    );
+    await refreshStage();
+    setPendingItemId(null);
+    void search(query);
   }
 
   return (
@@ -186,6 +194,12 @@ export function StageItemIntake({
           />
         </div>
       </Field>
+
+      {refreshFailed && (
+        <StageRefreshFailure onRetry={refreshStage}>
+          Item moved to this Stage. Couldn&apos;t refresh the Stage details.
+        </StageRefreshFailure>
+      )}
 
       {searching && results === null && <StageSearchSkeleton />}
 

@@ -17,7 +17,6 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
-  fetchStage,
   moveLearningPlanItem,
   removeItemFromStage,
   reorderStageItems,
@@ -25,6 +24,7 @@ import {
 import type { CurrentUser } from "../application-auth/types";
 import { ItemRow } from "../items/ItemRow";
 import { StageItemIntake } from "./StageItemIntake";
+import { StageRefreshFailure, useStageRefresh } from "./StageRefresh";
 
 interface StageViewProps {
   stage: StageDetail;
@@ -205,6 +205,7 @@ export function StageView({
       {!structuralReadOnly && (
         <StageItemIntake
           stageId={stage.id}
+          learningPlanId={stage.learningPlanId}
           user={user}
           onStageChanged={onStageChanged}
         />
@@ -226,6 +227,12 @@ function MoveDirectly({
 }) {
   const [moving, setMoving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [moved, setMoved] = useState(false);
+  const { refreshStage, refreshFailed } = useStageRefresh({
+    stageId: stage.id,
+    user,
+    onStageChanged,
+  });
 
   async function move() {
     if (moving) return;
@@ -233,12 +240,15 @@ function MoveDirectly({
     setFailed(false);
     try {
       await moveLearningPlanItem(user, stage.learningPlanId, itemId, null);
-      onStageChanged(await fetchStage(user, stage.id));
+      setMoved(true);
     } catch {
       setFailed(true);
+      setMoving(false);
+      return;
     } finally {
       setMoving(false);
     }
+    await refreshStage();
   }
 
   return (
@@ -248,7 +258,7 @@ function MoveDirectly({
         variant="secondary"
         size="compact"
         className="min-h-11 sm:min-h-8"
-        disabled={moving}
+        disabled={moving || moved}
         onClick={() => void move()}
       >
         {moving ? (
@@ -259,9 +269,19 @@ function MoveDirectly({
         ) : (
           <CornerDownLeft aria-hidden="true" />
         )}
-        {moving ? "Moving…" : "Move directly in plan"}
+        {moving
+          ? "Moving…"
+          : moved
+            ? "Moved directly"
+            : "Move directly in plan"}
       </Button>
       {failed && <Alert>Couldn&apos;t move this Item. Nothing changed.</Alert>}
+      {refreshFailed && (
+        <StageRefreshFailure onRetry={refreshStage}>
+          Item moved directly in the plan. Couldn&apos;t refresh the Stage
+          details.
+        </StageRefreshFailure>
+      )}
     </div>
   );
 }

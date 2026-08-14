@@ -19,14 +19,17 @@ interface ItemSummaryProps {
   actions?: ReactNode;
   className?: string;
   detailBackgroundLocation?: ItemBackgroundLocation;
+  /** Item-owned editing controls used when the recurring row is operable. */
+  editableFacts?: ReactNode;
 }
 
-/** Shared, read-only Item identity and facts for every recurring row. */
+/** Shared Item identity and facts for every recurring row. */
 export function ItemSummary({
   item,
   actions,
   className,
   detailBackgroundLocation,
+  editableFacts,
 }: ItemSummaryProps) {
   const location = useLocation();
   const backgroundLocation = itemLinkBackgroundLocation(
@@ -56,8 +59,10 @@ export function ItemSummary({
             </Link>
           </h3>
         </div>
-        <ItemStatusBadge status={item.status} />
+        {!editableFacts && <ItemStatusBadge status={item.status} />}
       </div>
+
+      {editableFacts}
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {item.labels.length > 0 ? (
@@ -72,17 +77,21 @@ export function ItemSummary({
         ) : (
           <span>No Labels</span>
         )}
-        <span aria-hidden="true">·</span>
-        {item.targetDate ? (
-          <span>Target {formatTargetDate(item.targetDate)}</span>
-        ) : (
-          <span>No Target date</span>
-        )}
-        {item.pastTarget && (
-          <Badge variant="past">
-            <CalendarClock aria-hidden="true" />
-            Past target
-          </Badge>
+        {!editableFacts && (
+          <>
+            <span aria-hidden="true">·</span>
+            {item.targetDate ? (
+              <span>Target {formatTargetDate(item.targetDate)}</span>
+            ) : (
+              <span>No Target date</span>
+            )}
+            {item.pastTarget && (
+              <Badge variant="past">
+                <CalendarClock aria-hidden="true" />
+                Past target
+              </Badge>
+            )}
+          </>
         )}
       </div>
 

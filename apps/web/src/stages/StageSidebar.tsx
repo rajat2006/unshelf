@@ -50,8 +50,12 @@ export function StageSidebar({
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeFailed, setRemoveFailed] = useState(false);
+  const loadVersion = useRef(0);
+  const route = useRef({ stageId, learningPlanId });
+  route.current = { stageId, learningPlanId };
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoadError(false);
     try {
       const nextStage = await fetchLearningPlanStage(
@@ -59,21 +63,35 @@ export function StageSidebar({
         learningPlanId,
         stageId,
       );
+      if (version !== loadVersion.current) return;
       setStage(nextStage);
       setName(nextStage.name);
     } catch {
-      setLoadError(true);
+      if (version === loadVersion.current) setLoadError(true);
     }
   }, [stageId, learningPlanId, user]);
 
   useEffect(() => {
     setStage(null);
     void load();
+    return () => {
+      loadVersion.current += 1;
+    };
   }, [load]);
+
+  const refreshSurroundingPlan = async () => {
+    try {
+      await onLearningPlanChanged();
+    } catch {
+      // The enclosing Learning Plan surface owns and presents refresh recovery.
+    }
+  };
 
   const updateItem = (changed: Item) => {
     setStage((current) =>
-      current
+      current &&
+      current.id === route.current.stageId &&
+      current.learningPlanId === route.current.learningPlanId
         ? {
             ...current,
             items: current.items.map((item) =>
@@ -82,7 +100,17 @@ export function StageSidebar({
           }
         : current,
     );
-    void onLearningPlanChanged();
+    void refreshSurroundingPlan();
+  };
+
+  const acceptStageChange = (changed: StageDetail) => {
+    if (
+      changed.id !== route.current.stageId ||
+      changed.learningPlanId !== route.current.learningPlanId
+    )
+      return;
+    setStage(changed);
+    void refreshSurroundingPlan();
   };
 
   const rename = async (event: FormEvent) => {
@@ -99,14 +127,20 @@ export function StageSidebar({
     setRenaming(true);
     try {
       const updated = await updateStage(user, stageId, { name: trimmed });
+      if (
+        updated.id !== route.current.stageId ||
+        updated.learningPlanId !== route.current.learningPlanId
+      )
+        return;
       setStage(updated);
       setName(updated.name);
-      await onLearningPlanChanged();
     } catch {
       setRenameFailed(true);
+      return;
     } finally {
       setRenaming(false);
     }
+    await refreshSurroundingPlan();
   };
 
   const remove = async (itemDisposition: StageItemDisposition) => {
@@ -115,22 +149,31 @@ export function StageSidebar({
     setRemoveFailed(false);
     try {
       await removeStage(user, stageId, itemDisposition);
-      onClose();
-      await onLearningPlanChanged();
     } catch {
       setRemoveFailed(true);
+      return;
     } finally {
       setRemoving(false);
     }
+    if (stageId !== route.current.stageId) return;
+    onClose();
+    await refreshSurroundingPlan();
   };
+
+  const displayedStage =
+    stage?.id === stageId && stage.learningPlanId === learningPlanId
+      ? stage
+      : null;
 
   return (
     <aside
       className="grid min-w-0 content-start gap-6 overflow-hidden rounded-[var(--radius-panel)] border bg-card p-4 text-card-foreground sm:p-6"
-      aria-label={stage ? `${stage.name} details` : "Stage details"}
-      aria-busy={!stage && !loadError}
+      aria-label={
+        displayedStage ? `${displayedStage.name} details` : "Stage details"
+      }
+      aria-busy={!displayedStage && !loadError}
     >
-      {!stage && !loadError && <StageSidebarSkeleton />}
+      {!displayedStage && !loadError && <StageSidebarSkeleton />}
 
       {loadError && (
         <div className="grid gap-4">
@@ -153,7 +196,7 @@ export function StageSidebar({
         </div>
       )}
 
-      {stage && (
+      {displayedStage && (
         <>
           <header className="flex min-w-0 items-start justify-between gap-3 border-b pb-4">
             <div className="min-w-0">
@@ -161,7 +204,7 @@ export function StageSidebar({
                 Stage detail
               </p>
               <h2 className="m-0 mt-1 font-serif text-2xl leading-tight font-semibold break-words">
-                {stage.name}
+                {displayedStage.name}
               </h2>
             </div>
             <Button
@@ -222,12 +265,9 @@ export function StageSidebar({
           )}
 
           <StageView
-            stage={stage}
+            stage={displayedStage}
             user={user}
-            onStageChanged={(changed) => {
-              setStage(changed);
-              void onLearningPlanChanged();
-            }}
+            onStageChanged={acceptStageChange}
             onItemChanged={updateItem}
             onClose={onClose}
             headingLevel={2}
