@@ -125,6 +125,28 @@ afterEach(() => {
 });
 
 describe("canonical Item route", () => {
+  it("presents routed detail before the retained room in single-column source order", async () => {
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: "/library",
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    const detail = await screen.findByRole("complementary", {
+      name: `${item.title} details`,
+    });
+    const room = screen.getByText("Library room");
+
+    expect(
+      detail.compareDocumentPosition(room) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it.each([
     ["Library room", "/library?q=systems"],
     ["Today room", "/today"],

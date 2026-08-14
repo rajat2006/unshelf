@@ -250,7 +250,7 @@ export function StageItemIntake({
                     </span>
                   </div>
                   {conflict && (
-                    <Badge variant="progress">
+                    <Badge variant="neutral">
                       {candidate.kind === "conflict"
                         ? `In ${candidate.stage.name}`
                         : "Placed directly on this Learning Plan"}
@@ -262,7 +262,7 @@ export function StageItemIntake({
                   {isMoved ? (
                     <>
                       <span
-                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-status-completed"
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
                         role="status"
                       >
                         <Check aria-hidden="true" className="size-4" />

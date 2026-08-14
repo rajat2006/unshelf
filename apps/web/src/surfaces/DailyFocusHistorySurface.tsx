@@ -97,7 +97,7 @@ export function DailyFocusHistorySurface({
         >
           Daily Focus history
         </h1>
-        <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
           Review what received your attention and its Status at day end. Past
           Daily Focus records cannot be edited.
         </p>
@@ -202,7 +202,7 @@ export function DailyFocusHistorySurface({
                           {snapshot.status !== Status.Done &&
                             (addedItemIds.has(item.id) ? (
                               <span
-                                className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-status-completed"
+                                className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-primary"
                                 role="status"
                               >
                                 <Check className="size-4" aria-hidden="true" />

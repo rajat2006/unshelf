@@ -326,7 +326,7 @@ export function TodaySurface() {
           >
             Today
           </h1>
-          <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+          <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
             Choose a small working set, then let each Item&apos;s shared Status
             record your progress everywhere.
           </p>

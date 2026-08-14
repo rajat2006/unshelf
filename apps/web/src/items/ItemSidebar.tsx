@@ -81,7 +81,7 @@ export function ItemSidebar({
 
   return (
     <aside
-      className="min-w-0 rounded-[var(--radius-panel)] border bg-card text-card-foreground lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto"
+      className="min-w-0 rounded-[var(--radius-panel)] border bg-card text-card-foreground lg:order-last lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto"
       aria-label={visibleItem ? `${visibleItem.title} details` : "Item details"}
     >
       {!visibleItem && !error && (
