@@ -4,6 +4,15 @@
 - Repository snapshot: [`243d86e2c2d8846f205b36c793d365ab4d835d38`](https://github.com/rajat2006/unshelf/tree/243d86e2c2d8846f205b36c793d365ab4d835d38)
 - Wayfinder ticket: [Audit the existing Playwright behavioral suite](https://github.com/rajat2006/unshelf/issues/338)
 
+## Decision status
+
+**No owner decision is recorded by this memo.** It is an AFK research artifact:
+the facts, failure history, tradeoffs, and dispositions below are inputs for
+later owner conversations. Words such as “retain,” “rewrite,” “separate,” and
+“delete” name the research recommendation to put in front of the owner; they do
+not mean that the recommendation has been approved. Every choice summarized in
+[Decisions still open](#decisions-still-open) remains open.
+
 ## Question
 
 What purpose and value does each part of the existing Playwright browser setup
@@ -11,11 +20,12 @@ serve, which parts should be retained, rewritten, separated, or deleted, and
 what must change before a behavioral end-to-end journey can be trusted as a
 deterministic CI gate?
 
-## Executive answer
+## Research synthesis
 
-**Do not put the current suite into required CI.** Keep Playwright and the core
-real-application seam, but treat the current suite as untrusted prior art and
-rebuild the gate around a small set of browser-only contracts.
+**Research recommendation: do not put the current suite into required CI
+without an owner decision.** The evidence supports considering Playwright and
+the core real-application seam as candidates, while treating the current suite
+as untrusted prior art and considering a smaller set of browser-only contracts.
 
 The strongest part is the middle of the stack: a real React `App`, real HTTP
 calls, the real Express application, committed migrations, and a real ephemeral
@@ -51,7 +61,7 @@ The suite around that seam has not earned gate status:
   tenancy constraints, domain ordering, migration mechanics, and every loading
   or error rendering in two viewports.[^duplication]
 
-The right destination is three explicit suites:
+One researched option is three explicit suites; the owner has not selected it:
 
 1. **Required browser-behavior gate:** a small Chromium suite of independent,
    browser-specific journeys, with a phone project only where behavior differs.
@@ -125,7 +135,7 @@ name and claims must say so.
 
 ### What each spec is worth
 
-| Spec | Unique browser-level value | Duplication / cost | Recommended disposition |
+| Spec | Unique browser-level value | Duplication / cost | Research recommendation to decide |
 | --- | --- | --- | --- |
 | [`application.spec.ts`](https://github.com/rajat2006/unshelf/blob/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/web/test/browser/application.spec.ts#L1-L176) | Proves a coherent cross-room workflow through real UI, HTTP, persistence, and reload; uniquely checks for external requests, but only in these two tests. | The first journey repeats Capture persistence and tenancy. The second is very long and repeats most room-specific specs. | **Rewrite and retain one sentinel journey.** Keep the Power Learner cross-room coherence, shorten it to intent-level steps, and move the non-loopback network ban into an automatic fixture. Delete the first journey after compact Capture and API tenancy coverage are authoritative. |
 | [`capture.spec.ts`](https://github.com/rajat2006/unshelf/blob/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/web/test/browser/capture.spec.ts#L1-L227) | Real keyboard routing, editable-control suppression, modal visibility, unchanged URL, and recovery after an intercepted request failure. | Six surfaces × two projects repeat one global control. Source preservation, duplicate policy, validation, and persistence already have API tests. All cases share one default User per project. | **Rewrite.** Keep one desktop keyboard/dialog journey, one origin-preservation journey, and one phone interaction only if phone behavior differs. Move domain validation and duplicate/source facts down; cover the shared component's surface availability below Playwright. |
@@ -357,7 +367,7 @@ problem, but isolation alone is not yet a sufficient reliability policy. Test
 state, process lifecycle, browser provisioning, diagnostics, and scope all need
 explicit ownership.
 
-## Recommended target design
+## Candidate target design for owner review
 
 ### 1. Preserve the deep application seam
 
@@ -505,22 +515,23 @@ flakiness is mathematically impossible. Any recurrence of the historic
 different-test timeout pattern resets the qualification run and blocks gate
 promotion until the cause is understood.
 
-## Final disposition
+## Decisions still open
 
-| Decision | Answer |
+| Decision to take with the owner | Research position—not approved |
 | --- | --- |
-| Keep Playwright? | **Yes.** It is well suited to browser behavior, diagnostics, accessibility automation, and a later visual-fidelity implementation path. |
-| Keep the real App/API/PostgreSQL harness? | **Yes, after isolation and lifecycle rewrites.** It is the suite's highest-value asset. |
-| Keep fake auth? | **Yes for hermetic application behavior; no as a claim about Clerk/OAuth.** Separate the real identity smoke. |
-| Keep every current spec in the required gate? | **No.** Rewrite a small browser-specific set; migrate duplicated assertions down; separate audit/migration/visual classes. |
-| Keep both projects on every test? | **No.** Select desktop/phone by behavior; phone emulation is not Safari coverage. |
-| Add the existing `test:browser` command to Product CI? | **No.** Create a dedicated, provisioned, diagnostic browser check after qualification. |
-| Use retries to obtain green? | **No.** Use at most a diagnostic retry plus `failOnFlakyTests`; quarantine any flaky case from the gate. |
-| Current suite trusted as deterministic? | **No.** Repository history explicitly demonstrates otherwise. |
+| Keep Playwright? | **Recommendation: yes.** It is well suited to browser behavior, diagnostics, accessibility automation, and a later visual-fidelity implementation path. |
+| Keep the real App/API/PostgreSQL harness? | **Recommendation: yes, after isolation and lifecycle rewrites.** It is the suite's highest-value asset. |
+| Keep fake auth? | **Recommendation: yes for hermetic application behavior; no as a claim about Clerk/OAuth.** Separate the real identity smoke. |
+| Keep every current spec in the required gate? | **Recommendation: no.** Rewrite a small browser-specific set; migrate duplicated assertions down; separate audit/migration/visual classes. |
+| Keep both projects on every test? | **Recommendation: no.** Select desktop/phone by behavior; phone emulation is not Safari coverage. |
+| Add the existing `test:browser` command to Product CI? | **Recommendation: no.** Create a dedicated, provisioned, diagnostic browser check after qualification. |
+| Use retries to obtain green? | **Recommendation: no.** Use at most a diagnostic retry plus `failOnFlakyTests`; quarantine any flaky case from the gate. |
+| Current suite trusted as deterministic? | **Fact: no.** Repository history explicitly demonstrates otherwise. |
 
-The current suite should remain opt-in while this work is done. Its code is
-useful evidence and a source of candidate contracts, but its existence grants
-neither Playwright nor any particular test a place in the final required gate.
+The research recommendation is to leave the current suite opt-in while these
+decisions are taken. Its code is useful evidence and a source of candidate
+contracts, but neither Playwright nor any particular test has an approved place
+in a future required gate yet.
 
 [^current-harness]: The browser server starts the API test harness with a real PostgreSQL container and committed migrations, then exposes it through a Vite proxy: [`server.ts`](https://github.com/rajat2006/unshelf/blob/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/web/test/browser/server.ts#L19-L111) and [`apps/api/test/harness.ts`](https://github.com/rajat2006/unshelf/blob/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/api/test/harness.ts#L133-L196).
 [^current-count]: Counted from the 11 specs under [`apps/web/test/browser`](https://github.com/rajat2006/unshelf/tree/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/web/test/browser): 70 top-level declarations plus six cases generated by the [`Capture` surface loop](https://github.com/rajat2006/unshelf/blob/243d86e2c2d8846f205b36c793d365ab4d835d38/apps/web/test/browser/capture.spec.ts#L31-L58), collected under the two configured projects. The 24 project-conditional `test.skip` calls are visible across the specs; the source specs total 3,425 lines at this snapshot.
