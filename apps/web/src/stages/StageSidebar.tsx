@@ -242,7 +242,6 @@ export function StageSidebar({
               <Button
                 type="submit"
                 variant="secondary"
-                disabled={renaming}
                 loading={renaming}
                 loadingLabel="Renaming…"
                 className="w-fit min-w-36"
@@ -298,7 +297,6 @@ export function StageSidebar({
                     <Button
                       type="button"
                       variant="destructive"
-                      disabled={removing}
                       loading={removing}
                       loadingLabel="Removing Items…"
                       onClick={() => void remove("remove_from_plan")}

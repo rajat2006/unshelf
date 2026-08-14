@@ -213,7 +213,6 @@ export function DailyFocusHistorySurface({
                                 type="button"
                                 size="compact"
                                 className="min-h-11 min-w-32 sm:min-h-8"
-                                disabled={addingItemId === item.id}
                                 loading={addingItemId === item.id}
                                 loadingLabel="Adding…"
                                 onClick={() => void reconsider(item.id)}

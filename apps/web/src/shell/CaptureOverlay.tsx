@@ -194,7 +194,6 @@ function CaptureComposer({
         <Button
           type="submit"
           size="touch"
-          disabled={saving}
           loading={saving}
           loadingLabel="Adding to Library…"
           className="min-w-40 justify-self-start sm:h-10"

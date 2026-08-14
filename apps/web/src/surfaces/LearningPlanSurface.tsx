@@ -210,7 +210,6 @@ export function LearningPlanSurface({
                     <Button
                       type="submit"
                       variant="secondary"
-                      disabled={renaming}
                       loading={renaming}
                       loadingLabel="Renaming…"
                       className="min-w-32"

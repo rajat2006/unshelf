@@ -298,7 +298,6 @@ function RemoveFromStage({
         variant="quiet"
         size="compact"
         className="min-h-11 text-destructive hover:bg-destructive/8 hover:text-destructive sm:min-h-8"
-        disabled={removing}
         loading={removing}
         loadingLabel="Removing…"
         onClick={() => void remove()}

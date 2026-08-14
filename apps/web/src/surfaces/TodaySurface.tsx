@@ -378,7 +378,6 @@ export function TodaySurface() {
                     type="button"
                     variant="secondary"
                     className="min-w-24 w-fit"
-                    disabled={focusRetrying}
                     loading={focusRetrying}
                     loadingLabel="Retrying…"
                     onClick={() => void retryFocus()}
@@ -457,10 +456,6 @@ export function TodaySurface() {
                                     variant="quiet"
                                     size="compact"
                                     className="min-h-11 min-w-28 sm:min-h-8"
-                                    disabled={
-                                      pendingAction?.kind === "remove" &&
-                                      pendingAction.itemId === item.id
-                                    }
                                     loading={
                                       pendingAction?.kind === "remove" &&
                                       pendingAction.itemId === item.id
@@ -520,7 +515,6 @@ export function TodaySurface() {
                     type="button"
                     variant="secondary"
                     className="min-w-24 w-fit"
-                    disabled={planningRetrying}
                     loading={planningRetrying}
                     loadingLabel="Retrying…"
                     onClick={() => void retryPlanning()}
@@ -719,10 +713,6 @@ export function TodaySurface() {
                                   variant="quiet"
                                   size="compact"
                                   className="min-h-11 min-w-28 sm:min-h-8"
-                                  disabled={
-                                    pendingAction?.kind === "suppress" &&
-                                    pendingAction.itemId === suggestion.item.id
-                                  }
                                   loading={
                                     pendingAction?.kind === "suppress" &&
                                     pendingAction.itemId === suggestion.item.id
@@ -792,7 +782,6 @@ function PlanningAddButton({
       type="button"
       size="compact"
       className="min-h-11 min-w-24 sm:min-h-8"
-      disabled={pending}
       loading={pending}
       loadingLabel="Adding…"
       onClick={onAdd}
@@ -828,7 +817,6 @@ function TodayStatusButton({
         variant={item.status === Status.Done ? "secondary" : "primary"}
         size="compact"
         className="min-h-11 min-w-28 sm:min-h-8"
-        disabled={saving}
         loading={saving}
         loadingLabel="Saving…"
         onClick={() => void changeStatus(nextStatus)}

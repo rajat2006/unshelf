@@ -183,7 +183,6 @@ function LearningPlanListItem({
             type="button"
             variant="quiet"
             size="compact"
-            disabled={pending}
             loading={pending}
             loadingLabel={`${pendingLabel}…`}
             className="-mt-1 -mr-2 h-11 min-w-32 sm:h-8"
@@ -323,7 +322,6 @@ function NewLearningPlanForm({
       <Button
         type="submit"
         size="touch"
-        disabled={creating}
         loading={creating}
         loadingLabel="Creating Learning Plan…"
         className="min-w-48 sm:h-10"
