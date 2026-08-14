@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Button } from "../components/ui/button";
+import { Button } from "@/components/ui/button";
 
 /**
  * A lightweight not-found state (design spec §4): an unknown or stale route

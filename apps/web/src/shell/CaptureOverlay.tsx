@@ -2,29 +2,29 @@ import { useRef, useState, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import { captureItem } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
-import { Alert } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldLabel,
-} from "../components/ui/field";
-import { Input } from "../components/ui/input";
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../components/ui/select";
+} from "@/components/ui/select";
 import { TYPE_LABELS } from "../items/presentation";
 
 interface CaptureOverlayProps {

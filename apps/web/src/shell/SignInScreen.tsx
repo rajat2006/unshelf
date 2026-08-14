@@ -1,5 +1,5 @@
 import { SignInButton } from "../application-auth/SignInButton";
-import { Button } from "../components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Wordmark } from "./Wordmark";
 
 /**

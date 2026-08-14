@@ -163,7 +163,7 @@ export function LearningPlanSurface({
                 </Badge>
               )}
             </div>
-            <p className="m-0 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
               {archived
                 ? "This commitment is preserved for consultation. Restore it from Plans to change its structure."
                 : phoneReadOnly
@@ -231,7 +231,15 @@ export function LearningPlanSurface({
           {record && (
             <div className="grid min-w-56 gap-2 rounded-[var(--radius-card)] border bg-background/75 p-4">
               <div className="flex items-baseline justify-between gap-3">
-                <strong className="font-serif text-3xl font-semibold text-status-completed">
+                <strong
+                  className={`font-serif text-3xl font-semibold ${
+                    record.total === 0
+                      ? "text-muted-foreground"
+                      : completionPercentage(record) === 100
+                        ? "text-status-completed"
+                        : "text-status-progress"
+                  }`}
+                >
                   {record.total === 0
                     ? "—"
                     : `${Math.round(completionPercentage(record))}%`}
@@ -244,13 +252,17 @@ export function LearningPlanSurface({
               </div>
               <Progress
                 value={completionPercentage(record)}
+                variant={
+                  completionPercentage(record) === 100
+                    ? "completed"
+                    : "progress"
+                }
                 aria-label={`${record.name} progress`}
                 aria-valuetext={
                   record.total === 0
                     ? "No Items added yet"
                     : `${record.done} of ${record.total} Items done`
                 }
-                className="[&_[data-slot=progress-indicator]]:bg-status-completed"
               />
             </div>
           )}

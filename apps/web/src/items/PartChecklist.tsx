@@ -301,9 +301,9 @@ function PartRow({
         </Button>
         <Button
           type="button"
-          variant="quiet"
+          variant="quiet-destructive"
           size="icon-compact"
-          className="size-11 text-destructive hover:text-destructive sm:size-8"
+          className="size-11 sm:size-8"
           disabled={busy}
           onClick={() => void runRowMutation(onRemove)}
         >

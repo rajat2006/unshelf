@@ -3,17 +3,20 @@ import { describe, expect, it } from "vitest";
 import { Button } from "./button";
 
 describe("Button", () => {
-  it.each(["primary", "secondary", "quiet", "destructive"] as const)(
-    "exposes the %s action role",
-    (variant) => {
-      const markup = renderToStaticMarkup(
-        <Button variant={variant}>{variant}</Button>,
-      );
+  it.each([
+    "primary",
+    "secondary",
+    "quiet",
+    "quiet-destructive",
+    "destructive",
+  ] as const)("exposes the %s action role", (variant) => {
+    const markup = renderToStaticMarkup(
+      <Button variant={variant}>{variant}</Button>,
+    );
 
-      expect(markup).toContain(`data-variant="${variant}"`);
-      expect(markup).toContain(`>${variant}</button>`);
-    },
-  );
+    expect(markup).toContain(`data-variant="${variant}"`);
+    expect(markup).toContain(`>${variant}</button>`);
+  });
 
   it("exposes normal and compact control dimensions", () => {
     const normal = renderToStaticMarkup(<Button>Normal</Button>);

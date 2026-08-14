@@ -195,15 +195,15 @@ export function PlanLibraryDrawer({
                         </Button>
                       ) : candidate.kind === "direct" ? (
                         <>
-                          <Badge variant="completed">
+                          <Badge variant="current">
                             <Check aria-hidden="true" />
                             Placed directly
                           </Badge>
                           <Button
                             type="button"
-                            variant="quiet"
+                            variant="quiet-destructive"
                             size="compact"
-                            className="min-h-11 text-destructive hover:bg-destructive/8 hover:text-destructive sm:min-h-8"
+                            className="min-h-11 sm:min-h-8"
                             disabled={busyItemId !== null}
                             loading={pending}
                             loadingLabel="Removing…"

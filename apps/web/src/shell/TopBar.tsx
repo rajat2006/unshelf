@@ -1,13 +1,13 @@
 import { Plus } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router";
 import { UserButton } from "../application-auth/UserButton";
-import { Button } from "../components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   NavigationMenu,
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
-} from "../components/ui/navigation-menu";
+} from "@/components/ui/navigation-menu";
 import {
   itemBackgroundSurface,
   readItemBackgroundLocation,

@@ -1,13 +1,12 @@
 import { useId, useState } from "react";
-import { CalendarClock } from "lucide-react";
 import type { Item } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { updateItemTargetDate } from "../api";
 import type { CurrentUser } from "../application-auth/types";
+import { ItemPastTargetBadge } from "./ItemPastTargetBadge";
 
 interface ItemTargetDateProps {
   item: Item;
@@ -66,7 +65,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
             Clear
           </Button>
         )}
-        {item.pastTarget && <PastTarget />}
+        {item.pastTarget && <ItemPastTargetBadge />}
       </div>
       {saving && (
         <FieldDescription role="status">Saving Target date…</FieldDescription>
@@ -88,15 +87,5 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
         </Alert>
       )}
     </Field>
-  );
-}
-
-/** The derived past-target state: something you notice, not something that shouts. */
-function PastTarget() {
-  return (
-    <Badge variant="past">
-      <CalendarClock aria-hidden="true" />
-      Past target
-    </Badge>
   );
 }

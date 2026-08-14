@@ -217,13 +217,13 @@ function LearningPlanListItem({
         <div className="grid gap-2">
           <Progress
             value={completionPercentage(learningPlan)}
+            variant={
+              completionPercentage(learningPlan) === 100
+                ? "completed"
+                : "progress"
+            }
             aria-label={`${learningPlan.name} progress`}
             aria-valuetext={progressLabel(learningPlan)}
-            className={
-              completionPercentage(learningPlan) === 100
-                ? "[&_[data-slot=progress-indicator]]:bg-status-completed"
-                : undefined
-            }
           />
           <p className="m-0 text-xs font-semibold text-muted-foreground">
             {progressLabel(learningPlan)}

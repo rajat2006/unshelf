@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CalendarClock, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import type { Item } from "@unshelf/shared";
 import { Link, useLocation } from "react-router";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import {
   type ItemBackgroundLocation,
 } from "./item-route-state";
 import { ItemSource } from "./ItemSource";
+import { ItemPastTargetBadge } from "./ItemPastTargetBadge";
 import { ItemStatusBadge } from "./ItemStatusBadge";
 import { TYPE_LABELS } from "./presentation";
 
@@ -85,12 +86,7 @@ export function ItemSummary({
             ) : (
               <span>No Target date</span>
             )}
-            {item.pastTarget && (
-              <Badge variant="past">
-                <CalendarClock aria-hidden="true" />
-                Past target
-              </Badge>
-            )}
+            {item.pastTarget && <ItemPastTargetBadge />}
           </>
         )}
       </div>

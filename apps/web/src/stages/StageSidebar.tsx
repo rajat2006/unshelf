@@ -322,8 +322,8 @@ export function StageSidebar({
               ) : (
                 <Button
                   type="button"
-                  variant="quiet"
-                  className="w-fit text-destructive hover:bg-destructive/8 hover:text-destructive"
+                  variant="quiet-destructive"
+                  className="w-fit"
                   onClick={() => setConfirmingRemoval(true)}
                 >
                   <Trash2 aria-hidden="true" />

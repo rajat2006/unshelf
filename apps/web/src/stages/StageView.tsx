@@ -19,6 +19,7 @@ import type { CurrentUser } from "../application-auth/types";
 import { ItemRow } from "../items/ItemRow";
 import { StageItemIntake } from "./StageItemIntake";
 import { StageRefreshFailure, useStageRefresh } from "./StageRefresh";
+import { completionPercentage } from "../presentation/progress";
 
 interface StageViewProps {
   stage: StageDetail;
@@ -48,8 +49,10 @@ export function StageView({
   const [orderingItemId, setOrderingItemId] = useState<ItemId | null>(null);
   const [orderFailed, setOrderFailed] = useState(false);
   const done = stage.items.filter((item) => item.status === Status.Done).length;
-  const percentage =
-    stage.items.length === 0 ? 0 : (done / stage.items.length) * 100;
+  const percentage = completionPercentage({
+    done,
+    total: stage.items.length,
+  });
   const progressLabel =
     stage.items.length === 0
       ? "No Items added yet"
@@ -98,13 +101,9 @@ export function StageView({
         </div>
         <Progress
           value={percentage}
+          variant={percentage === 100 ? "completed" : "progress"}
           aria-label={`${stage.name} progress`}
           aria-valuetext={progressLabel}
-          className={
-            percentage === 100
-              ? "[&_[data-slot=progress-indicator]]:bg-status-completed"
-              : undefined
-          }
         />
       </div>
 
@@ -295,9 +294,9 @@ function RemoveFromStage({
     <div className="grid gap-2">
       <Button
         type="button"
-        variant="quiet"
+        variant="quiet-destructive"
         size="compact"
-        className="min-h-11 text-destructive hover:bg-destructive/8 hover:text-destructive sm:min-h-8"
+        className="min-h-11 sm:min-h-8"
         loading={removing}
         loadingLabel="Removing…"
         onClick={() => void remove()}

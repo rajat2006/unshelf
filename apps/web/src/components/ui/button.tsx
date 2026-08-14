@@ -15,12 +15,14 @@ const buttonVariants = cva(
           "border-input bg-background text-foreground hover:border-primary/45 hover:bg-accent aria-expanded:bg-accent",
         quiet:
           "text-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent",
+        "quiet-destructive":
+          "text-destructive hover:bg-destructive/8 hover:text-destructive focus-visible:border-destructive focus-visible:ring-destructive/25",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/88 focus-visible:border-destructive focus-visible:ring-destructive/25",
       },
       size: {
         default: "h-10 px-4",
-        compact: "h-8 px-3 text-xs",
+        compact: "h-8 px-3",
         touch: "h-11 px-5",
         icon: "size-10",
         "icon-compact": "size-8",
