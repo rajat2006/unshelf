@@ -16,11 +16,6 @@ export function createApiErrorHandler(
       return;
     }
 
-    if (isArchivedLearningPlanViolation(error)) {
-      res.status(409).json({ error: "learning plan is archived" });
-      return;
-    }
-
     const route = registeredRoute(req);
     req.failureRequest = failureRequestSnapshot(req, options.secrets);
     req.logger?.error({
@@ -37,25 +32,6 @@ export function createApiErrorHandler(
       message: "An unexpected error occurred",
     });
   };
-}
-
-function isArchivedLearningPlanViolation(error: unknown): boolean {
-  let current: unknown = error;
-  while (current instanceof Error) {
-    const postgresError = current as Error & {
-      code?: unknown;
-      constraint?: unknown;
-      cause?: unknown;
-    };
-    if (
-      postgresError.code === "23514" &&
-      postgresError.constraint === "learning_plan_active_structure"
-    ) {
-      return true;
-    }
-    current = postgresError.cause;
-  }
-  return false;
 }
 
 export const apiErrorHandler: ErrorRequestHandler = createApiErrorHandler();
