@@ -1,5 +1,18 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+
+const repositoryRoot = new URL("../../../", import.meta.url);
+
+function wayfinderArtifactPolicyTarget(instructions: string): string {
+  const links = [
+    ...instructions.matchAll(/\]\(([^)]+wayfinder-artifacts\.md)\)/g),
+  ];
+
+  expect(links).toHaveLength(1);
+  return links[0]?.[1] ?? "";
+}
 
 const ciWorkflow = readFileSync(
   new URL("../../../.github/workflows/ci.yml", import.meta.url),
@@ -30,6 +43,23 @@ const agentWorkflows = new Map(
 );
 
 describe("repository delivery workflows", () => {
+  it("lets supported agents discover one project-owned Wayfinder artifact policy", () => {
+    const policyTarget = wayfinderArtifactPolicyTarget(
+      readFileSync(new URL("CLAUDE.md", repositoryRoot), "utf8"),
+    );
+    const policyPath = new URL(policyTarget, repositoryRoot);
+    const repositoryRelativePath = path.relative(
+      fileURLToPath(repositoryRoot),
+      fileURLToPath(policyPath),
+    );
+
+    expect(existsSync(policyPath)).toBe(true);
+    expect(repositoryRelativePath).toBe("docs/agents/wayfinder-artifacts.md");
+    expect(repositoryRelativePath.split(path.sep)).not.toContain(".agents");
+    expect(repositoryRelativePath.split(path.sep)).not.toContain(".claude");
+    expect(repositoryRelativePath.split(path.sep)).not.toContain(".codex");
+  });
+
   it("keeps Product CI available to forks without privileged authority", () => {
     expect(ciWorkflow).toContain("pull_request:");
     expect(ciWorkflow).toContain("permissions:\n  contents: read");
