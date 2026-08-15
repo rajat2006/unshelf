@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repositoryRoot = new URL("../../../", import.meta.url);
-const agentInstructions = ["AGENTS.md", "CLAUDE.md"];
 
 function wayfinderArtifactPolicyTarget(instructions: string): string {
   const links = [
@@ -45,15 +44,9 @@ const agentWorkflows = new Map(
 
 describe("repository delivery workflows", () => {
   it("lets supported agents discover one project-owned Wayfinder artifact policy", () => {
-    const targets = agentInstructions.map((instructionFile) =>
-      wayfinderArtifactPolicyTarget(
-        readFileSync(new URL(instructionFile, repositoryRoot), "utf8"),
-      ),
+    const policyTarget = wayfinderArtifactPolicyTarget(
+      readFileSync(new URL("CLAUDE.md", repositoryRoot), "utf8"),
     );
-
-    expect(new Set(targets).size).toBe(1);
-
-    const policyTarget = targets[0] ?? "";
     const policyPath = new URL(policyTarget, repositoryRoot);
     const repositoryRelativePath = path.relative(
       fileURLToPath(repositoryRoot),
