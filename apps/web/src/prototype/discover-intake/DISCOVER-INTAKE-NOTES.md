@@ -30,24 +30,33 @@ authorization, and enough new arrivals to exercise bulk review.
 
 ## Variant hypotheses
 
-### A — Intake first
+The first live pass rejected a long all-at-once feed. It established a stronger
+common model for the next pass: Discover has one combined queue across every
+Follow by default; the left Follow rail filters that queue; the right side
+reviews one Discovery at a time. Follow health and whether intake feels finite
+remain open questions.
 
-Hypothesis: one chronological decision stream should own the room, with Follow
-health summarized in the heading and opened only when maintenance is needed.
+### A — Filter rail + deck
 
-### B — Follows + intake
+Hypothesis: the lightest expression is enough—a persistent filter rail and one
+large Discovery card with previous/next controls.
 
-Hypothesis: the earlier persistent Follow rail earns its width because setup and
-health remain continuously legible beside Candidate intake.
+### B — Queue + focus
 
-### C — Review batches
+Hypothesis: after filtering by Follow, a compact queue list helps the User jump
+within the filtered intake without losing the one-at-a-time focus card.
 
-Hypothesis: a bounded “new since last open” review deck makes recurring discovery
-feel finite while history and Follow maintenance stay one level down.
+### C — Follow sessions
+
+Hypothesis: choosing a Follow should feel like starting a bounded review session;
+the stacked deck and explicit remaining count may make intake feel finite without
+turning it into a Library backlog.
 
 ## Live-session verdict
 
 - Winner or hybrid: **Pending live fit-check.**
-- Validated:
-- Falsified:
-- Required changes:
+- Validated: one combined queue across all Follows; optional filtering by Follow;
+  one-at-a-time review on the right.
+- Falsified: rendering every unresolved Discovery as a long all-at-once feed.
+- Required changes: compare the revised variants and decide how much queue
+  preview and session framing the focused review needs.

@@ -5,9 +5,7 @@ import {
   Check,
   CirclePause,
   Clock3,
-  ExternalLink,
   History,
-  Inbox,
   Library,
   LoaderCircle,
   Pause,
@@ -25,7 +23,6 @@ import { useSearchParams } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -75,9 +72,9 @@ interface PrototypeState {
 }
 
 const variants: { key: VariantKey; name: string }[] = [
-  { key: "A", name: "Intake first" },
-  { key: "B", name: "Follows + intake" },
-  { key: "C", name: "Review batches" },
+  { key: "A", name: "Filter rail + deck" },
+  { key: "B", name: "Queue + focus" },
+  { key: "C", name: "Follow sessions" },
 ];
 
 const initialFollows: Follow[] = [
@@ -233,18 +230,25 @@ export function DiscoverIntakePrototype() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [stateOpen, setStateOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeFollowId, setActiveFollowId] = useState("all");
+  const [reviewIndex, setReviewIndex] = useState(0);
   const [searchParams] = useSearchParams();
   const variant = normalizeVariant(searchParams.get("variant"));
 
   const visibleDiscoveries = useMemo(() => {
-    if (frame === "empty") {
-      return state.discoveries.filter(
-        (discovery) =>
-          discovery.state === "kept" || discovery.state === "dismissed",
-      );
-    }
-    return state.discoveries;
-  }, [frame, state.discoveries]);
+    const discoveries =
+      frame === "empty"
+        ? state.discoveries.filter(
+            (discovery) =>
+              discovery.state === "kept" || discovery.state === "dismissed",
+          )
+        : state.discoveries;
+    return activeFollowId === "all"
+      ? discoveries
+      : discoveries.filter(
+          (discovery) => discovery.followId === activeFollowId,
+        );
+  }, [activeFollowId, frame, state.discoveries]);
 
   const actions = {
     setDiscovery(id: string, next: DiscoveryState) {
@@ -265,14 +269,15 @@ export function DiscoverIntakePrototype() {
           : [...current.selectedIds, id],
       }));
     },
-    bulk(next: "seen" | "dismissed") {
+    bulk(next: "seen" | "dismissed", discoveryIds?: string[]) {
       setState((current) => {
         const targets =
-          current.selectedIds.length > 0
+          discoveryIds ??
+          (current.selectedIds.length > 0
             ? current.selectedIds
             : current.discoveries
                 .filter((discovery) => discovery.state === "new")
-                .map((discovery) => discovery.id);
+                .map((discovery) => discovery.id));
         return {
           ...current,
           discoveries: current.discoveries.map((discovery) =>
@@ -364,6 +369,13 @@ export function DiscoverIntakePrototype() {
     onSetup: () => setSetupOpen(true),
     onHealth: () => setHealthOpen(true),
     onHistory: () => setHistoryOpen(true),
+    activeFollowId,
+    reviewIndex,
+    onFollowFilter: (followId: string) => {
+      setActiveFollowId(followId);
+      setReviewIndex(0);
+    },
+    onReviewIndex: setReviewIndex,
   };
 
   return (
@@ -375,6 +387,8 @@ export function DiscoverIntakePrototype() {
         onReset={() => {
           setState(createInitialState());
           setFrame("representative");
+          setActiveFollowId("all");
+          setReviewIndex(0);
         }}
       />
       {variant === "A" && <IntakeFirst {...shared} />}
@@ -410,7 +424,7 @@ export function DiscoverIntakePrototype() {
       <StateLens
         open={stateOpen}
         onOpenChange={setStateOpen}
-        state={{ ...state, frame }}
+        state={{ ...state, frame, activeFollowId, reviewIndex }}
       />
       <PrototypeSwitcher current={variant} />
     </div>
@@ -425,7 +439,7 @@ interface VariantProps {
   actions: {
     setDiscovery: (id: string, next: DiscoveryState) => void;
     toggleSelected: (id: string) => void;
-    bulk: (next: "seen" | "dismissed") => void;
+    bulk: (next: "seen" | "dismissed", discoveryIds?: string[]) => void;
     toggleFollow: (id: string) => void;
     removeFollow: (id: string) => void;
     reconnect: (id: string) => void;
@@ -434,110 +448,106 @@ interface VariantProps {
   onSetup: () => void;
   onHealth: () => void;
   onHistory: () => void;
+  activeFollowId: string;
+  reviewIndex: number;
+  onFollowFilter: (followId: string) => void;
+  onReviewIndex: (index: number) => void;
 }
 
 function IntakeFirst(props: VariantProps) {
-  const newCount = props.discoveries.filter(
-    (item) => item.state === "new",
-  ).length;
-  const unhealthy = props.state.follows.filter(
-    (follow) =>
-      follow.state === "failed" || follow.state === "authorization-expired",
-  ).length;
+  const unresolved = unresolvedDiscoveries(props.discoveries);
+  const current = currentDiscovery(unresolved, props.reviewIndex);
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 md:px-6 md:py-12">
-      <header className="mb-8 flex flex-col gap-5 border-b pb-7 md:flex-row md:items-end md:justify-between">
+    <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant A · Intake first
+            Variant A · Filter rail + deck
           </p>
-          <h1 className="font-serif text-4xl tracking-tight md:text-5xl">
-            Discover
-          </h1>
-          <p className="mt-2 max-w-xl text-muted-foreground">
-            Decide what is worth keeping. Everything else stays out of your
-            Library.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={props.onHealth}>
-            <Settings2 /> {props.state.follows.length} Follows
-            {unhealthy > 0 && <Badge variant="past">{unhealthy}</Badge>}
-          </Button>
-          <Button onClick={props.onSetup}>
-            <Plus /> New Follow
-          </Button>
-        </div>
-      </header>
-      <StatusFrame frame={props.frame} follows={props.state.follows} />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-serif text-2xl">
-            {newCount} new since your last visit
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Application open checked active Follows · today at 10:42
+          <h1 className="font-serif text-4xl">Discover</h1>
+          <p className="mt-2 text-muted-foreground">
+            Every Follow lands in one queue. Filter only when you want to narrow
+            it.
           </p>
         </div>
         <RefreshAndHistory {...props} />
+      </header>
+      <StatusFrame frame={props.frame} follows={props.state.follows} />
+      <div className="grid gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
+        <FollowFilterRail {...props} />
+        <section className="min-w-0">
+          <QueueHeading props={props} unresolved={unresolved} />
+          {props.frame === "loading" || props.refreshing ? (
+            <LoadingFeed />
+          ) : current ? (
+            <CandidateFocusCard
+              discovery={current}
+              position={reviewPosition(unresolved, props.reviewIndex)}
+              total={unresolved.length}
+              actions={props.actions}
+              onPrevious={() => moveReview(props, unresolved, -1)}
+              onNext={() => moveReview(props, unresolved, 1)}
+            />
+          ) : (
+            <FilteredEmptyState props={props} />
+          )}
+          <FilteredBulkBar props={props} unresolved={unresolved} />
+        </section>
       </div>
-      <BulkBar state={props.state} actions={props.actions} />
-      <DiscoveryFeed {...props} />
     </main>
   );
 }
 
 function FollowsAndIntake(props: VariantProps) {
+  const unresolved = unresolvedDiscoveries(props.discoveries);
+  const current = currentDiscovery(unresolved, props.reviewIndex);
   return (
     <main className="mx-auto max-w-[80rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant B · Earlier composition expanded
+            Variant B · Queue + focus
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Follows stay visible beside intake.
+            Pick a Follow on the left, scan its queue, then decide one Discovery
+            in focus.
           </p>
         </div>
         <RefreshAndHistory {...props} />
       </header>
       <StatusFrame frame={props.frame} follows={props.state.follows} />
-      <div className="grid gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside className="h-fit rounded-xl border bg-quiet-panel p-4 lg:sticky lg:top-28">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Follows
-              </p>
-              <p className="font-serif text-xl">Recurring reach</p>
+      <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <FollowFilterRail {...props} dense />
+        <section className="min-w-0">
+          <QueueHeading props={props} unresolved={unresolved} />
+          {props.frame === "loading" || props.refreshing ? (
+            <LoadingFeed />
+          ) : current ? (
+            <div className="grid gap-4 xl:grid-cols-[17rem_minmax(0,1fr)]">
+              <CandidateQueue
+                discoveries={unresolved}
+                currentId={current.id}
+                onSelect={(index) => props.onReviewIndex(index)}
+              />
+              <CandidateFocusCard
+                discovery={current}
+                position={reviewPosition(unresolved, props.reviewIndex)}
+                total={unresolved.length}
+                actions={props.actions}
+                compact
+                onPrevious={() => moveReview(props, unresolved, -1)}
+                onNext={() => moveReview(props, unresolved, 1)}
+              />
             </div>
-            <Button
-              size="icon-compact"
-              onClick={props.onSetup}
-              aria-label="New Follow"
-            >
-              <Plus />
-            </Button>
+          ) : (
+            <FilteredEmptyState props={props} />
+          )}
+          <div className="mt-4 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
+            The list is only the current intake queue—not the Library. Keep
+            resolves one Discovery into an Item; Dismiss removes it from this
+            queue while preserving history.
           </div>
-          <FollowList
-            follows={props.state.follows}
-            actions={props.actions}
-            compact
-          />
-        </aside>
-        <section>
-          <div className="mb-4 flex items-end justify-between gap-3">
-            <div>
-              <h2 className="font-serif text-2xl">Candidate intake</h2>
-              <p className="text-sm text-muted-foreground">
-                Keep creates or links an Item. It never places it in a Learning
-                Plan.
-              </p>
-            </div>
-          </div>
-          <BulkBar state={props.state} actions={props.actions} />
-          <DiscoveryFeed {...props} />
         </section>
       </div>
     </main>
@@ -545,135 +555,484 @@ function FollowsAndIntake(props: VariantProps) {
 }
 
 function ReviewBatches(props: VariantProps) {
-  const unresolved = props.discoveries.filter(
-    (item) => item.state === "new" || item.state === "seen",
+  const unresolved = unresolvedDiscoveries(props.discoveries);
+  const current = currentDiscovery(unresolved, props.reviewIndex);
+  const selectedFollow = props.state.follows.find(
+    (follow) => follow.id === props.activeFollowId,
   );
-  const current = unresolved[0];
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12">
-      <header className="mb-7 text-center">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-          Variant C · Review batches
-        </p>
-        <h1 className="font-serif text-4xl md:text-5xl">
-          A finite sweep, not a backlog
-        </h1>
-        <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
-          Review what arrived since the last application open, then leave
-          Discover quiet.
-        </p>
+    <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+            Variant C · Follow sessions
+          </p>
+          <h1 className="font-serif text-4xl">Discover</h1>
+          <p className="mt-2 text-muted-foreground">
+            All Follows still combine by default; choosing one turns the same
+            queue into a bounded review session.
+          </p>
+        </div>
+        <RefreshAndHistory {...props} />
       </header>
       <StatusFrame frame={props.frame} follows={props.state.follows} />
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <BatchMetric
-          icon={<Inbox />}
-          label="This sweep"
-          value={`${unresolved.length} left`}
-        />
-        <button
-          className="rounded-xl border bg-card p-4 text-left hover:bg-accent"
-          onClick={props.onHealth}
-        >
-          <BatchMetric
-            icon={<Settings2 />}
-            label="Follow health"
-            value={`${props.state.follows.filter((f) => f.state === "active").length} active`}
-          />
-        </button>
-        <button
-          className="rounded-xl border bg-card p-4 text-left hover:bg-accent"
-          onClick={props.onHistory}
-        >
-          <BatchMetric
-            icon={<History />}
-            label="Prior history"
-            value={`${props.state.discoveries.filter((d) => d.state === "kept" || d.state === "dismissed").length} resolved`}
-          />
-        </button>
-      </div>
-      {props.frame === "loading" || props.refreshing ? (
-        <LoadingFeed />
-      ) : current ? (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
-          <section className="rounded-2xl border bg-card p-5 shadow-sm md:p-8">
-            <div className="mb-8 flex items-center justify-between">
-              <Badge variant={current.state === "new" ? "current" : "neutral"}>
-                {current.state}
-              </Badge>
-              <span className="text-sm text-muted-foreground">
-                1 of {unresolved.length}
-              </span>
+      <div className="grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <FollowFilterRail {...props} sessionStyle />
+        <section className="min-w-0 overflow-hidden rounded-2xl bg-quiet-panel p-4 md:p-7">
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                {selectedFollow ? "Reviewing one Follow" : "Combined review"}
+              </p>
+              <h2 className="mt-1 font-serif text-3xl">
+                {selectedFollow?.name ?? "Everything that arrived"}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {unresolved.length} unresolved Discoveries in this session
+              </p>
             </div>
-            <div className="mb-6 grid aspect-video place-items-center rounded-xl bg-muted">
-              <Video className="size-16 text-muted-foreground/60" />
+            <FilteredBulkMenu props={props} unresolved={unresolved} />
+          </div>
+          {props.frame === "loading" || props.refreshing ? (
+            <LoadingFeed />
+          ) : current ? (
+            <div className="relative mx-auto max-w-3xl pb-7">
+              <div className="absolute inset-x-8 top-5 bottom-2 rounded-2xl border bg-card/40" />
+              <div className="absolute inset-x-4 top-2 bottom-4 rounded-2xl border bg-card/70" />
+              <div className="relative">
+                <CandidateFocusCard
+                  discovery={current}
+                  position={reviewPosition(unresolved, props.reviewIndex)}
+                  total={unresolved.length}
+                  actions={props.actions}
+                  onPrevious={() => moveReview(props, unresolved, -1)}
+                  onNext={() => moveReview(props, unresolved, 1)}
+                />
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {current.publisher} · {current.published} · {current.duration}
-            </p>
-            <h2 className="mt-2 font-serif text-3xl">{current.title}</h2>
-            <DiscoveryHistory discovery={current} />
-            <div className="mt-8 grid gap-2 sm:grid-cols-3">
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  props.actions.setDiscovery(current.id, "dismissed")
-                }
-              >
-                Dismiss
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => props.actions.setDiscovery(current.id, "seen")}
-              >
-                Seen, decide later
-              </Button>
-              <Button
-                onClick={() => props.actions.setDiscovery(current.id, "kept")}
-                disabled={current.alreadyInLibrary}
-              >
-                <Library />{" "}
-                {current.alreadyInLibrary ? "Already in Library" : "Keep"}
-              </Button>
-            </div>
-          </section>
-          <aside className="rounded-xl border bg-quiet-panel p-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Up next
-            </p>
-            <div className="space-y-3">
-              {unresolved.slice(1, 5).map((item) => (
-                <div className="border-b pb-3 last:border-0" key={item.id}>
-                  <p className="line-clamp-2 text-sm font-medium">
-                    {item.title}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {item.publisher}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <Button
-              className="mt-4 w-full"
-              variant="secondary"
-              onClick={() => props.actions.bulk("seen")}
-            >
-              Acknowledge remainder
-            </Button>
-          </aside>
-        </div>
-      ) : (
-        <EmptyState onSetup={props.onSetup} />
-      )}
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <Button variant="secondary" onClick={props.onRefresh}>
-          <RefreshCw /> Refresh
-        </Button>
-        <Button variant="secondary" onClick={props.onSetup}>
-          <Plus /> New Follow
-        </Button>
+          ) : (
+            <FilteredEmptyState props={props} />
+          )}
+        </section>
       </div>
     </main>
   );
+}
+
+function FollowFilterRail({
+  dense = false,
+  sessionStyle = false,
+  ...props
+}: VariantProps & { dense?: boolean; sessionStyle?: boolean }) {
+  const allCount = unresolvedDiscoveries(props.state.discoveries).length;
+  return (
+    <aside
+      className={`h-fit rounded-xl border p-3 lg:sticky lg:top-24 ${sessionStyle ? "bg-card" : "bg-quiet-panel"}`}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2 px-1">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Filter by Follow
+          </p>
+          {!dense && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              One combined queue by default
+            </p>
+          )}
+        </div>
+        <Button
+          size="icon-compact"
+          onClick={props.onSetup}
+          aria-label="New Follow"
+        >
+          <Plus />
+        </Button>
+      </div>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+        <FollowFilterButton
+          active={props.activeFollowId === "all"}
+          count={allCount}
+          label="All Follows"
+          meta="Everything that arrived"
+          onClick={() => props.onFollowFilter("all")}
+        />
+        {props.state.follows.map((follow) => (
+          <FollowFilterButton
+            active={props.activeFollowId === follow.id}
+            count={
+              unresolvedDiscoveries(props.state.discoveries).filter(
+                (discovery) => discovery.followId === follow.id,
+              ).length
+            }
+            followState={follow.state}
+            key={follow.id}
+            label={follow.name}
+            meta={follow.targetKind}
+            onClick={() => props.onFollowFilter(follow.id)}
+          />
+        ))}
+      </div>
+      <Button
+        className="mt-3 w-full justify-between"
+        variant="quiet"
+        onClick={props.onHealth}
+      >
+        <span className="flex items-center gap-2">
+          <Settings2 /> Manage Follow health
+        </span>
+        <Badge
+          variant={
+            props.state.follows.some(
+              (follow) =>
+                follow.state === "failed" ||
+                follow.state === "authorization-expired",
+            )
+              ? "past"
+              : "neutral"
+          }
+        >
+          {
+            props.state.follows.filter(
+              (follow) =>
+                follow.state === "failed" ||
+                follow.state === "authorization-expired",
+            ).length
+          }
+        </Badge>
+      </Button>
+    </aside>
+  );
+}
+
+function FollowFilterButton({
+  active,
+  count,
+  followState,
+  label,
+  meta,
+  onClick,
+}: {
+  active: boolean;
+  count: number;
+  followState?: FollowState;
+  label: string;
+  meta: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`min-w-60 rounded-lg border px-3 py-3 text-left transition-colors lg:w-full lg:min-w-0 ${
+        active
+          ? "border-primary/50 bg-accent text-accent-foreground"
+          : "border-transparent bg-card hover:border-border hover:bg-accent/60"
+      }`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <span className="flex items-start gap-2">
+        <Video className="mt-0.5 size-4 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">{label}</span>
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            {meta}
+          </span>
+          {followState && (
+            <span
+              className={`mt-1 flex items-center gap-1 text-xs ${
+                followState === "failed" ||
+                followState === "authorization-expired"
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {followState === "active" ? (
+                <Check className="size-3" />
+              ) : followState === "paused" ? (
+                <CirclePause className="size-3" />
+              ) : (
+                <AlertCircle className="size-3" />
+              )}
+              {followStateLabel(followState)}
+            </span>
+          )}
+        </span>
+        <Badge variant={active ? "current" : "neutral"}>{count}</Badge>
+      </span>
+    </button>
+  );
+}
+
+function QueueHeading({
+  props,
+  unresolved,
+}: {
+  props: VariantProps;
+  unresolved: Discovery[];
+}) {
+  const follow = props.state.follows.find(
+    (candidate) => candidate.id === props.activeFollowId,
+  );
+  return (
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+          Candidate intake
+        </p>
+        <h2 className="mt-1 font-serif text-2xl">
+          {follow ? follow.name : "All Follows"}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {unresolved.length} unresolved · one Discovery at a time
+        </p>
+      </div>
+      <FilteredBulkMenu props={props} unresolved={unresolved} />
+    </div>
+  );
+}
+
+function CandidateFocusCard({
+  actions,
+  compact = false,
+  discovery,
+  onNext,
+  onPrevious,
+  position,
+  total,
+}: {
+  actions: VariantProps["actions"];
+  compact?: boolean;
+  discovery: Discovery;
+  onNext: () => void;
+  onPrevious: () => void;
+  position: number;
+  total: number;
+}) {
+  return (
+    <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div
+        className={`grid place-items-center bg-muted ${compact ? "aspect-[16/7]" : "aspect-video"}`}
+      >
+        <Video className="size-16 text-muted-foreground/50" />
+      </div>
+      <div className={compact ? "p-5" : "p-5 md:p-7"}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Badge variant={discovery.state === "new" ? "current" : "neutral"}>
+              {discovery.state}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {position} of {total}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <Button
+              size="icon-compact"
+              variant="quiet"
+              onClick={onPrevious}
+              aria-label="Previous Discovery"
+            >
+              <ArrowLeft />
+            </Button>
+            <Button
+              size="icon-compact"
+              variant="quiet"
+              onClick={onNext}
+              aria-label="Next Discovery"
+            >
+              <ArrowRight />
+            </Button>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {discovery.publisher} · {discovery.published} · {discovery.duration}
+        </p>
+        <h3 className="mt-2 font-serif text-3xl leading-tight">
+          {discovery.title}
+        </h3>
+        <DiscoveryHistory discovery={discovery} />
+        <div className="mt-7 grid gap-2 sm:grid-cols-3">
+          <Button
+            variant="secondary"
+            onClick={() => actions.setDiscovery(discovery.id, "dismissed")}
+          >
+            Dismiss
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              actions.setDiscovery(discovery.id, "seen");
+              onNext();
+            }}
+          >
+            Seen, decide later
+          </Button>
+          <Button
+            onClick={() => actions.setDiscovery(discovery.id, "kept")}
+            disabled={discovery.alreadyInLibrary}
+          >
+            <Library />
+            {discovery.alreadyInLibrary ? "Already in Library" : "Keep"}
+          </Button>
+        </div>
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Use the arrows like a swipe. The active Follow filter stays in place.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function CandidateQueue({
+  currentId,
+  discoveries,
+  onSelect,
+}: {
+  currentId: string;
+  discoveries: Discovery[];
+  onSelect: (index: number) => void;
+}) {
+  return (
+    <aside className="max-h-[40rem] overflow-y-auto rounded-xl border bg-quiet-panel p-2">
+      <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Queue
+      </p>
+      <div className="space-y-1">
+        {discoveries.map((discovery, index) => (
+          <button
+            className={`w-full rounded-lg px-3 py-3 text-left ${
+              discovery.id === currentId
+                ? "bg-accent text-accent-foreground"
+                : "hover:bg-card"
+            }`}
+            key={discovery.id}
+            onClick={() => onSelect(index)}
+          >
+            <span className="block line-clamp-2 text-sm font-semibold">
+              {discovery.title}
+            </span>
+            <span className="mt-1 block truncate text-xs text-muted-foreground">
+              {discovery.publisher} · {discovery.state}
+            </span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function FilteredBulkMenu({
+  props,
+  unresolved,
+}: {
+  props: VariantProps;
+  unresolved: Discovery[];
+}) {
+  const ids = unresolved.map((discovery) => discovery.id);
+  return (
+    <div className="flex flex-wrap gap-1">
+      <Button
+        size="compact"
+        variant="quiet"
+        disabled={ids.length === 0}
+        onClick={() => props.actions.bulk("seen", ids)}
+      >
+        <Check /> Acknowledge {ids.length}
+      </Button>
+      <Button
+        size="compact"
+        variant="quiet"
+        disabled={ids.length === 0}
+        onClick={() => props.actions.bulk("dismissed", ids)}
+      >
+        Dismiss {ids.length}
+      </Button>
+    </div>
+  );
+}
+
+function FilteredBulkBar({
+  props,
+  unresolved,
+}: {
+  props: VariantProps;
+  unresolved: Discovery[];
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border bg-quiet-panel px-4 py-3 text-sm">
+      <span className="mr-auto text-muted-foreground">
+        Clear only the current{" "}
+        {props.activeFollowId === "all" ? "combined" : "filtered"} queue
+      </span>
+      <FilteredBulkMenu props={props} unresolved={unresolved} />
+    </div>
+  );
+}
+
+function FilteredEmptyState({ props }: { props: VariantProps }) {
+  const filtered = props.activeFollowId !== "all";
+  return (
+    <div className="grid min-h-80 place-items-center rounded-2xl border border-dashed bg-card p-8 text-center">
+      <div>
+        <span className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-accent">
+          <Check />
+        </span>
+        <h2 className="font-serif text-2xl">
+          {filtered ? "This Follow is clear" : "Discover is clear"}
+        </h2>
+        <p className="mx-auto mt-2 max-w-md text-muted-foreground">
+          {filtered
+            ? "No unresolved Discoveries from this Follow. The combined queue may still have arrivals from others."
+            : "No new or seen Discoveries are waiting. Resolved history remains available."}
+        </p>
+        {filtered ? (
+          <Button
+            className="mt-5"
+            variant="secondary"
+            onClick={() => props.onFollowFilter("all")}
+          >
+            Show all Follows
+          </Button>
+        ) : (
+          <Button className="mt-5" variant="secondary" onClick={props.onSetup}>
+            <Plus /> New Follow
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function unresolvedDiscoveries(discoveries: Discovery[]) {
+  return discoveries.filter(
+    (discovery) => discovery.state === "new" || discovery.state === "seen",
+  );
+}
+
+function currentDiscovery(discoveries: Discovery[], reviewIndex: number) {
+  if (discoveries.length === 0) return undefined;
+  return discoveries[reviewIndex % discoveries.length];
+}
+
+function reviewPosition(discoveries: Discovery[], reviewIndex: number) {
+  return discoveries.length === 0 ? 0 : (reviewIndex % discoveries.length) + 1;
+}
+
+function moveReview(
+  props: VariantProps,
+  discoveries: Discovery[],
+  delta: number,
+) {
+  if (discoveries.length === 0) return;
+  props.onReviewIndex(
+    (props.reviewIndex + delta + discoveries.length) % discoveries.length,
+  );
+}
+
+function followStateLabel(state: FollowState) {
+  if (state === "authorization-expired") return "Authorization expired";
+  if (state === "failed") return "Partial failure";
+  if (state === "paused") return "Paused";
+  return "Active";
 }
 
 function PrototypeTopBar() {
@@ -795,133 +1154,6 @@ function RefreshAndHistory(props: VariantProps) {
         {props.refreshing ? "Refreshing" : "Refresh"}
       </Button>
     </div>
-  );
-}
-
-function BulkBar({ state, actions }: Pick<VariantProps, "state" | "actions">) {
-  const newCount = state.discoveries.filter(
-    (item) => item.state === "new",
-  ).length;
-  const count = state.selectedIds.length || newCount;
-  if (newCount === 0 && state.selectedIds.length === 0) return null;
-  return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-quiet-panel px-3 py-2 text-sm">
-      <span className="mr-auto text-muted-foreground">
-        {state.selectedIds.length
-          ? `${state.selectedIds.length} selected`
-          : `${newCount} new`}
-      </span>
-      <Button
-        size="compact"
-        variant="quiet"
-        onClick={() => actions.bulk("seen")}
-      >
-        <Check /> Acknowledge {count}
-      </Button>
-      <Button
-        size="compact"
-        variant="quiet"
-        onClick={() => actions.bulk("dismissed")}
-      >
-        Dismiss {count}
-      </Button>
-    </div>
-  );
-}
-
-function DiscoveryFeed(props: VariantProps) {
-  if (props.frame === "loading" || props.refreshing) return <LoadingFeed />;
-  const unresolved = props.discoveries.filter(
-    (item) => item.state === "new" || item.state === "seen",
-  );
-  if (unresolved.length === 0) return <EmptyState onSetup={props.onSetup} />;
-  return (
-    <div className="space-y-3">
-      {unresolved.map((discovery) => (
-        <DiscoveryRow
-          discovery={discovery}
-          selected={props.state.selectedIds.includes(discovery.id)}
-          actions={props.actions}
-          key={discovery.id}
-        />
-      ))}
-    </div>
-  );
-}
-
-function DiscoveryRow({
-  discovery,
-  selected,
-  actions,
-}: {
-  discovery: Discovery;
-  selected: boolean;
-  actions: VariantProps["actions"];
-}) {
-  return (
-    <article
-      className={`group rounded-xl border bg-card p-4 transition-shadow hover:shadow-sm md:p-5 ${discovery.state === "seen" ? "opacity-80" : ""}`}
-    >
-      <div className="flex gap-3 md:gap-5">
-        <Checkbox
-          checked={selected}
-          onCheckedChange={() => actions.toggleSelected(discovery.id)}
-          aria-label={`Select ${discovery.title}`}
-        />
-        <div className="hidden h-24 w-40 shrink-0 place-items-center rounded-lg bg-muted sm:grid">
-          <Video className="size-9 text-muted-foreground/60" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant={discovery.state === "new" ? "current" : "neutral"}>
-              {discovery.state}
-            </Badge>
-            <span>{discovery.publisher}</span>
-            <span>·</span>
-            <span>{discovery.published}</span>
-            <span>·</span>
-            <span>{discovery.duration}</span>
-          </div>
-          <h3 className="font-serif text-xl leading-tight md:text-2xl">
-            {discovery.title}
-          </h3>
-          <DiscoveryHistory discovery={discovery} />
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              size="compact"
-              variant="secondary"
-              onClick={() => actions.setDiscovery(discovery.id, "dismissed")}
-            >
-              Dismiss
-            </Button>
-            {discovery.state === "new" && (
-              <Button
-                size="compact"
-                variant="secondary"
-                onClick={() => actions.setDiscovery(discovery.id, "seen")}
-              >
-                Mark seen
-              </Button>
-            )}
-            <Button
-              size="compact"
-              onClick={() => actions.setDiscovery(discovery.id, "kept")}
-              disabled={discovery.alreadyInLibrary}
-            >
-              <Library />{" "}
-              {discovery.alreadyInLibrary ? "Already in Library" : "Keep"}
-            </Button>
-            <Button
-              size="icon-compact"
-              variant="quiet"
-              aria-label={`Open ${discovery.title}`}
-            >
-              <ExternalLink />
-            </Button>
-          </div>
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -1263,50 +1495,6 @@ function LoadingFeed() {
           <Skeleton className="h-4 w-1/2" />
         </div>
       ))}
-    </div>
-  );
-}
-
-function EmptyState({ onSetup }: { onSetup: () => void }) {
-  return (
-    <div className="grid min-h-80 place-items-center rounded-2xl border border-dashed bg-card p-8 text-center">
-      <div>
-        <span className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-accent">
-          <Check />
-        </span>
-        <h2 className="font-serif text-2xl">Discover is clear</h2>
-        <p className="mx-auto mt-2 max-w-md text-muted-foreground">
-          No new or seen Discoveries are waiting. Resolved history remains
-          available; your Library has not become a backlog.
-        </p>
-        <Button className="mt-5" variant="secondary" onClick={onSetup}>
-          <Plus /> New Follow
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function BatchMetric({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
-        {icon}
-      </span>
-      <span>
-        <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <strong className="font-serif text-xl">{value}</strong>
-      </span>
     </div>
   );
 }
