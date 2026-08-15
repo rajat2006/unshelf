@@ -229,10 +229,6 @@ export async function fetchDailyPlanning(
 ): Promise<DailyPlanning> {
   const search = new URLSearchParams();
   if (query.query) search.set("query", query.query);
-  if (query.intention) search.set("intention", query.intention);
-  if (query.learningPlanId) {
-    search.set("learningPlanId", query.learningPlanId);
-  }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
   return requestJson<DailyPlanning>(
     user,

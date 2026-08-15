@@ -28,8 +28,8 @@ import {
   addItemToToday,
   fetchDailyFocusHistory,
   fetchDailyPlanning,
-  fetchLearningPlans,
   fetchToday,
+  suppressDailyPlanningItem,
 } from "../api";
 import { CaptureProvider } from "../shell/CaptureProvider";
 import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
@@ -40,8 +40,8 @@ vi.mock("../api", async (importOriginal) => ({
   addItemToToday: vi.fn(),
   fetchDailyFocusHistory: vi.fn(),
   fetchDailyPlanning: vi.fn(),
-  fetchLearningPlans: vi.fn(),
   fetchToday: vi.fn(),
+  suppressDailyPlanningItem: vi.fn(),
 }));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -80,12 +80,30 @@ const focus: DailyFocus = {
   done: 0,
   total: 1,
 };
+const replacement: Item = {
+  ...item,
+  id: "00000000-0000-0000-0000-000000000005" as ItemId,
+  title: "Practical storage engines",
+};
 const auth: ApplicationAuth = {
   status: "signed-in",
   user: { getToken: async () => null },
   SignInButton: ({ children }) => children,
   UserButton: () => <button type="button">Account</button>,
 };
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
 
 function renderToday() {
   return render(
@@ -115,13 +133,45 @@ afterEach(() => {
 });
 
 describe("Today room", () => {
+  it("presents Daily Focus and Suggestions as one ledger beside deliberate Library search", async () => {
+    vi.mocked(fetchToday).mockResolvedValue(focus);
+    vi.mocked(fetchDailyPlanning).mockResolvedValue({
+      searchResults: [replacement],
+      suggestions: [
+        {
+          item: replacement,
+          signal: "recent_capture",
+          explanation: "Captured recently",
+        },
+      ],
+    });
+
+    renderToday();
+
+    const ledger = await screen.findByRole("region", {
+      name: "Today's daily ledger",
+    });
+    const focusRegion = within(ledger).getByRole("region", {
+      name: "Today's Daily Focus",
+    });
+    const suggestions = within(ledger).getByRole("region", {
+      name: "Suggestions",
+    });
+    expect(
+      focusRegion.compareDocumentPosition(suggestions) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("complementary", { name: "Library search" }),
+    ).not.toBe(ledger);
+  });
+
   it("presents each current pick as a dated agenda row", async () => {
     vi.mocked(fetchToday).mockResolvedValue(focus);
     vi.mocked(fetchDailyPlanning).mockResolvedValue({
       searchResults: [],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -147,17 +197,14 @@ describe("Today room", () => {
   });
 
   it("contains a planning failure beside an available Daily Focus and retries it", async () => {
-    let resolvePlanning:
-      ((planning: { searchResults: []; suggestions: [] }) => void) | undefined;
+    const planningRetry = deferred<{
+      searchResults: [];
+      suggestions: [];
+    }>();
     vi.mocked(fetchToday).mockResolvedValue(focus);
     vi.mocked(fetchDailyPlanning)
       .mockRejectedValueOnce(new Error("planning unavailable"))
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolvePlanning = resolve;
-        }),
-      );
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
+      .mockReturnValueOnce(planningRetry.promise);
 
     renderToday();
 
@@ -169,29 +216,40 @@ describe("Today room", () => {
     expect(
       within(planning).getByText("Couldn't update Daily Planning"),
     ).toBeVisible();
+    const suggestions = screen.getByRole("region", { name: "Suggestions" });
+    expect(
+      within(suggestions).getByText("Suggestions unavailable"),
+    ).toBeVisible();
+    expect(
+      within(suggestions).queryByText("No Suggestions are current for Today."),
+    ).not.toBeInTheDocument();
 
     const retry = within(planning).getByRole("button", { name: "Retry" });
     fireEvent.click(retry);
 
     expect(retry).toBeDisabled();
     expect(retry).toHaveTextContent("Retrying…");
-    resolvePlanning?.({ searchResults: [], suggestions: [] });
+    planningRetry.resolve({ searchResults: [], suggestions: [] });
 
     await waitFor(() =>
       expect(
         within(planning).queryByText("Couldn't update Daily Planning"),
       ).not.toBeInTheDocument(),
     );
+    expect(
+      within(suggestions).getByText("No Suggestions are current for Today."),
+    ).toBeVisible();
     expect(fetchDailyPlanning).toHaveBeenCalledTimes(2);
   });
 
   it("contains a Daily Focus failure without discarding Daily Planning", async () => {
-    vi.mocked(fetchToday).mockRejectedValue(new Error("focus unavailable"));
+    vi.mocked(fetchToday)
+      .mockRejectedValueOnce(new Error("focus unavailable"))
+      .mockResolvedValueOnce(focus);
     vi.mocked(fetchDailyPlanning).mockResolvedValue({
       searchResults: [item],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -201,6 +259,13 @@ describe("Today room", () => {
     expect(
       within(focusRegion).getByText("Couldn't load today's Daily Focus"),
     ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Item search results" }),
+    ).toHaveTextContent(item.title);
+
+    fireEvent.click(within(focusRegion).getByRole("button", { name: "Retry" }));
+
+    expect(await within(focusRegion).findByText(item.title)).toBeVisible();
     expect(
       screen.getByRole("region", { name: "Item search results" }),
     ).toHaveTextContent(item.title);
@@ -218,13 +283,11 @@ describe("Today room", () => {
       suggestions: [
         {
           item,
-          signal: "recently_captured_uncommitted",
-          explanation: "Recently captured and not in an active Learning Plan",
-          origin: null,
+          signal: "recent_capture",
+          explanation: "Captured recently",
         },
       ],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -235,12 +298,7 @@ describe("Today room", () => {
       name: item.title,
     });
     const itemPresentation = within(itemLink.closest("article")!);
-    expect(
-      itemPresentation.getByText(
-        "Recently captured and not in an active Learning Plan",
-      ),
-    ).toBeVisible();
-    expect(itemPresentation.getByText("In progress")).toBeVisible();
+    expect(itemPresentation.getByText("Captured recently")).toBeVisible();
     expect(
       itemPresentation.getByRole("button", {
         name: `Not today for ${item.title}`,
@@ -255,7 +313,6 @@ describe("Today room", () => {
       searchResults: [item],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
     vi.mocked(addItemToToday).mockResolvedValue(focus);
 
     renderToday();
@@ -274,6 +331,362 @@ describe("Today room", () => {
         name: `Added ${item.title} to Today`,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps a confirmed Add when planning replenishment fails", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const planning = {
+      searchResults: [item],
+      suggestions: [
+        {
+          item,
+          signal: "recent_capture" as const,
+          explanation: "Captured recently",
+        },
+      ],
+    };
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(planning)
+      .mockRejectedValueOnce(new Error("replenishment unavailable"));
+    vi.mocked(addItemToToday).mockResolvedValue(focus);
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${item.title} to Today`,
+      }),
+    );
+
+    expect(
+      await screen.findByText("Couldn't update Daily Planning"),
+    ).toBeVisible();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Today's Daily Focus" }),
+      ).getByText(item.title),
+    ).toBeVisible();
+    expect(within(suggestions).queryByText(item.title)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", {
+        name: `Added ${item.title} to Today`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Couldn't update Today. Your existing Daily Focus is unchanged; try again.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("announces a replenished Not today window and disables only that action", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const suppression = deferred<void>();
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce({
+        searchResults: [],
+        suggestions: [item, replacement].map((suggestionItem) => ({
+          item: suggestionItem,
+          signal: "recent_capture" as const,
+          explanation: "Captured recently",
+        })),
+      })
+      .mockResolvedValueOnce({
+        searchResults: [],
+        suggestions: [
+          {
+            item: replacement,
+            signal: "recent_capture",
+            explanation: "Captured recently",
+          },
+        ],
+      });
+    vi.mocked(suppressDailyPlanningItem).mockReturnValue(suppression.promise);
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    const notToday = within(suggestions).getByRole("button", {
+      name: `Not today for ${item.title}`,
+    });
+    fireEvent.click(notToday);
+
+    expect(notToday).toBeDisabled();
+    expect(notToday).toHaveTextContent("Updating…");
+    expect(
+      within(suggestions).getByRole("button", {
+        name: `Add ${replacement.title} to Today`,
+      }),
+    ).toBeEnabled();
+    suppression.resolve();
+
+    expect(
+      await screen.findByRole("status", {
+        name: `Set Not today for ${item.title}`,
+      }),
+    ).toBeInTheDocument();
+    expect(within(suggestions).queryByText(item.title)).not.toBeInTheDocument();
+    expect(within(suggestions).getByText(replacement.title)).toBeVisible();
+  });
+
+  it("keeps a stale search response from overwriting a replenished window", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const initialPlanning = {
+      searchResults: [],
+      suggestions: [
+        {
+          item,
+          signal: "recent_capture" as const,
+          explanation: "Captured recently",
+        },
+      ],
+    };
+    const searchRequest = deferred<typeof initialPlanning>();
+    let queriedRequests = 0;
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning).mockImplementation((_user, query) => {
+      if (!query.query) return Promise.resolve(initialPlanning);
+      queriedRequests += 1;
+      if (queriedRequests === 1) {
+        return searchRequest.promise;
+      }
+      return Promise.resolve({
+        searchResults: [],
+        suggestions: [
+          {
+            item: replacement,
+            signal: "recent_capture",
+            explanation: "Captured recently",
+          },
+        ],
+      });
+    });
+    vi.mocked(suppressDailyPlanningItem).mockResolvedValue();
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find an Item" }), {
+      target: { value: "distributed" },
+    });
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Not today for ${item.title}`,
+      }),
+    );
+    expect(
+      await screen.findByRole("status", {
+        name: `Set Not today for ${item.title}`,
+      }),
+    ).toBeInTheDocument();
+    expect(within(suggestions).getByText(replacement.title)).toBeVisible();
+
+    searchRequest.resolve(initialPlanning);
+
+    await waitFor(() =>
+      expect(
+        within(suggestions).queryByText(item.title),
+      ).not.toBeInTheDocument(),
+    );
+    expect(within(suggestions).getByText(replacement.title)).toBeVisible();
+  });
+
+  it("keeps every concurrent action disabled until its own request finishes", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const suppressions = new Map<ItemId, Deferred<void>>();
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning).mockResolvedValue({
+      searchResults: [],
+      suggestions: [item, replacement].map((suggestionItem) => ({
+        item: suggestionItem,
+        signal: "recent_capture",
+        explanation: "Captured recently",
+      })),
+    });
+    vi.mocked(suppressDailyPlanningItem).mockImplementation((_user, itemId) => {
+      const suppression = deferred<void>();
+      suppressions.set(itemId, suppression);
+      return suppression.promise;
+    });
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    const firstAction = within(suggestions).getByRole("button", {
+      name: `Not today for ${item.title}`,
+    });
+    const secondAction = within(suggestions).getByRole("button", {
+      name: `Not today for ${replacement.title}`,
+    });
+    fireEvent.click(firstAction);
+    fireEvent.click(secondAction);
+    expect(firstAction).toBeDisabled();
+    expect(secondAction).toBeDisabled();
+
+    suppressions.get(item.id)!.resolve();
+
+    await waitFor(() => expect(firstAction).toBeEnabled());
+    expect(secondAction).toBeDisabled();
+    suppressions.get(replacement.id)!.resolve();
+  });
+
+  it("keeps an older mutation refresh from replacing the newest window", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const initialPlanning = {
+      searchResults: [],
+      suggestions: [item, replacement].map((suggestionItem) => ({
+        item: suggestionItem,
+        signal: "recent_capture" as const,
+        explanation: "Captured recently",
+      })),
+    };
+    const suppressions = new Map<ItemId, Deferred<void>>();
+    const olderPlanning = deferred<typeof initialPlanning>();
+    const newestPlanning = deferred<typeof initialPlanning>();
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(initialPlanning)
+      .mockReturnValueOnce(olderPlanning.promise)
+      .mockReturnValueOnce(newestPlanning.promise);
+    vi.mocked(suppressDailyPlanningItem).mockImplementation((_user, itemId) => {
+      const suppression = deferred<void>();
+      suppressions.set(itemId, suppression);
+      return suppression.promise;
+    });
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Not today for ${item.title}`,
+      }),
+    );
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Not today for ${replacement.title}`,
+      }),
+    );
+    suppressions.get(item.id)!.resolve();
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
+    suppressions.get(replacement.id)!.resolve();
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
+
+    newestPlanning.resolve({ searchResults: [], suggestions: [] });
+    expect(
+      await within(suggestions).findByText(
+        "No Suggestions are current for Today.",
+      ),
+    ).toBeVisible();
+    olderPlanning.resolve(initialPlanning);
+
+    await waitFor(() =>
+      expect(
+        within(suggestions).queryByText(item.title),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(suggestions).queryByText(replacement.title),
+    ).not.toBeInTheDocument();
+  });
+
+  it("merges concurrent confirmed Adds without accepting stale planning", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const focusWithBoth: DailyFocus = {
+      ...focus,
+      entries: [
+        ...focus.entries,
+        {
+          item: replacement,
+          origin: null,
+          snapshot: {
+            status: replacement.status,
+            partPercentage: replacement.partPercentage,
+          },
+        },
+      ],
+      total: 2,
+    };
+    const initialPlanning = {
+      searchResults: [],
+      suggestions: [item, replacement].map((suggestionItem) => ({
+        item: suggestionItem,
+        signal: "recent_capture" as const,
+        explanation: "Captured recently",
+      })),
+    };
+    const adds = new Map<ItemId, Deferred<DailyFocus>>();
+    const olderPlanning = deferred<typeof initialPlanning>();
+    const newestPlanning = deferred<typeof initialPlanning>();
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(initialPlanning)
+      .mockReturnValueOnce(olderPlanning.promise)
+      .mockReturnValueOnce(newestPlanning.promise);
+    vi.mocked(addItemToToday).mockImplementation((_user, itemId) => {
+      const add = deferred<DailyFocus>();
+      adds.set(itemId, add);
+      return add.promise;
+    });
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${item.title} to Today`,
+      }),
+    );
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${replacement.title} to Today`,
+      }),
+    );
+    adds.get(item.id)!.resolve(focus);
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
+    adds.get(replacement.id)!.resolve(focusWithBoth);
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
+
+    const focusRegion = screen.getByRole("region", {
+      name: "Today's Daily Focus",
+    });
+    expect(await within(focusRegion).findByText(item.title)).toBeVisible();
+    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+
+    newestPlanning.resolve({ searchResults: [], suggestions: [] });
+    olderPlanning.resolve(initialPlanning);
+
+    expect(
+      await screen.findByRole("status", {
+        name: `Added ${replacement.title} to Today`,
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(suggestions).queryByText(item.title),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(suggestions).queryByText(replacement.title),
+    ).not.toBeInTheDocument();
+    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+    expect(within(focusRegion).getByText(item.title)).toBeVisible();
   });
 });
 
