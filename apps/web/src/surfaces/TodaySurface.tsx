@@ -44,6 +44,18 @@ type TodayState =
       planning: DailyPlanning;
     };
 
+type PendingActionKind = "add" | "remove" | "suppress";
+
+function pendingActionKey({
+  kind,
+  itemId,
+}: {
+  kind: PendingActionKind;
+  itemId: Item["id"];
+}): string {
+  return `${kind}:${itemId}`;
+}
+
 /** The current editable Daily Focus and its explicit Library selection seam. */
 export function TodaySurface() {
   const user = useCurrentUser();
@@ -56,12 +68,51 @@ export function TodaySurface() {
   const [planningRetrying, setPlanningRetrying] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const skipPlanningRefresh = useRef(false);
-  const [pendingAction, setPendingAction] = useState<{
-    kind: "add" | "remove" | "suppress";
+  const queryRef = useRef(query);
+  const planningRequestNumber = useRef(0);
+  const [pendingActions, setPendingActions] = useState<Set<string>>(
+    () => new Set(),
+  );
+  queryRef.current = query;
+
+  const startPlanningRequest = useCallback(() => {
+    const requestNumber = ++planningRequestNumber.current;
+    return {
+      request: fetchDailyPlanning(user, {
+        query: queryRef.current.trim() || undefined,
+      }),
+      isCurrent: () => requestNumber === planningRequestNumber.current,
+    };
+  }, [user]);
+
+  const updatePendingAction = ({
+    kind,
+    itemId,
+    pending,
+  }: {
+    kind: PendingActionKind;
     itemId: Item["id"];
-  }>();
+    pending: boolean;
+  }) => {
+    const key = pendingActionKey({ kind, itemId });
+    setPendingActions((current) => {
+      const updated = new Set(current);
+      if (pending) updated.add(key);
+      else updated.delete(key);
+      return updated;
+    });
+  };
+
+  const isActionPending = ({
+    kind,
+    itemId,
+  }: {
+    kind: PendingActionKind;
+    itemId: Item["id"];
+  }) => pendingActions.has(pendingActionKey({ kind, itemId }));
 
   const load = useCallback(async () => {
+    planningRequestNumber.current += 1;
     setState({ status: "loading" });
     const [focus, planning] = await Promise.allSettled([
       fetchToday(user),
@@ -111,20 +162,20 @@ export function TodaySurface() {
 
   const retryPlanning = useCallback(async () => {
     setPlanningRetrying(true);
+    const planningRequest = startPlanningRequest();
     try {
-      const planning = await fetchDailyPlanning(user, {
-        query: query.trim() || undefined,
-      });
+      const planning = await planningRequest.request;
+      if (!planningRequest.isCurrent()) return;
       setState((value) =>
         value.status === "loading" ? value : { ...value, planning },
       );
       setPlanningError(false);
     } catch {
-      setPlanningError(true);
+      if (planningRequest.isCurrent()) setPlanningError(true);
     } finally {
       setPlanningRetrying(false);
     }
-  }, [query, user]);
+  }, [startPlanningRequest]);
 
   useEffect(() => {
     if (state.status === "loading") return;
@@ -136,11 +187,10 @@ export function TodaySurface() {
     }
     let isActive = true;
     setPlanningError(false);
-    void fetchDailyPlanning(user, {
-      query: query.trim() || undefined,
-    })
+    const planningRequest = startPlanningRequest();
+    void planningRequest.request
       .then((planning) => {
-        if (isActive) {
+        if (isActive && planningRequest.isCurrent()) {
           setPlanningError(false);
           setState((value) =>
             value.status === "loading" ? value : { ...value, planning },
@@ -148,12 +198,12 @@ export function TodaySurface() {
         }
       })
       .catch(() => {
-        if (isActive) setPlanningError(true);
+        if (isActive && planningRequest.isCurrent()) setPlanningError(true);
       });
     return () => {
       isActive = false;
     };
-  }, [query, state.status, user]);
+  }, [query, startPlanningRequest, state.status]);
 
   const add = async (
     item: Item,
@@ -161,59 +211,67 @@ export function TodaySurface() {
   ) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "add", itemId: item.id });
+    updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
-      const planning = await fetchDailyPlanning(user, {
-        query: query.trim() || undefined,
-      });
+      const planningRequest = startPlanningRequest();
+      const planning = await planningRequest.request;
       setState((current) =>
         current.status !== "loading"
           ? {
               ...current,
               status: "ready",
               focus,
-              planning,
+              planning: planningRequest.isCurrent()
+                ? planning
+                : { ...current.planning, suggestions: planning.suggestions },
             }
           : current,
       );
+      if (planningRequest.isCurrent()) setPlanningError(false);
       setAnnouncement(`Added ${item.title} to Today`);
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({ kind: "add", itemId: item.id, pending: false });
     }
   };
 
   const suppress = async (item: Item) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "suppress", itemId: item.id });
+    updatePendingAction({ kind: "suppress", itemId: item.id, pending: true });
     try {
       await suppressDailyPlanningItem(user, item.id);
-      const planning = await fetchDailyPlanning(user, {
-        query: query.trim() || undefined,
-      });
+      const planningRequest = startPlanningRequest();
+      const planning = await planningRequest.request;
       setState((current) =>
         current.status !== "loading"
           ? {
               ...current,
-              planning,
+              planning: planningRequest.isCurrent()
+                ? planning
+                : { ...current.planning, suggestions: planning.suggestions },
             }
           : current,
       );
+      if (planningRequest.isCurrent()) setPlanningError(false);
       setAnnouncement(`Set Not today for ${item.title}`);
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({
+        kind: "suppress",
+        itemId: item.id,
+        pending: false,
+      });
     }
   };
 
   const remove = async (focus: DailyFocus, item: Item) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "remove", itemId: item.id });
+    updatePendingAction({ kind: "remove", itemId: item.id, pending: true });
     try {
       const updated = await removeItemFromToday(user, focus.id, item.id);
       setState((current) =>
@@ -223,7 +281,7 @@ export function TodaySurface() {
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({ kind: "remove", itemId: item.id, pending: false });
     }
   };
 
@@ -428,10 +486,10 @@ export function TodaySurface() {
                                 variant="quiet"
                                 size="compact"
                                 className="min-h-11 min-w-28 sm:min-h-8"
-                                loading={
-                                  pendingAction?.kind === "remove" &&
-                                  pendingAction.itemId === item.id
-                                }
+                                loading={isActionPending({
+                                  kind: "remove",
+                                  itemId: item.id,
+                                })}
                                 loadingLabel="Removing…"
                                 onClick={() => void remove(state.focus, item)}
                                 aria-label={`Remove ${item.title} from Today`}
@@ -545,10 +603,10 @@ export function TodaySurface() {
                           actions={
                             <PlanningAddButton
                               item={item}
-                              pending={
-                                pendingAction?.kind === "add" &&
-                                pendingAction.itemId === item.id
-                              }
+                              pending={isActionPending({
+                                kind: "add",
+                                itemId: item.id,
+                              })}
                               onAdd={() => void add(item)}
                             />
                           }
@@ -587,10 +645,10 @@ export function TodaySurface() {
                               <div className="flex flex-wrap gap-2">
                                 <PlanningAddButton
                                   item={suggestion.item}
-                                  pending={
-                                    pendingAction?.kind === "add" &&
-                                    pendingAction.itemId === suggestion.item.id
-                                  }
+                                  pending={isActionPending({
+                                    kind: "add",
+                                    itemId: suggestion.item.id,
+                                  })}
                                   onAdd={() => void add(suggestion.item)}
                                 />
                                 <Button
@@ -598,10 +656,10 @@ export function TodaySurface() {
                                   variant="quiet"
                                   size="compact"
                                   className="min-h-11 min-w-28 sm:min-h-8"
-                                  loading={
-                                    pendingAction?.kind === "suppress" &&
-                                    pendingAction.itemId === suggestion.item.id
-                                  }
+                                  loading={isActionPending({
+                                    kind: "suppress",
+                                    itemId: suggestion.item.id,
+                                  })}
                                   loadingLabel="Updating…"
                                   onClick={() => void suppress(suggestion.item)}
                                   aria-label={`Not today for ${suggestion.item.title}`}
