@@ -34,28 +34,35 @@ The first live pass rejected a long all-at-once feed and established a combined
 queue with a left Follow filter. The second pass then falsified the oversized,
 one-at-a-time Discovery card: it made overview and rapid triage too slow. This
 pass keeps the Follow organization but compares dense, directly actionable
-Candidate overviews.
+Candidate overviews. The third pass selected the small-card direction: thumbnails
+make it calm and familiar rather than haphazard, while continuous vertical scroll
+remains unresolved. The fourth pass narrows to visual gallery density and whether
+the review should be paged.
 
-### A — Compact rows
+### A — Balanced grid
 
-Hypothesis: a small thumbnail, one-line title, essential metadata, history, and
-always-visible decisions form the best balance of recognition and density.
+Hypothesis: the selected small-card composition already strikes the right balance:
+three columns beside the Follow rail, several visible Candidates, and no extra
+review mechanism.
 
-### B — Triage table
+### B — Contact sheet
 
-Hypothesis: removing thumbnails and aligning metadata and decisions into columns
-makes the fastest overview and comparison surface.
+Hypothesis: moving Follow filters into a compact strip and using the entire width
+for four or five columns reduces vertical scrolling without making the gallery
+feel cluttered.
 
-### C — Small cards
+### C — Paged gallery
 
-Hypothesis: small visual cards preserve thumbnail recognition while fitting six
-or more directly actionable Candidates in a desktop viewport.
+Hypothesis: a fixed six-Candidate review screen makes intake explicitly finite and
+eliminates continuous scrolling, while preserving the selected thumbnail grid.
 
 ## Live-session verdict
 
 - Winner or hybrid: **Pending live fit-check.**
 - Validated: one combined queue across all Follows; optional filtering by Follow;
-  Candidate decisions must remain directly available from the overview.
-- Falsified: a long spacious feed and the large one-at-a-time review deck.
-- Required changes: compare compact rows, a triage table, and small cards to
-  choose the useful density and role of thumbnails.
+  Candidate decisions must remain directly available from the overview; compact
+  thumbnails make the intake calm, scannable, and appropriately familiar.
+- Falsified: a long spacious feed, the large one-at-a-time review deck, compact
+  rows, and the thumbnail-free triage table.
+- Required changes: compare balanced, denser full-width, and paged galleries to
+  settle above-the-fold density and continuous-scroll behavior.

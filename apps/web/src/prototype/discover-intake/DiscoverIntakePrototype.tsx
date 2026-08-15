@@ -71,9 +71,9 @@ interface PrototypeState {
 }
 
 const variants: { key: VariantKey; name: string }[] = [
-  { key: "A", name: "Compact rows" },
-  { key: "B", name: "Triage table" },
-  { key: "C", name: "Small cards" },
+  { key: "A", name: "Balanced grid" },
+  { key: "B", name: "Contact sheet" },
+  { key: "C", name: "Paged gallery" },
 ];
 
 const initialFollows: Follow[] = [
@@ -83,7 +83,7 @@ const initialFollows: Follow[] = [
     detail: "youtube.com/@jherr",
     targetKind: "Public channel",
     state: "active",
-    newCount: 3,
+    newCount: 4,
     lastChecked: "Just now",
   },
   {
@@ -92,7 +92,7 @@ const initialFollows: Follow[] = [
     detail: "Query · newest first · videos only",
     targetKind: "Recurring search",
     state: "active",
-    newCount: 2,
+    newCount: 3,
     lastChecked: "Just now",
   },
   {
@@ -101,7 +101,7 @@ const initialFollows: Follow[] = [
     detail: "youtube.com/@ByteByteGo",
     targetKind: "Public channel",
     state: "failed",
-    newCount: 1,
+    newCount: 2,
     lastChecked: "Partial result · 10:42",
   },
   {
@@ -110,7 +110,7 @@ const initialFollows: Follow[] = [
     detail: "youtube.com/@mitocw",
     targetKind: "Public channel",
     state: "paused",
-    newCount: 0,
+    newCount: 1,
     lastChecked: "Paused 9 Aug",
   },
   {
@@ -175,6 +175,46 @@ const initialDiscoveries: Discovery[] = [
     followId: "rsc-search",
     published: "13 Aug",
     duration: "22 min",
+    state: "new",
+    type: "video",
+  },
+  {
+    id: "server-cache",
+    title: "The React server cache explained",
+    publisher: "Aurora Scharff",
+    followId: "rsc-search",
+    published: "12 Aug",
+    duration: "14 min",
+    state: "new",
+    type: "video",
+  },
+  {
+    id: "load-balancing",
+    title: "Load balancing at scale",
+    publisher: "ByteByteGo",
+    followId: "bytebytego",
+    published: "11 Aug",
+    duration: "10 min",
+    state: "new",
+    type: "video",
+  },
+  {
+    id: "typescript-patterns",
+    title: "TypeScript patterns I keep reaching for",
+    publisher: "Jack Herrington",
+    followId: "jack",
+    published: "10 Aug",
+    duration: "21 min",
+    state: "new",
+    type: "video",
+  },
+  {
+    id: "distributed-2",
+    title: "Distributed Systems lecture 2",
+    publisher: "MIT OpenCourseWare",
+    followId: "mit",
+    published: "9 Aug",
+    duration: "52 min",
     state: "new",
     type: "video",
   },
@@ -451,12 +491,12 @@ function IntakeFirst(props: VariantProps) {
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant A · Compact rows
+            Variant A · Balanced grid
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Scan title, publisher, age, and prior history; decide without
-            opening anything.
+            The selected small-card direction: calm thumbnail recognition with
+            six actionable Candidates in a typical desktop view.
           </p>
         </div>
         <RefreshAndHistory {...props} />
@@ -469,7 +509,7 @@ function IntakeFirst(props: VariantProps) {
           {props.frame === "loading" || props.refreshing ? (
             <LoadingFeed />
           ) : unresolved.length > 0 ? (
-            <CompactRows
+            <CompactCardGrid
               discoveries={unresolved}
               follows={props.state.follows}
               actions={props.actions}
@@ -486,55 +526,61 @@ function IntakeFirst(props: VariantProps) {
 function FollowsAndIntake(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
   return (
-    <main className="mx-auto max-w-[80rem] px-4 py-7 md:px-6">
+    <main className="mx-auto max-w-[90rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant B · Triage table
+            Variant B · Contact sheet
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Maximum overview: no feature cards, just comparable rows and fixed
-            decision columns.
+            Move Follow filters above the intake and spend the full width on a
+            denser visual overview.
           </p>
         </div>
         <RefreshAndHistory {...props} />
       </header>
       <StatusFrame frame={props.frame} follows={props.state.follows} />
-      <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <FollowFilterRail {...props} dense />
-        <section className="min-w-0">
-          <IntakeToolbar props={props} unresolved={unresolved} />
-          {props.frame === "loading" || props.refreshing ? (
-            <LoadingFeed />
-          ) : unresolved.length > 0 ? (
-            <TriageTable
-              discoveries={unresolved}
-              follows={props.state.follows}
-              actions={props.actions}
-            />
-          ) : (
-            <FilteredEmptyState props={props} />
-          )}
-        </section>
-      </div>
+      <FollowChipStrip {...props} />
+      <section className="mt-4 min-w-0">
+        <IntakeToolbar props={props} unresolved={unresolved} />
+        {props.frame === "loading" || props.refreshing ? (
+          <LoadingFeed />
+        ) : unresolved.length > 0 ? (
+          <DenseContactSheet
+            discoveries={unresolved}
+            follows={props.state.follows}
+            actions={props.actions}
+          />
+        ) : (
+          <FilteredEmptyState props={props} />
+        )}
+      </section>
     </main>
   );
 }
 
 function ReviewBatches(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
+  const [page, setPage] = useState(0);
+  const pageSize = 6;
+  const pageCount = Math.max(1, Math.ceil(unresolved.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const visiblePage = unresolved.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize,
+  );
   return (
     <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant C · Small cards
+            Variant C · Paged gallery
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Keep thumbnail recognition, but fit several actionable Candidates on
-            screen at once.
+            Keep the balanced grid but cap each review screen at six Candidates
+            instead of creating one continuous scroll.
           </p>
         </div>
         <RefreshAndHistory {...props} />
@@ -547,10 +593,13 @@ function ReviewBatches(props: VariantProps) {
           {props.frame === "loading" || props.refreshing ? (
             <LoadingFeed />
           ) : unresolved.length > 0 ? (
-            <CompactCardGrid
-              discoveries={unresolved}
+            <PagedGallery
+              discoveries={visiblePage}
               follows={props.state.follows}
               actions={props.actions}
+              page={safePage}
+              pageCount={pageCount}
+              onPage={setPage}
             />
           ) : (
             <FilteredEmptyState props={props} />
@@ -732,96 +781,179 @@ function IntakeToolbar({
   );
 }
 
-function CompactRows({
+function FollowChipStrip(props: VariantProps) {
+  const allCount = unresolvedDiscoveries(props.state.discoveries).length;
+  return (
+    <div className="rounded-xl border bg-quiet-panel p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Follow
+        </span>
+        <FollowChip
+          active={props.activeFollowId === "all"}
+          count={allCount}
+          label="All"
+          onClick={() => props.onFollowFilter("all")}
+        />
+        {props.state.follows.map((follow) => (
+          <FollowChip
+            active={props.activeFollowId === follow.id}
+            count={
+              unresolvedDiscoveries(props.state.discoveries).filter(
+                (discovery) => discovery.followId === follow.id,
+              ).length
+            }
+            key={follow.id}
+            label={follow.name}
+            unhealthy={
+              follow.state === "failed" ||
+              follow.state === "authorization-expired"
+            }
+            onClick={() => props.onFollowFilter(follow.id)}
+          />
+        ))}
+        <Button
+          className="ml-auto"
+          size="compact"
+          variant="quiet"
+          onClick={props.onHealth}
+        >
+          <Settings2 /> Health
+        </Button>
+        <Button size="compact" onClick={props.onSetup}>
+          <Plus /> Follow
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FollowChip({
+  active,
+  count,
+  label,
+  onClick,
+  unhealthy = false,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  onClick: () => void;
+  unhealthy?: boolean;
+}) {
+  return (
+    <button
+      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium ${
+        active
+          ? "border-primary/50 bg-accent text-accent-foreground"
+          : "bg-card hover:bg-accent/60"
+      }`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {unhealthy && <AlertCircle className="size-3 text-destructive" />}
+      {label}
+      <span className="text-xs text-muted-foreground">{count}</span>
+    </button>
+  );
+}
+
+function DenseContactSheet({
   actions,
   discoveries,
   follows,
 }: CandidateCollectionProps) {
   return (
-    <div className="divide-y overflow-hidden rounded-xl border bg-card">
+    <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
       {discoveries.map((discovery) => (
         <article
-          className="grid gap-3 px-3 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto] sm:items-center"
+          className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card"
           key={discovery.id}
         >
-          <div className="hidden h-16 place-items-center rounded-md bg-muted sm:grid">
+          <div className="relative grid aspect-[16/7] place-items-center bg-muted">
             <Video className="size-7 text-muted-foreground/50" />
+            <Badge
+              className="absolute top-2 left-2"
+              variant={discovery.state === "new" ? "current" : "neutral"}
+            >
+              {discovery.state}
+            </Badge>
           </div>
-          <div className="min-w-0">
-            <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <Badge
-                variant={discovery.state === "new" ? "current" : "neutral"}
-              >
-                {discovery.state}
-              </Badge>
-              <span>{followName(discovery.followId, follows)}</span>
-              <span>·</span>
-              <span>{discovery.published}</span>
-              <span>·</span>
-              <span>{discovery.duration}</span>
-            </div>
-            <h3 className="truncate font-medium">{discovery.title}</h3>
+          <div className="flex flex-1 flex-col p-2.5">
+            <h3 className="line-clamp-2 min-h-9 text-sm font-semibold leading-snug">
+              {discovery.title}
+            </h3>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {followName(discovery.followId, follows)} · {discovery.duration}
+            </p>
             <CompactHistory discovery={discovery} />
+            <div className="mt-auto pt-2">
+              <DecisionButtons actions={actions} discovery={discovery} terse />
+            </div>
           </div>
-          <DecisionButtons actions={actions} discovery={discovery} />
         </article>
       ))}
     </div>
   );
 }
 
-function TriageTable({
+function PagedGallery({
   actions,
   discoveries,
   follows,
-}: CandidateCollectionProps) {
+  onPage,
+  page,
+  pageCount,
+}: CandidateCollectionProps & {
+  onPage: (page: number) => void;
+  page: number;
+  pageCount: number;
+}) {
   return (
-    <>
-      <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
-        <div className="grid grid-cols-[minmax(0,1fr)_9rem_7rem_17rem] gap-3 border-b bg-quiet-panel px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <span>Candidate</span>
-          <span>Follow</span>
-          <span>Arrived</span>
-          <span>Decision</span>
-        </div>
-        <div className="divide-y">
-          {discoveries.map((discovery) => (
-            <article
-              className="grid grid-cols-[minmax(0,1fr)_9rem_7rem_17rem] items-center gap-3 px-4 py-2.5"
-              key={discovery.id}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={discovery.state === "new" ? "current" : "neutral"}
-                  >
-                    {discovery.state}
-                  </Badge>
-                  <h3 className="truncate text-sm font-medium">
-                    {discovery.title}
-                  </h3>
-                </div>
-                <CompactHistory discovery={discovery} />
-              </div>
-              <span className="truncate text-sm text-muted-foreground">
-                {followName(discovery.followId, follows)}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {discovery.published}
-              </span>
-              <DecisionButtons actions={actions} discovery={discovery} terse />
-            </article>
-          ))}
+    <div>
+      <div className="mb-3 flex items-center justify-between rounded-lg bg-quiet-panel px-3 py-2 text-sm">
+        <span className="text-muted-foreground">
+          Screen {page + 1} of {pageCount} · up to six Candidates
+        </span>
+        <div className="flex gap-1">
+          <Button
+            size="icon-compact"
+            variant="quiet"
+            disabled={page === 0}
+            onClick={() => onPage(page - 1)}
+            aria-label="Previous Candidate screen"
+          >
+            <ArrowLeft />
+          </Button>
+          <Button
+            size="icon-compact"
+            variant="quiet"
+            disabled={page + 1 >= pageCount}
+            onClick={() => onPage(page + 1)}
+            aria-label="Next Candidate screen"
+          >
+            <ArrowRight />
+          </Button>
         </div>
       </div>
-      <div className="md:hidden">
-        <CompactRows
-          actions={actions}
-          discoveries={discoveries}
-          follows={follows}
-        />
+      <CompactCardGrid
+        actions={actions}
+        discoveries={discoveries}
+        follows={follows}
+      />
+      <div className="mt-3 flex justify-center gap-1">
+        {Array.from({ length: pageCount }, (_, index) => (
+          <button
+            aria-label={`Candidate screen ${index + 1}`}
+            className={`h-2 rounded-full transition-all ${
+              index === page ? "w-7 bg-primary" : "w-2 bg-border"
+            }`}
+            key={index}
+            onClick={() => onPage(index)}
+          />
+        ))}
       </div>
-    </>
+    </div>
   );
 }
 
