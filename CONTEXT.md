@@ -22,9 +22,10 @@ _Avoid_: Software engineer, Student, Expert (none defines the audience by itself
 ### Recurring discovery
 
 **Provider**:
-An external service Unshelf queries for learning material through provider-specific
-targets and filters. Provider details stay behind the recurring-discovery boundary
-rather than becoming shared Unshelf concepts.
+A system-supported external service Unshelf queries for learning material through
+provider-specific targets and filters. A User owns Follows rather than Providers;
+Provider details and any Provider-specific authorization stay behind the
+recurring-discovery boundary rather than becoming shared Unshelf concepts.
 _Avoid_: Source (the optional link stored on an Item), Follow
 
 **Follow**:
