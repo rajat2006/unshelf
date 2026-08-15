@@ -178,7 +178,7 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 });
 
-test("a User plans Today with ordered explained suggestions and temporary inputs", async ({
+test("a User plans Today with a capped explained shortlist and independent search", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-daily-planning`;
@@ -218,8 +218,11 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   await testApi(page, user, `/api/items/${dormant.id}/status`, "PATCH", {
     status: "in_progress",
   });
+  const today = (await (
+    await testApi(page, user, "/api/daily-focus/today")
+  ).json()) as { date: string };
   await testApi(page, user, `/api/items/${targeted.id}/target-date`, "PATCH", {
-    targetDate: "2099-01-01",
+    targetDate: today.date,
   });
   await testApi(page, user, `/api/items/${done.id}/status`, "PATCH", {
     status: "done",
@@ -231,20 +234,14 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   await page.goto(testAppUrl("/today", user));
   const suggestions = page.getByRole("region", { name: "Suggestions" });
   await expect(
-    page.getByRole("heading", { level: 2, name: "Plan Today" }),
+    page.getByRole("heading", { level: 2, name: "Add only what fits" }),
   ).toBeVisible();
   await expect(
     suggestions.getByText("Unfinished from yesterday"),
   ).toBeVisible();
-  await expect(
-    suggestions.getByText("In progress and waiting longest"),
-  ).toBeVisible();
-  await expect(suggestions.getByText("Target date 2099-01-01")).toBeVisible();
-  await expect(
-    suggestions.getByText(
-      "Recently captured and not in an active Learning Plan",
-    ),
-  ).toBeVisible();
+  await expect(suggestions.getByText("Target date is Today")).toBeVisible();
+  await expect(suggestions.getByText("Captured recently")).toBeVisible();
+  await expect(suggestions.getByRole("listitem")).toHaveCount(3);
   await expect(suggestions.getByText("Finished suggestion noise")).toHaveCount(
     0,
   );
@@ -252,28 +249,20 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
     suggestions.getByText("Already selected suggestion noise"),
   ).toHaveCount(0);
 
-  await page.getByRole("combobox", { name: "Learning Plan lens" }).click();
-  await page.getByRole("option", { name: "Database foundations" }).click();
-  await expect(suggestions.getByText("In Database foundations")).toBeVisible();
   const suggestionTitles = await suggestions
     .getByRole("link")
     .allTextContents();
-  expect(suggestionTitles.slice(0, 5)).toEqual([
+  expect(suggestionTitles).toEqual([
     "Continue yesterday's indexes",
-    "Plan-aware query execution",
-    "Dormant transaction internals",
     "Targeted storage reading",
     "Fresh uncommitted paper",
   ]);
-
-  await page
-    .getByRole("textbox", { name: "Learning intention" })
-    .fill("DATABASE");
   await expect(
-    suggestions.getByText("Plan-aware query execution"),
-  ).toBeVisible();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Learning intention" }).clear();
+    page.getByRole("textbox", { name: "Learning intention" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Learning Plan lens" }),
+  ).toHaveCount(0);
 
   await page
     .getByRole("searchbox", { name: "Find an Item" })

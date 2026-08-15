@@ -1,15 +1,12 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   Status,
-  type DailyFocusOrigin,
   type DailyPlanning,
   type DailyPlanningQuery,
   type DailyPlanningSignal,
   type DailyPlanningSuggestion,
   type Item,
   type ItemId,
-  type LearningPlanId,
-  type StageId,
   type UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
@@ -19,38 +16,31 @@ import {
   dailyFocusItems,
   dailyPlanningSuppressions,
   items,
-  learningPlans,
 } from "../schema";
 
 interface PlanningFacts {
   item: Item;
-  activityAt: Date;
+  planningDate: string;
   yesterdayAddedAt: Date | string | null;
-  selectedPlanPlacement: boolean;
-  selectedStageId: string | null;
-  selectedStageName: string | null;
-  activePlanCount: number;
-  contextNames: string;
+  targetDistance: number | null;
+  recentCapture: boolean;
   suppressedToday: boolean;
 }
 
-interface OrderedSuggestion extends DailyPlanningSuggestion {
-  orderDate: string | null;
+interface SuggestionCandidate {
+  suggestion: DailyPlanningSuggestion;
+  orderDate: string;
+  targetDistance: number | null;
 }
 
-const SIGNAL_PRIORITY: Record<DailyPlanningSignal, number> = {
-  unfinished_yesterday: 0,
-  selected_plan: 1,
-  dormant_in_progress: 2,
-  approaching_target: 3,
-  recently_captured_uncommitted: 4,
-};
+const SIGNALS: DailyPlanningSignal[] = [
+  "unfinished_yesterday",
+  "target_date",
+  "recent_capture",
+];
+const SUGGESTION_LIMIT = 3;
 
-type PlanningResult =
-  | { ok: true; planning: DailyPlanning }
-  | { ok: false; error: "plan_not_found" };
-
-/** Build today's transparent suggestion projection from current durable facts. */
+/** Build today's capped suggestion projection from current durable facts. */
 export async function getDailyPlanning({
   db,
   userId,
@@ -59,18 +49,11 @@ export async function getDailyPlanning({
   db: Database;
   userId: UserId;
   query: DailyPlanningQuery;
-}): Promise<PlanningResult> {
-  const selectedPlan = query.learningPlanId
-    ? await readSelectedPlan(db, userId, query.learningPlanId)
-    : null;
-  if (query.learningPlanId && !selectedPlan) {
-    return { ok: false, error: "plan_not_found" };
-  }
-
+}): Promise<DailyPlanning> {
   const rows = await db
     .select({
       ...ITEM_PROJECTION,
-      activityAt: items.activityAt,
+      planningDate: sql<string>`current_date::text`,
       yesterdayAddedAt: sql<Date | string | null>`(
         select daily_focus_items.added_at
         from daily_focus_items
@@ -83,66 +66,19 @@ export async function getDailyPlanning({
           and daily_focus_items.status_snapshot <> 'done'
         limit 1
       )`,
-      selectedPlanPlacement: query.learningPlanId
-        ? sql<boolean>`exists (
-            select 1
-            from learning_plan_item_placements
-            where learning_plan_item_placements.item_id = items.id
-              and learning_plan_item_placements.user_id = items.user_id
-              and learning_plan_item_placements.learning_plan_id = ${query.learningPlanId}
-          )`
-        : sql<boolean>`false`,
-      selectedStageId: query.learningPlanId
-        ? sql<string | null>`(
-            select learning_plan_item_placements.stage_id
-            from learning_plan_item_placements
-            where learning_plan_item_placements.item_id = items.id
-              and learning_plan_item_placements.user_id = items.user_id
-              and learning_plan_item_placements.learning_plan_id = ${query.learningPlanId}
-            limit 1
-          )`
-        : sql<string | null>`null`,
-      selectedStageName: query.learningPlanId
-        ? sql<string | null>`(
-            select stages.name
-            from learning_plan_item_placements
-            join stages
-              on stages.id = learning_plan_item_placements.stage_id
-              and stages.user_id = learning_plan_item_placements.user_id
-            where learning_plan_item_placements.item_id = items.id
-              and learning_plan_item_placements.user_id = items.user_id
-              and learning_plan_item_placements.learning_plan_id = ${query.learningPlanId}
-            limit 1
-          )`
-        : sql<string | null>`null`,
-      activePlanCount: sql<number>`(
-        select count(*)::integer
-        from learning_plan_item_placements
-        join learning_plans
-          on learning_plans.id = learning_plan_item_placements.learning_plan_id
-          and learning_plans.user_id = learning_plan_item_placements.user_id
-        where learning_plan_item_placements.item_id = items.id
-          and learning_plan_item_placements.user_id = items.user_id
-          and learning_plans.archived_at is null
-      )`,
-      contextNames: sql<string>`coalesce((
-        select string_agg(concat_ws(' ', learning_plans.name, stages.name), ' ')
-        from learning_plan_item_placements
-        join learning_plans
-          on learning_plans.id = learning_plan_item_placements.learning_plan_id
-          and learning_plans.user_id = learning_plan_item_placements.user_id
-        left join stages
-          on stages.id = learning_plan_item_placements.stage_id
-          and stages.user_id = learning_plan_item_placements.user_id
-        where learning_plan_item_placements.item_id = items.id
-          and learning_plan_item_placements.user_id = items.user_id
-      ), '')`,
+      targetDistance: sql<number | null>`case
+        when ${items.targetDate} between current_date - 7 and current_date + 7
+          then abs(${items.targetDate} - current_date)::integer
+        else null
+      end`,
+      recentCapture: sql<boolean>`${items.createdAt} >= current_date - 6
+        and ${items.createdAt} < current_date + 1`,
       suppressedToday: sql<boolean>`exists (
         select 1
-        from ${dailyPlanningSuppressions}
-        where ${dailyPlanningSuppressions.itemId} = ${items.id}
-          and ${dailyPlanningSuppressions.userId} = ${items.userId}
-          and ${dailyPlanningSuppressions.date} = current_date
+        from daily_planning_suppressions
+        where daily_planning_suppressions.item_id = items.id
+          and daily_planning_suppressions.user_id = items.user_id
+          and daily_planning_suppressions.date = current_date
       )`,
     })
     .from(items)
@@ -165,36 +101,19 @@ export async function getDailyPlanning({
 
   const facts: PlanningFacts[] = rows.map((row) => ({
     item: toItem(row),
-    activityAt: row.activityAt,
+    planningDate: row.planningDate,
     yesterdayAddedAt: row.yesterdayAddedAt,
-    selectedPlanPlacement: row.selectedPlanPlacement,
-    selectedStageId: row.selectedStageId,
-    selectedStageName: row.selectedStageName,
-    activePlanCount: row.activePlanCount,
-    contextNames: row.contextNames,
+    targetDistance: row.targetDistance,
+    recentCapture: row.recentCapture,
     suppressedToday: row.suppressedToday,
   }));
-  const intentionTokens = lexicalTokens(query.intention ?? "");
-  const relevant = facts.filter(
-    (fact) =>
-      fact.item.status !== Status.Done &&
-      !fact.suppressedToday &&
-      (intentionTokens.length === 0 ||
-        intentionTokens.some((token) => lexicalNames(fact).has(token))),
+  const eligible = facts.filter(
+    (fact) => fact.item.status !== Status.Done && !fact.suppressedToday,
   );
 
   return {
-    ok: true,
-    planning: {
-      searchResults: searchItems(facts, query.query ?? ""),
-      suggestions: relevant
-        .map((fact) => suggestionFor(fact, selectedPlan))
-        .filter(
-          (suggestion): suggestion is OrderedSuggestion => suggestion !== null,
-        )
-        .sort((first, second) => compareSuggestions({ first, second }))
-        .map(({ orderDate: _orderDate, ...suggestion }) => suggestion),
-    },
+    searchResults: searchItems(facts, query.query ?? ""),
+    suggestions: selectSuggestions(eligible),
   };
 }
 
@@ -223,40 +142,6 @@ export async function suppressDailyPlanningItem({
   });
 }
 
-async function readSelectedPlan(
-  db: Database,
-  userId: UserId,
-  learningPlanId: LearningPlanId,
-): Promise<{ id: LearningPlanId; name: string } | null> {
-  const [plan] = await db
-    .select({ id: learningPlans.id, name: learningPlans.name })
-    .from(learningPlans)
-    .where(
-      and(
-        eq(learningPlans.id, learningPlanId),
-        eq(learningPlans.userId, userId),
-      ),
-    )
-    .limit(1);
-  return plan ? { id: plan.id as LearningPlanId, name: plan.name } : null;
-}
-
-function lexicalTokens(value: string): string[] {
-  return value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-}
-
-function lexicalNames(fact: PlanningFacts): Set<string> {
-  return new Set(
-    lexicalTokens(
-      [
-        fact.item.title,
-        ...fact.item.labels.map((label) => label.name),
-        fact.contextNames,
-      ].join(" "),
-    ),
-  );
-}
-
 function searchItems(facts: PlanningFacts[], query: string): Item[] {
   const normalized = query.toLocaleLowerCase();
   if (!normalized) return [];
@@ -276,67 +161,103 @@ function searchItems(facts: PlanningFacts[], query: string): Item[] {
     );
 }
 
-function suggestionFor(
-  fact: PlanningFacts,
-  selectedPlan: { id: LearningPlanId; name: string } | null,
-): OrderedSuggestion | null {
-  let signal: DailyPlanningSignal;
-  let explanation: string;
-  let orderDate: string | null;
-  let origin: DailyFocusOrigin | null = null;
-
-  if (fact.yesterdayAddedAt) {
-    signal = "unfinished_yesterday";
-    explanation = "Unfinished from yesterday";
-    orderDate = new Date(fact.yesterdayAddedAt).toISOString();
-  } else if (fact.selectedPlanPlacement && selectedPlan) {
-    signal = "selected_plan";
-    explanation = `In ${selectedPlan.name}`;
-    orderDate = null;
-    origin = {
-      learningPlan: selectedPlan,
-      stage:
-        fact.selectedStageId && fact.selectedStageName
-          ? {
-              id: fact.selectedStageId as StageId,
-              name: fact.selectedStageName,
-            }
-          : null,
-    };
-  } else if (fact.item.status === Status.InProgress) {
-    signal = "dormant_in_progress";
-    explanation = "In progress and waiting longest";
-    orderDate = fact.activityAt.toISOString();
-  } else if (fact.item.targetDate) {
-    signal = "approaching_target";
-    explanation = `Target date ${fact.item.targetDate}`;
-    orderDate = fact.item.targetDate;
-  } else if (fact.activePlanCount === 0) {
-    signal = "recently_captured_uncommitted";
-    explanation = "Recently captured and not in an active Learning Plan";
-    orderDate = fact.item.createdAt;
-  } else {
-    return null;
+function selectSuggestions(facts: PlanningFacts[]): DailyPlanningSuggestion[] {
+  const groups = new Map(
+    SIGNALS.map((signal) => [signal, [] as SuggestionCandidate[]]),
+  );
+  for (const fact of facts) {
+    const candidate = suggestionFor(fact);
+    if (candidate) groups.get(candidate.suggestion.signal)?.push(candidate);
+  }
+  for (const signal of SIGNALS) {
+    groups.get(signal)?.sort(compareWithinSignal);
   }
 
-  return { item: fact.item, signal, explanation, origin, orderDate };
+  const selected: SuggestionCandidate[] = [];
+  for (const signal of SIGNALS) {
+    const first = groups.get(signal)?.[0];
+    if (first) selected.push(first);
+  }
+  for (const signal of SIGNALS) {
+    for (const candidate of groups.get(signal)?.slice(1) ?? []) {
+      if (selected.length >= SUGGESTION_LIMIT) break;
+      selected.push(candidate);
+    }
+  }
+
+  return selected
+    .sort((first, second) => {
+      const signalOrder =
+        SIGNALS.indexOf(first.suggestion.signal) -
+        SIGNALS.indexOf(second.suggestion.signal);
+      return signalOrder || compareWithinSignal(first, second);
+    })
+    .slice(0, SUGGESTION_LIMIT)
+    .map(({ suggestion }) => suggestion);
 }
 
-function compareSuggestions({
-  first,
-  second,
-}: {
-  first: OrderedSuggestion;
-  second: OrderedSuggestion;
-}): number {
-  const firstPriority = SIGNAL_PRIORITY[first.signal];
-  const secondPriority = SIGNAL_PRIORITY[second.signal];
-  if (firstPriority !== secondPriority) return firstPriority - secondPriority;
-  const dateOrder =
-    first.orderDate === null || second.orderDate === null
-      ? 0
-      : first.signal === "recently_captured_uncommitted"
-        ? second.orderDate.localeCompare(first.orderDate)
-        : first.orderDate.localeCompare(second.orderDate);
-  return dateOrder || first.item.id.localeCompare(second.item.id);
+function suggestionFor(fact: PlanningFacts): SuggestionCandidate | null {
+  if (fact.yesterdayAddedAt) {
+    return {
+      suggestion: {
+        item: fact.item,
+        signal: "unfinished_yesterday",
+        explanation: "Unfinished from yesterday",
+      },
+      orderDate: new Date(fact.yesterdayAddedAt).toISOString(),
+      targetDistance: null,
+    };
+  }
+  if (fact.targetDistance !== null && fact.item.targetDate) {
+    return {
+      suggestion: {
+        item: fact.item,
+        signal: "target_date",
+        explanation: targetExplanation(fact),
+      },
+      orderDate: fact.item.targetDate,
+      targetDistance: fact.targetDistance,
+    };
+  }
+  if (fact.recentCapture) {
+    return {
+      suggestion: {
+        item: fact.item,
+        signal: "recent_capture",
+        explanation: "Captured recently",
+      },
+      orderDate: fact.item.createdAt,
+      targetDistance: null,
+    };
+  }
+  return null;
+}
+
+function targetExplanation(fact: PlanningFacts): string {
+  const targetDate = fact.item.targetDate!;
+  const distance = fact.targetDistance!;
+  if (targetDate === fact.planningDate) return "Target date is Today";
+  const days = `${distance} ${distance === 1 ? "day" : "days"}`;
+  return targetDate < fact.planningDate
+    ? `Target date was ${days} ago · ${targetDate}`
+    : `Target date is in ${days} · ${targetDate}`;
+}
+
+function compareWithinSignal(
+  first: SuggestionCandidate,
+  second: SuggestionCandidate,
+): number {
+  const signal = first.suggestion.signal;
+  let order: number;
+  if (signal === "target_date") {
+    const distanceOrder = first.targetDistance! - second.targetDistance!;
+    order = distanceOrder || first.orderDate.localeCompare(second.orderDate);
+  } else if (signal === "recent_capture") {
+    order = second.orderDate.localeCompare(first.orderDate);
+  } else {
+    order = first.orderDate.localeCompare(second.orderDate);
+  }
+  return (
+    order || first.suggestion.item.id.localeCompare(second.suggestion.item.id)
+  );
 }

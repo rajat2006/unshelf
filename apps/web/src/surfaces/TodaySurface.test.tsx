@@ -28,7 +28,6 @@ import {
   addItemToToday,
   fetchDailyFocusHistory,
   fetchDailyPlanning,
-  fetchLearningPlans,
   fetchToday,
 } from "../api";
 import { CaptureProvider } from "../shell/CaptureProvider";
@@ -40,7 +39,6 @@ vi.mock("../api", async (importOriginal) => ({
   addItemToToday: vi.fn(),
   fetchDailyFocusHistory: vi.fn(),
   fetchDailyPlanning: vi.fn(),
-  fetchLearningPlans: vi.fn(),
   fetchToday: vi.fn(),
 }));
 
@@ -121,7 +119,6 @@ describe("Today room", () => {
       searchResults: [],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -157,7 +154,6 @@ describe("Today room", () => {
           resolvePlanning = resolve;
         }),
       );
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -191,7 +187,6 @@ describe("Today room", () => {
       searchResults: [item],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -218,13 +213,11 @@ describe("Today room", () => {
       suggestions: [
         {
           item,
-          signal: "recently_captured_uncommitted",
-          explanation: "Recently captured and not in an active Learning Plan",
-          origin: null,
+          signal: "recent_capture",
+          explanation: "Captured recently",
         },
       ],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
 
     renderToday();
 
@@ -235,11 +228,7 @@ describe("Today room", () => {
       name: item.title,
     });
     const itemPresentation = within(itemLink.closest("article")!);
-    expect(
-      itemPresentation.getByText(
-        "Recently captured and not in an active Learning Plan",
-      ),
-    ).toBeVisible();
+    expect(itemPresentation.getByText("Captured recently")).toBeVisible();
     expect(itemPresentation.getByText("In progress")).toBeVisible();
     expect(
       itemPresentation.getByRole("button", {
@@ -255,7 +244,6 @@ describe("Today room", () => {
       searchResults: [item],
       suggestions: [],
     });
-    vi.mocked(fetchLearningPlans).mockResolvedValue([]);
     vi.mocked(addItemToToday).mockResolvedValue(focus);
 
     renderToday();

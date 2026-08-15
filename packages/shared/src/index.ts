@@ -230,19 +230,13 @@ export interface DailyFocusEntry {
 
 /** The ordered, transparent signals that can place an Item in Daily Planning. */
 export type DailyPlanningSignal =
-  | "unfinished_yesterday"
-  | "selected_plan"
-  | "dormant_in_progress"
-  | "approaching_target"
-  | "recently_captured_uncommitted";
+  "unfinished_yesterday" | "target_date" | "recent_capture";
 
 /** One de-duplicated suggestion with the highest-priority reason it appears. */
 export interface DailyPlanningSuggestion {
   item: Item;
   signal: DailyPlanningSignal;
   explanation: string;
-  /** Plan context retained when the selected Plan caused the suggestion. */
-  origin: DailyFocusOrigin | null;
 }
 
 /** A read-only projection used to choose Items for the current Daily Focus. */

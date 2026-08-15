@@ -63,8 +63,6 @@ export const addDailyFocusItemRequestSchema = z.strictObject({
 
 export const dailyPlanningQuerySchema = z.strictObject({
   query: z.string().trim().optional(),
-  intention: z.string().trim().optional(),
-  learningPlanId: learningPlanIdSchema.optional(),
 });
 
 export const suppressDailyPlanningItemRequestSchema = z.strictObject({

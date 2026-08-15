@@ -5,33 +5,18 @@ import {
   type DailyFocus,
   type DailyPlanning,
   type Item,
-  type LearningPlan,
-  type LearningPlanId,
 } from "@unshelf/shared";
-import { ChevronDown, History, Plus, Search, Trash2, X } from "lucide-react";
+import { History, Plus, Search, Trash2, X } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToToday,
   fetchDailyPlanning,
-  fetchLearningPlans,
   fetchToday,
   removeItemFromToday,
   suppressDailyPlanningItem,
@@ -52,13 +37,11 @@ type TodayState =
   | {
       status: "focus-error";
       planning: DailyPlanning;
-      plans: LearningPlan[];
     }
   | {
       status: "ready";
       focus: DailyFocus;
       planning: DailyPlanning;
-      plans: LearningPlan[];
     };
 
 /** The current editable Daily Focus and its explicit Library selection seam. */
@@ -67,10 +50,6 @@ export function TodaySurface() {
   const location = useLocation();
   const [state, setState] = useState<TodayState>({ status: "loading" });
   const [query, setQuery] = useState("");
-  const [intention, setIntention] = useState("");
-  const [learningPlanId, setLearningPlanId] = useState<
-    LearningPlanId | undefined
-  >();
   const [mutationError, setMutationError] = useState(false);
   const [planningError, setPlanningError] = useState(false);
   const [focusRetrying, setFocusRetrying] = useState(false);
@@ -84,25 +63,20 @@ export function TodaySurface() {
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
-    const [focus, planning, plans] = await Promise.allSettled([
+    const [focus, planning] = await Promise.allSettled([
       fetchToday(user),
       fetchDailyPlanning(user, {}),
-      fetchLearningPlans(user),
     ]);
     skipPlanningRefresh.current = true;
-    setPlanningError(
-      planning.status === "rejected" || plans.status === "rejected",
-    );
+    setPlanningError(planning.status === "rejected");
     const loadedPlanning =
       planning.status === "fulfilled"
         ? planning.value
         : { searchResults: [], suggestions: [] };
-    const loadedPlans = plans.status === "fulfilled" ? plans.value : [];
     if (focus.status === "rejected") {
       setState({
         status: "focus-error",
         planning: loadedPlanning,
-        plans: loadedPlans,
       });
       return;
     }
@@ -110,7 +84,6 @@ export function TodaySurface() {
       status: "ready",
       focus: focus.value,
       planning: loadedPlanning,
-      plans: loadedPlans,
     });
   }, [user]);
 
@@ -139,16 +112,11 @@ export function TodaySurface() {
   const retryPlanning = useCallback(async () => {
     setPlanningRetrying(true);
     try {
-      const [planning, plans] = await Promise.all([
-        fetchDailyPlanning(user, {
-          query: query.trim() || undefined,
-          intention: intention.trim() || undefined,
-          learningPlanId,
-        }),
-        fetchLearningPlans(user),
-      ]);
+      const planning = await fetchDailyPlanning(user, {
+        query: query.trim() || undefined,
+      });
       setState((value) =>
-        value.status === "loading" ? value : { ...value, planning, plans },
+        value.status === "loading" ? value : { ...value, planning },
       );
       setPlanningError(false);
     } catch {
@@ -156,17 +124,13 @@ export function TodaySurface() {
     } finally {
       setPlanningRetrying(false);
     }
-  }, [intention, learningPlanId, query, user]);
+  }, [query, user]);
 
   useEffect(() => {
     if (state.status === "loading") return;
     if (skipPlanningRefresh.current) {
       skipPlanningRefresh.current = false;
-      if (
-        query.trim() === "" &&
-        intention.trim() === "" &&
-        learningPlanId === undefined
-      ) {
+      if (query.trim() === "") {
         return;
       }
     }
@@ -174,8 +138,6 @@ export function TodaySurface() {
     setPlanningError(false);
     void fetchDailyPlanning(user, {
       query: query.trim() || undefined,
-      intention: intention.trim() || undefined,
-      learningPlanId,
     })
       .then((planning) => {
         if (isActive) {
@@ -191,7 +153,7 @@ export function TodaySurface() {
     return () => {
       isActive = false;
     };
-  }, [intention, learningPlanId, query, state.status, user]);
+  }, [query, state.status, user]);
 
   const add = async (
     item: Item,
@@ -538,7 +500,7 @@ export function TodaySurface() {
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search exact Item titles…"
+                    placeholder="Search title, Source, or Labels…"
                     className="pr-10 pl-9"
                   />
                   {query.length > 0 && (
@@ -555,62 +517,6 @@ export function TodaySurface() {
                   )}
                 </div>
               </Field>
-
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="compact"
-                    className="min-h-11 w-fit sm:min-h-8"
-                  >
-                    More filters
-                    <ChevronDown aria-hidden="true" />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="grid gap-4 pt-4">
-                  <Field>
-                    <FieldLabel htmlFor="today-intention">
-                      Learning intention
-                    </FieldLabel>
-                    <Input
-                      id="today-intention"
-                      type="text"
-                      value={intention}
-                      onChange={(event) => setIntention(event.target.value)}
-                      placeholder="What do you want to learn?"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Learning Plan lens</FieldLabel>
-                    <Select
-                      value={learningPlanId ?? "all"}
-                      onValueChange={(value) =>
-                        setLearningPlanId(
-                          value === "all"
-                            ? undefined
-                            : (value as LearningPlanId),
-                        )
-                      }
-                    >
-                      <SelectTrigger
-                        className="w-full"
-                        aria-label="Learning Plan lens"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Learning Plans</SelectItem>
-                        {state.plans.map((plan) => (
-                          <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </CollapsibleContent>
-              </Collapsible>
 
               {query.trim() && state.planning.searchResults.length === 0 && (
                 <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
@@ -654,7 +560,7 @@ export function TodaySurface() {
                 <h3 className="m-0 text-sm font-semibold">Suggestions</h3>
                 {state.planning.suggestions.length === 0 ? (
                   <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
-                    No suggestions for these inputs.
+                    No Suggestions are current for Today.
                   </div>
                 ) : (
                   <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
@@ -667,17 +573,6 @@ export function TodaySurface() {
                           item={suggestion.item}
                           presentation="catalog"
                           className="bg-background p-3 sm:grid-cols-1"
-                          detailBackgroundLocation={
-                            suggestion.origin
-                              ? planItemBackgroundLocation({
-                                  learningPlanId:
-                                    suggestion.origin.learningPlan.id,
-                                  ...(suggestion.origin.stage
-                                    ? { stageId: suggestion.origin.stage.id }
-                                    : {}),
-                                })
-                              : undefined
-                          }
                           actions={
                             <div className="grid gap-2">
                               <p className="m-0 text-xs leading-relaxed text-muted-foreground">
@@ -690,23 +585,7 @@ export function TodaySurface() {
                                     pendingAction?.kind === "add" &&
                                     pendingAction.itemId === suggestion.item.id
                                   }
-                                  onAdd={() =>
-                                    void add(
-                                      suggestion.item,
-                                      suggestion.origin
-                                        ? {
-                                            learningPlanId:
-                                              suggestion.origin.learningPlan.id,
-                                            ...(suggestion.origin.stage
-                                              ? {
-                                                  stageId:
-                                                    suggestion.origin.stage.id,
-                                                }
-                                              : {}),
-                                          }
-                                        : undefined,
-                                    )
-                                  }
+                                  onAdd={() => void add(suggestion.item)}
                                 />
                                 <Button
                                   type="button"
