@@ -6,7 +6,6 @@ import {
   CirclePause,
   Clock3,
   History,
-  Library,
   LoaderCircle,
   Pause,
   Play,
@@ -72,9 +71,9 @@ interface PrototypeState {
 }
 
 const variants: { key: VariantKey; name: string }[] = [
-  { key: "A", name: "Filter rail + deck" },
-  { key: "B", name: "Queue + focus" },
-  { key: "C", name: "Follow sessions" },
+  { key: "A", name: "Compact rows" },
+  { key: "B", name: "Triage table" },
+  { key: "C", name: "Small cards" },
 ];
 
 const initialFollows: Follow[] = [
@@ -231,7 +230,6 @@ export function DiscoverIntakePrototype() {
   const [stateOpen, setStateOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFollowId, setActiveFollowId] = useState("all");
-  const [reviewIndex, setReviewIndex] = useState(0);
   const [searchParams] = useSearchParams();
   const variant = normalizeVariant(searchParams.get("variant"));
 
@@ -370,12 +368,7 @@ export function DiscoverIntakePrototype() {
     onHealth: () => setHealthOpen(true),
     onHistory: () => setHistoryOpen(true),
     activeFollowId,
-    reviewIndex,
-    onFollowFilter: (followId: string) => {
-      setActiveFollowId(followId);
-      setReviewIndex(0);
-    },
-    onReviewIndex: setReviewIndex,
+    onFollowFilter: setActiveFollowId,
   };
 
   return (
@@ -388,7 +381,6 @@ export function DiscoverIntakePrototype() {
           setState(createInitialState());
           setFrame("representative");
           setActiveFollowId("all");
-          setReviewIndex(0);
         }}
       />
       {variant === "A" && <IntakeFirst {...shared} />}
@@ -424,7 +416,7 @@ export function DiscoverIntakePrototype() {
       <StateLens
         open={stateOpen}
         onOpenChange={setStateOpen}
-        state={{ ...state, frame, activeFollowId, reviewIndex }}
+        state={{ ...state, frame, activeFollowId }}
       />
       <PrototypeSwitcher current={variant} />
     </div>
@@ -449,25 +441,22 @@ interface VariantProps {
   onHealth: () => void;
   onHistory: () => void;
   activeFollowId: string;
-  reviewIndex: number;
   onFollowFilter: (followId: string) => void;
-  onReviewIndex: (index: number) => void;
 }
 
 function IntakeFirst(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
-  const current = currentDiscovery(unresolved, props.reviewIndex);
   return (
     <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant A · Filter rail + deck
+            Variant A · Compact rows
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Every Follow lands in one queue. Filter only when you want to narrow
-            it.
+            Scan title, publisher, age, and prior history; decide without
+            opening anything.
           </p>
         </div>
         <RefreshAndHistory {...props} />
@@ -476,22 +465,18 @@ function IntakeFirst(props: VariantProps) {
       <div className="grid gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
         <FollowFilterRail {...props} />
         <section className="min-w-0">
-          <QueueHeading props={props} unresolved={unresolved} />
+          <IntakeToolbar props={props} unresolved={unresolved} />
           {props.frame === "loading" || props.refreshing ? (
             <LoadingFeed />
-          ) : current ? (
-            <CandidateFocusCard
-              discovery={current}
-              position={reviewPosition(unresolved, props.reviewIndex)}
-              total={unresolved.length}
+          ) : unresolved.length > 0 ? (
+            <CompactRows
+              discoveries={unresolved}
+              follows={props.state.follows}
               actions={props.actions}
-              onPrevious={() => moveReview(props, unresolved, -1)}
-              onNext={() => moveReview(props, unresolved, 1)}
             />
           ) : (
             <FilteredEmptyState props={props} />
           )}
-          <FilteredBulkBar props={props} unresolved={unresolved} />
         </section>
       </div>
     </main>
@@ -500,18 +485,17 @@ function IntakeFirst(props: VariantProps) {
 
 function FollowsAndIntake(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
-  const current = currentDiscovery(unresolved, props.reviewIndex);
   return (
     <main className="mx-auto max-w-[80rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant B · Queue + focus
+            Variant B · Triage table
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            Pick a Follow on the left, scan its queue, then decide one Discovery
-            in focus.
+            Maximum overview: no feature cards, just comparable rows and fixed
+            decision columns.
           </p>
         </div>
         <RefreshAndHistory {...props} />
@@ -520,34 +504,18 @@ function FollowsAndIntake(props: VariantProps) {
       <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <FollowFilterRail {...props} dense />
         <section className="min-w-0">
-          <QueueHeading props={props} unresolved={unresolved} />
+          <IntakeToolbar props={props} unresolved={unresolved} />
           {props.frame === "loading" || props.refreshing ? (
             <LoadingFeed />
-          ) : current ? (
-            <div className="grid gap-4 xl:grid-cols-[17rem_minmax(0,1fr)]">
-              <CandidateQueue
-                discoveries={unresolved}
-                currentId={current.id}
-                onSelect={(index) => props.onReviewIndex(index)}
-              />
-              <CandidateFocusCard
-                discovery={current}
-                position={reviewPosition(unresolved, props.reviewIndex)}
-                total={unresolved.length}
-                actions={props.actions}
-                compact
-                onPrevious={() => moveReview(props, unresolved, -1)}
-                onNext={() => moveReview(props, unresolved, 1)}
-              />
-            </div>
+          ) : unresolved.length > 0 ? (
+            <TriageTable
+              discoveries={unresolved}
+              follows={props.state.follows}
+              actions={props.actions}
+            />
           ) : (
             <FilteredEmptyState props={props} />
           )}
-          <div className="mt-4 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
-            The list is only the current intake queue—not the Library. Keep
-            resolves one Discovery into an Item; Dismiss removes it from this
-            queue while preserving history.
-          </div>
         </section>
       </div>
     </main>
@@ -556,21 +524,17 @@ function FollowsAndIntake(props: VariantProps) {
 
 function ReviewBatches(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
-  const current = currentDiscovery(unresolved, props.reviewIndex);
-  const selectedFollow = props.state.follows.find(
-    (follow) => follow.id === props.activeFollowId,
-  );
   return (
     <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Variant C · Follow sessions
+            Variant C · Small cards
           </p>
           <h1 className="font-serif text-4xl">Discover</h1>
           <p className="mt-2 text-muted-foreground">
-            All Follows still combine by default; choosing one turns the same
-            queue into a bounded review session.
+            Keep thumbnail recognition, but fit several actionable Candidates on
+            screen at once.
           </p>
         </div>
         <RefreshAndHistory {...props} />
@@ -578,38 +542,16 @@ function ReviewBatches(props: VariantProps) {
       <StatusFrame frame={props.frame} follows={props.state.follows} />
       <div className="grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <FollowFilterRail {...props} sessionStyle />
-        <section className="min-w-0 overflow-hidden rounded-2xl bg-quiet-panel p-4 md:p-7">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                {selectedFollow ? "Reviewing one Follow" : "Combined review"}
-              </p>
-              <h2 className="mt-1 font-serif text-3xl">
-                {selectedFollow?.name ?? "Everything that arrived"}
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {unresolved.length} unresolved Discoveries in this session
-              </p>
-            </div>
-            <FilteredBulkMenu props={props} unresolved={unresolved} />
-          </div>
+        <section className="min-w-0">
+          <IntakeToolbar props={props} unresolved={unresolved} />
           {props.frame === "loading" || props.refreshing ? (
             <LoadingFeed />
-          ) : current ? (
-            <div className="relative mx-auto max-w-3xl pb-7">
-              <div className="absolute inset-x-8 top-5 bottom-2 rounded-2xl border bg-card/40" />
-              <div className="absolute inset-x-4 top-2 bottom-4 rounded-2xl border bg-card/70" />
-              <div className="relative">
-                <CandidateFocusCard
-                  discovery={current}
-                  position={reviewPosition(unresolved, props.reviewIndex)}
-                  total={unresolved.length}
-                  actions={props.actions}
-                  onPrevious={() => moveReview(props, unresolved, -1)}
-                  onNext={() => moveReview(props, unresolved, 1)}
-                />
-              </div>
-            </div>
+          ) : unresolved.length > 0 ? (
+            <CompactCardGrid
+              discoveries={unresolved}
+              follows={props.state.follows}
+              actions={props.actions}
+            />
           ) : (
             <FilteredEmptyState props={props} />
           )}
@@ -762,7 +704,7 @@ function FollowFilterButton({
   );
 }
 
-function QueueHeading({
+function IntakeToolbar({
   props,
   unresolved,
 }: {
@@ -773,7 +715,7 @@ function QueueHeading({
     (candidate) => candidate.id === props.activeFollowId,
   );
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-3 border-b pb-3">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-primary">
           Candidate intake
@@ -782,7 +724,7 @@ function QueueHeading({
           {follow ? follow.name : "All Follows"}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {unresolved.length} unresolved · one Discovery at a time
+          {unresolved.length} to decide · Keep creates or links a Library Item
         </p>
       </div>
       <FilteredBulkMenu props={props} unresolved={unresolved} />
@@ -790,134 +732,198 @@ function QueueHeading({
   );
 }
 
-function CandidateFocusCard({
+function CompactRows({
   actions,
-  compact = false,
-  discovery,
-  onNext,
-  onPrevious,
-  position,
-  total,
-}: {
-  actions: VariantProps["actions"];
-  compact?: boolean;
-  discovery: Discovery;
-  onNext: () => void;
-  onPrevious: () => void;
-  position: number;
-  total: number;
-}) {
+  discoveries,
+  follows,
+}: CandidateCollectionProps) {
   return (
-    <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-      <div
-        className={`grid place-items-center bg-muted ${compact ? "aspect-[16/7]" : "aspect-video"}`}
-      >
-        <Video className="size-16 text-muted-foreground/50" />
-      </div>
-      <div className={compact ? "p-5" : "p-5 md:p-7"}>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Badge variant={discovery.state === "new" ? "current" : "neutral"}>
-              {discovery.state}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {position} of {total}
-            </span>
+    <div className="divide-y overflow-hidden rounded-xl border bg-card">
+      {discoveries.map((discovery) => (
+        <article
+          className="grid gap-3 px-3 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto] sm:items-center"
+          key={discovery.id}
+        >
+          <div className="hidden h-16 place-items-center rounded-md bg-muted sm:grid">
+            <Video className="size-7 text-muted-foreground/50" />
           </div>
-          <div className="flex gap-1">
-            <Button
-              size="icon-compact"
-              variant="quiet"
-              onClick={onPrevious}
-              aria-label="Previous Discovery"
-            >
-              <ArrowLeft />
-            </Button>
-            <Button
-              size="icon-compact"
-              variant="quiet"
-              onClick={onNext}
-              aria-label="Next Discovery"
-            >
-              <ArrowRight />
-            </Button>
+          <div className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <Badge
+                variant={discovery.state === "new" ? "current" : "neutral"}
+              >
+                {discovery.state}
+              </Badge>
+              <span>{followName(discovery.followId, follows)}</span>
+              <span>·</span>
+              <span>{discovery.published}</span>
+              <span>·</span>
+              <span>{discovery.duration}</span>
+            </div>
+            <h3 className="truncate font-medium">{discovery.title}</h3>
+            <CompactHistory discovery={discovery} />
           </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {discovery.publisher} · {discovery.published} · {discovery.duration}
-        </p>
-        <h3 className="mt-2 font-serif text-3xl leading-tight">
-          {discovery.title}
-        </h3>
-        <DiscoveryHistory discovery={discovery} />
-        <div className="mt-7 grid gap-2 sm:grid-cols-3">
-          <Button
-            variant="secondary"
-            onClick={() => actions.setDiscovery(discovery.id, "dismissed")}
-          >
-            Dismiss
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              actions.setDiscovery(discovery.id, "seen");
-              onNext();
-            }}
-          >
-            Seen, decide later
-          </Button>
-          <Button
-            onClick={() => actions.setDiscovery(discovery.id, "kept")}
-            disabled={discovery.alreadyInLibrary}
-          >
-            <Library />
-            {discovery.alreadyInLibrary ? "Already in Library" : "Keep"}
-          </Button>
-        </div>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Use the arrows like a swipe. The active Follow filter stays in place.
-        </p>
-      </div>
-    </article>
+          <DecisionButtons actions={actions} discovery={discovery} />
+        </article>
+      ))}
+    </div>
   );
 }
 
-function CandidateQueue({
-  currentId,
+function TriageTable({
+  actions,
   discoveries,
-  onSelect,
-}: {
-  currentId: string;
+  follows,
+}: CandidateCollectionProps) {
+  return (
+    <>
+      <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
+        <div className="grid grid-cols-[minmax(0,1fr)_9rem_7rem_17rem] gap-3 border-b bg-quiet-panel px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>Candidate</span>
+          <span>Follow</span>
+          <span>Arrived</span>
+          <span>Decision</span>
+        </div>
+        <div className="divide-y">
+          {discoveries.map((discovery) => (
+            <article
+              className="grid grid-cols-[minmax(0,1fr)_9rem_7rem_17rem] items-center gap-3 px-4 py-2.5"
+              key={discovery.id}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={discovery.state === "new" ? "current" : "neutral"}
+                  >
+                    {discovery.state}
+                  </Badge>
+                  <h3 className="truncate text-sm font-medium">
+                    {discovery.title}
+                  </h3>
+                </div>
+                <CompactHistory discovery={discovery} />
+              </div>
+              <span className="truncate text-sm text-muted-foreground">
+                {followName(discovery.followId, follows)}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {discovery.published}
+              </span>
+              <DecisionButtons actions={actions} discovery={discovery} terse />
+            </article>
+          ))}
+        </div>
+      </div>
+      <div className="md:hidden">
+        <CompactRows
+          actions={actions}
+          discoveries={discoveries}
+          follows={follows}
+        />
+      </div>
+    </>
+  );
+}
+
+function CompactCardGrid({
+  actions,
+  discoveries,
+  follows,
+}: CandidateCollectionProps) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {discoveries.map((discovery) => (
+        <article
+          className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card"
+          key={discovery.id}
+        >
+          <div className="grid aspect-[16/6] place-items-center bg-muted">
+            <Video className="size-8 text-muted-foreground/50" />
+          </div>
+          <div className="flex flex-1 flex-col p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge
+                variant={discovery.state === "new" ? "current" : "neutral"}
+              >
+                {discovery.state}
+              </Badge>
+              <span className="truncate">
+                {followName(discovery.followId, follows)}
+              </span>
+            </div>
+            <h3 className="mt-2 line-clamp-2 min-h-10 text-sm font-semibold leading-snug">
+              {discovery.title}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {discovery.published} · {discovery.duration}
+            </p>
+            <CompactHistory discovery={discovery} />
+            <div className="mt-auto pt-3">
+              <DecisionButtons actions={actions} discovery={discovery} terse />
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+interface CandidateCollectionProps {
+  actions: VariantProps["actions"];
   discoveries: Discovery[];
-  onSelect: (index: number) => void;
+  follows: Follow[];
+}
+
+function DecisionButtons({
+  actions,
+  discovery,
+  terse = false,
+}: {
+  actions: VariantProps["actions"];
+  discovery: Discovery;
+  terse?: boolean;
 }) {
   return (
-    <aside className="max-h-[40rem] overflow-y-auto rounded-xl border bg-quiet-panel p-2">
-      <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Queue
-      </p>
-      <div className="space-y-1">
-        {discoveries.map((discovery, index) => (
-          <button
-            className={`w-full rounded-lg px-3 py-3 text-left ${
-              discovery.id === currentId
-                ? "bg-accent text-accent-foreground"
-                : "hover:bg-card"
-            }`}
-            key={discovery.id}
-            onClick={() => onSelect(index)}
-          >
-            <span className="block line-clamp-2 text-sm font-semibold">
-              {discovery.title}
-            </span>
-            <span className="mt-1 block truncate text-xs text-muted-foreground">
-              {discovery.publisher} · {discovery.state}
-            </span>
-          </button>
-        ))}
-      </div>
-    </aside>
+    <div className="flex flex-wrap items-center gap-1">
+      <Button
+        size="compact"
+        variant="quiet"
+        onClick={() => actions.setDiscovery(discovery.id, "dismissed")}
+      >
+        Dismiss
+      </Button>
+      <Button
+        size="compact"
+        variant="secondary"
+        onClick={() => actions.setDiscovery(discovery.id, "seen")}
+      >
+        {terse ? "Later" : "Decide later"}
+      </Button>
+      <Button
+        size="compact"
+        onClick={() => actions.setDiscovery(discovery.id, "kept")}
+        disabled={discovery.alreadyInLibrary}
+      >
+        {discovery.alreadyInLibrary ? "In Library" : "Keep"}
+      </Button>
+    </div>
   );
+}
+
+function CompactHistory({ discovery }: { discovery: Discovery }) {
+  if (!discovery.history && !discovery.alreadyInLibrary) return null;
+  return (
+    <p className="mt-1 truncate text-xs font-medium text-primary">
+      {discovery.alreadyInLibrary ? "Already in Library" : discovery.history}
+      {discovery.alreadyInLibrary && discovery.history
+        ? ` · ${discovery.history}`
+        : ""}
+    </p>
+  );
+}
+
+function followName(followId: string, follows: Follow[]) {
+  return follows.find((follow) => follow.id === followId)?.name ?? followId;
 }
 
 function FilteredBulkMenu({
@@ -946,24 +952,6 @@ function FilteredBulkMenu({
       >
         Dismiss {ids.length}
       </Button>
-    </div>
-  );
-}
-
-function FilteredBulkBar({
-  props,
-  unresolved,
-}: {
-  props: VariantProps;
-  unresolved: Discovery[];
-}) {
-  return (
-    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border bg-quiet-panel px-4 py-3 text-sm">
-      <span className="mr-auto text-muted-foreground">
-        Clear only the current{" "}
-        {props.activeFollowId === "all" ? "combined" : "filtered"} queue
-      </span>
-      <FilteredBulkMenu props={props} unresolved={unresolved} />
     </div>
   );
 }
@@ -1005,26 +993,6 @@ function FilteredEmptyState({ props }: { props: VariantProps }) {
 function unresolvedDiscoveries(discoveries: Discovery[]) {
   return discoveries.filter(
     (discovery) => discovery.state === "new" || discovery.state === "seen",
-  );
-}
-
-function currentDiscovery(discoveries: Discovery[], reviewIndex: number) {
-  if (discoveries.length === 0) return undefined;
-  return discoveries[reviewIndex % discoveries.length];
-}
-
-function reviewPosition(discoveries: Discovery[], reviewIndex: number) {
-  return discoveries.length === 0 ? 0 : (reviewIndex % discoveries.length) + 1;
-}
-
-function moveReview(
-  props: VariantProps,
-  discoveries: Discovery[],
-  delta: number,
-) {
-  if (discoveries.length === 0) return;
-  props.onReviewIndex(
-    (props.reviewIndex + delta + discoveries.length) % discoveries.length,
   );
 }
 
@@ -1154,23 +1122,6 @@ function RefreshAndHistory(props: VariantProps) {
         {props.refreshing ? "Refreshing" : "Refresh"}
       </Button>
     </div>
-  );
-}
-
-function DiscoveryHistory({ discovery }: { discovery: Discovery }) {
-  if (!discovery.history && !discovery.alreadyInLibrary) return null;
-  return (
-    <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-primary">
-      {discovery.alreadyInLibrary ? (
-        <Library className="size-4" />
-      ) : (
-        <History className="size-4" />
-      )}
-      {discovery.alreadyInLibrary ? "Already in Library" : discovery.history}
-      {discovery.alreadyInLibrary && discovery.history
-        ? ` · ${discovery.history}`
-        : ""}
-    </p>
   );
 }
 

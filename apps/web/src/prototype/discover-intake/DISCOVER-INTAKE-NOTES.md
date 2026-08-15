@@ -30,33 +30,32 @@ authorization, and enough new arrivals to exercise bulk review.
 
 ## Variant hypotheses
 
-The first live pass rejected a long all-at-once feed. It established a stronger
-common model for the next pass: Discover has one combined queue across every
-Follow by default; the left Follow rail filters that queue; the right side
-reviews one Discovery at a time. Follow health and whether intake feels finite
-remain open questions.
+The first live pass rejected a long all-at-once feed and established a combined
+queue with a left Follow filter. The second pass then falsified the oversized,
+one-at-a-time Discovery card: it made overview and rapid triage too slow. This
+pass keeps the Follow organization but compares dense, directly actionable
+Candidate overviews.
 
-### A — Filter rail + deck
+### A — Compact rows
 
-Hypothesis: the lightest expression is enough—a persistent filter rail and one
-large Discovery card with previous/next controls.
+Hypothesis: a small thumbnail, one-line title, essential metadata, history, and
+always-visible decisions form the best balance of recognition and density.
 
-### B — Queue + focus
+### B — Triage table
 
-Hypothesis: after filtering by Follow, a compact queue list helps the User jump
-within the filtered intake without losing the one-at-a-time focus card.
+Hypothesis: removing thumbnails and aligning metadata and decisions into columns
+makes the fastest overview and comparison surface.
 
-### C — Follow sessions
+### C — Small cards
 
-Hypothesis: choosing a Follow should feel like starting a bounded review session;
-the stacked deck and explicit remaining count may make intake feel finite without
-turning it into a Library backlog.
+Hypothesis: small visual cards preserve thumbnail recognition while fitting six
+or more directly actionable Candidates in a desktop viewport.
 
 ## Live-session verdict
 
 - Winner or hybrid: **Pending live fit-check.**
 - Validated: one combined queue across all Follows; optional filtering by Follow;
-  one-at-a-time review on the right.
-- Falsified: rendering every unresolved Discovery as a long all-at-once feed.
-- Required changes: compare the revised variants and decide how much queue
-  preview and session framing the focused review needs.
+  Candidate decisions must remain directly available from the overview.
+- Falsified: a long spacious feed and the large one-at-a-time review deck.
+- Required changes: compare compact rows, a triage table, and small cards to
+  choose the useful density and role of thumbnails.
