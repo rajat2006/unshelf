@@ -38,6 +38,12 @@ _Avoid_: Subscription (may mean a paid plan or a provider's own subscription),
 Channel (one provider-specific kind of target), Source (already the link stored
 on an Item)
 
+**Follow health**:
+The current ability of a Follow to acquire Provider results. It is distinct from
+the Follow's lifecycle: partial or failed refresh, throttling, and authorization
+requiring reconnection do not pause or remove it.
+_Avoid_: Follow status (ambiguous with the Follow's lifecycle)
+
 **Candidate**:
 A provider-identified piece of potential learning material surfaced before an
 Item exists or is linked for it. For one User, one Provider identity denotes one
