@@ -137,34 +137,29 @@ export function TodaySurface() {
   const applyPlanningReplenishment = ({
     planning,
     isCurrent,
-    addedFocus,
   }: {
     planning: DailyPlanning;
     isCurrent: boolean;
-    addedFocus?: { focus: DailyFocus; itemId: Item["id"] };
   }) => {
+    if (!isCurrent) return;
     setState((current) => {
       if (current.status === "loading") return current;
-      if (addedFocus) {
-        return {
-          ...current,
-          status: "ready",
-          focus:
-            current.status === "ready"
-              ? mergeConfirmedAdd({
-                  current: current.focus,
-                  confirmed: addedFocus.focus,
-                  itemId: addedFocus.itemId,
-                })
-              : addedFocus.focus,
-          planning: isCurrent ? planning : current.planning,
-        };
-      }
-      return isCurrent ? { ...current, planning } : current;
+      return { ...current, planning };
     });
-    if (isCurrent) {
-      setPlanningError(false);
-      setPlanningAvailable(true);
+    setPlanningError(false);
+    setPlanningAvailable(true);
+  };
+
+  const replenishPlanning = async (): Promise<void> => {
+    const planningRequest = startPlanningRequest();
+    try {
+      const planning = await planningRequest.request;
+      applyPlanningReplenishment({
+        planning,
+        isCurrent: planningRequest.isCurrent(),
+      });
+    } catch {
+      if (planningRequest.isCurrent()) setPlanningError(true);
     }
   };
 
@@ -274,14 +269,25 @@ export function TodaySurface() {
     updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
-      const planningRequest = startPlanningRequest();
-      const planning = await planningRequest.request;
-      applyPlanningReplenishment({
-        planning,
-        isCurrent: planningRequest.isCurrent(),
-        addedFocus: { focus, itemId: item.id },
-      });
+      setState((current) =>
+        current.status === "loading"
+          ? current
+          : {
+              ...current,
+              status: "ready",
+              focus:
+                current.status === "ready"
+                  ? mergeConfirmedAdd({
+                      current: current.focus,
+                      confirmed: focus,
+                      itemId: item.id,
+                    })
+                  : focus,
+              planning: removePlanningItem(current.planning, item.id),
+            },
+      );
       setAnnouncement(`Added ${item.title} to Today`);
+      await replenishPlanning();
     } catch {
       setMutationError(true);
     } finally {
@@ -295,13 +301,16 @@ export function TodaySurface() {
     updatePendingAction({ kind: "suppress", itemId: item.id, pending: true });
     try {
       await suppressDailyPlanningItem(user, item.id);
-      const planningRequest = startPlanningRequest();
-      const planning = await planningRequest.request;
-      applyPlanningReplenishment({
-        planning,
-        isCurrent: planningRequest.isCurrent(),
-      });
+      setState((current) =>
+        current.status === "loading"
+          ? current
+          : {
+              ...current,
+              planning: removePlanningSuggestion(current.planning, item.id),
+            },
+      );
       setAnnouncement(`Set Not today for ${item.title}`);
+      await replenishPlanning();
     } catch {
       setMutationError(true);
     } finally {
@@ -824,6 +833,30 @@ function PlanningAddButton({
       Add
     </Button>
   );
+}
+
+function removePlanningItem(
+  planning: DailyPlanning,
+  itemId: Item["id"],
+): DailyPlanning {
+  return {
+    searchResults: planning.searchResults.filter((item) => item.id !== itemId),
+    suggestions: planning.suggestions.filter(
+      (suggestion) => suggestion.item.id !== itemId,
+    ),
+  };
+}
+
+function removePlanningSuggestion(
+  planning: DailyPlanning,
+  itemId: Item["id"],
+): DailyPlanning {
+  return {
+    ...planning,
+    suggestions: planning.suggestions.filter(
+      (suggestion) => suggestion.item.id !== itemId,
+    ),
+  };
 }
 
 function previousCalendarDate(date: string): string {

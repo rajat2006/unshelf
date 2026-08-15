@@ -92,6 +92,19 @@ const auth: ApplicationAuth = {
   UserButton: () => <button type="button">Account</button>,
 };
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function renderToday() {
   return render(
     <ApplicationAuthProvider auth={auth}>
@@ -184,16 +197,14 @@ describe("Today room", () => {
   });
 
   it("contains a planning failure beside an available Daily Focus and retries it", async () => {
-    let resolvePlanning:
-      ((planning: { searchResults: []; suggestions: [] }) => void) | undefined;
+    const planningRetry = deferred<{
+      searchResults: [];
+      suggestions: [];
+    }>();
     vi.mocked(fetchToday).mockResolvedValue(focus);
     vi.mocked(fetchDailyPlanning)
       .mockRejectedValueOnce(new Error("planning unavailable"))
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolvePlanning = resolve;
-        }),
-      );
+      .mockReturnValueOnce(planningRetry.promise);
 
     renderToday();
 
@@ -218,7 +229,7 @@ describe("Today room", () => {
 
     expect(retry).toBeDisabled();
     expect(retry).toHaveTextContent("Retrying…");
-    resolvePlanning?.({ searchResults: [], suggestions: [] });
+    planningRetry.resolve({ searchResults: [], suggestions: [] });
 
     await waitFor(() =>
       expect(
@@ -322,7 +333,7 @@ describe("Today room", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps confirmed state and reports a failed Add replenishment", async () => {
+  it("keeps a confirmed Add when planning replenishment fails", async () => {
     const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
     const planning = {
       searchResults: [item],
@@ -352,26 +363,29 @@ describe("Today room", () => {
     );
 
     expect(
-      await screen.findByText(
-        "Couldn't update Today. Your existing Daily Focus is unchanged; try again.",
-      ),
+      await screen.findByText("Couldn't update Daily Planning"),
     ).toBeVisible();
     expect(
       within(
         screen.getByRole("region", { name: "Today's Daily Focus" }),
-      ).queryByText(item.title),
-    ).not.toBeInTheDocument();
-    expect(within(suggestions).getByText(item.title)).toBeVisible();
+      ).getByText(item.title),
+    ).toBeVisible();
+    expect(within(suggestions).queryByText(item.title)).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("status", {
+      screen.getByRole("status", {
         name: `Added ${item.title} to Today`,
       }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Couldn't update Today. Your existing Daily Focus is unchanged; try again.",
+      ),
     ).not.toBeInTheDocument();
   });
 
   it("announces a replenished Not today window and disables only that action", async () => {
     const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
-    let finishSuppression: (() => void) | undefined;
+    const suppression = deferred<void>();
     vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
     vi.mocked(fetchDailyPlanning)
       .mockResolvedValueOnce({
@@ -392,11 +406,7 @@ describe("Today room", () => {
           },
         ],
       });
-    vi.mocked(suppressDailyPlanningItem).mockReturnValue(
-      new Promise((resolve) => {
-        finishSuppression = resolve;
-      }),
-    );
+    vi.mocked(suppressDailyPlanningItem).mockReturnValue(suppression.promise);
 
     renderToday();
 
@@ -415,7 +425,7 @@ describe("Today room", () => {
         name: `Add ${replacement.title} to Today`,
       }),
     ).toBeEnabled();
-    finishSuppression?.();
+    suppression.resolve();
 
     expect(
       await screen.findByRole("status", {
@@ -438,16 +448,14 @@ describe("Today room", () => {
         },
       ],
     };
-    let finishSearch: ((planning: typeof initialPlanning) => void) | undefined;
+    const searchRequest = deferred<typeof initialPlanning>();
     let queriedRequests = 0;
     vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
     vi.mocked(fetchDailyPlanning).mockImplementation((_user, query) => {
       if (!query.query) return Promise.resolve(initialPlanning);
       queriedRequests += 1;
       if (queriedRequests === 1) {
-        return new Promise((resolve) => {
-          finishSearch = resolve;
-        });
+        return searchRequest.promise;
       }
       return Promise.resolve({
         searchResults: [],
@@ -483,7 +491,7 @@ describe("Today room", () => {
     ).toBeInTheDocument();
     expect(within(suggestions).getByText(replacement.title)).toBeVisible();
 
-    finishSearch?.(initialPlanning);
+    searchRequest.resolve(initialPlanning);
 
     await waitFor(() =>
       expect(
@@ -495,7 +503,7 @@ describe("Today room", () => {
 
   it("keeps every concurrent action disabled until its own request finishes", async () => {
     const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
-    const finishSuppressions = new Map<ItemId, () => void>();
+    const suppressions = new Map<ItemId, Deferred<void>>();
     vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
     vi.mocked(fetchDailyPlanning).mockResolvedValue({
       searchResults: [],
@@ -505,12 +513,11 @@ describe("Today room", () => {
         explanation: "Captured recently",
       })),
     });
-    vi.mocked(suppressDailyPlanningItem).mockImplementation(
-      (_user, itemId) =>
-        new Promise((resolve) => {
-          finishSuppressions.set(itemId, resolve);
-        }),
-    );
+    vi.mocked(suppressDailyPlanningItem).mockImplementation((_user, itemId) => {
+      const suppression = deferred<void>();
+      suppressions.set(itemId, suppression);
+      return suppression.promise;
+    });
 
     renderToday();
 
@@ -528,11 +535,11 @@ describe("Today room", () => {
     expect(firstAction).toBeDisabled();
     expect(secondAction).toBeDisabled();
 
-    finishSuppressions.get(item.id)?.();
+    suppressions.get(item.id)!.resolve();
 
     await waitFor(() => expect(firstAction).toBeEnabled());
     expect(secondAction).toBeDisabled();
-    finishSuppressions.get(replacement.id)?.();
+    suppressions.get(replacement.id)!.resolve();
   });
 
   it("keeps an older mutation refresh from replacing the newest window", async () => {
@@ -545,30 +552,19 @@ describe("Today room", () => {
         explanation: "Captured recently",
       })),
     };
-    const finishSuppressions = new Map<ItemId, () => void>();
-    let finishOlderPlanning:
-      ((planning: typeof initialPlanning) => void) | undefined;
-    let finishNewestPlanning:
-      ((planning: typeof initialPlanning) => void) | undefined;
+    const suppressions = new Map<ItemId, Deferred<void>>();
+    const olderPlanning = deferred<typeof initialPlanning>();
+    const newestPlanning = deferred<typeof initialPlanning>();
     vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
     vi.mocked(fetchDailyPlanning)
       .mockResolvedValueOnce(initialPlanning)
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          finishOlderPlanning = resolve;
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          finishNewestPlanning = resolve;
-        }),
-      );
-    vi.mocked(suppressDailyPlanningItem).mockImplementation(
-      (_user, itemId) =>
-        new Promise((resolve) => {
-          finishSuppressions.set(itemId, resolve);
-        }),
-    );
+      .mockReturnValueOnce(olderPlanning.promise)
+      .mockReturnValueOnce(newestPlanning.promise);
+    vi.mocked(suppressDailyPlanningItem).mockImplementation((_user, itemId) => {
+      const suppression = deferred<void>();
+      suppressions.set(itemId, suppression);
+      return suppression.promise;
+    });
 
     renderToday();
 
@@ -585,18 +581,18 @@ describe("Today room", () => {
         name: `Not today for ${replacement.title}`,
       }),
     );
-    finishSuppressions.get(item.id)?.();
+    suppressions.get(item.id)!.resolve();
     await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
-    finishSuppressions.get(replacement.id)?.();
+    suppressions.get(replacement.id)!.resolve();
     await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
 
-    finishNewestPlanning?.({ searchResults: [], suggestions: [] });
+    newestPlanning.resolve({ searchResults: [], suggestions: [] });
     expect(
       await within(suggestions).findByText(
         "No Suggestions are current for Today.",
       ),
     ).toBeVisible();
-    finishOlderPlanning?.(initialPlanning);
+    olderPlanning.resolve(initialPlanning);
 
     await waitFor(() =>
       expect(
@@ -608,7 +604,7 @@ describe("Today room", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps an older Add response from replacing a newer Daily Focus", async () => {
+  it("merges concurrent confirmed Adds without accepting stale planning", async () => {
     const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
     const focusWithBoth: DailyFocus = {
       ...focus,
@@ -633,30 +629,19 @@ describe("Today room", () => {
         explanation: "Captured recently",
       })),
     };
-    const finishAdds = new Map<ItemId, (focus: DailyFocus) => void>();
-    let finishOlderPlanning:
-      ((planning: typeof initialPlanning) => void) | undefined;
-    let finishNewestPlanning:
-      ((planning: typeof initialPlanning) => void) | undefined;
+    const adds = new Map<ItemId, Deferred<DailyFocus>>();
+    const olderPlanning = deferred<typeof initialPlanning>();
+    const newestPlanning = deferred<typeof initialPlanning>();
     vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
     vi.mocked(fetchDailyPlanning)
       .mockResolvedValueOnce(initialPlanning)
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          finishOlderPlanning = resolve;
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          finishNewestPlanning = resolve;
-        }),
-      );
-    vi.mocked(addItemToToday).mockImplementation(
-      (_user, itemId) =>
-        new Promise((resolve) => {
-          finishAdds.set(itemId, resolve);
-        }),
-    );
+      .mockReturnValueOnce(olderPlanning.promise)
+      .mockReturnValueOnce(newestPlanning.promise);
+    vi.mocked(addItemToToday).mockImplementation((_user, itemId) => {
+      const add = deferred<DailyFocus>();
+      adds.set(itemId, add);
+      return add.promise;
+    });
 
     renderToday();
 
@@ -673,26 +658,33 @@ describe("Today room", () => {
         name: `Add ${replacement.title} to Today`,
       }),
     );
-    finishAdds.get(item.id)?.(focus);
+    adds.get(item.id)!.resolve(focus);
     await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
-    finishAdds.get(replacement.id)?.(focusWithBoth);
+    adds.get(replacement.id)!.resolve(focusWithBoth);
     await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
 
-    finishNewestPlanning?.({ searchResults: [], suggestions: [] });
     const focusRegion = screen.getByRole("region", {
       name: "Today's Daily Focus",
     });
-    expect(
-      await within(focusRegion).findByText(replacement.title),
-    ).toBeVisible();
-    expect(within(focusRegion).queryByText(item.title)).not.toBeInTheDocument();
-    finishOlderPlanning?.(initialPlanning);
+    expect(await within(focusRegion).findByText(item.title)).toBeVisible();
+    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+
+    newestPlanning.resolve({ searchResults: [], suggestions: [] });
+    olderPlanning.resolve(initialPlanning);
 
     expect(
       await screen.findByRole("status", {
-        name: `Added ${item.title} to Today`,
+        name: `Added ${replacement.title} to Today`,
       }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(suggestions).queryByText(item.title),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(suggestions).queryByText(replacement.title),
+    ).not.toBeInTheDocument();
     expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
     expect(within(focusRegion).getByText(item.title)).toBeVisible();
   });
