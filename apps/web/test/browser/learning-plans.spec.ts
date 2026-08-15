@@ -137,11 +137,13 @@ test("a User archives a read-only Learning Plan, sees live progress, and restore
   ).toBeEnabled();
   await page.goto(appUrl(testInfo, "/today", user));
   await page
-    .getByRole("combobox", { name: "Learning Plan lens" })
-    .selectOption(plan.id);
+    .getByRole("searchbox", { name: "Find an Item" })
+    .fill("shared progress");
   await expect(
-    page.getByText("In Lifecycle plan", { exact: true }),
-  ).toBeVisible();
+    page
+      .getByRole("region", { name: "Item search results" })
+      .getByRole("button", { name: "Add Shared progress item to Today" }),
+  ).toBeEnabled();
 
   await page.goto(appUrl(testInfo, `/items/${item.id}`, user));
   await expect(page.getByText("Lifecycle plan · Archived")).toBeVisible();
