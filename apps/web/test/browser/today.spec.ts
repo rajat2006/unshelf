@@ -232,9 +232,19 @@ test("a User plans Today with a capped explained shortlist and independent searc
   });
 
   await page.goto(testAppUrl("/today", user));
+  const ledger = page.getByRole("region", { name: "Today's daily ledger" });
   const suggestions = page.getByRole("region", { name: "Suggestions" });
   await expect(
-    page.getByRole("heading", { level: 2, name: "Add only what fits" }),
+    ledger.getByRole("region", { name: "Today's Daily Focus" }),
+  ).toBeVisible();
+  await expect(
+    ledger.getByRole("region", { name: "Suggestions" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Library search" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Add a known Item" }),
   ).toBeVisible();
   await expect(
     suggestions.getByText("Unfinished from yesterday"),
