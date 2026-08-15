@@ -412,7 +412,7 @@ export function DiscoverIntakePrototype() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-28 text-foreground">
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <PrototypeTopBar />
       <StressBar
         frame={frame}
@@ -487,8 +487,8 @@ interface VariantProps {
 function IntakeFirst(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
   return (
-    <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <main className="mx-auto flex min-h-0 w-full max-w-[78rem] flex-1 flex-col overflow-hidden px-4 py-5 md:px-6">
+      <header className="mb-4 flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             Variant A · Balanced grid
@@ -501,22 +501,28 @@ function IntakeFirst(props: VariantProps) {
         </div>
         <RefreshAndHistory {...props} />
       </header>
-      <StatusFrame frame={props.frame} follows={props.state.follows} />
-      <div className="grid gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
+      <div className="shrink-0">
+        <StatusFrame frame={props.frame} follows={props.state.follows} />
+      </div>
+      <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-5 lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-1">
         <FollowFilterRail {...props} />
-        <section className="min-w-0">
-          <IntakeToolbar props={props} unresolved={unresolved} />
-          {props.frame === "loading" || props.refreshing ? (
-            <LoadingFeed />
-          ) : unresolved.length > 0 ? (
-            <CompactCardGrid
-              discoveries={unresolved}
-              follows={props.state.follows}
-              actions={props.actions}
-            />
-          ) : (
-            <FilteredEmptyState props={props} />
-          )}
+        <section className="flex min-h-0 min-w-0 flex-col">
+          <div className="shrink-0">
+            <IntakeToolbar props={props} unresolved={unresolved} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-24">
+            {props.frame === "loading" || props.refreshing ? (
+              <LoadingFeed />
+            ) : unresolved.length > 0 ? (
+              <CompactCardGrid
+                discoveries={unresolved}
+                follows={props.state.follows}
+                actions={props.actions}
+              />
+            ) : (
+              <FilteredEmptyState props={props} />
+            )}
+          </div>
         </section>
       </div>
     </main>
@@ -526,7 +532,7 @@ function IntakeFirst(props: VariantProps) {
 function FollowsAndIntake(props: VariantProps) {
   const unresolved = unresolvedDiscoveries(props.discoveries);
   return (
-    <main className="mx-auto max-w-[90rem] px-4 py-7 md:px-6">
+    <main className="mx-auto min-h-0 w-full max-w-[90rem] flex-1 overflow-y-auto px-4 py-7 pb-28 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -571,7 +577,7 @@ function ReviewBatches(props: VariantProps) {
     safePage * pageSize + pageSize,
   );
   return (
-    <main className="mx-auto max-w-[78rem] px-4 py-7 md:px-6">
+    <main className="mx-auto min-h-0 w-full max-w-[78rem] flex-1 overflow-y-auto px-4 py-7 pb-28 md:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -1137,7 +1143,7 @@ function followStateLabel(state: FollowState) {
 
 function PrototypeTopBar() {
   return (
-    <header className="border-b bg-background/95">
+    <header className="sticky top-0 z-40 shrink-0 border-b bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex min-h-16 max-w-[80rem] flex-wrap items-center gap-3 px-4 py-2 md:px-6">
         <span className="font-serif text-xl font-semibold">unshelf</span>
         <nav
@@ -1175,7 +1181,7 @@ function StressBar({
   onReset: () => void;
 }) {
   return (
-    <div className="border-b bg-quiet-panel">
+    <div className="z-30 shrink-0 border-b bg-quiet-panel">
       <div className="mx-auto flex max-w-[80rem] flex-wrap items-center gap-2 px-4 py-2 text-sm md:px-6">
         <span className="font-semibold">Stress frame</span>
         <select

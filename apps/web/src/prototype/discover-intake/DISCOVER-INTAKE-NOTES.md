@@ -58,11 +58,17 @@ eliminates continuous scrolling, while preserving the selected thumbnail grid.
 
 ## Live-session verdict
 
-- Winner or hybrid: **Pending live fit-check.**
+- Winner or hybrid: **A — Balanced grid**, with the product top bar and Follow
+  rail held stationary while only the Candidate feed scrolls.
 - Validated: one combined queue across all Follows; optional filtering by Follow;
   Candidate decisions must remain directly available from the overview; compact
-  thumbnails make the intake calm, scannable, and appropriately familiar.
+  thumbnails make the intake calm, scannable, and appropriately familiar; three
+  columns beside the Follow rail preserve useful density without feeling like a
+  crowded contact sheet.
 - Falsified: a long spacious feed, the large one-at-a-time review deck, compact
-  rows, and the thumbnail-free triage table.
-- Required changes: compare balanced, denser full-width, and paged galleries to
-  settle above-the-fold density and continuous-scroll behavior.
+  rows, the thumbnail-free triage table, the full-width contact sheet, and explicit
+  pagination.
+- Required production behavior: the workspace top bar remains sticky; the Follow
+  rail and intake heading remain stationary within Discover; only the Candidate
+  grid becomes the vertical scroll container. At phone width the Follow filter
+  reflows above the same independently scrolling feed.
