@@ -111,6 +111,30 @@ export function TodaySurface() {
     itemId: Item["id"];
   }) => pendingActions.has(pendingActionKey({ kind, itemId }));
 
+  const applyPlanningReplenishment = ({
+    planning,
+    isCurrent,
+    focus,
+  }: {
+    planning: DailyPlanning;
+    isCurrent: boolean;
+    focus?: DailyFocus;
+  }) => {
+    setState((current) => {
+      if (current.status === "loading") return current;
+      if (focus) {
+        return {
+          ...current,
+          status: "ready",
+          focus,
+          planning: isCurrent ? planning : current.planning,
+        };
+      }
+      return isCurrent ? { ...current, planning } : current;
+    });
+    if (isCurrent) setPlanningError(false);
+  };
+
   const load = useCallback(async () => {
     planningRequestNumber.current += 1;
     setState({ status: "loading" });
@@ -216,19 +240,11 @@ export function TodaySurface() {
       const focus = await addItemToToday(user, item.id, origin);
       const planningRequest = startPlanningRequest();
       const planning = await planningRequest.request;
-      setState((current) =>
-        current.status !== "loading"
-          ? {
-              ...current,
-              status: "ready",
-              focus,
-              planning: planningRequest.isCurrent()
-                ? planning
-                : { ...current.planning, suggestions: planning.suggestions },
-            }
-          : current,
-      );
-      if (planningRequest.isCurrent()) setPlanningError(false);
+      applyPlanningReplenishment({
+        planning,
+        isCurrent: planningRequest.isCurrent(),
+        focus,
+      });
       setAnnouncement(`Added ${item.title} to Today`);
     } catch {
       setMutationError(true);
@@ -245,17 +261,10 @@ export function TodaySurface() {
       await suppressDailyPlanningItem(user, item.id);
       const planningRequest = startPlanningRequest();
       const planning = await planningRequest.request;
-      setState((current) =>
-        current.status !== "loading"
-          ? {
-              ...current,
-              planning: planningRequest.isCurrent()
-                ? planning
-                : { ...current.planning, suggestions: planning.suggestions },
-            }
-          : current,
-      );
-      if (planningRequest.isCurrent()) setPlanningError(false);
+      applyPlanningReplenishment({
+        planning,
+        isCurrent: planningRequest.isCurrent(),
+      });
       setAnnouncement(`Set Not today for ${item.title}`);
     } catch {
       setMutationError(true);

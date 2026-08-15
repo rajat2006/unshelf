@@ -483,6 +483,79 @@ describe("Today room", () => {
     expect(secondAction).toBeDisabled();
     finishSuppressions.get(replacement.id)?.();
   });
+
+  it("keeps an older mutation refresh from replacing the newest window", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const initialPlanning = {
+      searchResults: [],
+      suggestions: [item, replacement].map((suggestionItem) => ({
+        item: suggestionItem,
+        signal: "recent_capture" as const,
+        explanation: "Captured recently",
+      })),
+    };
+    const finishSuppressions = new Map<ItemId, () => void>();
+    let finishOlderPlanning:
+      ((planning: typeof initialPlanning) => void) | undefined;
+    let finishNewestPlanning:
+      ((planning: typeof initialPlanning) => void) | undefined;
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(initialPlanning)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishOlderPlanning = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishNewestPlanning = resolve;
+        }),
+      );
+    vi.mocked(suppressDailyPlanningItem).mockImplementation(
+      (_user, itemId) =>
+        new Promise((resolve) => {
+          finishSuppressions.set(itemId, resolve);
+        }),
+    );
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Not today for ${item.title}`,
+      }),
+    );
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Not today for ${replacement.title}`,
+      }),
+    );
+    finishSuppressions.get(item.id)?.();
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
+    finishSuppressions.get(replacement.id)?.();
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
+
+    finishNewestPlanning?.({ searchResults: [], suggestions: [] });
+    expect(
+      await within(suggestions).findByText(
+        "No Suggestions are current for Today.",
+      ),
+    ).toBeVisible();
+    finishOlderPlanning?.(initialPlanning);
+
+    await waitFor(() =>
+      expect(
+        within(suggestions).queryByText(item.title),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(suggestions).queryByText(replacement.title),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Daily Focus history", () => {
