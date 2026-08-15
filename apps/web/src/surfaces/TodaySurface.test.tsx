@@ -29,6 +29,7 @@ import {
   fetchDailyFocusHistory,
   fetchDailyPlanning,
   fetchToday,
+  suppressDailyPlanningItem,
 } from "../api";
 import { CaptureProvider } from "../shell/CaptureProvider";
 import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
@@ -40,6 +41,7 @@ vi.mock("../api", async (importOriginal) => ({
   fetchDailyFocusHistory: vi.fn(),
   fetchDailyPlanning: vi.fn(),
   fetchToday: vi.fn(),
+  suppressDailyPlanningItem: vi.fn(),
 }));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -77,6 +79,11 @@ const focus: DailyFocus = {
   ],
   done: 0,
   total: 1,
+};
+const replacement: Item = {
+  ...item,
+  id: "00000000-0000-0000-0000-000000000005" as ItemId,
+  title: "Practical storage engines",
 };
 const auth: ApplicationAuth = {
   status: "signed-in",
@@ -262,6 +269,110 @@ describe("Today room", () => {
         name: `Added ${item.title} to Today`,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps confirmed state and reports a failed Add replenishment", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const planning = {
+      searchResults: [item],
+      suggestions: [
+        {
+          item,
+          signal: "recent_capture" as const,
+          explanation: "Captured recently",
+        },
+      ],
+    };
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(planning)
+      .mockRejectedValueOnce(new Error("replenishment unavailable"));
+    vi.mocked(addItemToToday).mockResolvedValue(focus);
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${item.title} to Today`,
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Couldn't update Today. Your existing Daily Focus is unchanged; try again.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Today's Daily Focus" }),
+      ).queryByText(item.title),
+    ).not.toBeInTheDocument();
+    expect(within(suggestions).getByText(item.title)).toBeVisible();
+    expect(
+      screen.queryByRole("status", {
+        name: `Added ${item.title} to Today`,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("announces a replenished Not today window and disables only that action", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    let finishSuppression: (() => void) | undefined;
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce({
+        searchResults: [],
+        suggestions: [item, replacement].map((suggestionItem) => ({
+          item: suggestionItem,
+          signal: "recent_capture" as const,
+          explanation: "Captured recently",
+        })),
+      })
+      .mockResolvedValueOnce({
+        searchResults: [],
+        suggestions: [
+          {
+            item: replacement,
+            signal: "recent_capture",
+            explanation: "Captured recently",
+          },
+        ],
+      });
+    vi.mocked(suppressDailyPlanningItem).mockReturnValue(
+      new Promise((resolve) => {
+        finishSuppression = resolve;
+      }),
+    );
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    const notToday = within(suggestions).getByRole("button", {
+      name: `Not today for ${item.title}`,
+    });
+    fireEvent.click(notToday);
+
+    expect(notToday).toBeDisabled();
+    expect(notToday).toHaveTextContent("Updating…");
+    expect(
+      within(suggestions).getByRole("button", {
+        name: `Add ${replacement.title} to Today`,
+      }),
+    ).toBeEnabled();
+    finishSuppression?.();
+
+    expect(
+      await screen.findByRole("status", {
+        name: `Set Not today for ${item.title}`,
+      }),
+    ).toBeInTheDocument();
+    expect(within(suggestions).queryByText(item.title)).not.toBeInTheDocument();
+    expect(within(suggestions).getByText(replacement.title)).toBeVisible();
   });
 });
 

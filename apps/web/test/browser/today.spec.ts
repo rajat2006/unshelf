@@ -193,7 +193,7 @@ test("a User plans Today with a capped explained shortlist and independent searc
   const planned = await createItem("Plan-aware query execution");
   const dormant = await createItem("Dormant transaction internals");
   const targeted = await createItem("Targeted storage reading");
-  const recent = await createItem("Fresh uncommitted paper");
+  await createItem("Fresh uncommitted paper");
   const done = await createItem("Finished suggestion noise");
   const selected = await createItem("Already selected suggestion noise");
 
@@ -257,6 +257,22 @@ test("a User plans Today with a capped explained shortlist and independent searc
     "Targeted storage reading",
     "Fresh uncommitted paper",
   ]);
+
+  await suggestions
+    .getByRole("button", { name: "Add Continue yesterday's indexes to Today" })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "Today's Daily Focus" })
+      .getByText("Continue yesterday's indexes"),
+  ).toBeVisible();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual([
+      "Targeted storage reading",
+      "Fresh uncommitted paper",
+      "Dormant transaction internals",
+    ]);
   await expect(
     page.getByRole("textbox", { name: "Learning intention" }),
   ).toHaveCount(0);
@@ -276,16 +292,59 @@ test("a User plans Today with a capped explained shortlist and independent searc
   await suggestions
     .getByRole("button", { name: "Not today for Fresh uncommitted paper" })
     .click();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual([
+      "Targeted storage reading",
+      "Dormant transaction internals",
+      "Plan-aware query execution",
+    ]);
   await expect(
     page
       .getByRole("region", { name: "Item search results" })
       .getByText("Fresh uncommitted paper"),
   ).toBeVisible();
+
+  await page
+    .getByRole("region", { name: "Item search results" })
+    .getByRole("button", { name: "Add Fresh uncommitted paper to Today" })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "Today's Daily Focus" })
+      .getByText("Fresh uncommitted paper"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Item search results" }),
+  ).toHaveCount(0);
+
+  await suggestions
+    .getByRole("button", {
+      name: "Not today for Dormant transaction internals",
+    })
+    .click();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual(["Targeted storage reading", "Plan-aware query execution"]);
+  await suggestions
+    .getByRole("button", { name: "Not today for Plan-aware query execution" })
+    .click();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual(["Targeted storage reading"]);
+
   await page.reload();
   await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
+  await expect(
+    suggestions.getByText("Dormant transaction internals"),
+  ).toHaveCount(0);
+  await expect(suggestions.getByText("Plan-aware query execution")).toHaveCount(
+    0,
+  );
 
-  await elapseDailyPlanningSuppression({ page, user, itemId: recent.id });
+  await elapseDailyPlanningSuppression({ page, user, itemId: dormant.id });
   await page.reload();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toBeVisible();
+  await expect(
+    suggestions.getByText("Dormant transaction internals"),
+  ).toBeVisible();
 });

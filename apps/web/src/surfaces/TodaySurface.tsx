@@ -164,13 +164,16 @@ export function TodaySurface() {
     setPendingAction({ kind: "add", itemId: item.id });
     try {
       const focus = await addItemToToday(user, item.id, origin);
+      const planning = await fetchDailyPlanning(user, {
+        query: query.trim() || undefined,
+      });
       setState((current) =>
         current.status !== "loading"
           ? {
               ...current,
               status: "ready",
               focus,
-              planning: removePlanningItem(current.planning, item.id),
+              planning,
             }
           : current,
       );
@@ -188,11 +191,14 @@ export function TodaySurface() {
     setPendingAction({ kind: "suppress", itemId: item.id });
     try {
       await suppressDailyPlanningItem(user, item.id);
+      const planning = await fetchDailyPlanning(user, {
+        query: query.trim() || undefined,
+      });
       setState((current) =>
         current.status !== "loading"
           ? {
               ...current,
-              planning: removePlanningSuggestion(current.planning, item.id),
+              planning,
             }
           : current,
       );
@@ -670,30 +676,6 @@ function PlanningAddButton({
       Add
     </Button>
   );
-}
-
-function removePlanningItem(
-  planning: DailyPlanning,
-  itemId: Item["id"],
-): DailyPlanning {
-  return {
-    searchResults: planning.searchResults.filter((item) => item.id !== itemId),
-    suggestions: planning.suggestions.filter(
-      (suggestion) => suggestion.item.id !== itemId,
-    ),
-  };
-}
-
-function removePlanningSuggestion(
-  planning: DailyPlanning,
-  itemId: Item["id"],
-): DailyPlanning {
-  return {
-    ...planning,
-    suggestions: planning.suggestions.filter(
-      (suggestion) => suggestion.item.id !== itemId,
-    ),
-  };
 }
 
 function previousCalendarDate(date: string): string {

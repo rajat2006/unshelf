@@ -334,6 +334,74 @@ describe("Daily Planning service", () => {
     ]);
   });
 
+  it("recomputes the deterministic window after Add and Not today", async () => {
+    const user = "daily-planning-live-window";
+    const candidates = await Promise.all(
+      Array.from(
+        { length: 5 },
+        async (_, index) =>
+          (
+            await request(app)
+              .post("/api/items")
+              .set(TEST_USER_HEADER, user)
+              .send({ title: `Window candidate ${index}`, type: "article" })
+              .expect(201)
+          ).body as Item,
+      ),
+    );
+    await harness.pool.query(
+      `update items
+       set created_at = current_date + interval '12 hours'
+         - array_position($1::uuid[], id) * interval '1 hour'
+       where id = any($1::uuid[])`,
+      [candidates.map(({ id }) => id)],
+    );
+    const readPlanning = async () =>
+      (
+        await request(app)
+          .get("/api/daily-focus/today/planning")
+          .query({ query: "window candidate" })
+          .set(TEST_USER_HEADER, user)
+          .expect(200)
+      ).body as DailyPlanning;
+
+    expect(
+      (await readPlanning()).suggestions.map(({ item }) => item.id),
+    ).toEqual(candidates.slice(0, 3).map(({ id }) => id));
+
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: candidates[0].id })
+      .expect(201);
+    expect(
+      (await readPlanning()).suggestions.map(({ item }) => item.id),
+    ).toEqual(candidates.slice(1, 4).map(({ id }) => id));
+
+    await request(app)
+      .post("/api/daily-focus/today/suppressions")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: candidates[1].id })
+      .expect(204);
+    const replenished = await readPlanning();
+    expect(replenished.suggestions.map(({ item }) => item.id)).toEqual(
+      candidates.slice(2, 5).map(({ id }) => id),
+    );
+    expect(replenished.searchResults.map(({ id }) => id)).toEqual(
+      expect.arrayContaining(candidates.slice(1).map(({ id }) => id)),
+    );
+
+    const focus = (
+      await request(app)
+        .get("/api/daily-focus/today")
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyFocus;
+    expect(focus.entries.map(({ item }) => item.id)).toEqual([
+      candidates[0].id,
+    ]);
+  });
+
   it("returns a sparse shortlist or an empty shortlist without filling a quota", async () => {
     const sparseUser = "daily-planning-sparse";
     const sparse = (
