@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "prototype:discover": "vite --host 127.0.0.1",
     "lint": "eslint src test playwright.config.ts vite.config.ts",
     "lint:fix": "eslint src test playwright.config.ts vite.config.ts --fix",
     "preview": "vite preview",
