@@ -56,6 +56,28 @@ function pendingActionKey({
   return `${kind}:${itemId}`;
 }
 
+function mergeConfirmedAdd({
+  current,
+  confirmed,
+  itemId,
+}: {
+  current: DailyFocus;
+  confirmed: DailyFocus;
+  itemId: Item["id"];
+}): DailyFocus {
+  if (current.entries.some((entry) => entry.item.id === itemId)) return current;
+  const addedEntry = confirmed.entries.find(
+    (entry) => entry.item.id === itemId,
+  );
+  if (!addedEntry) return current;
+  const entries = [...current.entries, addedEntry];
+  return {
+    ...current,
+    entries,
+    ...deriveItemCompletion(entries.map((entry) => entry.item)),
+  };
+}
+
 /** The current editable Daily Focus and its explicit Library selection seam. */
 export function TodaySurface() {
   const user = useCurrentUser();
@@ -70,7 +92,6 @@ export function TodaySurface() {
   const skipPlanningRefresh = useRef(false);
   const queryRef = useRef(query);
   const planningRequestNumber = useRef(0);
-  const addFocusResponseNumber = useRef(0);
   const [pendingActions, setPendingActions] = useState<Set<string>>(
     () => new Set(),
   );
@@ -115,19 +136,26 @@ export function TodaySurface() {
   const applyPlanningReplenishment = ({
     planning,
     isCurrent,
-    focus,
+    addedFocus,
   }: {
     planning: DailyPlanning;
     isCurrent: boolean;
-    focus?: DailyFocus;
+    addedFocus?: { focus: DailyFocus; itemId: Item["id"] };
   }) => {
     setState((current) => {
       if (current.status === "loading") return current;
-      if (focus) {
+      if (addedFocus) {
         return {
           ...current,
           status: "ready",
-          focus,
+          focus:
+            current.status === "ready"
+              ? mergeConfirmedAdd({
+                  current: current.focus,
+                  confirmed: addedFocus.focus,
+                  itemId: addedFocus.itemId,
+                })
+              : addedFocus.focus,
           planning: isCurrent ? planning : current.planning,
         };
       }
@@ -138,7 +166,6 @@ export function TodaySurface() {
 
   const load = useCallback(async () => {
     planningRequestNumber.current += 1;
-    addFocusResponseNumber.current += 1;
     setState({ status: "loading" });
     const [focus, planning] = await Promise.allSettled([
       fetchToday(user),
@@ -170,7 +197,6 @@ export function TodaySurface() {
   useCaptureListener(load);
 
   const retryFocus = useCallback(async () => {
-    addFocusResponseNumber.current += 1;
     setFocusRetrying(true);
     try {
       const focus = await fetchToday(user);
@@ -241,16 +267,12 @@ export function TodaySurface() {
     updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
-      const focusResponseNumber = ++addFocusResponseNumber.current;
       const planningRequest = startPlanningRequest();
       const planning = await planningRequest.request;
       applyPlanningReplenishment({
         planning,
         isCurrent: planningRequest.isCurrent(),
-        focus:
-          focusResponseNumber === addFocusResponseNumber.current
-            ? focus
-            : undefined,
+        addedFocus: { focus, itemId: item.id },
       });
       setAnnouncement(`Added ${item.title} to Today`);
     } catch {

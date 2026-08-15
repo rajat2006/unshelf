@@ -631,8 +631,10 @@ describe("Today room", () => {
     const focusRegion = screen.getByRole("region", {
       name: "Today's Daily Focus",
     });
-    expect(await within(focusRegion).findByText(item.title)).toBeVisible();
-    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+    expect(
+      await within(focusRegion).findByText(replacement.title),
+    ).toBeVisible();
+    expect(within(focusRegion).queryByText(item.title)).not.toBeInTheDocument();
     finishOlderPlanning?.(initialPlanning);
 
     expect(
