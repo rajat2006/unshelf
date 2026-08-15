@@ -556,6 +556,93 @@ describe("Today room", () => {
       within(suggestions).queryByText(replacement.title),
     ).not.toBeInTheDocument();
   });
+
+  it("keeps an older Add response from replacing a newer Daily Focus", async () => {
+    const emptyFocus = { ...focus, entries: [], done: 0, total: 0 };
+    const focusWithBoth: DailyFocus = {
+      ...focus,
+      entries: [
+        ...focus.entries,
+        {
+          item: replacement,
+          origin: null,
+          snapshot: {
+            status: replacement.status,
+            partPercentage: replacement.partPercentage,
+          },
+        },
+      ],
+      total: 2,
+    };
+    const initialPlanning = {
+      searchResults: [],
+      suggestions: [item, replacement].map((suggestionItem) => ({
+        item: suggestionItem,
+        signal: "recent_capture" as const,
+        explanation: "Captured recently",
+      })),
+    };
+    const finishAdds = new Map<ItemId, (focus: DailyFocus) => void>();
+    let finishOlderPlanning:
+      ((planning: typeof initialPlanning) => void) | undefined;
+    let finishNewestPlanning:
+      ((planning: typeof initialPlanning) => void) | undefined;
+    vi.mocked(fetchToday).mockResolvedValue(emptyFocus);
+    vi.mocked(fetchDailyPlanning)
+      .mockResolvedValueOnce(initialPlanning)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishOlderPlanning = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishNewestPlanning = resolve;
+        }),
+      );
+    vi.mocked(addItemToToday).mockImplementation(
+      (_user, itemId) =>
+        new Promise((resolve) => {
+          finishAdds.set(itemId, resolve);
+        }),
+    );
+
+    renderToday();
+
+    const suggestions = await screen.findByRole("region", {
+      name: "Suggestions",
+    });
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${item.title} to Today`,
+      }),
+    );
+    fireEvent.click(
+      within(suggestions).getByRole("button", {
+        name: `Add ${replacement.title} to Today`,
+      }),
+    );
+    finishAdds.get(item.id)?.(focus);
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(2));
+    finishAdds.get(replacement.id)?.(focusWithBoth);
+    await waitFor(() => expect(fetchDailyPlanning).toHaveBeenCalledTimes(3));
+
+    finishNewestPlanning?.({ searchResults: [], suggestions: [] });
+    const focusRegion = screen.getByRole("region", {
+      name: "Today's Daily Focus",
+    });
+    expect(await within(focusRegion).findByText(item.title)).toBeVisible();
+    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+    finishOlderPlanning?.(initialPlanning);
+
+    expect(
+      await screen.findByRole("status", {
+        name: `Added ${item.title} to Today`,
+      }),
+    ).toBeInTheDocument();
+    expect(within(focusRegion).getByText(replacement.title)).toBeVisible();
+    expect(within(focusRegion).getByText(item.title)).toBeVisible();
+  });
 });
 
 describe("Daily Focus history", () => {

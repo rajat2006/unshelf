@@ -70,6 +70,7 @@ export function TodaySurface() {
   const skipPlanningRefresh = useRef(false);
   const queryRef = useRef(query);
   const planningRequestNumber = useRef(0);
+  const addFocusResponseNumber = useRef(0);
   const [pendingActions, setPendingActions] = useState<Set<string>>(
     () => new Set(),
   );
@@ -137,6 +138,7 @@ export function TodaySurface() {
 
   const load = useCallback(async () => {
     planningRequestNumber.current += 1;
+    addFocusResponseNumber.current += 1;
     setState({ status: "loading" });
     const [focus, planning] = await Promise.allSettled([
       fetchToday(user),
@@ -168,6 +170,7 @@ export function TodaySurface() {
   useCaptureListener(load);
 
   const retryFocus = useCallback(async () => {
+    addFocusResponseNumber.current += 1;
     setFocusRetrying(true);
     try {
       const focus = await fetchToday(user);
@@ -238,12 +241,16 @@ export function TodaySurface() {
     updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
+      const focusResponseNumber = ++addFocusResponseNumber.current;
       const planningRequest = startPlanningRequest();
       const planning = await planningRequest.request;
       applyPlanningReplenishment({
         planning,
         isCurrent: planningRequest.isCurrent(),
-        focus,
+        focus:
+          focusResponseNumber === addFocusResponseNumber.current
+            ? focus
+            : undefined,
       });
       setAnnouncement(`Added ${item.title} to Today`);
     } catch {
