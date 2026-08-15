@@ -156,6 +156,88 @@ describe("Daily Planning service", () => {
     );
   });
 
+  it("uses Item ID as the final Target-date and yesterday tie-breaker", async () => {
+    const createItem = async ({
+      user,
+      title,
+    }: {
+      user: string;
+      title: string;
+    }) =>
+      (
+        await request(app)
+          .post("/api/items")
+          .set(TEST_USER_HEADER, user)
+          .send({ title, type: "article" })
+          .expect(201)
+      ).body as Item;
+
+    const targetUser = "daily-planning-target-id-tie";
+    const targeted = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        createItem({ user: targetUser, title: `Target tie ${index}` }),
+      ),
+    );
+    await harness.pool.query(
+      `update items
+       set created_at = current_date - 30, target_date = current_date + 1
+       where id = any($1::uuid[])`,
+      [targeted.map(({ id }) => id)],
+    );
+    const targetPlanning = (
+      await request(app)
+        .get("/api/daily-focus/today/planning")
+        .set(TEST_USER_HEADER, targetUser)
+        .expect(200)
+    ).body as DailyPlanning;
+    expect(targetPlanning.suggestions.map(({ item }) => item.id)).toEqual(
+      targeted
+        .map(({ id }) => id)
+        .sort((first, second) => first.localeCompare(second))
+        .slice(0, 3),
+    );
+
+    const yesterdayUser = "daily-planning-yesterday-id-tie";
+    const yesterday = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        createItem({ user: yesterdayUser, title: `Yesterday tie ${index}` }),
+      ),
+    );
+    for (const item of yesterday) {
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, yesterdayUser)
+        .send({ itemId: item.id })
+        .expect(201);
+    }
+    await harness.pool.query(
+      `update daily_focuses set date = current_date - 1
+       where user_id = (select id from users where clerk_user_id = $1)`,
+      [yesterdayUser],
+    );
+    await harness.pool.query(
+      `update daily_focus_items set added_at = current_date - interval '1 hour'
+       where item_id = any($1::uuid[])`,
+      [yesterday.map(({ id }) => id)],
+    );
+    await harness.pool.query(
+      "update items set created_at = current_date - 30 where id = any($1::uuid[])",
+      [yesterday.map(({ id }) => id)],
+    );
+    const yesterdayPlanning = (
+      await request(app)
+        .get("/api/daily-focus/today/planning")
+        .set(TEST_USER_HEADER, yesterdayUser)
+        .expect(200)
+    ).body as DailyPlanning;
+    expect(yesterdayPlanning.suggestions.map(({ item }) => item.id)).toEqual(
+      yesterday
+        .map(({ id }) => id)
+        .sort((first, second) => first.localeCompare(second))
+        .slice(0, 3),
+    );
+  });
+
   it("ages Captures after seven calendar dates and orders stable ties by Item ID", async () => {
     const user = "daily-planning-capture-dates";
     const createItem = async (title: string) =>

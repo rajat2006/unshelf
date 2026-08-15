@@ -170,7 +170,9 @@ function selectSuggestions(facts: PlanningFacts[]): DailyPlanningSuggestion[] {
     if (candidate) groups.get(candidate.suggestion.signal)?.push(candidate);
   }
   for (const signal of SIGNALS) {
-    groups.get(signal)?.sort(compareWithinSignal);
+    groups
+      .get(signal)
+      ?.sort((first, second) => compareWithinSignal({ first, second }));
   }
 
   const selected: SuggestionCandidate[] = [];
@@ -190,7 +192,7 @@ function selectSuggestions(facts: PlanningFacts[]): DailyPlanningSuggestion[] {
       const signalOrder =
         SIGNALS.indexOf(first.suggestion.signal) -
         SIGNALS.indexOf(second.suggestion.signal);
-      return signalOrder || compareWithinSignal(first, second);
+      return signalOrder || compareWithinSignal({ first, second });
     })
     .slice(0, SUGGESTION_LIMIT)
     .map(({ suggestion }) => suggestion);
@@ -243,10 +245,13 @@ function targetExplanation(fact: PlanningFacts): string {
     : `Target date is in ${days} · ${targetDate}`;
 }
 
-function compareWithinSignal(
-  first: SuggestionCandidate,
-  second: SuggestionCandidate,
-): number {
+function compareWithinSignal({
+  first,
+  second,
+}: {
+  first: SuggestionCandidate;
+  second: SuggestionCandidate;
+}): number {
   const signal = first.suggestion.signal;
   let order: number;
   if (signal === "target_date") {

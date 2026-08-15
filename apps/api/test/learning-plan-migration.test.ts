@@ -245,21 +245,19 @@ describe("Learning Plan migration", () => {
         db,
         migrations.slice(itemCreationMigrationIndex + 1),
       );
-      const activityFacts = await db.execute(sql`
-        SELECT id, created_at, activity_at
+      const finalItemFacts = await db.execute(sql`
+        SELECT id, created_at
         FROM items
         ORDER BY id
       `);
-      expect(activityFacts.rows).toEqual([
+      expect(finalItemFacts.rows).toEqual([
         {
           id: IDS.itemA,
           created_at: "2025-12-31 23:00:00+00",
-          activity_at: "2025-12-31 23:00:00+00",
         },
         {
           id: IDS.itemB,
           created_at: "2025-12-31 23:00:00+00",
-          activity_at: "2025-12-31 23:00:00+00",
         },
       ]);
     } finally {
