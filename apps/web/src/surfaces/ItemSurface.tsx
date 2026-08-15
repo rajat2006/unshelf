@@ -38,7 +38,25 @@ export function ItemSurface() {
       : "";
 
   return (
-    <div className="item-detail-layout">
+    <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
+      {itemId && (
+        <ItemSidebar
+          itemId={itemId as ItemId}
+          user={user}
+          itemOverride={changedItem}
+          onItemChanged={recordItemChange}
+          onPlacementChanged={() =>
+            setPlacementVersion((current) => current + 1)
+          }
+          onClose={() => {
+            void navigate(
+              backgroundLocation
+                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
+                : "/library",
+            );
+          }}
+        />
+      )}
       {backgroundLocation ? (
         backgroundSurface.kind === "plan" ? (
           <LearningPlanSurface
@@ -71,24 +89,6 @@ export function ItemSurface() {
         <LibrarySurface
           itemOverrides={itemOverrides}
           onItemChanged={recordItemChange}
-        />
-      )}
-      {itemId && (
-        <ItemSidebar
-          itemId={itemId as ItemId}
-          user={user}
-          itemOverride={changedItem}
-          onItemChanged={recordItemChange}
-          onPlacementChanged={() =>
-            setPlacementVersion((current) => current + 1)
-          }
-          onClose={() => {
-            void navigate(
-              backgroundLocation
-                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
-                : "/library",
-            );
-          }}
         />
       )}
     </div>

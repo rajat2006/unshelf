@@ -172,6 +172,8 @@ export interface Item {
   completedAt: string | null;
   /** The private Labels currently applied to this Item. */
   labels: Label[];
+  /** Derived completion percentage for a Structured Item, or null without Parts. */
+  partPercentage: number | null;
 }
 
 /** One lightweight checklist entry owned by an Item. */
@@ -186,7 +188,6 @@ export interface Part {
 /** Canonical Item detail, including structure that is not a Library row. */
 export interface ItemDetail extends Item {
   parts: Part[];
-  partPercentage: number | null;
 }
 
 /** Derive completion for any current selection of shared Items. */
@@ -229,19 +230,13 @@ export interface DailyFocusEntry {
 
 /** The ordered, transparent signals that can place an Item in Daily Planning. */
 export type DailyPlanningSignal =
-  | "unfinished_yesterday"
-  | "selected_plan"
-  | "dormant_in_progress"
-  | "approaching_target"
-  | "recently_captured_uncommitted";
+  "unfinished_yesterday" | "target_date" | "recent_capture";
 
 /** One de-duplicated suggestion with the highest-priority reason it appears. */
 export interface DailyPlanningSuggestion {
   item: Item;
   signal: DailyPlanningSignal;
   explanation: string;
-  /** Plan context retained when the selected Plan caused the suggestion. */
-  origin: DailyFocusOrigin | null;
 }
 
 /** A read-only projection used to choose Items for the current Daily Focus. */

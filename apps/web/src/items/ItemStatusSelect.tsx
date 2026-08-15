@@ -1,6 +1,20 @@
-import { ITEM_STATUSES, Status, StatusMode, type Item } from "@unshelf/shared";
+import {
+  ITEM_STATUSES,
+  StatusMode,
+  type Item,
+  type Status,
+} from "@unshelf/shared";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import type { CurrentUser } from "../application-auth/types";
-import { STATUS_LABELS } from "./presentation";
+import { ItemStatusBadge } from "./ItemStatusBadge";
 import { useItemStatusMutation } from "./useItemStatusMutation";
 
 interface ItemStatusSelectProps {
@@ -17,52 +31,60 @@ export function ItemStatusSelect({
   onChanged,
   structured = false,
 }: ItemStatusSelectProps) {
-  const { changeStatus, error, saving } = useItemStatusMutation({
+  const { changeStatus, failedStatus, saving } = useItemStatusMutation({
     item,
     user,
     onChanged,
   });
 
   return (
-    <div className="item-control-row">
-      <fieldset
-        className="status-control"
-        aria-label={`Status for ${item.title}`}
+    <Field className="max-w-56">
+      <FieldLabel>Status</FieldLabel>
+      <Select
+        value={item.status}
         disabled={saving}
+        onValueChange={(status: Status) => void changeStatus(status)}
       >
-        <legend>Status</legend>
-        <div className="status-control__choices">
+        <SelectTrigger
+          aria-label={`Status for ${item.title}`}
+          className="min-h-11 w-full sm:min-h-10"
+        >
+          <ItemStatusBadge status={item.status} />
+        </SelectTrigger>
+        <SelectContent position="popper">
           {ITEM_STATUSES.map((status) => (
-            <button
-              key={status}
-              type="button"
-              className={[
-                status === item.status ? "is-active" : "",
-                status === Status.Done ? "is-done" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-pressed={status === item.status}
-              onClick={() => void changeStatus(status)}
-            >
-              {STATUS_LABELS[status]}
-            </button>
+            <SelectItem key={status} value={status}>
+              <ItemStatusBadge status={status} />
+            </SelectItem>
           ))}
-        </div>
-        {structured && !saving && (
-          <span className="item-control-caption">
-            {item.statusMode === StatusMode.Automatic
-              ? "Status follows Parts"
-              : "Status set manually"}
-          </span>
-        )}
-        {saving && <span className="item-control-caption">Saving…</span>}
-      </fieldset>
-      {error && (
-        <div role="alert" className="item-control-error">
-          Could not change Status: {error}
-        </div>
+        </SelectContent>
+      </Select>
+      {structured && !saving && (
+        <FieldDescription>
+          {item.statusMode === StatusMode.Automatic
+            ? "Status follows Parts"
+            : "Status set manually"}
+        </FieldDescription>
       )}
-    </div>
+      {saving && (
+        <FieldDescription role="status">Saving Status…</FieldDescription>
+      )}
+      {failedStatus !== null && (
+        <Alert className="grid gap-2">
+          <span>
+            Couldn’t update Status. Your previous Status is unchanged.
+          </span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="compact"
+            className="min-h-11 w-fit sm:min-h-8"
+            onClick={() => void changeStatus(failedStatus)}
+          >
+            Retry Status
+          </Button>
+        </Alert>
+      )}
+    </Field>
   );
 }

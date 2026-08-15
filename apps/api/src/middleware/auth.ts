@@ -86,11 +86,16 @@ export function authorizedPartiesForOrigin({
 export function parsePublicOrigin(value: string): string {
   try {
     const parsed = new URL(value);
-    if (parsed.protocol === "https:" && parsed.origin === value) {
+    const isAllowedProtocol =
+      parsed.protocol === "https:" ||
+      (parsed.protocol === "http:" && parsed.hostname === "localhost");
+    if (isAllowedProtocol && parsed.origin === value) {
       return value;
     }
   } catch {
     // Invalid URLs fail with the same public configuration error.
   }
-  throw new Error("PUBLIC_ORIGIN must be an exact HTTPS origin");
+  throw new Error(
+    "PUBLIC_ORIGIN must be an exact HTTPS origin or an exact HTTP localhost origin",
+  );
 }

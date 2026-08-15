@@ -18,9 +18,19 @@ import { useCaptureShortcuts } from "./useCaptureShortcuts";
 export function CaptureProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const listeners = useRef(new Set<() => void>());
+  const returnFocus = useRef<HTMLElement | null>(null);
 
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
+  const open = useCallback(() => {
+    returnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setIsOpen(true);
+  }, []);
+  const close = useCallback(() => {
+    setIsOpen(false);
+    window.setTimeout(() => returnFocus.current?.focus(), 0);
+  }, []);
 
   const subscribe = useCallback((onCaptured: () => void) => {
     listeners.current.add(onCaptured);

@@ -1,61 +1,68 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ItemId,
+  LearningPlanId,
   StageDetail,
   StageId,
   StageItemCandidate,
 } from "@unshelf/shared";
+import { ArrowRightLeft, Check, Plus, RotateCcw, Search } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToStage,
-  fetchStage,
   fetchStageItemCandidates,
   moveLearningPlanItem,
   removeItemFromStage,
 } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { TYPE_LABELS } from "../items/presentation";
+import { StageRefreshFailure, useStageRefresh } from "./StageRefresh";
 
 interface StageItemIntakeProps {
   stageId: StageId;
+  learningPlanId: LearningPlanId;
   user: CurrentUser;
   onStageChanged: (stage: StageDetail) => void;
 }
 
 type AvailableCandidate = Extract<StageItemCandidate, { kind: "available" }>;
 
-/**
- * The open Stage's server-searched Library intake.
- *
- * Each available row is an independent placement command. The last successful
- * row stays where the User acted long enough to offer Undo; the query and this
- * local row state survive the parent Stage detail refresh.
- */
+/** Server-searched Library intake for one open Stage. */
 export function StageItemIntake({
   stageId,
+  learningPlanId,
   user,
   onStageChanged,
 }: StageItemIntakeProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<StageItemCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState(false);
   const [pendingItemId, setPendingItemId] = useState<ItemId | null>(null);
   const [failedItemId, setFailedItemId] = useState<ItemId | null>(null);
   const [moved, setMoved] = useState<AvailableCandidate | null>(null);
   const requestVersion = useRef(0);
+  const { refreshStage, refreshFailed } = useStageRefresh({
+    stageId,
+    user,
+    onStageChanged,
+  });
 
   const search = useCallback(
     async (titleQuery: string) => {
       const version = ++requestVersion.current;
       setSearching(true);
-      setSearchError(null);
+      setSearchError(false);
       try {
         const found = await fetchStageItemCandidates(user, stageId, titleQuery);
         if (version === requestVersion.current) setResults(found);
-      } catch (caught: unknown) {
-        if (version === requestVersion.current) {
-          setSearchError(String(caught));
-        }
+      } catch {
+        if (version === requestVersion.current) setSearchError(true);
       } finally {
         if (version === requestVersion.current) setSearching(false);
       }
@@ -94,7 +101,7 @@ export function StageItemIntake({
         const reconciled = await fetchStageItemCandidates(user, stageId, query);
         if (version === requestVersion.current) setResults(reconciled);
       } catch {
-        // Keep the placement failure local; the explicit search Retry owns reads.
+        // The placement error remains actionable; search has its own Retry.
       }
     } finally {
       setPendingItemId(null);
@@ -121,130 +128,214 @@ export function StageItemIntake({
     setPendingItemId(candidate.id);
     setFailedItemId(null);
     try {
-      await moveLearningPlanItem(
-        user,
-        (await fetchStage(user, stageId)).learningPlanId,
-        candidate.id,
-        stageId,
-      );
-      onStageChanged(await fetchStage(user, stageId));
-      await search(query);
+      await moveLearningPlanItem(user, learningPlanId, candidate.id, stageId);
     } catch {
       setFailedItemId(candidate.id);
-    } finally {
       setPendingItemId(null);
+      return;
     }
+
+    setResults(
+      (current) =>
+        current?.filter((result) => result.id !== candidate.id) ?? current,
+    );
+    await refreshStage();
+    setPendingItemId(null);
+    void search(query);
   }
 
   return (
     <section
-      className="stage-intake"
+      className="grid min-w-0 gap-4 border-t pt-6"
       aria-labelledby={`stage-intake-${stageId}`}
     >
-      <h3 id={`stage-intake-${stageId}`}>Add Items from your Library</h3>
-      <label className="stage-intake__search">
-        Search by title
-        <input
-          type="search"
-          value={query}
-          disabled={pendingItemId !== null}
-          onChange={(event) => {
-            requestVersion.current += 1;
-            setMoved(null);
-            setResults(null);
-            setFailedItemId(null);
-            setQuery(event.target.value);
-          }}
-        />
-      </label>
+      <div className="grid gap-1">
+        <h3
+          id={`stage-intake-${stageId}`}
+          className="m-0 font-serif text-xl leading-tight font-semibold"
+        >
+          Add Items from your Library
+        </h3>
+        <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+          Search your Library. Items already on this Learning Plan can move
+          here, but cannot appear twice.
+        </p>
+      </div>
 
-      {searching && results === null && <p role="status">Searching Library…</p>}
+      <Field>
+        <FieldLabel htmlFor={`stage-search-${stageId}`}>
+          Search by title
+        </FieldLabel>
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            id={`stage-search-${stageId}`}
+            type="search"
+            className="pl-9"
+            value={query}
+            disabled={pendingItemId !== null}
+            onChange={(event) => {
+              requestVersion.current += 1;
+              setMoved(null);
+              setResults(null);
+              setFailedItemId(null);
+              setQuery(event.target.value);
+            }}
+          />
+        </div>
+      </Field>
+
+      {refreshFailed && (
+        <StageRefreshFailure onRetry={refreshStage}>
+          Item moved to this Stage. Couldn&apos;t refresh the Stage details.
+        </StageRefreshFailure>
+      )}
+
+      {searching && results === null && <StageSearchSkeleton />}
+
       {searchError && (
-        <div role="alert" className="surface-error">
-          <p>Could not search your Library.</p>
-          <button type="button" onClick={() => void search(query)}>
+        <div className="grid justify-items-start gap-3">
+          <Alert>
+            Couldn&apos;t search your Library. Check your connection and try
+            again.
+          </Alert>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void search(query)}
+          >
             Retry
-          </button>
+          </Button>
         </div>
       )}
+
       {!searchError && results?.length === 0 && (
-        <div className="stage-intake__empty">
-          <p>No matching Items in your Library.</p>
-          {/* Future direct Capture can extend this empty state without changing the picker. */}
+        <div className="rounded-[var(--radius-card)] border border-dashed bg-muted/35 p-5">
+          <p className="m-0 text-sm text-muted-foreground">
+            {query
+              ? `No Library Items match “${query}”.`
+              : "No Library Items are available to place here."}
+          </p>
         </div>
       )}
+
       {!searchError && results && results.length > 0 && (
-        <ul className="stage-intake__results">
+        <ul
+          className="grid min-w-0 list-none gap-3 p-0"
+          aria-label="Library search results"
+        >
           {results.map((candidate) => {
             const isMoved = moved?.id === candidate.id;
             const isPending = pendingItemId === candidate.id;
             const hasFailed = failedItemId === candidate.id;
+            const conflict =
+              candidate.kind === "conflict" ||
+              candidate.kind === "direct_conflict";
+
             return (
-              <li key={candidate.id}>
-                <span>
-                  <strong>{candidate.title}</strong>
-                  <small>{TYPE_LABELS[candidate.type]}</small>
-                </span>
-                {isMoved ? (
-                  <span className="stage-intake__result-action">
-                    <span>Moved to In this Stage</span>
-                    <button
-                      type="button"
-                      disabled={pendingItemId !== null}
-                      onClick={() => void undo()}
-                    >
-                      {isPending ? "Undoing…" : "Undo"}
-                    </button>
-                    {hasFailed && (
-                      <span role="alert">Could not undo. Try again.</span>
-                    )}
-                  </span>
-                ) : candidate.kind === "conflict" ||
-                  candidate.kind === "direct_conflict" ? (
-                  <span className="stage-intake__result-action">
-                    <span className="stage-intake__conflict">
+              <li
+                key={candidate.id}
+                className="grid min-w-0 gap-3 rounded-[var(--radius-card)] border bg-background p-4"
+              >
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <strong className="block text-sm leading-snug break-words">
+                      {candidate.title}
+                    </strong>
+                    <span className="text-xs text-muted-foreground">
+                      {TYPE_LABELS[candidate.type]}
+                    </span>
+                  </div>
+                  {conflict && (
+                    <Badge variant="neutral">
                       {candidate.kind === "conflict"
                         ? `In ${candidate.stage.name}`
                         : "Placed directly on this Learning Plan"}
-                    </span>
-                    <button
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid justify-items-start gap-2">
+                  {isMoved ? (
+                    <>
+                      <span
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
+                        role="status"
+                      >
+                        <Check aria-hidden="true" className="size-4" />
+                        Added to this Stage
+                      </span>
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        size="compact"
+                        className="min-h-11 sm:min-h-8"
+                        disabled={pendingItemId !== null}
+                        loading={isPending}
+                        loadingLabel="Undoing…"
+                        onClick={() => void undo()}
+                      >
+                        <RotateCcw aria-hidden="true" />
+                        Undo
+                      </Button>
+                    </>
+                  ) : conflict ? (
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="compact"
+                      className="min-h-11 sm:min-h-8"
                       disabled={pendingItemId !== null}
+                      loading={isPending}
+                      loadingLabel="Moving…"
                       onClick={() => void moveHere(candidate)}
                     >
-                      {isPending ? "Moving…" : "Move to this Stage"}
-                    </button>
-                    {hasFailed && (
-                      <span role="alert">Could not move this Item.</span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="stage-intake__result-action">
-                    <button
+                      <ArrowRightLeft aria-hidden="true" />
+                      Move to this Stage
+                    </Button>
+                  ) : (
+                    <Button
                       type="button"
+                      size="compact"
+                      className="min-h-11 sm:min-h-8"
                       disabled={pendingItemId !== null}
+                      loading={isPending}
+                      loadingLabel="Adding…"
                       onClick={() => void add(candidate)}
                     >
-                      {isPending ? "Adding…" : "Add to this Stage"}
-                    </button>
-                    {hasFailed && (
-                      <span role="alert">
-                        Could not add this Item.{" "}
-                        <button
-                          type="button"
-                          onClick={() => void add(candidate)}
-                        >
-                          Retry
-                        </button>
-                      </span>
-                    )}
-                  </span>
-                )}
+                      <Plus aria-hidden="true" />
+                      Add to this Stage
+                    </Button>
+                  )}
+
+                  {hasFailed && (
+                    <Alert>
+                      {isMoved
+                        ? "Couldn’t undo that placement. Try again."
+                        : conflict
+                          ? "Couldn’t move this Item. Nothing changed; try again."
+                          : "Couldn’t add this Item. Its current placement is unchanged; try again."}
+                    </Alert>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
       )}
     </section>
+  );
+}
+
+function StageSearchSkeleton() {
+  return (
+    <div className="grid gap-3" role="status" aria-label="Searching Library">
+      <span className="sr-only">Searching Library…</span>
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </div>
   );
 }

@@ -74,7 +74,11 @@ test("a User explicitly chooses and edits today's shared Library Items", async (
       exact: true,
     }),
   ).toBeVisible();
-  await focus.getByRole("button", { name: "Done" }).click();
+  await focus
+    .getByRole("button", {
+      name: "Mark Read Designing Data-Intensive Applications done",
+    })
+    .click();
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 
   await focus
@@ -174,7 +178,7 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
   await expect(page.getByText("1 of 1 done")).toBeVisible();
 });
 
-test("a User plans Today with ordered explained suggestions and temporary inputs", async ({
+test("a User plans Today with a capped explained shortlist and independent search", async ({
   page,
 }, testInfo) => {
   const user = `${testInfo.project.name}-daily-planning`;
@@ -189,7 +193,7 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   const planned = await createItem("Plan-aware query execution");
   const dormant = await createItem("Dormant transaction internals");
   const targeted = await createItem("Targeted storage reading");
-  const recent = await createItem("Fresh uncommitted paper");
+  await createItem("Fresh uncommitted paper");
   const done = await createItem("Finished suggestion noise");
   const selected = await createItem("Already selected suggestion noise");
 
@@ -214,8 +218,11 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   await testApi(page, user, `/api/items/${dormant.id}/status`, "PATCH", {
     status: "in_progress",
   });
+  const today = (await (
+    await testApi(page, user, "/api/daily-focus/today")
+  ).json()) as { date: string };
   await testApi(page, user, `/api/items/${targeted.id}/target-date`, "PATCH", {
-    targetDate: "2099-01-01",
+    targetDate: today.date,
   });
   await testApi(page, user, `/api/items/${done.id}/status`, "PATCH", {
     status: "done",
@@ -225,22 +232,26 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   });
 
   await page.goto(testAppUrl("/today", user));
+  const ledger = page.getByRole("region", { name: "Today's daily ledger" });
   const suggestions = page.getByRole("region", { name: "Suggestions" });
   await expect(
-    page.getByRole("heading", { level: 2, name: "Plan Today" }),
+    ledger.getByRole("region", { name: "Today's Daily Focus" }),
+  ).toBeVisible();
+  await expect(
+    ledger.getByRole("region", { name: "Suggestions" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Library search" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Add a known Item" }),
   ).toBeVisible();
   await expect(
     suggestions.getByText("Unfinished from yesterday"),
   ).toBeVisible();
-  await expect(
-    suggestions.getByText("In progress and waiting longest"),
-  ).toBeVisible();
-  await expect(suggestions.getByText("Target date 2099-01-01")).toBeVisible();
-  await expect(
-    suggestions.getByText(
-      "Recently captured and not in an active Learning Plan",
-    ),
-  ).toBeVisible();
+  await expect(suggestions.getByText("Target date is Today")).toBeVisible();
+  await expect(suggestions.getByText("Captured recently")).toBeVisible();
+  await expect(suggestions.getByRole("listitem")).toHaveCount(3);
   await expect(suggestions.getByText("Finished suggestion noise")).toHaveCount(
     0,
   );
@@ -248,30 +259,36 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
     suggestions.getByText("Already selected suggestion noise"),
   ).toHaveCount(0);
 
-  await page
-    .getByRole("combobox", { name: "Learning Plan lens" })
-    .selectOption(plan.id);
-  await expect(suggestions.getByText("In Database foundations")).toBeVisible();
   const suggestionTitles = await suggestions
-    .getByRole("listitem")
-    .locator("strong")
+    .getByRole("link")
     .allTextContents();
-  expect(suggestionTitles.slice(0, 5)).toEqual([
+  expect(suggestionTitles).toEqual([
     "Continue yesterday's indexes",
-    "Plan-aware query execution",
-    "Dormant transaction internals",
     "Targeted storage reading",
     "Fresh uncommitted paper",
   ]);
 
-  await page
-    .getByRole("textbox", { name: "Learning intention" })
-    .fill("DATABASE");
+  await suggestions
+    .getByRole("button", { name: "Add Continue yesterday's indexes to Today" })
+    .click();
   await expect(
-    suggestions.getByText("Plan-aware query execution"),
+    page
+      .getByRole("region", { name: "Today's Daily Focus" })
+      .getByText("Continue yesterday's indexes"),
   ).toBeVisible();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Learning intention" }).clear();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual([
+      "Targeted storage reading",
+      "Fresh uncommitted paper",
+      "Dormant transaction internals",
+    ]);
+  await expect(
+    page.getByRole("textbox", { name: "Learning intention" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Learning Plan lens" }),
+  ).toHaveCount(0);
 
   await page
     .getByRole("searchbox", { name: "Find an Item" })
@@ -285,16 +302,59 @@ test("a User plans Today with ordered explained suggestions and temporary inputs
   await suggestions
     .getByRole("button", { name: "Not today for Fresh uncommitted paper" })
     .click();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual([
+      "Targeted storage reading",
+      "Dormant transaction internals",
+      "Plan-aware query execution",
+    ]);
   await expect(
     page
       .getByRole("region", { name: "Item search results" })
       .getByText("Fresh uncommitted paper"),
   ).toBeVisible();
+
+  await page
+    .getByRole("region", { name: "Item search results" })
+    .getByRole("button", { name: "Add Fresh uncommitted paper to Today" })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "Today's Daily Focus" })
+      .getByText("Fresh uncommitted paper"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Item search results" }),
+  ).toHaveCount(0);
+
+  await suggestions
+    .getByRole("button", {
+      name: "Not today for Dormant transaction internals",
+    })
+    .click();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual(["Targeted storage reading", "Plan-aware query execution"]);
+  await suggestions
+    .getByRole("button", { name: "Not today for Plan-aware query execution" })
+    .click();
+  await expect
+    .poll(() => suggestions.getByRole("link").allTextContents())
+    .toEqual(["Targeted storage reading"]);
+
   await page.reload();
   await expect(suggestions.getByText("Fresh uncommitted paper")).toHaveCount(0);
+  await expect(
+    suggestions.getByText("Dormant transaction internals"),
+  ).toHaveCount(0);
+  await expect(suggestions.getByText("Plan-aware query execution")).toHaveCount(
+    0,
+  );
 
-  await elapseDailyPlanningSuppression({ page, user, itemId: recent.id });
+  await elapseDailyPlanningSuppression({ page, user, itemId: dormant.id });
   await page.reload();
-  await expect(suggestions.getByText("Fresh uncommitted paper")).toBeVisible();
+  await expect(
+    suggestions.getByText("Dormant transaction internals"),
+  ).toBeVisible();
 });

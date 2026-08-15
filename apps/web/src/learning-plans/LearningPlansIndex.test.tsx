@@ -73,7 +73,7 @@ describe("Learning Plans index surface states", () => {
     );
     // A LearningPlan with no Items names what is missing, not progress that cannot exist.
     expect(markup).toContain("Empty journey");
-    expect(markup).toContain("No items added yet");
+    expect(markup).toContain("No Items added yet");
   });
 
   it("offers start-a-LearningPlan when the index is empty", () => {
@@ -103,11 +103,11 @@ describe("Learning Plans index surface states", () => {
       ],
     });
 
-    expect(markup).toContain("Active Plans");
-    expect(markup).toContain("Archived Plans");
+    expect(markup).toContain("Active Learning Plans");
+    expect(markup).toContain("Archived Learning Plans");
     expect(markup).toContain("Archive Active journey");
     expect(markup).toContain("Restore Archived journey");
-    expect(markup).toContain("No items added yet");
+    expect(markup).toContain("No Items added yet");
   });
 
   it("shows card-shaped skeletons while loading, not a spinner", () => {
@@ -120,7 +120,7 @@ describe("Learning Plans index surface states", () => {
     const markup = render({ status: "error" });
 
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain("load this");
+    expect(markup).toContain("load your Learning Plans");
     expect(markup).toContain("Retry");
   });
 });

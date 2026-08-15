@@ -16,10 +16,12 @@ import { TopBar } from "./TopBar";
 export function Shell() {
   return (
     <CaptureProvider>
-      <TopBar />
-      <main className="app-main">
-        <Outlet />
-      </main>
+      <div className="min-h-svh bg-background text-foreground">
+        <TopBar />
+        <main className="mx-auto w-full min-w-0 max-w-[80rem] px-4 py-8 md:px-6 md:py-10 has-[.learning-plan-surface]:max-w-none has-[.learning-plan-surface]:p-0">
+          <Outlet />
+        </main>
+      </div>
     </CaptureProvider>
   );
 }

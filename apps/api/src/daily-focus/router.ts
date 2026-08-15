@@ -48,16 +48,12 @@ export function createDailyFocusRouter(
       "invalid_daily_planning_query",
     ),
     async (req, res) => {
-      const result = await dailyFocusService.getDailyPlanning({
+      const planning = await dailyFocusService.getDailyPlanning({
         db,
         userId: req.user!.id,
         query: res.locals.validated.query,
       });
-      if (!result.ok) {
-        res.status(404).json({ error: "learning plan not found" });
-        return;
-      }
-      res.json(result.planning);
+      res.json(planning);
     },
   );
 

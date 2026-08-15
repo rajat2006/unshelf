@@ -26,7 +26,10 @@ async function addStage(
       .getByRole("button", { name: /Start your Learning Plan/ })
       .click();
   } else {
-    await page.getByRole("button", { name: "Add next Stage" }).last().click();
+    await page
+      .getByRole("button", { name: "Add the next stage in sequence" })
+      .last()
+      .click();
   }
   const input = page.getByPlaceholder(
     first ? "Name your first stage" : "Name the new stage",
@@ -34,7 +37,7 @@ async function addStage(
   await input.fill(name);
   await input.press("Enter");
   if (first) {
-    await page.getByRole("button", { name: "＋ Add another Stage" }).click();
+    await page.getByRole("button", { name: "Add another Stage" }).click();
     const next = page.getByPlaceholder("Name another stage");
     await next.fill(`${name} continuation`);
     await next.press("Enter");
@@ -45,7 +48,8 @@ async function addStage(
     await looseStage
       .getByRole("button", { name: `Sequence ${name} continuation` })
       .click();
-    await looseStage.getByLabel("Follows").selectOption({ label: name });
+    await looseStage.getByLabel("Follows").click();
+    await page.getByRole("option", { name }).click();
     await looseStage
       .getByRole("button", { name: "Sequence", exact: true })
       .click();
@@ -65,12 +69,19 @@ test("the Learning Plan uses warm editorial styling in both color schemes and ex
   await addStage(page, "Begin here", true);
 
   const canvas = page.getByRole("region", { name: "Learning Plan canvas" });
-  await expect(canvas).toHaveCSS("background-color", "rgb(252, 252, 250)");
+  const lightCanvasBackground = await canvas.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(lightCanvasBackground).toBe(
+    await page
+      .locator("body")
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+  );
   await expect(page.getByRole("heading", { level: 1 })).toHaveCSS(
     "font-family",
     /Georgia/,
   );
-  await expect(page.getByText("You are here", { exact: true })).toBeVisible();
+  await expect(canvas.getByText(/You are here/, { exact: true })).toBeVisible();
   await expect(
     page.getByText("Dotted path: ahead", { exact: true }),
   ).toBeVisible();
@@ -78,8 +89,13 @@ test("the Learning Plan uses warm editorial styling in both color schemes and ex
     page.getByText("Solid path: walked", { exact: true }),
   ).toBeVisible();
 
-  await page.getByLabel("Theme").selectOption("dark");
-  await expect(canvas).toHaveCSS("background-color", "rgb(26, 27, 26)");
+  await page.getByLabel("Theme").click();
+  await page.getByRole("option", { name: "Dark" }).click();
+  await expect
+    .poll(() =>
+      canvas.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .not.toBe(lightCanvasBackground);
 
   await expectNoAccessibilityViolations(page);
 });
@@ -171,11 +187,15 @@ test("reduced motion removes LearningPlan progress transitions", async ({
 
   expect(
     await page
-      .locator(".progress-ring__value")
+      .getByRole("progressbar")
       .first()
-      .evaluate((element) =>
-        Number.parseFloat(getComputedStyle(element).transitionDuration),
-      ),
+      .evaluate((element) => {
+        const durations = [element, ...element.querySelectorAll("*")].map(
+          (candidate) =>
+            Number.parseFloat(getComputedStyle(candidate).transitionDuration),
+        );
+        return Math.max(...durations);
+      }),
   ).toBeLessThanOrEqual(0.00001);
 });
 
