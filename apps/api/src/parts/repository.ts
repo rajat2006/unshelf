@@ -46,8 +46,6 @@ export async function createParts(
         position: start + offset,
       })),
     );
-    await touchItemActivity(tx, input);
-
     if (start > 0) await deriveItemStatus(tx, input);
     await refreshTodayEntrySnapshot(tx, input);
 
@@ -172,7 +170,6 @@ export async function updatePartCompletion(
           eq(parts.userId, input.userId),
         ),
       );
-    await touchItemActivity(tx, input);
     await deriveItemStatus(tx, input);
     await refreshTodayEntrySnapshot(tx, input);
     return getItem(tx, input.userId, input.itemId);
@@ -198,8 +195,6 @@ export async function removePart(
       )
       .returning({ id: parts.id });
     if (!removed[0]) return null;
-
-    await touchItemActivity(tx, input);
 
     const remaining = await tx
       .select({ id: parts.id })
@@ -261,16 +256,6 @@ async function deriveItemStatus(
       status,
       statusMode: StatusMode.Automatic,
     })
-    .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
-}
-
-async function touchItemActivity(
-  db: Database,
-  input: { userId: UserId; itemId: ItemId },
-): Promise<void> {
-  await db
-    .update(items)
-    .set({ activityAt: new Date() })
     .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
 }
 

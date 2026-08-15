@@ -91,9 +91,6 @@ export const items = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    activityAt: timestamp("activity_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
     type: text("type", { enum: nonEmpty(ITEM_TYPES) }).notNull(),
     status: text("status", { enum: nonEmpty(ITEM_STATUSES) })
       .notNull()

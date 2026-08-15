@@ -5,33 +5,18 @@ import {
   type DailyFocus,
   type DailyPlanning,
   type Item,
-  type LearningPlan,
-  type LearningPlanId,
 } from "@unshelf/shared";
-import { ChevronDown, History, Plus, Search, Trash2, X } from "lucide-react";
+import { BookOpen, History, Plus, Search, Trash2, X } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   addItemToToday,
   fetchDailyPlanning,
-  fetchLearningPlans,
   fetchToday,
   removeItemFromToday,
   suppressDailyPlanningItem,
@@ -52,14 +37,46 @@ type TodayState =
   | {
       status: "focus-error";
       planning: DailyPlanning;
-      plans: LearningPlan[];
     }
   | {
       status: "ready";
       focus: DailyFocus;
       planning: DailyPlanning;
-      plans: LearningPlan[];
     };
+
+type PendingActionKind = "add" | "remove" | "suppress";
+
+function pendingActionKey({
+  kind,
+  itemId,
+}: {
+  kind: PendingActionKind;
+  itemId: Item["id"];
+}): string {
+  return `${kind}:${itemId}`;
+}
+
+function mergeConfirmedAdd({
+  current,
+  confirmed,
+  itemId,
+}: {
+  current: DailyFocus;
+  confirmed: DailyFocus;
+  itemId: Item["id"];
+}): DailyFocus {
+  if (current.entries.some((entry) => entry.item.id === itemId)) return current;
+  const addedEntry = confirmed.entries.find(
+    (entry) => entry.item.id === itemId,
+  );
+  if (!addedEntry) return current;
+  const entries = [...current.entries, addedEntry];
+  return {
+    ...current,
+    entries,
+    ...deriveItemCompletion(entries.map((entry) => entry.item)),
+  };
+}
 
 /** The current editable Daily Focus and its explicit Library selection seam. */
 export function TodaySurface() {
@@ -67,42 +84,103 @@ export function TodaySurface() {
   const location = useLocation();
   const [state, setState] = useState<TodayState>({ status: "loading" });
   const [query, setQuery] = useState("");
-  const [intention, setIntention] = useState("");
-  const [learningPlanId, setLearningPlanId] = useState<
-    LearningPlanId | undefined
-  >();
   const [mutationError, setMutationError] = useState(false);
   const [planningError, setPlanningError] = useState(false);
+  const [planningAvailable, setPlanningAvailable] = useState(false);
   const [focusRetrying, setFocusRetrying] = useState(false);
   const [planningRetrying, setPlanningRetrying] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const skipPlanningRefresh = useRef(false);
-  const [pendingAction, setPendingAction] = useState<{
-    kind: "add" | "remove" | "suppress";
+  const queryRef = useRef(query);
+  const planningRequestNumber = useRef(0);
+  const [pendingActions, setPendingActions] = useState<Set<string>>(
+    () => new Set(),
+  );
+  queryRef.current = query;
+
+  const startPlanningRequest = useCallback(() => {
+    const requestNumber = ++planningRequestNumber.current;
+    return {
+      request: fetchDailyPlanning(user, {
+        query: queryRef.current.trim() || undefined,
+      }),
+      isCurrent: () => requestNumber === planningRequestNumber.current,
+    };
+  }, [user]);
+
+  const updatePendingAction = ({
+    kind,
+    itemId,
+    pending,
+  }: {
+    kind: PendingActionKind;
     itemId: Item["id"];
-  }>();
+    pending: boolean;
+  }) => {
+    const key = pendingActionKey({ kind, itemId });
+    setPendingActions((current) => {
+      const updated = new Set(current);
+      if (pending) updated.add(key);
+      else updated.delete(key);
+      return updated;
+    });
+  };
+
+  const isActionPending = ({
+    kind,
+    itemId,
+  }: {
+    kind: PendingActionKind;
+    itemId: Item["id"];
+  }) => pendingActions.has(pendingActionKey({ kind, itemId }));
+
+  const applyPlanningReplenishment = ({
+    planning,
+    isCurrent,
+  }: {
+    planning: DailyPlanning;
+    isCurrent: boolean;
+  }) => {
+    if (!isCurrent) return;
+    setState((current) => {
+      if (current.status === "loading") return current;
+      return { ...current, planning };
+    });
+    setPlanningError(false);
+    setPlanningAvailable(true);
+  };
+
+  const replenishPlanning = async (): Promise<void> => {
+    const planningRequest = startPlanningRequest();
+    try {
+      const planning = await planningRequest.request;
+      applyPlanningReplenishment({
+        planning,
+        isCurrent: planningRequest.isCurrent(),
+      });
+    } catch {
+      if (planningRequest.isCurrent()) setPlanningError(true);
+    }
+  };
 
   const load = useCallback(async () => {
+    planningRequestNumber.current += 1;
     setState({ status: "loading" });
-    const [focus, planning, plans] = await Promise.allSettled([
+    const [focus, planning] = await Promise.allSettled([
       fetchToday(user),
       fetchDailyPlanning(user, {}),
-      fetchLearningPlans(user),
     ]);
     skipPlanningRefresh.current = true;
-    setPlanningError(
-      planning.status === "rejected" || plans.status === "rejected",
-    );
+    setPlanningError(planning.status === "rejected");
+    setPlanningAvailable(planning.status === "fulfilled");
     const loadedPlanning =
       planning.status === "fulfilled"
         ? planning.value
         : { searchResults: [], suggestions: [] };
-    const loadedPlans = plans.status === "fulfilled" ? plans.value : [];
     if (focus.status === "rejected") {
       setState({
         status: "focus-error",
         planning: loadedPlanning,
-        plans: loadedPlans,
       });
       return;
     }
@@ -110,7 +188,6 @@ export function TodaySurface() {
       status: "ready",
       focus: focus.value,
       planning: loadedPlanning,
-      plans: loadedPlans,
     });
   }, [user]);
 
@@ -138,60 +215,50 @@ export function TodaySurface() {
 
   const retryPlanning = useCallback(async () => {
     setPlanningRetrying(true);
+    const planningRequest = startPlanningRequest();
     try {
-      const [planning, plans] = await Promise.all([
-        fetchDailyPlanning(user, {
-          query: query.trim() || undefined,
-          intention: intention.trim() || undefined,
-          learningPlanId,
-        }),
-        fetchLearningPlans(user),
-      ]);
+      const planning = await planningRequest.request;
+      if (!planningRequest.isCurrent()) return;
       setState((value) =>
-        value.status === "loading" ? value : { ...value, planning, plans },
+        value.status === "loading" ? value : { ...value, planning },
       );
       setPlanningError(false);
+      setPlanningAvailable(true);
     } catch {
-      setPlanningError(true);
+      if (planningRequest.isCurrent()) setPlanningError(true);
     } finally {
       setPlanningRetrying(false);
     }
-  }, [intention, learningPlanId, query, user]);
+  }, [startPlanningRequest]);
 
   useEffect(() => {
     if (state.status === "loading") return;
     if (skipPlanningRefresh.current) {
       skipPlanningRefresh.current = false;
-      if (
-        query.trim() === "" &&
-        intention.trim() === "" &&
-        learningPlanId === undefined
-      ) {
+      if (query.trim() === "") {
         return;
       }
     }
     let isActive = true;
     setPlanningError(false);
-    void fetchDailyPlanning(user, {
-      query: query.trim() || undefined,
-      intention: intention.trim() || undefined,
-      learningPlanId,
-    })
+    const planningRequest = startPlanningRequest();
+    void planningRequest.request
       .then((planning) => {
-        if (isActive) {
+        if (isActive && planningRequest.isCurrent()) {
           setPlanningError(false);
           setState((value) =>
             value.status === "loading" ? value : { ...value, planning },
           );
+          setPlanningAvailable(true);
         }
       })
       .catch(() => {
-        if (isActive) setPlanningError(true);
+        if (isActive && planningRequest.isCurrent()) setPlanningError(true);
       });
     return () => {
       isActive = false;
     };
-  }, [intention, learningPlanId, query, state.status, user]);
+  }, [query, startPlanningRequest, state.status]);
 
   const add = async (
     item: Item,
@@ -199,53 +266,66 @@ export function TodaySurface() {
   ) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "add", itemId: item.id });
+    updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
       setState((current) =>
-        current.status !== "loading"
-          ? {
+        current.status === "loading"
+          ? current
+          : {
               ...current,
               status: "ready",
-              focus,
+              focus:
+                current.status === "ready"
+                  ? mergeConfirmedAdd({
+                      current: current.focus,
+                      confirmed: focus,
+                      itemId: item.id,
+                    })
+                  : focus,
               planning: removePlanningItem(current.planning, item.id),
-            }
-          : current,
+            },
       );
       setAnnouncement(`Added ${item.title} to Today`);
+      await replenishPlanning();
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({ kind: "add", itemId: item.id, pending: false });
     }
   };
 
   const suppress = async (item: Item) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "suppress", itemId: item.id });
+    updatePendingAction({ kind: "suppress", itemId: item.id, pending: true });
     try {
       await suppressDailyPlanningItem(user, item.id);
       setState((current) =>
-        current.status !== "loading"
-          ? {
+        current.status === "loading"
+          ? current
+          : {
               ...current,
               planning: removePlanningSuggestion(current.planning, item.id),
-            }
-          : current,
+            },
       );
       setAnnouncement(`Set Not today for ${item.title}`);
+      await replenishPlanning();
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({
+        kind: "suppress",
+        itemId: item.id,
+        pending: false,
+      });
     }
   };
 
   const remove = async (focus: DailyFocus, item: Item) => {
     setMutationError(false);
     setAnnouncement("");
-    setPendingAction({ kind: "remove", itemId: item.id });
+    updatePendingAction({ kind: "remove", itemId: item.id, pending: true });
     try {
       const updated = await removeItemFromToday(user, focus.id, item.id);
       setState((current) =>
@@ -255,7 +335,7 @@ export function TodaySurface() {
     } catch {
       setMutationError(true);
     } finally {
-      setPendingAction(undefined);
+      updatePendingAction({ kind: "remove", itemId: item.id, pending: false });
     }
   };
 
@@ -296,7 +376,7 @@ export function TodaySurface() {
   };
   return (
     <section
-      className="mx-auto grid w-full max-w-7xl min-w-0 gap-6"
+      className="mx-auto grid w-full max-w-5xl min-w-0 gap-6"
       aria-labelledby="today-heading"
       aria-busy={state.status === "loading"}
     >
@@ -319,8 +399,8 @@ export function TodaySurface() {
             Today
           </h1>
           <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Choose a small working set, then let each Item&apos;s shared Status
-            record your progress everywhere.
+            Choose a small working set. Suggestions can help, but only you add
+            an Item to Daily Focus.
           </p>
         </div>
         {state.status === "ready" && (
@@ -347,392 +427,354 @@ export function TodaySurface() {
       {state.status === "loading" && <TodayLoading />}
       {state.status !== "loading" && (
         <>
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.65fr)] lg:items-start">
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(17rem,0.55fr)] lg:items-start">
             <section
-              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-6"
-              aria-label="Today's Daily Focus"
+              className="min-w-0 overflow-hidden rounded-[var(--radius-panel)] border bg-card"
+              aria-label="Today's daily ledger"
             >
-              {state.status === "focus-error" ? (
-                <Alert className="grid gap-3">
-                  <div>
-                    <p className="m-0 font-semibold">
-                      Couldn&apos;t load today&apos;s Daily Focus
-                    </p>
-                    <p className="mt-1 mb-0 text-sm">
-                      Daily Planning is still available. Try the focus request
-                      again.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="min-w-24 w-fit"
-                    loading={focusRetrying}
-                    loadingLabel="Retrying…"
-                    onClick={() => void retryFocus()}
-                  >
-                    Retry
-                  </Button>
-                </Alert>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+              <section
+                className="grid min-w-0 gap-4 p-4 sm:p-6"
+                aria-label="Today's Daily Focus"
+              >
+                {state.status === "focus-error" ? (
+                  <Alert className="grid gap-3">
                     <div>
-                      <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
-                        {state.focus.date}
+                      <p className="m-0 font-semibold">
+                        Couldn&apos;t load today&apos;s Daily Focus
                       </p>
-                      <h2 className="mt-1 mb-0 font-serif text-2xl font-medium">
-                        Today&apos;s Daily Focus
-                      </h2>
-                    </div>
-                    <Button
-                      asChild
-                      variant="quiet"
-                      size="compact"
-                      className="min-h-11 sm:min-h-8"
-                    >
-                      <Link
-                        to={{
-                          pathname: `/today/${previousCalendarDate(state.focus.date)}`,
-                          search: location.search,
-                        }}
-                      >
-                        <History aria-hidden="true" />
-                        Browse yesterday
-                      </Link>
-                    </Button>
-                  </div>
-                  {state.focus.entries.length === 0 ? (
-                    <div className="rounded-[var(--radius-card)] border border-dashed bg-card p-8 text-center">
-                      <p className="m-0 font-serif text-xl font-medium">
-                        Choose what deserves your attention.
-                      </p>
-                      <p className="mt-2 mb-0 text-sm text-muted-foreground">
-                        Use Daily Planning to build a small working set.
+                      <p className="mt-1 mb-0 text-sm">
+                        Daily Planning is still available. Try the focus request
+                        again.
                       </p>
                     </div>
-                  ) : (
-                    <ol className="grid list-none overflow-hidden border-t p-0">
-                      {state.focus.entries.map(({ item, origin }, index) => (
-                        <li key={item.id} className="border-b last:border-b-0">
-                          <article className="flex min-w-0 flex-wrap items-center gap-3 py-4 sm:flex-nowrap">
-                            <span className="w-7 shrink-0 font-serif text-lg text-muted-foreground">
-                              {String(index + 1).padStart(2, "0")}
-                            </span>
-                            <span
-                              className={`size-2.5 shrink-0 rounded-full border ${item.status === Status.Done ? "border-status-completed bg-status-completed" : item.status === Status.InProgress ? "border-status-progress bg-status-progress" : "border-muted-foreground"}`}
-                              aria-hidden="true"
-                            />
-                            <span className="sr-only">
-                              {STATUS_LABELS[item.status]}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <Link
-                                className="font-semibold text-foreground underline-offset-4 hover:text-primary hover:underline"
-                                to={`/items/${item.id}`}
-                                state={itemDetailRouteState(
-                                  origin
-                                    ? planItemBackgroundLocation({
-                                        learningPlanId: origin.learningPlan.id,
-                                        ...(origin.stage
-                                          ? { stageId: origin.stage.id }
-                                          : {}),
-                                      })
-                                    : location,
-                                )}
-                              >
-                                {item.title}
-                              </Link>
-                              <p className="mt-1 mb-0 text-xs text-muted-foreground">
-                                {origin
-                                  ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
-                                  : "From Library"}
-                              </p>
-                            </div>
-                            <div className="ml-auto flex flex-wrap gap-2">
-                              <ItemDoneToggle
-                                item={item}
-                                user={user}
-                                onChanged={replaceItem}
-                              />
-                              <Button
-                                type="button"
-                                variant="quiet"
-                                size="compact"
-                                className="min-h-11 min-w-28 sm:min-h-8"
-                                loading={
-                                  pendingAction?.kind === "remove" &&
-                                  pendingAction.itemId === item.id
-                                }
-                                loadingLabel="Removing…"
-                                onClick={() => void remove(state.focus, item)}
-                                aria-label={`Remove ${item.title} from Today`}
-                              >
-                                <Trash2 aria-hidden="true" />
-                                Remove
-                              </Button>
-                            </div>
-                          </article>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </>
-              )}
-            </section>
-
-            <section
-              className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:p-5"
-              aria-label="Daily Planning"
-            >
-              <div className="grid gap-1">
-                <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
-                  Search + suggestions
-                </p>
-                <h2
-                  id="today-planning-heading"
-                  className="m-0 font-serif text-2xl font-medium"
-                >
-                  Add only what fits
-                </h2>
-                <p className="mt-1 mb-0 text-sm leading-relaxed text-muted-foreground">
-                  Search the Library or choose from suggestions. Only Add
-                  changes Today.
-                </p>
-              </div>
-
-              {planningError && (
-                <Alert className="grid gap-3">
-                  <div>
-                    <p className="m-0 font-semibold">
-                      Couldn&apos;t update Daily Planning
-                    </p>
-                    <p className="mt-1 mb-0 text-sm">
-                      Today remains available. Try the planning request again.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="min-w-24 w-fit"
-                    loading={planningRetrying}
-                    loadingLabel="Retrying…"
-                    onClick={() => void retryPlanning()}
-                  >
-                    Retry
-                  </Button>
-                </Alert>
-              )}
-
-              <Field>
-                <FieldLabel className="sr-only" htmlFor="today-item-search">
-                  Find an Item
-                </FieldLabel>
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    id="today-item-search"
-                    type="search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search exact Item titles…"
-                    className="pr-10 pl-9"
-                  />
-                  {query.length > 0 && (
                     <Button
                       type="button"
-                      variant="quiet"
-                      size="icon-compact"
-                      className="absolute top-1/2 right-1 min-h-11 min-w-11 -translate-y-1/2 sm:min-h-8 sm:min-w-8"
-                      onClick={() => setQuery("")}
-                      aria-label="Clear Item search"
+                      variant="secondary"
+                      className="min-w-24 w-fit"
+                      loading={focusRetrying}
+                      loadingLabel="Retrying…"
+                      onClick={() => void retryFocus()}
                     >
-                      <X aria-hidden="true" />
+                      Retry
                     </Button>
-                  )}
-                </div>
-              </Field>
-
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="compact"
-                    className="min-h-11 w-fit sm:min-h-8"
-                  >
-                    More filters
-                    <ChevronDown aria-hidden="true" />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="grid gap-4 pt-4">
-                  <Field>
-                    <FieldLabel htmlFor="today-intention">
-                      Learning intention
-                    </FieldLabel>
-                    <Input
-                      id="today-intention"
-                      type="text"
-                      value={intention}
-                      onChange={(event) => setIntention(event.target.value)}
-                      placeholder="What do you want to learn?"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Learning Plan lens</FieldLabel>
-                    <Select
-                      value={learningPlanId ?? "all"}
-                      onValueChange={(value) =>
-                        setLearningPlanId(
-                          value === "all"
-                            ? undefined
-                            : (value as LearningPlanId),
-                        )
-                      }
-                    >
-                      <SelectTrigger
-                        className="w-full"
-                        aria-label="Learning Plan lens"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Learning Plans</SelectItem>
-                        {state.plans.map((plan) => (
-                          <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </CollapsibleContent>
-              </Collapsible>
-
-              {query.trim() && state.planning.searchResults.length === 0 && (
-                <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
-                  No unselected Items match.
-                </div>
-              )}
-              {state.planning.searchResults.length > 0 && (
-                <section
-                  className="grid gap-3"
-                  aria-label="Item search results"
-                >
-                  <h3 className="m-0 text-sm font-semibold">Search results</h3>
-                  <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
-                    {state.planning.searchResults.map((item) => (
-                      <li key={item.id} className="border-b last:border-b-0">
-                        <ItemSummary
-                          item={item}
-                          presentation="catalog"
-                          className="bg-background p-3 sm:grid-cols-1"
-                          actions={
-                            <PlanningAddButton
-                              item={item}
-                              pending={
-                                pendingAction?.kind === "add" &&
-                                pendingAction.itemId === item.id
-                              }
-                              onAdd={() => void add(item)}
-                            />
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              <section
-                className="grid gap-3 border-t pt-5"
-                aria-label="Suggestions"
-              >
-                <h3 className="m-0 text-sm font-semibold">Suggestions</h3>
-                {state.planning.suggestions.length === 0 ? (
-                  <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
-                    No suggestions for these inputs.
-                  </div>
+                  </Alert>
                 ) : (
-                  <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
-                    {state.planning.suggestions.map((suggestion) => (
-                      <li
-                        key={suggestion.item.id}
-                        className="border-b last:border-b-0"
+                  <>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                          {state.focus.date}
+                        </p>
+                        <h2 className="mt-1 mb-0 font-serif text-2xl font-medium">
+                          Today&apos;s Daily Focus
+                        </h2>
+                      </div>
+                      <Button
+                        asChild
+                        variant="quiet"
+                        size="compact"
+                        className="min-h-11 sm:min-h-8"
                       >
-                        <ItemSummary
-                          item={suggestion.item}
-                          presentation="catalog"
-                          className="bg-background p-3 sm:grid-cols-1"
-                          detailBackgroundLocation={
-                            suggestion.origin
-                              ? planItemBackgroundLocation({
-                                  learningPlanId:
-                                    suggestion.origin.learningPlan.id,
-                                  ...(suggestion.origin.stage
-                                    ? { stageId: suggestion.origin.stage.id }
-                                    : {}),
-                                })
-                              : undefined
-                          }
-                          actions={
-                            <div className="grid gap-2">
-                              <p className="m-0 text-xs leading-relaxed text-muted-foreground">
-                                {suggestion.explanation}
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                <PlanningAddButton
-                                  item={suggestion.item}
-                                  pending={
-                                    pendingAction?.kind === "add" &&
-                                    pendingAction.itemId === suggestion.item.id
-                                  }
-                                  onAdd={() =>
-                                    void add(
-                                      suggestion.item,
-                                      suggestion.origin
-                                        ? {
-                                            learningPlanId:
-                                              suggestion.origin.learningPlan.id,
-                                            ...(suggestion.origin.stage
-                                              ? {
-                                                  stageId:
-                                                    suggestion.origin.stage.id,
-                                                }
-                                              : {}),
-                                          }
-                                        : undefined,
-                                    )
-                                  }
+                        <Link
+                          to={{
+                            pathname: `/today/${previousCalendarDate(state.focus.date)}`,
+                            search: location.search,
+                          }}
+                        >
+                          <History aria-hidden="true" />
+                          Browse yesterday
+                        </Link>
+                      </Button>
+                    </div>
+                    {state.focus.entries.length === 0 ? (
+                      <div className="rounded-[var(--radius-card)] border border-dashed bg-card p-8 text-center">
+                        <p className="m-0 font-serif text-xl font-medium">
+                          Choose what deserves your attention.
+                        </p>
+                        <p className="mt-2 mb-0 text-sm text-muted-foreground">
+                          Search the Library or consider a Suggestion below.
+                        </p>
+                      </div>
+                    ) : (
+                      <ol className="grid list-none overflow-hidden border-t p-0">
+                        {state.focus.entries.map(({ item, origin }, index) => (
+                          <li
+                            key={item.id}
+                            className="border-b last:border-b-0"
+                          >
+                            <article className="flex min-w-0 flex-wrap items-center gap-3 py-4 sm:flex-nowrap">
+                              <span className="w-7 shrink-0 font-serif text-lg text-muted-foreground">
+                                {String(index + 1).padStart(2, "0")}
+                              </span>
+                              <span
+                                className={`size-2.5 shrink-0 rounded-full border ${item.status === Status.Done ? "border-status-completed bg-status-completed" : item.status === Status.InProgress ? "border-status-progress bg-status-progress" : "border-muted-foreground"}`}
+                                aria-hidden="true"
+                              />
+                              <span className="sr-only">
+                                {STATUS_LABELS[item.status]}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <Link
+                                  className="font-semibold text-foreground underline-offset-4 hover:text-primary hover:underline"
+                                  to={`/items/${item.id}`}
+                                  state={itemDetailRouteState(
+                                    origin
+                                      ? planItemBackgroundLocation({
+                                          learningPlanId:
+                                            origin.learningPlan.id,
+                                          ...(origin.stage
+                                            ? { stageId: origin.stage.id }
+                                            : {}),
+                                        })
+                                      : location,
+                                  )}
+                                >
+                                  {item.title}
+                                </Link>
+                                <p className="mt-1 mb-0 text-xs text-muted-foreground">
+                                  {origin
+                                    ? `From ${origin.learningPlan.name}${origin.stage ? ` · ${origin.stage.name}` : ""}`
+                                    : "From Library"}
+                                </p>
+                              </div>
+                              <div className="ml-auto flex flex-wrap gap-2">
+                                <ItemDoneToggle
+                                  item={item}
+                                  user={user}
+                                  onChanged={replaceItem}
                                 />
                                 <Button
                                   type="button"
                                   variant="quiet"
                                   size="compact"
                                   className="min-h-11 min-w-28 sm:min-h-8"
-                                  loading={
-                                    pendingAction?.kind === "suppress" &&
-                                    pendingAction.itemId === suggestion.item.id
-                                  }
-                                  loadingLabel="Updating…"
-                                  onClick={() => void suppress(suggestion.item)}
-                                  aria-label={`Not today for ${suggestion.item.title}`}
+                                  loading={isActionPending({
+                                    kind: "remove",
+                                    itemId: item.id,
+                                  })}
+                                  loadingLabel="Removing…"
+                                  onClick={() => void remove(state.focus, item)}
+                                  aria-label={`Remove ${item.title} from Today`}
                                 >
-                                  <X aria-hidden="true" />
-                                  Not today
+                                  <Trash2 aria-hidden="true" />
+                                  Remove
                                 </Button>
                               </div>
-                            </div>
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
+                            </article>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </>
                 )}
               </section>
+
+              <section
+                className="grid gap-4 border-t-2 border-dashed bg-quiet-panel/55 p-4 sm:p-6"
+                aria-label="Suggestions"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <p className="m-0 text-xs font-semibold tracking-[0.1em] text-primary uppercase">
+                      Not in Daily Focus
+                    </p>
+                    <h2 className="mt-1 mb-0 font-serif text-xl font-medium">
+                      Consider next
+                    </h2>
+                  </div>
+                  {planningAvailable && (
+                    <span className="text-xs text-muted-foreground">
+                      {state.planning.suggestions.length} of 3 visible
+                    </span>
+                  )}
+                </div>
+
+                {!planningAvailable ? (
+                  <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
+                    Suggestions unavailable
+                  </div>
+                ) : state.planning.suggestions.length === 0 ? (
+                  <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
+                    No Suggestions are current for Today.
+                  </div>
+                ) : (
+                  <ol className="grid list-none gap-1 p-0">
+                    {state.planning.suggestions.map((suggestion, index) => (
+                      <li key={suggestion.item.id}>
+                        <article className="grid gap-3 rounded-[var(--radius-card)] px-2 py-3 hover:bg-background sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:items-center">
+                          <span className="font-serif text-lg text-muted-foreground">
+                            +{index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <h3 className="m-0 truncate text-sm leading-snug font-semibold">
+                              <Link
+                                className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+                                to={`/items/${suggestion.item.id}`}
+                                state={itemDetailRouteState(location)}
+                              >
+                                {suggestion.item.title}
+                              </Link>
+                            </h3>
+                            <p className="mt-1 mb-0 text-xs leading-relaxed text-muted-foreground">
+                              {suggestion.explanation}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 sm:justify-end">
+                            <PlanningAddButton
+                              item={suggestion.item}
+                              pending={isActionPending({
+                                kind: "add",
+                                itemId: suggestion.item.id,
+                              })}
+                              onAdd={() => void add(suggestion.item)}
+                            />
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              size="compact"
+                              className="min-h-11 min-w-28 sm:min-h-8"
+                              loading={isActionPending({
+                                kind: "suppress",
+                                itemId: suggestion.item.id,
+                              })}
+                              loadingLabel="Updating…"
+                              onClick={() => void suppress(suggestion.item)}
+                              aria-label={`Not today for ${suggestion.item.title}`}
+                            >
+                              <X aria-hidden="true" />
+                              Not today
+                            </Button>
+                          </div>
+                        </article>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            </section>
+
+            <section aria-label="Daily Planning">
+              <aside
+                className="grid min-w-0 gap-4 rounded-[var(--radius-panel)] border bg-card p-4 sm:p-5"
+                aria-label="Library search"
+              >
+                <div className="grid gap-1">
+                  <div className="flex items-center gap-2 text-primary">
+                    <BookOpen className="size-4" aria-hidden="true" />
+                    <p className="m-0 text-xs font-semibold tracking-[0.1em] uppercase">
+                      Library
+                    </p>
+                  </div>
+                  <h2
+                    id="today-planning-heading"
+                    className="mt-1 mb-0 font-serif text-xl font-medium"
+                  >
+                    Add a known Item
+                  </h2>
+                  <p className="mt-1 mb-0 text-sm leading-relaxed text-muted-foreground">
+                    Search is the deliberate path around Suggestions.
+                  </p>
+                </div>
+
+                {planningError && (
+                  <Alert className="grid gap-3">
+                    <div>
+                      <p className="m-0 font-semibold">
+                        Couldn&apos;t update Daily Planning
+                      </p>
+                      <p className="mt-1 mb-0 text-sm">
+                        Today remains available. Try the planning request again.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="min-w-24 w-fit"
+                      loading={planningRetrying}
+                      loadingLabel="Retrying…"
+                      onClick={() => void retryPlanning()}
+                    >
+                      Retry
+                    </Button>
+                  </Alert>
+                )}
+
+                <Field>
+                  <FieldLabel className="sr-only" htmlFor="today-item-search">
+                    Find an Item
+                  </FieldLabel>
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      id="today-item-search"
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search title, Source, or Labels…"
+                      className="pr-10 pl-9"
+                    />
+                    {query.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        size="icon-compact"
+                        className="absolute top-1/2 right-1 min-h-11 min-w-11 -translate-y-1/2 sm:min-h-8 sm:min-w-8"
+                        onClick={() => setQuery("")}
+                        aria-label="Clear Item search"
+                      >
+                        <X aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                </Field>
+
+                {planningAvailable &&
+                  query.trim() &&
+                  state.planning.searchResults.length === 0 && (
+                    <div className="rounded-[var(--radius-card)] border border-dashed p-4 text-sm text-muted-foreground">
+                      No unselected Items match.
+                    </div>
+                  )}
+                {state.planning.searchResults.length > 0 && (
+                  <section
+                    className="grid gap-3"
+                    aria-label="Item search results"
+                  >
+                    <h3 className="m-0 text-sm font-semibold">
+                      Search results
+                    </h3>
+                    <ul className="grid list-none overflow-hidden rounded-[var(--radius-card)] border p-0">
+                      {state.planning.searchResults.map((item) => (
+                        <li key={item.id} className="border-b last:border-b-0">
+                          <ItemSummary
+                            item={item}
+                            presentation="catalog"
+                            className="bg-background p-3 sm:grid-cols-1"
+                            actions={
+                              <PlanningAddButton
+                                item={item}
+                                pending={isActionPending({
+                                  kind: "add",
+                                  itemId: item.id,
+                                })}
+                                onAdd={() => void add(item)}
+                              />
+                            }
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                <p className="m-0 border-t pt-4 text-xs leading-relaxed text-muted-foreground">
+                  Only Add changes Daily Focus. Not today applies only to
+                  Suggestions on this date.
+                </p>
+              </aside>
             </section>
           </div>
           {mutationError && (
