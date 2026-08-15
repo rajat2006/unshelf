@@ -8,6 +8,7 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router";
 import { useApplicationAuth } from "./application-auth/useApplicationAuth";
 import { AuthPlaceholder } from "./shell/AuthPlaceholder";
@@ -19,6 +20,7 @@ import { ItemSurface } from "./surfaces/ItemSurface";
 import { LibrarySurface } from "./surfaces/LibrarySurface";
 import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
 import { TodaySurface } from "./surfaces/TodaySurface";
+import { TodayPlanningPrototype } from "./surfaces/TodayPlanningPrototype";
 import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
 
 /**
@@ -45,7 +47,7 @@ export function App() {
         <Route element={<Shell />}>
           <Route index element={<Navigate to="/today" replace />} />
           <Route path="plans" element={<PlansSurface />} />
-          <Route path="today" element={<TodaySurface />} />
+          <Route path="today" element={<TodayRoute />} />
           <Route path="today/:date" element={<DailyFocusHistorySurface />} />
           <Route
             path="library"
@@ -65,6 +67,18 @@ export function App() {
       </Route>
     </Routes>
   );
+}
+
+/** Keep the throwaway Daily Planning variants on Today's real route in dev. */
+function TodayRoute() {
+  const [searchParams] = useSearchParams();
+  if (
+    import.meta.env.DEV &&
+    searchParams.get("prototype") === "daily-planning"
+  ) {
+    return <TodayPlanningPrototype />;
+  }
+  return <TodaySurface />;
 }
 
 /** Legacy Stage URLs collapse into the current flat Learning Plan workspace. */
