@@ -305,6 +305,43 @@ describe("Discover Follow confirmation", () => {
     expect(workspace.body.discoveries).toHaveLength(2);
   });
 
+  it("rechecks expiry after a confirmation waiting on the receipt lock", async () => {
+    const clerkUserId = "clerk_expiry_race";
+    const prepared = await prepare(clerkUserId);
+    if (!prepared.ok || !("preview" in prepared)) {
+      throw new Error("expected preview");
+    }
+    const lockClient = await harness.pool.connect();
+    try {
+      await lockClient.query("BEGIN");
+      await lockClient.query(
+        `SELECT id FROM discover_follow_previews WHERE id = $1 FOR UPDATE`,
+        [prepared.preview.previewId],
+      );
+      const pendingConfirmation = Promise.resolve(
+        confirm({
+          clerkUserId,
+          previewId: prepared.preview.previewId,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      currentNow = new Date(prepared.preview.expiresAt);
+      await lockClient.query("COMMIT");
+
+      const response = await pendingConfirmation;
+      expect(response.status).toBe(410);
+      expect(response.body.error).toBe("preview_expired");
+      const workspace = await request(app)
+        .get("/api/discover")
+        .set(TEST_USER_HEADER, clerkUserId);
+      expect(workspace.body).toEqual({ follows: [], discoveries: [] });
+    } finally {
+      await lockClient.query("ROLLBACK");
+      lockClient.release();
+    }
+  });
+
   it("rejects expired, consumed, foreign, and unverifiable receipts without partial intake", async () => {
     const expired = await prepare("clerk_expired_preview");
     if (!expired.ok || !("preview" in expired)) {
@@ -500,12 +537,14 @@ describe("Discover Follow confirmation", () => {
     const rows = await harness.pool.query<{
       candidate_id: string;
       discovery_id: string;
+      follow_id: string;
       other_user_id: string;
       other_item_id: string;
     }>(
       `SELECT
          candidate.id AS candidate_id,
          discovery.id AS discovery_id,
+         discovery.follow_id,
          other_user.id AS other_user_id,
          other_item.id AS other_item_id
        FROM discover_candidates candidate
@@ -528,6 +567,28 @@ describe("Discover Follow confirmation", () => {
       harness.pool.query(
         `UPDATE discover_discoveries SET user_id = $1 WHERE id = $2`,
         [row.other_user_id, row.discovery_id],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      harness.pool.query(
+        `UPDATE discover_follow_preview_results
+         SET user_id = $1
+         WHERE preview_id = $2 AND position = 0`,
+        [row.other_user_id, prepared.preview.previewId],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      harness.pool.query(
+        `UPDATE discover_follow_candidate_presence
+         SET user_id = $1
+         WHERE follow_id = $2`,
+        [row.other_user_id, row.follow_id],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      harness.pool.query(
+        `UPDATE discover_follows SET user_id = $1 WHERE id = $2`,
+        [row.other_user_id, row.follow_id],
       ),
     ).rejects.toMatchObject({ code: "23503" });
   });
