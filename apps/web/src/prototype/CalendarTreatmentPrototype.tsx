@@ -1,7 +1,7 @@
 /**
  * PROTOTYPE — throw away after issue #417 is resolved.
- * Three warm-editorial desktop calendar treatments, switchable via `?variant=`,
- * mounted in a representative Item sidebar / Daily Focus history composition.
+ * Five compact variations of the selected Bookplate direction, switchable via
+ * `?variant=`, mounted in a representative Item / Daily Focus composition.
  */
 import {
   StrictMode,
@@ -39,9 +39,9 @@ import {
 import { cn } from "@/lib/utils";
 import "@/styles/globals.css";
 
-type VariantKey = "A" | "B" | "C";
+type VariantKey = "A" | "B" | "C" | "D" | "E";
 type FeatureKey = "target" | "history";
-type Treatment = "bookplate" | "desk" | "almanac";
+type Treatment = "circle" | "tiles" | "ledger" | "underline" | "soft-square";
 
 interface VariantDefinition {
   key: VariantKey;
@@ -53,23 +53,38 @@ interface VariantDefinition {
 const VARIANTS: readonly VariantDefinition[] = [
   {
     key: "A",
-    name: "Bookplate",
-    treatment: "bookplate",
-    summary: "A quiet field and compact, centred calendar with restrained ink.",
+    name: "Ink circle",
+    treatment: "circle",
+    summary:
+      "The original Bookplate direction with one quiet circular selection.",
   },
   {
     key: "B",
-    name: "Reading desk",
-    treatment: "desk",
+    name: "Separate tiles",
+    treatment: "tiles",
     summary:
-      "A wide two-part popover that separates context from date scanning.",
+      "Every date is a discrete square tile with visible breathing room.",
   },
   {
     key: "C",
-    name: "Almanac",
-    treatment: "almanac",
+    name: "Ledger grid",
+    treatment: "ledger",
     summary:
-      "A typographic date card and calendar with stronger editorial rhythm.",
+      "Continuous hairline boxes make the month read like a compact ledger.",
+  },
+  {
+    key: "D",
+    name: "Editorial underline",
+    treatment: "underline",
+    summary:
+      "No enclosing shape: selection is carried by type, ink and an underline.",
+  },
+  {
+    key: "E",
+    name: "Soft square",
+    treatment: "soft-square",
+    summary:
+      "A restrained rounded square sits between the circle and boxed grid.",
   },
 ];
 
@@ -81,7 +96,9 @@ const DATE_PATTERN = "dd/MM/yyyy";
 
 function parseVariant(): VariantKey {
   const value = new URLSearchParams(window.location.search).get("variant");
-  return value === "B" || value === "C" ? value : "A";
+  return value === "B" || value === "C" || value === "D" || value === "E"
+    ? value
+    : "A";
 }
 
 function CalendarTreatmentPrototype() {
@@ -340,26 +357,10 @@ function DateFieldDemo({
 
   const field = (
     <div className="grid min-w-0 gap-2">
-      <label
-        htmlFor={inputId}
-        className={cn(
-          "text-sm font-semibold",
-          treatment === "almanac" && "font-serif text-base",
-        )}
-      >
+      <label htmlFor={inputId} className="text-sm font-semibold">
         {feature === "target" ? "Target date" : "Daily Focus date"}
       </label>
-      <div
-        className={cn(
-          "flex min-w-0 items-stretch",
-          treatment === "bookplate" &&
-            "max-w-sm rounded-[var(--radius-control)] border border-input bg-background focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20",
-          treatment === "desk" &&
-            "max-w-md gap-1.5 rounded-[var(--radius-card)] border bg-quiet-panel p-1.5",
-          treatment === "almanac" &&
-            "max-w-md border-b-2 border-foreground/35 bg-transparent focus-within:border-primary",
-        )}
-      >
+      <div className="flex max-w-xs min-w-0 items-stretch rounded-[var(--radius-control)] border border-input bg-background focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
         <Input
           id={inputId}
           value={draft}
@@ -374,55 +375,36 @@ function DateFieldDemo({
           }}
           onBlur={validateDraft}
           onKeyDown={handleInputKeyDown}
-          className={cn(
-            "min-w-0 flex-1",
-            treatment === "bookplate" &&
-              "h-9 border-0 shadow-none focus-visible:ring-0",
-            treatment === "desk" && "h-9 bg-card font-medium",
-            treatment === "almanac" &&
-              "h-10 rounded-none border-0 bg-transparent px-1 font-serif text-base shadow-none focus-visible:ring-0",
-          )}
+          className="h-8 min-w-0 flex-1 border-0 shadow-none focus-visible:ring-0"
         />
         <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
           <PopoverPrimitive.Trigger asChild>
             <Button
               ref={triggerRef}
               type="button"
-              variant={treatment === "desk" ? "primary" : "quiet"}
-              size={treatment === "almanac" ? "icon-compact" : "compact"}
+              variant="quiet"
+              size="icon-compact"
               disabled={disabled}
               aria-label="Open calendar"
-              className={cn(
-                treatment === "bookplate" &&
-                  "rounded-l-none border-l border-input",
-                treatment === "desk" && "shrink-0",
-                treatment === "almanac" && "self-center rounded-full",
-              )}
+              className="rounded-l-none border-l border-input"
             >
               <CalendarDays aria-hidden="true" />
-              {treatment !== "almanac" && <span>Calendar</span>}
             </Button>
           </PopoverPrimitive.Trigger>
           <PopoverPrimitive.Portal>
             <PopoverPrimitive.Content
               sideOffset={8}
-              align={treatment === "desk" ? "end" : "start"}
+              align="start"
               collisionPadding={16}
               onOpenAutoFocus={(event) => event.preventDefault()}
               className={cn(
                 "z-40 border bg-popover text-popover-foreground shadow-[var(--shadow-floating)] outline-none",
                 "data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:animate-none",
-                treatment === "bookplate" &&
-                  "w-[18.25rem] rounded-[var(--radius-card)] p-3",
-                treatment === "desk" &&
-                  "grid w-[31rem] max-w-[calc(100vw-2rem)] grid-cols-[9rem_1fr] overflow-hidden rounded-[var(--radius-card)]",
-                treatment === "almanac" &&
-                  "w-[20.5rem] rounded-t-[var(--radius-card)] rounded-b-sm border-t-3 border-t-primary p-3",
+                "w-[15.75rem] rounded-[var(--radius-card)] p-2.5",
               )}
             >
               <CalendarPopover
                 treatment={treatment}
-                feature={feature}
                 selected={selected}
                 month={month}
                 disabled={disabled}
@@ -502,7 +484,6 @@ function DateFieldDemo({
 
 function CalendarPopover({
   treatment,
-  feature,
   selected,
   month,
   disabled,
@@ -512,7 +493,6 @@ function CalendarPopover({
   onClear,
 }: {
   treatment: Treatment;
-  feature: FeatureKey;
   selected: Date | undefined;
   month: Date;
   disabled: boolean;
@@ -521,98 +501,28 @@ function CalendarPopover({
   onToday: () => void;
   onClear: () => void;
 }) {
-  const calendar = (
-    <DayPicker
-      mode="single"
-      required
-      autoFocus
-      fixedWeeks
-      showOutsideDays
-      captionLayout="dropdown"
-      navLayout="around"
-      startMonth={START_MONTH}
-      endMonth={END_MONTH}
-      today={TODAY}
-      month={month}
-      selected={selected}
-      disabled={disabled}
-      onMonthChange={onMonthChange}
-      onSelect={onSelect}
-      components={{ Dropdown: CalendarDropdown }}
-      className="w-full"
-      classNames={calendarClassNames(treatment)}
-    />
-  );
-
-  if (treatment === "desk") {
-    return (
-      <>
-        <div className="flex flex-col justify-between gap-5 border-r bg-quiet-panel p-3">
-          <div>
-            <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
-              {feature === "target" ? "Soft target" : "History date"}
-            </p>
-            <p className="mt-2 mb-0 font-serif text-3xl leading-none font-medium">
-              {selected ? format(selected, "d") : "—"}
-            </p>
-            <p className="mt-1 mb-0 font-serif text-base">
-              {selected ? format(selected, "MMMM yyyy") : "No date"}
-            </p>
-            <p className="mt-2 mb-0 text-[0.68rem] leading-relaxed text-muted-foreground">
-              {feature === "target"
-                ? "A quiet intention, not a deadline."
-                : "Choose first; View date commits navigation."}
-            </p>
-          </div>
-          <CalendarActions onToday={onToday} onClear={onClear} />
-        </div>
-        <div className="p-3">{calendar}</div>
-      </>
-    );
-  }
-
-  if (treatment === "almanac") {
-    return (
-      <div className="grid gap-3">
-        <div className="flex items-end justify-between gap-3 border-b pb-3">
-          <div>
-            <p className="m-0 text-[0.68rem] font-semibold tracking-[0.16em] text-primary uppercase">
-              Select a calendar day
-            </p>
-            <p className="mt-1 mb-0 font-serif text-lg italic">
-              {selected ? format(selected, "EEEE, d MMMM") : "No date selected"}
-            </p>
-          </div>
-          <span className="font-serif text-2xl text-muted-foreground/55">
-            {format(month, "MM")}
-          </span>
-        </div>
-        {calendar}
-        <div className="flex items-center justify-between gap-2 border-t pt-3">
-          <p className="m-0 max-w-44 text-xs leading-relaxed text-muted-foreground">
-            Today is marked by a small dot; selection uses the full ink block.
-          </p>
-          <CalendarActions onToday={onToday} onClear={onClear} inline />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid gap-3">
-      <div className="flex items-center justify-between gap-3 border-b pb-2">
-        <div>
-          <p className="m-0 font-serif text-base font-medium">Choose a date</p>
-          <p className="m-0 text-xs text-muted-foreground">
-            {feature === "target" ? "For this Item" : "For Daily Focus"}
-          </p>
-        </div>
-        <span className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
-          {selected ? format(selected, "d MMM") : "Unset"}
-        </span>
-      </div>
-      {calendar}
-      <CalendarActions onToday={onToday} onClear={onClear} inline />
+    <div className="grid gap-2">
+      <DayPicker
+        mode="single"
+        required
+        autoFocus
+        showOutsideDays
+        captionLayout="dropdown"
+        navLayout="around"
+        startMonth={START_MONTH}
+        endMonth={END_MONTH}
+        today={TODAY}
+        month={month}
+        selected={selected}
+        disabled={disabled}
+        onMonthChange={onMonthChange}
+        onSelect={onSelect}
+        components={{ Dropdown: CalendarDropdown }}
+        className="w-full"
+        classNames={calendarClassNames(treatment)}
+      />
+      <CalendarActions onToday={onToday} onClear={onClear} />
     </div>
   );
 }
@@ -633,7 +543,7 @@ function CalendarDropdown({
       <SelectTrigger
         size="sm"
         aria-label={ariaLabel}
-        className="min-w-16 border-0 bg-transparent px-1.5 font-serif text-sm shadow-none"
+        className="h-7 min-w-14 max-w-20 border-0 bg-transparent px-1 font-serif text-xs shadow-none"
       >
         <SelectValue />
       </SelectTrigger>
@@ -655,45 +565,64 @@ function CalendarDropdown({
 function calendarClassNames(treatment: Treatment) {
   const base = {
     months: "w-full",
-    month: "relative grid w-full gap-2",
-    month_caption: "flex h-8 items-center justify-center px-9",
-    dropdowns: "flex items-center justify-center gap-1",
+    month: "relative grid w-full gap-1.5",
+    month_caption: "flex h-7 items-center justify-center px-8",
+    dropdowns: "flex items-center justify-center gap-0.5",
     nav: "flex items-center justify-between",
     button_previous:
-      "absolute left-0 top-0 z-10 grid size-8 place-items-center rounded-[var(--radius-control)] text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
+      "absolute left-0 top-0 z-10 grid size-7 place-items-center rounded-[var(--radius-small)] text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
     button_next:
-      "absolute right-0 top-0 z-10 grid size-8 place-items-center rounded-[var(--radius-control)] text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
-    chevron: "size-4 fill-current",
+      "absolute right-0 top-0 z-10 grid size-7 place-items-center rounded-[var(--radius-small)] text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
+    chevron: "size-3.5 fill-current",
     month_grid: "w-full border-collapse table-fixed",
     weekdays: "grid grid-cols-7",
     weekday:
-      "grid h-6 place-items-center text-[0.62rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase",
+      "grid h-5 place-items-center text-[0.58rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase",
     weeks: "grid",
     week: "grid grid-cols-7",
     day: "relative aspect-square min-w-0 p-0 text-center data-[outside=true]:opacity-35 data-[disabled=true]:opacity-25 data-[disabled=true]:line-through data-[focused=true]:z-10 data-[focused=true]:[&>button]:ring-2 data-[focused=true]:[&>button]:ring-ring data-[focused=true]:[&>button]:ring-offset-2 data-[focused=true]:[&>button]:ring-offset-popover",
     day_button:
-      "relative grid size-full min-h-8 place-items-center text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed",
+      "relative grid size-full min-h-7 place-items-center text-[0.7rem] outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed",
     today:
       "[&>button]:after:absolute [&>button]:after:bottom-1 [&>button]:after:left-1/2 [&>button]:after:size-1 [&>button]:after:-translate-x-1/2 [&>button]:after:rounded-full [&>button]:after:bg-primary",
   };
 
-  if (treatment === "desk") {
+  if (treatment === "tiles") {
     return {
       ...base,
       week: "grid grid-cols-7 gap-0.5",
       weeks: "grid gap-0.5",
-      day: `${base.day} data-[selected=true]:[&>button]:border-primary data-[selected=true]:[&>button]:bg-accent data-[selected=true]:[&>button]:font-bold data-[selected=true]:[&>button]:text-accent-foreground`,
-      day_button: `${base.day_button} rounded-[var(--radius-small)] border border-transparent`,
+      day: `${base.day} data-[selected=true]:[&>button]:border-primary data-[selected=true]:[&>button]:bg-accent data-[selected=true]:[&>button]:font-bold data-[selected=true]:[&>button]:text-accent-foreground data-[selected=true]:[&>button]:after:bg-accent-foreground`,
+      day_button: `${base.day_button} rounded-sm border border-border/70`,
     };
   }
 
-  if (treatment === "almanac") {
+  if (treatment === "ledger") {
     return {
       ...base,
-      weekday: `${base.weekday} font-serif font-normal tracking-normal normal-case italic`,
-      week: "grid grid-cols-7 gap-0.5 border-t border-border/60",
-      day: `${base.day} data-[selected=true]:[&>button]:bg-foreground data-[selected=true]:[&>button]:font-semibold data-[selected=true]:[&>button]:text-background data-[selected=true]:[&>button]:after:bg-background`,
-      day_button: `${base.day_button} rounded-sm font-serif text-sm`,
+      month_grid: `${base.month_grid} border border-border/75`,
+      weekdays: "grid grid-cols-7 border-b border-border/75 bg-muted/65",
+      week: "grid grid-cols-7 border-b border-border/75 last:border-b-0",
+      day: `${base.day} border-r border-border/75 last:border-r-0 data-[selected=true]:[&>button]:bg-foreground data-[selected=true]:[&>button]:font-semibold data-[selected=true]:[&>button]:text-background data-[selected=true]:[&>button]:after:bg-background`,
+      day_button: `${base.day_button} rounded-none font-serif text-xs`,
+    };
+  }
+
+  if (treatment === "underline") {
+    return {
+      ...base,
+      today:
+        "[&>button]:before:absolute [&>button]:before:top-0.5 [&>button]:before:left-1/2 [&>button]:before:size-1 [&>button]:before:-translate-x-1/2 [&>button]:before:rounded-full [&>button]:before:bg-primary",
+      day: `${base.day} data-[selected=true]:[&>button]:font-bold data-[selected=true]:[&>button]:text-primary data-[selected=true]:[&>button]:after:absolute data-[selected=true]:[&>button]:after:bottom-1 data-[selected=true]:[&>button]:after:left-1/2 data-[selected=true]:[&>button]:after:h-0.5 data-[selected=true]:[&>button]:after:w-4 data-[selected=true]:[&>button]:after:-translate-x-1/2 data-[selected=true]:[&>button]:after:bg-primary`,
+      day_button: `${base.day_button} rounded-none`,
+    };
+  }
+
+  if (treatment === "soft-square") {
+    return {
+      ...base,
+      day: `${base.day} data-[selected=true]:[&>button]:bg-primary data-[selected=true]:[&>button]:font-semibold data-[selected=true]:[&>button]:text-primary-foreground data-[selected=true]:[&>button]:after:bg-primary-foreground`,
+      day_button: `${base.day_button} rounded-[var(--radius-small)]`,
     };
   }
 
@@ -707,14 +636,12 @@ function calendarClassNames(treatment: Treatment) {
 function CalendarActions({
   onToday,
   onClear,
-  inline = false,
 }: {
   onToday: () => void;
   onClear: () => void;
-  inline?: boolean;
 }) {
   return (
-    <div className={cn("flex gap-2", !inline && "grid")}>
+    <div className="flex justify-end gap-1 border-t pt-2">
       <Button
         type="button"
         variant="secondary"
@@ -784,20 +711,28 @@ function StateSample({
     <div className="grid place-items-center gap-2 rounded-[var(--radius-card)] border bg-card p-3">
       <span
         className={cn(
-          "relative grid size-10 place-items-center text-sm",
-          treatment === "bookplate" && "rounded-full",
-          treatment === "desk" &&
-            "rounded-[var(--radius-small)] border border-transparent",
-          treatment === "almanac" && "rounded-sm font-serif text-base",
+          "relative grid size-9 place-items-center text-xs",
+          treatment === "circle" && "rounded-full",
+          treatment === "tiles" && "rounded-sm border border-border/70",
+          treatment === "ledger" &&
+            "rounded-none border border-border/75 font-serif",
+          treatment === "underline" && "rounded-none",
+          treatment === "soft-square" && "rounded-[var(--radius-small)]",
           selected &&
-            treatment === "bookplate" &&
+            treatment === "circle" &&
             "bg-primary font-semibold text-primary-foreground",
           selected &&
-            treatment === "desk" &&
+            treatment === "tiles" &&
             "border-primary bg-accent font-bold text-accent-foreground",
           selected &&
-            treatment === "almanac" &&
+            treatment === "ledger" &&
             "bg-foreground font-semibold text-background",
+          selected &&
+            treatment === "underline" &&
+            "font-bold text-primary after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-primary",
+          selected &&
+            treatment === "soft-square" &&
+            "bg-primary font-semibold text-primary-foreground",
           focused && "ring-2 ring-ring ring-offset-2 ring-offset-card",
           disabled && "opacity-30 line-through",
           today &&

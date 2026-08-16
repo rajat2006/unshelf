@@ -17,18 +17,18 @@ From the repository root:
 pnpm --filter @unshelf/web prototype:calendar-treatment
 ```
 
-The three treatments share one page and are linkable with `?variant=A`,
-`?variant=B`, or `?variant=C`. Use the floating switcher or the Left and Right
-arrow keys when focus is not inside a form control.
+The five treatments share one page and are linkable with `?variant=A` through
+`?variant=E`. Use the floating switcher or the Left and Right arrow keys when
+focus is not inside a form control.
 
 ## Treatments
 
-- **A — Bookplate:** compact field and centred popover; circular selection and
-  restrained action row.
-- **B — Reading desk:** wide, two-part popover; the selected-date context and
-  actions sit beside a scan-oriented grid.
-- **C — Almanac:** typographic field and popover; stronger editorial hierarchy,
-  ink-block selection, and a more explanatory footer.
+- **A — Ink circle:** the selected Bookplate direction with circular selection.
+- **B — Separate tiles:** individually boxed dates with small gutters.
+- **C — Ledger grid:** a continuous hairline table around every date.
+- **D — Editorial underline:** no enclosing selector; ink, weight, and an
+  underline carry selection.
+- **E — Soft square:** a compact rounded-square selector between A and B.
 
 Each treatment uses React DayPicker v10 for the calendar grid and the local
 Radix Select for direct month/year navigation. The prototype includes both
@@ -41,6 +41,12 @@ Following the first HITL review, every treatment was reduced to a compact
 desktop footprint: smaller popovers, tighter internal spacing, 32px calendar
 cells and navigation controls, compact field actions, and reduced display type.
 The coarse-pointer theme contract still expands shared controls to touch size.
+
+Following the second HITL review, the prototype converged on A and now compares
+five A-family selection geometries. The redundant explanatory header and
+selected-date badge were removed. The popover is 252px wide, with 28px desktop
+calendar cells and navigation controls, a compact icon-only trigger, and no
+space beyond month/year navigation, the grid, and Today/Clear.
 
 ## Review checklist
 
