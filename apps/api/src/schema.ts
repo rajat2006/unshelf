@@ -822,7 +822,7 @@ export const discoverAcquisitionAttempts = pgTable(
     ),
     check(
       "discover_acquisition_attempts_trigger_check",
-      sql`${table.trigger} = 'manual_follow'`,
+      sql`${table.trigger} IN ('app_open', 'manual_workspace', 'manual_follow')`,
     ),
     check(
       "discover_acquisition_attempts_outcome_check",

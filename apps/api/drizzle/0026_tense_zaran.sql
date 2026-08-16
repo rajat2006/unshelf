@@ -1,0 +1,2 @@
+ALTER TABLE "discover_acquisition_attempts" DROP CONSTRAINT "discover_acquisition_attempts_trigger_check";--> statement-breakpoint
+ALTER TABLE "discover_acquisition_attempts" ADD CONSTRAINT "discover_acquisition_attempts_trigger_check" CHECK ("discover_acquisition_attempts"."trigger" IN ('app_open', 'manual_workspace', 'manual_follow'));

@@ -92,6 +92,7 @@ export const confirmFollowRequestSchema = z.strictObject({
 
 /** Acquisition scope is explicit so a Follow id cannot leak into workspace refresh. */
 export const acquireAndApplyRequestSchema = z.discriminatedUnion("trigger", [
+  z.strictObject({ trigger: z.literal("app_open") }),
   z.strictObject({
     trigger: z.literal("manual_follow"),
     followId: followIdSchema,

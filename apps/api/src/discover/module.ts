@@ -75,6 +75,7 @@ const providerRetentionSafetyMilliseconds = 24 * 60 * 60 * 1_000;
 const acquisitionLeaseMilliseconds = 35 * 1_000;
 const joinPollMilliseconds = 10;
 const providerGateFallbackMilliseconds = 15 * 60 * 1_000;
+const appOpenFreshnessMilliseconds = 15 * 60 * 1_000;
 
 export interface DiscoverModule {
   prepareFollow(input: {
@@ -134,6 +135,14 @@ export interface ProviderPurgeReport {
   truncated: boolean;
 }
 
+type InternalDiscoverModule = Omit<DiscoverModule, "acquireAndApply"> & {
+  acquireAndApply(
+    input: Parameters<DiscoverModule["acquireAndApply"]>[0] & {
+      originatingTrigger?: AcquireAndApplyRequest["trigger"];
+    },
+  ): ReturnType<DiscoverModule["acquireAndApply"]>;
+};
+
 export function createDiscoverModule({
   db,
   youtube,
@@ -146,7 +155,7 @@ export function createDiscoverModule({
   logger: Logger;
 }): DiscoverModule {
   const providerConcurrency = pLimit(4);
-  const module: DiscoverModule = {
+  const module: InternalDiscoverModule = {
     prepareFollow: async ({ userId, request }) => {
       if (await isProviderSuspended({ db, provider: "youtube" })) {
         return { ok: false, error: "provider_unavailable" };
@@ -685,11 +694,18 @@ export function createDiscoverModule({
           );
         return result;
       }),
-    acquireAndApply: async ({ userId, request }) => {
-      if (request.trigger === "manual_workspace") {
+    acquireAndApply: async ({
+      userId,
+      request,
+      originatingTrigger = request.trigger,
+    }) => {
+      if (request.trigger !== "manual_follow") {
         const workspaceRefreshedAt = now();
         const activeFollows = await db
-          .select({ id: discoverFollows.id })
+          .select({
+            id: discoverFollows.id,
+            providerTargetId: discoverFollows.providerTargetId,
+          })
           .from(discoverFollows)
           .where(
             and(
@@ -698,26 +714,84 @@ export function createDiscoverModule({
             ),
           )
           .orderBy(asc(discoverFollows.createdAt));
+
+        const recentlyAttemptedTargetIds = new Set<string>();
+        if (request.trigger === "app_open" && activeFollows.length > 0) {
+          const freshnessBoundary = new Date(
+            workspaceRefreshedAt.getTime() - appOpenFreshnessMilliseconds,
+          );
+          const recentAttempts = await db
+            .select({
+              providerTargetId: discoverAcquisitionAttempts.providerTargetId,
+            })
+            .from(discoverAcquisitionAttempts)
+            .where(
+              and(
+                inArray(
+                  discoverAcquisitionAttempts.providerTargetId,
+                  activeFollows.map(({ providerTargetId }) => providerTargetId),
+                ),
+                inArray(discoverAcquisitionAttempts.outcome, [
+                  "complete",
+                  "partial",
+                  "failed",
+                ]),
+                gte(discoverAcquisitionAttempts.startedAt, freshnessBoundary),
+              ),
+            );
+          for (const { providerTargetId } of recentAttempts) {
+            recentlyAttemptedTargetIds.add(providerTargetId);
+          }
+        }
+
         const results = await Promise.all(
-          activeFollows.map(({ id }) =>
-            module.acquireAndApply({
+          activeFollows.map(async ({ id, providerTargetId }) => {
+            if (recentlyAttemptedTargetIds.has(providerTargetId)) {
+              return {
+                ok: true as const,
+                acquisition: {
+                  followId: id as FollowId,
+                  outcome: "skipped" as const,
+                  acceptedCount: 0,
+                  rejectedCount: 0,
+                  ...(await readTargetHealth({ db, providerTargetId })),
+                },
+              };
+            }
+            return module.acquireAndApply({
               userId,
+              originatingTrigger: request.trigger,
               request: {
                 trigger: "manual_follow",
                 followId: id as FollowId,
               },
-            }),
-          ),
+            });
+          }),
         );
         const acquisitions = results.flatMap((result) =>
           result.ok && "acquisition" in result ? [result.acquisition] : [],
         );
+        const freshnessSkippedFollowIds = new Set(
+          activeFollows
+            .filter(({ providerTargetId }) =>
+              recentlyAttemptedTargetIds.has(providerTargetId),
+            )
+            .map(({ id }) => id),
+        );
         await db.transaction(async (tx) => {
           for (const acquisition of acquisitions) {
+            const latestAttemptOutcome = acquisition.latestAttemptOutcome;
+            const workspaceOutcome =
+              freshnessSkippedFollowIds.has(acquisition.followId) &&
+              (latestAttemptOutcome === "complete" ||
+                latestAttemptOutcome === "partial" ||
+                latestAttemptOutcome === "failed")
+                ? latestAttemptOutcome
+                : acquisition.outcome;
             await tx
               .update(discoverFollows)
               .set({
-                latestWorkspaceRefreshOutcome: acquisition.outcome,
+                latestWorkspaceRefreshOutcome: workspaceOutcome,
                 latestWorkspaceRefreshedAt: workspaceRefreshedAt,
               })
               .where(
@@ -847,7 +921,7 @@ export function createDiscoverModule({
           .values({
             providerTargetId: follow.providerTargetId,
             generation: target.generation,
-            trigger: request.trigger,
+            trigger: originatingTrigger,
             startedAt,
             leaseExpiresAt: new Date(
               startedAt.getTime() + acquisitionLeaseMilliseconds,
@@ -922,7 +996,7 @@ export function createDiscoverModule({
           logger,
           attemptId: claim.attemptId,
           providerTargetId: claim.follow.providerTargetId,
-          trigger: request.trigger,
+          trigger: originatingTrigger,
           outcome: joined.outcome === "skipped" ? "skipped" : "joined",
           acceptedCount: joined.acceptedCount,
           rejectedCount: joined.rejectedCount,
@@ -974,7 +1048,7 @@ export function createDiscoverModule({
           logger,
           attemptId: claim.attemptId,
           providerTargetId: claim.follow.providerTargetId,
-          trigger: request.trigger,
+          trigger: originatingTrigger,
           outcome: "skipped",
           acceptedCount: 0,
           rejectedCount: 0,
@@ -1040,7 +1114,7 @@ export function createDiscoverModule({
           logger,
           attemptId: claim.attemptId,
           providerTargetId: claim.follow.providerTargetId,
-          trigger: request.trigger,
+          trigger: originatingTrigger,
           outcome: terminalOutcome,
           acceptedCount: 0,
           rejectedCount: 0,
@@ -1093,7 +1167,7 @@ export function createDiscoverModule({
           logger,
           attemptId: claim.attemptId,
           providerTargetId: claim.follow.providerTargetId,
-          trigger: request.trigger,
+          trigger: originatingTrigger,
           outcome: terminalOutcome,
           acceptedCount: 0,
           rejectedCount: 0,
@@ -1143,7 +1217,7 @@ export function createDiscoverModule({
           logger,
           attemptId: claim.attemptId,
           providerTargetId: claim.follow.providerTargetId,
-          trigger: request.trigger,
+          trigger: originatingTrigger,
           outcome: "failed",
           acceptedCount: acquired.videos.length,
           rejectedCount: acquired.rejectedCount,
@@ -1180,7 +1254,7 @@ export function createDiscoverModule({
         logger,
         attemptId: claim.attemptId,
         providerTargetId: claim.follow.providerTargetId,
-        trigger: request.trigger,
+        trigger: originatingTrigger,
         outcome: terminalOutcome,
         acceptedCount: acquired.videos.length,
         rejectedCount: acquired.rejectedCount,

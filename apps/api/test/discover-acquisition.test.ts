@@ -116,6 +116,74 @@ async function createFollow({
 }
 
 describe("POST /api/discover/acquisitions", () => {
+  it("refreshes on app open only when the latest eligible attempt is older than fifteen minutes", async () => {
+    const clerkUserId = "clerk_app_open_refresh";
+    const { followId, channelId } = await createFollow({ clerkUserId });
+    const appOpenVideo = {
+      ...newVideo,
+      providerIdentity: "video-app-open",
+      source: "https://www.youtube.com/watch?v=video-app-open",
+    };
+    acquireChannel.mockResolvedValue(
+      successfulAcquisition([appOpenVideo], channelId),
+    );
+
+    const first = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ trigger: "app_open" })
+      .expect(200);
+    expect(first.body.acquisitions).toEqual([
+      expect.objectContaining({ followId, outcome: "complete" }),
+    ]);
+
+    currentNow = new Date("2026-08-16T12:15:00.000Z");
+    const fresh = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ trigger: "app_open" })
+      .expect(200);
+    expect(fresh.body.acquisitions).toEqual([
+      expect.objectContaining({
+        followId,
+        outcome: "skipped",
+        latestAttemptAt: "2026-08-16T12:00:00.000Z",
+      }),
+    ]);
+    expect(acquireChannel).toHaveBeenCalledTimes(1);
+    const freshWorkspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .expect(200);
+    expect(
+      (freshWorkspace.body as DiscoverWorkspace).aggregateNotice,
+    ).toBeUndefined();
+
+    currentNow = new Date("2026-08-16T12:15:00.001Z");
+    const stale = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ trigger: "app_open" })
+      .expect(200);
+    expect(stale.body.acquisitions).toEqual([
+      expect.objectContaining({ followId, outcome: "complete" }),
+    ]);
+    expect(acquireChannel).toHaveBeenCalledTimes(2);
+    const attempts = await harness.pool.query<{ trigger: string }>(
+      `SELECT trigger
+       FROM discover_acquisition_attempts
+       WHERE provider_target_id = (
+         SELECT provider_target_id FROM discover_follows WHERE id = $1
+       )
+       ORDER BY started_at`,
+      [followId],
+    );
+    expect(attempts.rows.map(({ trigger }) => trigger)).toEqual([
+      "app_open",
+      "app_open",
+    ]);
+  });
+
   it("refreshes every active Follow independently for one workspace", async () => {
     const clerkUserId = "clerk_workspace_refresh";
     const first = await createFollow({
@@ -178,6 +246,21 @@ describe("POST /api/discover/acquisitions", () => {
       workspaceBody.follows.find(({ id }) => id === second.followId)?.health
         .latestAttemptOutcome,
     ).toBe("provider_unavailable");
+    const attempts = await harness.pool.query<{ trigger: string }>(
+      `SELECT trigger
+       FROM discover_acquisition_attempts
+       WHERE provider_target_id IN (
+         SELECT provider_target_id
+         FROM discover_follows
+         WHERE id = ANY($1::uuid[])
+       )
+       ORDER BY trigger`,
+      [[first.followId, second.followId]],
+    );
+    expect(attempts.rows.map(({ trigger }) => trigger)).toEqual([
+      "manual_workspace",
+      "manual_workspace",
+    ]);
   });
 
   it("resumes at the current snapshot without backfilling the paused interval", async () => {
