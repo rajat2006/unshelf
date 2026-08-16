@@ -23,6 +23,7 @@ import { ItemTargetDate } from "./ItemTargetDate";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import { ServerCalendarProvider } from "../server-calendar/ServerCalendarProvider";
+import { stubMatchMedia } from "../test-support/stub-match-media";
 
 vi.mock("../api", () => ({
   fetchServerCalendar: vi.fn(),
@@ -60,19 +61,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes("min-width") && query.includes("pointer: fine"),
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  );
+  stubMatchMedia(true);
   vi.mocked(fetchServerCalendar).mockResolvedValue({
     today: "2026-08-16",
     validUntil: "2099-08-17T00:00:00.000Z",

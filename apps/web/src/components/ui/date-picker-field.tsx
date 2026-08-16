@@ -50,10 +50,19 @@ export function DatePickerField({
   const [draft, setDraft] = useState(() =>
     value ? formatLocalizedCalendarDate(value, locale) : "",
   );
-  const [validationError, setValidationError] = useState<string>();
-  const previousControlled = useRef({ value, locale });
+  const [validationError, setValidationError] = useState<string | undefined>(
+    () => controlledValueError({ value, locale, required, min, max }),
+  );
+  const previousControlled = useRef({
+    value,
+    locale,
+    required,
+    min,
+    max,
+  });
   const lastEmittedValue = useRef<string | null | undefined>(undefined);
-  const currentValidity = useRef(true);
+  const currentValidity = useRef(validationError === undefined);
+  const canClear = allowClear && !required;
 
   function reportValidity(valid: boolean) {
     currentValidity.current = valid;
@@ -67,17 +76,28 @@ export function DatePickerField({
   useEffect(() => {
     if (
       value === previousControlled.current.value &&
-      locale === previousControlled.current.locale
+      locale === previousControlled.current.locale &&
+      required === previousControlled.current.required &&
+      min === previousControlled.current.min &&
+      max === previousControlled.current.max
     ) {
       return;
     }
-    previousControlled.current = { value, locale };
+    previousControlled.current = { value, locale, required, min, max };
     lastEmittedValue.current = undefined;
     setDraft(value ? formatLocalizedCalendarDate(value, locale) : "");
-    setValidationError(undefined);
-    currentValidity.current = true;
-    onValidityChange?.(true);
-  }, [locale, onValidityChange, value]);
+    const nextError = controlledValueError({
+      value,
+      locale,
+      required,
+      min,
+      max,
+    });
+    setValidationError(nextError);
+    const valid = nextError === undefined;
+    currentValidity.current = valid;
+    onValidityChange?.(valid);
+  }, [locale, max, min, onValidityChange, required, value]);
 
   function emitAction(nextValue: string | null) {
     setDraft(nextValue ? formatLocalizedCalendarDate(nextValue, locale) : "");
@@ -114,7 +134,7 @@ export function DatePickerField({
           Today
         </Button>
       )}
-      {allowClear && value !== null && (
+      {canClear && value !== null && (
         <Button
           type="button"
           variant="quiet"
@@ -129,65 +149,9 @@ export function DatePickerField({
     </>
   );
 
-  if (!isDesktop) {
-    return (
-      <div className="grid gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label={ariaLabel}
-            aria-labelledby={ariaLabelledBy}
-            aria-describedby={describedBy || undefined}
-            aria-invalid={validationError ? true : undefined}
-            id={id}
-            type="date"
-            required={required}
-            disabled={disabled}
-            min={min}
-            max={max}
-            value={value ?? ""}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              if (nextValue === "") {
-                if (allowClear && !required) emitAction(null);
-                else {
-                  setValidationError("Enter a date.");
-                  reportValidity(false);
-                }
-                return;
-              }
-
-              const isValid =
-                formatLocalizedCalendarDate(nextValue, locale) !== "" &&
-                (!min || nextValue >= min) &&
-                (!max || nextValue <= max);
-              if (isValid) {
-                emitAction(nextValue);
-                return;
-              }
-
-              const error =
-                formatLocalizedCalendarDate(nextValue, locale) === ""
-                  ? "impossible"
-                  : min && nextValue < min
-                    ? "before-min"
-                    : "after-max";
-              setValidationError(validationMessage(error, locale, min, max));
-              reportValidity(false);
-            }}
-            className="w-auto min-w-40"
-          />
-          {actions}
-        </div>
-        {validationError && (
-          <FieldError id={errorId}>{validationError}</FieldError>
-        )}
-      </div>
-    );
-  }
-
   function validateDraft() {
     if (draft === "") {
-      if (allowClear && !required) {
+      if (canClear) {
         setValidationError(undefined);
         reportValidity(true);
         if (value !== null && lastEmittedValue.current !== null) {
@@ -217,56 +181,110 @@ export function DatePickerField({
       return;
     }
 
-    setValidationError(validationMessage(result.error, locale, min, max));
+    setValidationError(
+      validationMessage({ error: result.error, locale, min, max }),
+    );
     reportValidity(false);
   }
+
+  const input = isDesktop ? (
+    <Input
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={describedBy || undefined}
+      aria-invalid={validationError ? true : undefined}
+      id={id}
+      type="text"
+      required={required}
+      disabled={disabled}
+      inputMode="numeric"
+      value={draft}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        setValidationError(undefined);
+        reportValidity(
+          nextDraft === ""
+            ? canClear
+            : parseLocalizedCalendarDate({
+                value: nextDraft,
+                locale,
+                min,
+                max,
+              }).ok,
+        );
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") validateDraft();
+      }}
+      className="w-auto min-w-40"
+    />
+  ) : (
+    <Input
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={describedBy || undefined}
+      aria-invalid={validationError ? true : undefined}
+      id={id}
+      type="date"
+      required={required}
+      disabled={disabled}
+      min={min}
+      max={max}
+      value={value ?? ""}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        if (nextValue === "") {
+          if (canClear) emitAction(null);
+          else {
+            setValidationError("Enter a date.");
+            reportValidity(false);
+          }
+          return;
+        }
+
+        const isValid =
+          formatLocalizedCalendarDate(nextValue, locale) !== "" &&
+          (!min || nextValue >= min) &&
+          (!max || nextValue <= max);
+        if (isValid) {
+          emitAction(nextValue);
+          return;
+        }
+
+        const error =
+          formatLocalizedCalendarDate(nextValue, locale) === ""
+            ? "impossible"
+            : min && nextValue < min
+              ? "before-min"
+              : "after-max";
+        setValidationError(validationMessage({ error, locale, min, max }));
+        reportValidity(false);
+      }}
+      className="w-auto min-w-40"
+    />
+  );
 
   return (
     <div
       className="grid gap-2"
-      onBlur={(event) => {
-        const nextTarget = event.relatedTarget;
-        if (
-          nextTarget instanceof Node &&
-          event.currentTarget.contains(nextTarget)
-        ) {
-          return;
-        }
-        validateDraft();
-      }}
+      onBlur={
+        isDesktop
+          ? (event) => {
+              const nextTarget = event.relatedTarget;
+              if (
+                nextTarget instanceof Node &&
+                event.currentTarget.contains(nextTarget)
+              ) {
+                return;
+              }
+              validateDraft();
+            }
+          : undefined
+      }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          aria-label={ariaLabel}
-          aria-labelledby={ariaLabelledBy}
-          aria-describedby={describedBy || undefined}
-          aria-invalid={validationError ? true : undefined}
-          id={id}
-          type="text"
-          required={required}
-          disabled={disabled}
-          inputMode="numeric"
-          value={draft}
-          onChange={(event) => {
-            const nextDraft = event.target.value;
-            setDraft(nextDraft);
-            setValidationError(undefined);
-            reportValidity(
-              nextDraft === ""
-                ? allowClear && !required
-                : parseLocalizedCalendarDate({
-                    value: nextDraft,
-                    locale,
-                    min,
-                    max,
-                  }).ok,
-            );
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") validateDraft();
-          }}
-          className="w-auto min-w-40"
-        />
+        {input}
         {actions}
       </div>
       {validationError && (
@@ -276,12 +294,46 @@ export function DatePickerField({
   );
 }
 
-function validationMessage(
-  error: "incomplete" | "malformed" | "impossible" | "before-min" | "after-max",
-  locale: DatePickerLocale,
-  min?: string,
-  max?: string,
-): string {
+interface ValidationMessageOptions {
+  error: "incomplete" | "malformed" | "impossible" | "before-min" | "after-max";
+  locale: DatePickerLocale;
+  min?: string;
+  max?: string;
+}
+
+interface ControlledValueErrorOptions {
+  value: string | null;
+  locale: DatePickerLocale;
+  required: boolean;
+  min?: string;
+  max?: string;
+}
+
+function controlledValueError({
+  value,
+  locale,
+  required,
+  min,
+  max,
+}: ControlledValueErrorOptions): string | undefined {
+  if (value === null) return required ? "Enter a date." : undefined;
+  if (formatLocalizedCalendarDate(value, locale) === "") {
+    return validationMessage({ error: "impossible", locale, min, max });
+  }
+  if (min && value < min) {
+    return validationMessage({ error: "before-min", locale, min, max });
+  }
+  if (max && value > max) {
+    return validationMessage({ error: "after-max", locale, min, max });
+  }
+}
+
+function validationMessage({
+  error,
+  locale,
+  min,
+  max,
+}: ValidationMessageOptions): string {
   const format = locale === "en-US" ? "MM/DD/YYYY" : "DD/MM/YYYY";
   switch (error) {
     case "incomplete":

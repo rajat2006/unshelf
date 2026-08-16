@@ -3,22 +3,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubMatchMedia } from "@/test-support/stub-match-media";
 import { DatePickerField } from "./date-picker-field";
 
 beforeEach(() => {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes("min-width") && query.includes("pointer: fine"),
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  );
+  stubMatchMedia(true);
 });
 
 afterEach(() => {
@@ -42,6 +31,29 @@ describe("DatePickerField", () => {
     );
 
     expect(onValidityChange).toHaveBeenCalledWith(true);
+  });
+
+  it("reports a controlled required-empty value as invalid", () => {
+    const onValidityChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value={null}
+        today="2026-08-16"
+        locale="en-US"
+        required
+        onValueChange={vi.fn()}
+        onValidityChange={onValidityChange}
+      />,
+    );
+
+    expect(onValidityChange).toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText("Target date")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a date.");
   });
 
   it("commits a valid localized desktop draft on Enter", () => {
@@ -155,6 +167,7 @@ describe("DatePickerField", () => {
         onValueChange={onValueChange}
       />,
     );
+    fireEvent.change(input, { target: { value: "" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(screen.getByRole("alert")).toHaveTextContent("Enter a date.");
@@ -242,19 +255,7 @@ describe("DatePickerField", () => {
   });
 
   it("mounts one canonical native input outside the desktop fine-pointer mode", () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia(false);
     const onValueChange = vi.fn();
     render(
       <DatePickerField
@@ -280,19 +281,7 @@ describe("DatePickerField", () => {
   });
 
   it("does not emit a native empty value when the field is required", () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia(false);
     const onValueChange = vi.fn();
     render(
       <DatePickerField
@@ -307,6 +296,9 @@ describe("DatePickerField", () => {
     );
 
     const input = screen.getByLabelText("Target date");
+    expect(
+      screen.queryByRole("button", { name: "Clear" }),
+    ).not.toBeInTheDocument();
     fireEvent.change(input, { target: { value: "" } });
 
     expect(input).toHaveAttribute("aria-invalid", "true");
@@ -315,19 +307,7 @@ describe("DatePickerField", () => {
   });
 
   it("reports a native value outside the supplied bounds without emitting it", () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia(false);
     const onValueChange = vi.fn();
     render(
       <DatePickerField
