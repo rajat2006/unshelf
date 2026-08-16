@@ -241,6 +241,52 @@ describe("Discover channel setup", () => {
     expect(retryKey).toBe(firstKey);
   });
 
+  it("keeps a successful confirmation visible when its authoritative reread fails", async () => {
+    vi.mocked(prepareFollowPreview).mockResolvedValue({
+      ok: true,
+      preview: {
+        outcome: "empty",
+        previewId: "00000000-0000-0000-0000-000000000003" as FollowPreviewId,
+        provider: "youtube",
+        target: {
+          kind: "channel",
+          channelId: "UC_confirmed_reload",
+          publisher: "Confirmed Learning",
+        },
+        videos: [],
+        rejectedCount: 0,
+        coverageStartedAt: "2026-07-17T12:00:00.000Z",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    vi.mocked(confirmFollow).mockResolvedValue({
+      ok: true,
+      follow: storedWorkspace.follows[0],
+      discoveries: storedWorkspace.discoveries,
+    });
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(emptyWorkspace)
+      .mockRejectedValueOnce(new Error("reread failed"));
+    renderDiscover();
+    const input = await screen.findByRole("textbox", {
+      name: "Public YouTube channel URL",
+    });
+    fireEvent.change(input, {
+      target: { value: "https://youtube.com/@confirmed" },
+    });
+    fireEvent.submit(input.closest("form")!);
+    await screen.findByRole("heading", { name: "Confirmed Learning" });
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+
+    expect(await screen.findByText("A deep module")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "confirmed, but the intake could not refresh",
+    );
+    expect(
+      screen.queryByText(/exact preview can no longer/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("announces loading then presents an exact partial preview that can be cancelled", async () => {
     let resolve!: (
       value: Awaited<ReturnType<typeof prepareFollowPreview>>,

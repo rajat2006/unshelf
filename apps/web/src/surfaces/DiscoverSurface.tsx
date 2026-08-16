@@ -4,6 +4,7 @@ import type {
   DiscoverWorkspace,
   DiscoverySummary,
   FollowPreview,
+  IdempotencyKey,
   PrepareFollowFailure,
 } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
@@ -17,17 +18,23 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
+type ConfirmationFailure = ConfirmFollowFailure | "unknown_outcome";
+
 type SetupState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "failure"; error: PrepareFollowFailure }
   | { kind: "preview"; preview: FollowPreview; expired: boolean }
-  | { kind: "confirming"; preview: FollowPreview; idempotencyKey: string }
+  | {
+      kind: "confirming";
+      preview: FollowPreview;
+      idempotencyKey: IdempotencyKey;
+    }
   | {
       kind: "confirmation-failure";
       preview: FollowPreview;
-      error: ConfirmFollowFailure;
-      idempotencyKey: string;
+      error: ConfirmationFailure;
+      idempotencyKey: IdempotencyKey;
     };
 
 type WorkspaceState =
@@ -135,35 +142,50 @@ export function DiscoverSurface() {
 
   const confirmPreview = async (
     preview: FollowPreview,
-    idempotencyKey: string = crypto.randomUUID(),
+    idempotencyKey: IdempotencyKey = crypto.randomUUID() as IdempotencyKey,
   ) => {
     setSetupState({ kind: "confirming", preview, idempotencyKey });
+    let result;
     try {
-      const result = await confirmFollow(user, {
+      result = await confirmFollow(user, {
         previewId: preview.previewId,
         idempotencyKey,
       });
-      if (!result.ok) {
-        setSetupState({
-          kind: "confirmation-failure",
-          preview,
-          error: result.error,
-          idempotencyKey,
-        });
-        return;
-      }
-      await loadWorkspace();
-      setSetupState({ kind: "idle" });
-      setAnnouncement(
-        `${result.follow.name ?? "This channel"} is now in Discover.`,
-      );
     } catch {
       setSetupState({
         kind: "confirmation-failure",
         preview,
-        error: "preview_unverifiable",
+        error: "unknown_outcome",
         idempotencyKey,
       });
+      return;
+    }
+    if (!result.ok) {
+      setSetupState({
+        kind: "confirmation-failure",
+        preview,
+        error: result.error,
+        idempotencyKey,
+      });
+      return;
+    }
+
+    const followName = result.follow.name ?? "This channel";
+    setWorkspaceState({
+      kind: "ready",
+      workspace: {
+        follows: [result.follow],
+        discoveries: result.discoveries,
+      },
+    });
+    setSetupState({ kind: "idle" });
+    setAnnouncement(`${followName} is now in Discover.`);
+    try {
+      await loadWorkspace();
+    } catch {
+      setAnnouncement(
+        `${followName} was confirmed, but the intake could not refresh. Reload Discover to retry.`,
+      );
     }
   };
 
@@ -503,7 +525,7 @@ function Preview({
       {preview.outcome === "partial" ? (
         <p
           role="status"
-          className="rounded-[var(--radius-card)] border border-amber-500/30 bg-amber-500/8 p-3 text-sm"
+          className="rounded-[var(--radius-card)] border bg-muted p-3 text-sm text-muted-foreground"
         >
           Partial preview: {preview.rejectedCount} invalid or unavailable{" "}
           {preview.rejectedCount === 1 ? "record was" : "records were"}{" "}
@@ -566,7 +588,7 @@ function failureMessage(error: PrepareFollowFailure): string {
   }[error];
 }
 
-function confirmationFailureMessage(error: ConfirmFollowFailure): string {
+function confirmationFailureMessage(error: ConfirmationFailure): string {
   return {
     preview_missing: "That preview is no longer available. Start over.",
     preview_expired:
@@ -576,6 +598,8 @@ function confirmationFailureMessage(error: ConfirmFollowFailure): string {
       "That exact preview can no longer be verified. Start over.",
     idempotency_conflict:
       "This confirmation conflicted with an earlier request. Start over.",
+    unknown_outcome:
+      "Confirmation may have completed, but its response was lost. Retry safely with the same request key.",
   }[error];
 }
 

@@ -42,7 +42,6 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_daily_planning_query",
   "invalid_follow_preview",
   "invalid_follow_confirmation",
-  "invalid_idempotency_key",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];
@@ -50,11 +49,12 @@ export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];
 interface RequestSchemas {
   body?: Schema;
   params?: ParameterSchemas;
+  headers?: ParameterSchemas;
   query?: Schema;
 }
 
 type ValidatedInput<Schemas extends RequestSchemas> = {
-  [Surface in keyof Schemas]: Surface extends "params"
+  [Surface in keyof Schemas]: Surface extends "params" | "headers"
     ? Schemas[Surface] extends ParameterSchemas
       ? {
           [Key in keyof Schemas[Surface]]: SchemaOutput<Schemas[Surface][Key]>;
@@ -115,6 +115,20 @@ export function validateRequest<const Schemas extends RequestSchemas>(
         }
       }
       parsed.params = params;
+    }
+
+    if (schemas.headers) {
+      const headers: Record<string, unknown> = {};
+      for (const [name, schema] of Object.entries(schemas.headers)) {
+        const result = schema.safeParse(req.header(name));
+        if (result.success) headers[name] = result.data;
+        else {
+          issues.push(
+            ...normalizeIssues(`header.${name}`, result.error.issues),
+          );
+        }
+      }
+      parsed.headers = headers;
     }
 
     if (schemas.query) {

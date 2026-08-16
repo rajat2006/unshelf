@@ -132,6 +132,10 @@ export type FollowPreviewId = string & {
   readonly [identifierBrand]: "FollowPreviewId";
 };
 
+export type IdempotencyKey = string & {
+  readonly [identifierBrand]: "IdempotencyKey";
+};
+
 export type FollowId = string & {
   readonly [identifierBrand]: "FollowId";
 };

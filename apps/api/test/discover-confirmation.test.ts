@@ -255,6 +255,56 @@ describe("Discover Follow confirmation", () => {
     });
   });
 
+  it("retains a failed request key so different later input conflicts", async () => {
+    const clerkUserId = "clerk_failed_key_reuse";
+    const idempotencyKey = crypto.randomUUID();
+    const missing = await confirm({
+      clerkUserId,
+      previewId: crypto.randomUUID(),
+      idempotencyKey,
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe("preview_missing");
+
+    const prepared = await prepare(clerkUserId);
+    if (!prepared.ok || !("preview" in prepared)) {
+      throw new Error("expected preview");
+    }
+    const conflict = await confirm({
+      clerkUserId,
+      previewId: prepared.preview.previewId,
+      idempotencyKey,
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error).toBe("idempotency_conflict");
+  });
+
+  it("serializes concurrent consumption of one receipt", async () => {
+    const clerkUserId = "clerk_concurrent_confirmation";
+    const prepared = await prepare(clerkUserId);
+    if (!prepared.ok || !("preview" in prepared)) {
+      throw new Error("expected preview");
+    }
+    const responses = await Promise.all(
+      [crypto.randomUUID(), crypto.randomUUID()].map((idempotencyKey) =>
+        confirm({
+          clerkUserId,
+          previewId: prepared.preview.previewId,
+          idempotencyKey,
+        }),
+      ),
+    );
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    expect(responses.find(({ status }) => status === 409)?.body.error).toBe(
+      "preview_consumed",
+    );
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, clerkUserId);
+    expect(workspace.body.follows).toHaveLength(1);
+    expect(workspace.body.discoveries).toHaveLength(2);
+  });
+
   it("rejects expired, consumed, foreign, and unverifiable receipts without partial intake", async () => {
     const expired = await prepare("clerk_expired_preview");
     if (!expired.ok || !("preview" in expired)) {
@@ -517,6 +567,17 @@ describe("Discover Follow confirmation", () => {
       `UPDATE discover_follows SET lifecycle = 'removed' WHERE id = $1`,
       [firstFollowId],
     );
+    const firstPresence = await harness.pool.query<{
+      first_surfaced_snapshot_id: string;
+    }>(
+      `SELECT first_surfaced_snapshot_id
+       FROM discover_follow_candidate_presence
+       WHERE follow_id = $1
+       ORDER BY candidate_id
+       LIMIT 1`,
+      [firstFollowId],
+    );
+    currentNow = new Date(baselineNow.getTime() + 16 * 60 * 1_000);
     const followAgain = await prepare(clerkUserId);
     if (!followAgain.ok || !("preview" in followAgain)) {
       throw new Error("expected Follow-again preview");
@@ -535,5 +596,22 @@ describe("Discover Follow confirmation", () => {
       .set(TEST_USER_HEADER, clerkUserId);
     expect(workspace.body.follows).toHaveLength(1);
     expect(workspace.body.discoveries).toHaveLength(4);
+    const restoredPresence = await harness.pool.query<{
+      first_surfaced_snapshot_id: string;
+      last_surfaced_snapshot_id: string;
+    }>(
+      `SELECT first_surfaced_snapshot_id, last_surfaced_snapshot_id
+       FROM discover_follow_candidate_presence
+       WHERE follow_id = $1
+       ORDER BY candidate_id
+       LIMIT 1`,
+      [firstFollowId],
+    );
+    expect(restoredPresence.rows[0]?.first_surfaced_snapshot_id).toBe(
+      firstPresence.rows[0]?.first_surfaced_snapshot_id,
+    );
+    expect(restoredPresence.rows[0]?.last_surfaced_snapshot_id).not.toBe(
+      firstPresence.rows[0]?.first_surfaced_snapshot_id,
+    );
   });
 });

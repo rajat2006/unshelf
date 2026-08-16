@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   DailyFocusId,
   FollowPreviewId,
+  IdempotencyKey,
   ItemId,
   LabelId,
   LearningPlanId,
@@ -86,7 +87,7 @@ export const confirmFollowRequestSchema = z.strictObject({
 });
 
 /** Mutation replays are scoped by a client-generated UUID. */
-export const idempotencyKeySchema = z.uuid();
+export const idempotencyKeySchema = identifierSchema<IdempotencyKey>();
 
 export const createPartsRequestSchema = z.strictObject({
   titles: z

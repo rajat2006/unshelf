@@ -8,10 +8,7 @@ import type {
   ConfirmFollowFailure,
   PrepareFollowFailure,
 } from "@unshelf/shared";
-import {
-  recordValidationFailure,
-  validateRequest,
-} from "../middleware/validation";
+import { validateRequest } from "../middleware/validation";
 import type { DiscoverModule } from "./module";
 
 /** Mount the authenticated Discover interface at `/api/discover`. */
@@ -42,22 +39,17 @@ export function createDiscoverRouter(
   router.post(
     "/follows",
     validateRequest(
-      { body: confirmFollowRequestSchema },
+      {
+        body: confirmFollowRequestSchema,
+        headers: { "Idempotency-Key": idempotencyKeySchema },
+      },
       "invalid_follow_confirmation",
     ),
     async (req, res) => {
-      const parsedKey = idempotencyKeySchema.safeParse(
-        req.header("Idempotency-Key"),
-      );
-      if (!parsedKey.success) {
-        recordValidationFailure(req, "invalid_idempotency_key");
-        res.status(400).json({ error: "invalid_request" });
-        return;
-      }
       const result = await discover.confirmFollow({
         userId: req.user!.id,
         request: res.locals.validated.body,
-        idempotencyKey: parsedKey.data,
+        idempotencyKey: res.locals.validated.headers["Idempotency-Key"],
       });
       if (!result.ok) {
         respondToConfirmFailure(res, result.error);

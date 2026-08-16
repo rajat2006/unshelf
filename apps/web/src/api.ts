@@ -17,6 +17,7 @@ import type {
   ItemDetail,
   ItemId,
   ItemPlacementCatalog,
+  IdempotencyKey,
   Label,
   LabelId,
   Status,
@@ -107,7 +108,7 @@ export async function prepareFollowPreview(
 /** Confirm one exact preview receipt with a replay-safe mutation key. */
 export async function confirmFollow(
   user: CurrentUser,
-  input: { previewId: FollowPreviewId; idempotencyKey: string },
+  input: { previewId: FollowPreviewId; idempotencyKey: IdempotencyKey },
 ): Promise<ConfirmFollowResponse> {
   const response = await authenticatedRequest(
     user,

@@ -11,6 +11,7 @@ import type {
   FollowId,
   FollowPreviewId,
   FollowSummary,
+  IdempotencyKey,
   PrepareFollowRequest,
   PrepareFollowResponse,
   UserId,
@@ -44,7 +45,7 @@ export interface DiscoverModule {
   confirmFollow(input: {
     userId: UserId;
     request: ConfirmFollowRequest;
-    idempotencyKey: string;
+    idempotencyKey: IdempotencyKey;
   }): Promise<ConfirmFollowResponse>;
   readWorkspace(input: { userId: UserId }): Promise<DiscoverWorkspace>;
 }
@@ -330,7 +331,7 @@ export function createDiscoverModule({
     confirmFollow: async ({ userId, request, idempotencyKey }) =>
       db.transaction(async (tx): Promise<ConfirmFollowResponse> => {
         const requestFingerprint = request.previewId;
-        const insertedKey = await tx
+        await tx
           .insert(discoverIdempotency)
           .values({
             userId,
@@ -338,8 +339,7 @@ export function createDiscoverModule({
             requestId: idempotencyKey,
             requestFingerprint,
           })
-          .onConflictDoNothing()
-          .returning({ requestId: discoverIdempotency.requestId });
+          .onConflictDoNothing();
         const [idempotency] = await tx
           .select({
             requestFingerprint: discoverIdempotency.requestFingerprint,
@@ -364,18 +364,18 @@ export function createDiscoverModule({
         const fail = async (
           error: ConfirmFollowFailure,
         ): Promise<ConfirmFollowResponse> => {
-          if (insertedKey.length > 0) {
-            await tx
-              .delete(discoverIdempotency)
-              .where(
-                and(
-                  eq(discoverIdempotency.userId, userId),
-                  eq(discoverIdempotency.operation, "confirm_follow"),
-                  eq(discoverIdempotency.requestId, idempotencyKey),
-                ),
-              );
-          }
-          return { ok: false, error };
+          const result: ConfirmFollowResponse = { ok: false, error };
+          await tx
+            .update(discoverIdempotency)
+            .set({ resultPayload: result })
+            .where(
+              and(
+                eq(discoverIdempotency.userId, userId),
+                eq(discoverIdempotency.operation, "confirm_follow"),
+                eq(discoverIdempotency.requestId, idempotencyKey),
+              ),
+            );
+          return result;
         };
 
         const [preview] = await tx
@@ -576,7 +576,6 @@ export function createDiscoverModule({
               set: {
                 appearanceSequence,
                 present: true,
-                firstSurfacedSnapshotId: preview.snapshotId,
                 lastSurfacedSnapshotId: preview.snapshotId,
               },
             });
