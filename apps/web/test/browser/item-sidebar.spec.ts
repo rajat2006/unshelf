@@ -607,12 +607,19 @@ test("Target date recovers authoritative Today without using the browser clock",
     name: `${item.title} details`,
   });
   const input = sidebar.getByLabel(`Target date for ${item.title}`);
-  const today = sidebar.getByRole("button", { name: "Today", exact: true });
+  const today =
+    testInfo.project.name === "phone"
+      ? sidebar.getByRole("button", { name: "Today", exact: true })
+      : page
+          .getByRole("dialog", { name: "Choose date" })
+          .getByRole("button", { name: "Today", exact: true });
 
   await expect(
     sidebar.getByText("Authoritative Today is unavailable."),
   ).toBeVisible();
-  await expect(today).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Today", exact: true }),
+  ).toHaveCount(0);
   const typedDate =
     testInfo.project.name === "phone" ? "2099-08-20" : "08/20/2099";
   await input.fill(typedDate);
@@ -623,6 +630,9 @@ test("Target date recovers authoritative Today without using the browser clock",
     await testApi(page, user, "/api/server-calendar")
   ).json()) as { today: string };
   await sidebar.getByRole("button", { name: "Retry Today" }).click();
+  if (testInfo.project.name !== "phone") {
+    await sidebar.getByRole("button", { name: "Choose date" }).click();
+  }
   await expect(today).toBeEnabled();
   await today.click();
   const [year, month, day] = authoritativeCalendar.today.split("-");
