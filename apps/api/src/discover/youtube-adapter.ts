@@ -105,6 +105,7 @@ async function acquireWithRetry({
   const fetchWithinBudget: ProviderFetch = (url, init) =>
     input.fetch(url, { ...init, signal });
   let retryCount = 0;
+  let providerRetryAt: Date | null = null;
   try {
     const result = await pRetry(
       (attemptNumber) => {
@@ -117,6 +118,12 @@ async function acquireWithRetry({
         maxRetryTime: retry.budgetMilliseconds,
         signal,
         onFailedAttempt: async ({ error, attemptNumber, retriesLeft }) => {
+          if (error instanceof RetryableProviderError && error.retryAt !== null) {
+            providerRetryAt =
+              providerRetryAt === null || error.retryAt > providerRetryAt
+                ? error.retryAt
+                : providerRetryAt;
+          }
           if (!(error instanceof RetryableProviderError) || retriesLeft === 0) {
             return;
           }
@@ -138,12 +145,16 @@ async function acquireWithRetry({
     );
     return retryCount === 0 ? result : { ...result, retryCount };
   } catch (error) {
+    const nextEligibleAt =
+      error instanceof RetryableProviderError && error.retryAt !== null
+        ? error.retryAt
+        : providerRetryAt;
     return {
       ok: false,
       error: "provider_unavailable",
-      ...(error instanceof RetryableProviderError && error.retryAt !== null
-        ? { nextEligibleAt: error.retryAt.toISOString() }
-        : {}),
+      ...(nextEligibleAt === null
+        ? {}
+        : { nextEligibleAt: nextEligibleAt.toISOString() }),
       ...(retryCount === 0 ? {} : { retryCount }),
     };
   }

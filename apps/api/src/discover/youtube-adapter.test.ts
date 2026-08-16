@@ -199,7 +199,11 @@ describe("YouTube Provider adapter", () => {
       },
     }).acquireChannel({ channelId: "UC_immutable" });
 
-    expect(result).toMatchObject({ ok: false, error: "provider_unavailable" });
+    expect(result).toEqual({
+      ok: false,
+      error: "provider_unavailable",
+      nextEligibleAt: "2026-08-16T12:01:00.000Z",
+    });
     expect(performance.now() - startedAt).toBeLessThan(200);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
