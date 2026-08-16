@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   DailyFocusId,
+  DiscoveryId,
   FollowId,
   FollowPreviewId,
   IdempotencyKey,
@@ -33,6 +34,7 @@ export const labelIdSchema = identifierSchema<LabelId>();
 export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
 export const followPreviewIdSchema = identifierSchema<FollowPreviewId>();
 export const followIdSchema = identifierSchema<FollowId>();
+export const discoveryIdSchema = identifierSchema<DiscoveryId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -100,6 +102,25 @@ export const acquireAndApplyRequestSchema = z.discriminatedUnion("trigger", [
 /** Follow lifecycle remains independent from acquisition health. */
 export const setFollowLifecycleRequestSchema = z.strictObject({
   lifecycle: z.enum(["active", "paused", "removed"]),
+});
+
+/** Decide one exact, non-empty set of unresolved Discovery occurrences. */
+export const decideDiscoveriesRequestSchema = z.strictObject({
+  discoveryIds: z
+    .array(discoveryIdSchema)
+    .min(1)
+    .refine(
+      (discoveryIds) => new Set(discoveryIds).size === discoveryIds.length,
+      {
+        message: "Discovery ids must be unique",
+      },
+    ),
+  decision: z.enum(["seen", "dismissed"]),
+});
+
+/** History paging is server-bounded; the client may return only an opaque cursor. */
+export const discoverHistoryQuerySchema = z.strictObject({
+  cursor: z.string().min(1).optional(),
 });
 
 /** Mutation replays are scoped by a client-generated UUID. */
@@ -198,6 +219,10 @@ export type AcquireAndApplyRequest = z.infer<
 export type SetFollowLifecycleRequest = z.infer<
   typeof setFollowLifecycleRequestSchema
 >;
+export type DecideDiscoveriesRequest = z.infer<
+  typeof decideDiscoveriesRequestSchema
+>;
+export type DiscoverHistoryQuery = z.infer<typeof discoverHistoryQuerySchema>;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
 export type UpdatePartCompletionRequest = z.infer<

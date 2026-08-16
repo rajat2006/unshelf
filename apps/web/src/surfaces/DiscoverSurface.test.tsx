@@ -14,6 +14,8 @@ import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProv
 import type { ApplicationAuth } from "../application-auth/types";
 import {
   confirmFollow,
+  decideDiscoveries,
+  fetchDiscoverHistory,
   fetchDiscoverWorkspace,
   prepareFollowPreview,
   refreshFollow,
@@ -24,6 +26,7 @@ import { DiscoverSurface } from "./DiscoverSurface";
 import {
   Type,
   type CandidateId,
+  type DiscoverHistoryCursor,
   type DiscoveryId,
   type DiscoverWorkspace,
   type FollowId,
@@ -34,6 +37,8 @@ vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   prepareFollowPreview: vi.fn(),
   confirmFollow: vi.fn(),
+  decideDiscoveries: vi.fn(),
+  fetchDiscoverHistory: vi.fn(),
   fetchDiscoverWorkspace: vi.fn(),
   refreshFollow: vi.fn(),
   refreshWorkspace: vi.fn(),
@@ -75,6 +80,7 @@ const storedWorkspace: DiscoverWorkspace = {
       type: Type.Video,
       thumbnailUrl: null,
       discoveredAt: "2026-08-16T12:00:00.000Z",
+      priorDecisions: { kept: 0, dismissed: 0 },
     },
   ],
 };
@@ -141,6 +147,222 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
+  it("keeps a card visible while Later is pending and rereads authoritative intake", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof decideDiscoveries>>) => void;
+    const seenWorkspace: DiscoverWorkspace = {
+      ...storedWorkspace,
+      discoveries: [
+        { ...storedWorkspace.discoveries[0], state: "seen" as const },
+      ],
+    };
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockResolvedValueOnce(seenWorkspace);
+    vi.mocked(decideDiscoveries).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderDiscover();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Later" }));
+
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Saving Later…" }),
+    ).toBeDisabled();
+    const cardDecision = vi.mocked(decideDiscoveries).mock.calls[0];
+    expect(cardDecision?.[0]).toBe(auth.user);
+    expect(cardDecision?.[1]).toMatchObject({
+      discoveryIds: [storedWorkspace.discoveries[0].id],
+      decision: "seen",
+    });
+    expect(cardDecision?.[1].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    await act(async () => {
+      finish({
+        ok: true,
+        discoveries: [
+          {
+            id: storedWorkspace.discoveries[0].id,
+            state: "seen",
+            seenAt: "2026-08-16T12:05:00.000Z",
+            decidedAt: null,
+          },
+        ],
+      });
+    });
+    await waitFor(() =>
+      expect(fetchDiscoverWorkspace).toHaveBeenCalledTimes(2),
+    );
+    expect(screen.getByText("seen")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "1 Discovery acknowledged",
+    );
+  });
+
+  it("freezes the selected Follow's exact ids when a bulk action begins", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof decideDiscoveries>>) => void;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
+      severalFollowsWorkspace,
+    );
+    vi.mocked(decideDiscoveries).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Systems Studio.*1/ }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Acknowledge 1" }));
+    fireEvent.click(screen.getByRole("button", { name: /All Follows.*2/ }));
+
+    const bulkDecision = vi.mocked(decideDiscoveries).mock.calls[0];
+    expect(bulkDecision?.[0]).toBe(auth.user);
+    expect(bulkDecision?.[1]).toMatchObject({
+      discoveryIds: [severalFollowsWorkspace.discoveries[1].id],
+      decision: "seen",
+    });
+    expect(bulkDecision?.[1].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByText("Understand queues")).toBeVisible();
+    await act(async () => {
+      finish({
+        ok: true,
+        discoveries: [
+          {
+            id: severalFollowsWorkspace.discoveries[1].id,
+            state: "seen",
+            seenAt: "2026-08-16T12:05:00.000Z",
+            decidedAt: null,
+          },
+        ],
+      });
+    });
+  });
+
+  it("pages secondary history and returns focus to its trigger", async () => {
+    const cursor = "opaque-history-page" as DiscoverHistoryCursor;
+    const dismissed = {
+      ...storedWorkspace.discoveries[0],
+      state: "dismissed" as const,
+      seenAt: null,
+      decidedAt: "2026-08-16T12:05:00.000Z",
+    };
+    const kept = {
+      ...dismissed,
+      id: "00000000-0000-0000-0000-000000000021" as DiscoveryId,
+      state: "kept" as const,
+      title: null,
+      source: null,
+      publisher: null,
+      publishedAt: null,
+      durationSeconds: null,
+      type: null,
+      thumbnailUrl: null,
+      decidedAt: "2026-08-16T12:04:00.000Z",
+    };
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(fetchDiscoverHistory)
+      .mockResolvedValueOnce({ discoveries: [dismissed], nextCursor: cursor })
+      .mockResolvedValueOnce({ discoveries: [kept], nextCursor: null });
+    renderDiscover();
+    const historyButton = await screen.findByRole("button", {
+      name: "History",
+    });
+    historyButton.focus();
+
+    fireEvent.click(historyButton);
+
+    expect(
+      await screen.findByRole("heading", { name: "Discovery history" }),
+    ).toBeVisible();
+    expect(await screen.findByText("Dismissed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load more history" }));
+    expect(
+      await screen.findByText("Provider details unavailable"),
+    ).toBeVisible();
+    expect(fetchDiscoverHistory).toHaveBeenLastCalledWith(auth.user, cursor);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(historyButton).toHaveFocus());
+  });
+
+  it("keeps intake actionable and reuses the mutation key after a decision failure", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(decideDiscoveries)
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({
+        ok: true,
+        discoveries: [
+          {
+            id: storedWorkspace.discoveries[0].id,
+            state: "dismissed",
+            seenAt: null,
+            decidedAt: "2026-08-16T12:05:00.000Z",
+          },
+        ],
+      });
+    renderDiscover();
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "current intake remains available",
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry decision" }));
+    await waitFor(() => expect(decideDiscoveries).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(decideDiscoveries).mock.calls[1]?.[1].idempotencyKey).toBe(
+      vi.mocked(decideDiscoveries).mock.calls[0]?.[1].idempotencyKey,
+    );
+  });
+
+  it("dismisses one card and rereads it out of unresolved intake", async () => {
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockResolvedValueOnce({ ...storedWorkspace, discoveries: [] });
+    vi.mocked(decideDiscoveries).mockResolvedValue({
+      ok: true,
+      discoveries: [
+        {
+          id: storedWorkspace.discoveries[0].id,
+          state: "dismissed",
+          seenAt: null,
+          decidedAt: "2026-08-16T12:05:00.000Z",
+        },
+      ],
+    });
+    renderDiscover();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
+
+    expect(await screen.findByText(/You’re caught up/)).toBeVisible();
+    expect(screen.queryByText("A deep module")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "1 Discovery dismissed",
+    );
+  });
+
+  it("recovers a failed history page inside the open dialog", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(fetchDiscoverHistory)
+      .mockRejectedValueOnce(new Error("history unavailable"))
+      .mockResolvedValueOnce({ discoveries: [], nextCursor: null });
+    renderDiscover();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "History could not load",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry history" }));
+
+    expect(
+      await screen.findByText("No kept or dismissed Discoveries yet."),
+    ).toBeVisible();
+    expect(fetchDiscoverHistory).toHaveBeenCalledTimes(2);
+  });
+
   it("combines and filters the same feed across phone reflow and desktop rail layouts", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,

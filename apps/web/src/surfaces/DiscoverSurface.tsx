@@ -3,6 +3,9 @@ import type {
   ConfirmFollowFailure,
   AcquisitionOutcome,
   DiscoverWorkspace,
+  DiscoverHistoryCursor,
+  DiscoveryHistoryEntry,
+  DiscoveryId,
   DiscoverySummary,
   FollowPreview,
   FollowId,
@@ -14,6 +17,8 @@ import type {
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import {
   confirmFollow,
+  decideDiscoveries,
+  fetchDiscoverHistory,
   fetchDiscoverWorkspace,
   prepareFollowPreview,
   refreshFollow,
@@ -24,6 +29,13 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type ConfirmationFailure = ConfirmFollowFailure | "unknown_outcome";
 
@@ -73,6 +85,22 @@ type LifecycleState =
   | { kind: "pending"; followId: FollowId; lifecycle: FollowLifecycle }
   | { kind: "failure"; followId: FollowId };
 
+type DecisionState =
+  | { kind: "idle" }
+  | {
+      kind: "pending";
+      discoveryIds: DiscoveryId[];
+      decision: "seen" | "dismissed";
+      idempotencyKey: IdempotencyKey;
+    }
+  | {
+      kind: "failure";
+      discoveryIds: DiscoveryId[];
+      decision: "seen" | "dismissed";
+      rereadFailed: boolean;
+      idempotencyKey: IdempotencyKey;
+    };
+
 export function DiscoverSurface() {
   const user = useCurrentUser();
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
@@ -87,6 +115,9 @@ export function DiscoverSurface() {
   const [workspaceRefreshState, setWorkspaceRefreshState] =
     useState<WorkspaceRefreshState>({ kind: "idle" });
   const [lifecycleState, setLifecycleState] = useState<LifecycleState>({
+    kind: "idle",
+  });
+  const [decisionState, setDecisionState] = useState<DecisionState>({
     kind: "idle",
   });
   const [showSetup, setShowSetup] = useState(false);
@@ -280,6 +311,61 @@ export function DiscoverSurface() {
     }
   };
 
+  const runDecision = async (
+    discoveryIds: DiscoveryId[],
+    decision: "seen" | "dismissed",
+    idempotencyKey: IdempotencyKey = crypto.randomUUID() as IdempotencyKey,
+  ) => {
+    setDecisionState({
+      kind: "pending",
+      discoveryIds,
+      decision,
+      idempotencyKey,
+    });
+    try {
+      const result = await decideDiscoveries(user, {
+        discoveryIds,
+        decision,
+        idempotencyKey,
+      });
+      if (!result.ok) {
+        setDecisionState({
+          kind: "failure",
+          discoveryIds,
+          decision,
+          rereadFailed: false,
+          idempotencyKey,
+        });
+        return;
+      }
+      try {
+        await loadWorkspace();
+        setDecisionState({ kind: "idle" });
+        setAnnouncement(
+          `${discoveryIds.length} ${
+            discoveryIds.length === 1 ? "Discovery" : "Discoveries"
+          } ${decision === "seen" ? "acknowledged" : "dismissed"}.`,
+        );
+      } catch {
+        setDecisionState({
+          kind: "failure",
+          discoveryIds,
+          decision,
+          rereadFailed: true,
+          idempotencyKey,
+        });
+      }
+    } catch {
+      setDecisionState({
+        kind: "failure",
+        discoveryIds,
+        decision,
+        rereadFailed: false,
+        idempotencyKey,
+      });
+    }
+  };
+
   const confirmPreview = async (
     preview: FollowPreview,
     idempotencyKey: IdempotencyKey = crypto.randomUUID() as IdempotencyKey,
@@ -422,10 +508,14 @@ export function DiscoverSurface() {
             refreshState={refreshState}
             workspaceRefreshState={workspaceRefreshState}
             lifecycleState={lifecycleState}
+            decisionState={decisionState}
             onRefresh={(follow) => void runFollowRefresh(follow)}
             onRefreshWorkspace={() => void runWorkspaceRefresh()}
             onLifecycleChange={(follow, lifecycle) =>
               void runLifecycleChange(follow, lifecycle)
+            }
+            onDecision={(discoveryIds, decision, idempotencyKey) =>
+              void runDecision(discoveryIds, decision, idempotencyKey)
             }
           />
         </>
@@ -606,19 +696,27 @@ function Workspace({
   refreshState,
   workspaceRefreshState,
   lifecycleState,
+  decisionState,
   onRefresh,
   onRefreshWorkspace,
   onLifecycleChange,
+  onDecision,
 }: {
   workspace: DiscoverWorkspace;
   refreshState: RefreshState;
   workspaceRefreshState: WorkspaceRefreshState;
   lifecycleState: LifecycleState;
+  decisionState: DecisionState;
   onRefresh: (follow: FollowSummary) => void;
   onRefreshWorkspace: () => void;
   onLifecycleChange: (
     follow: FollowSummary,
     lifecycle: FollowLifecycle,
+  ) => void;
+  onDecision: (
+    discoveryIds: DiscoveryId[],
+    decision: "seen" | "dismissed",
+    idempotencyKey?: IdempotencyKey,
   ) => void;
 }) {
   const [selectedFollowId, setSelectedFollowId] = useState<FollowId | null>(
@@ -633,6 +731,8 @@ function Workspace({
   const selectedFollow = workspace.follows.find(
     ({ id }) => id === selectedFollowId,
   );
+  const filteredDiscoveryIds = filteredDiscoveries.map(({ id }) => id);
+  const bulkPending = decisionState.kind === "pending";
   const refreshingFollowName =
     refreshState.kind === "idle"
       ? "this Follow"
@@ -808,7 +908,7 @@ function Workspace({
         className="min-w-0 space-y-4"
         aria-labelledby="discover-intake-heading"
       >
-        <div className="flex items-end justify-between gap-4 border-b pb-3">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-3">
           <div>
             <h2 id="discover-intake-heading" className="text-xl font-semibold">
               Intake
@@ -820,9 +920,61 @@ function Workspace({
                 : ""}
             </p>
           </div>
+          <div
+            className="flex flex-wrap gap-2"
+            aria-label="Filtered intake actions"
+          >
+            <HistoryDialog />
+            <Button
+              type="button"
+              size="touch"
+              variant="secondary"
+              disabled={filteredDiscoveryIds.length === 0 || bulkPending}
+              onClick={() => onDecision(filteredDiscoveryIds, "seen")}
+            >
+              {bulkPending && decisionState.decision === "seen"
+                ? `Acknowledging ${decisionState.discoveryIds.length}…`
+                : `Acknowledge ${filteredDiscoveryIds.length}`}
+            </Button>
+            <Button
+              type="button"
+              size="touch"
+              variant="quiet"
+              disabled={filteredDiscoveryIds.length === 0 || bulkPending}
+              onClick={() => onDecision(filteredDiscoveryIds, "dismissed")}
+            >
+              {bulkPending && decisionState.decision === "dismissed"
+                ? `Dismissing ${decisionState.discoveryIds.length}…`
+                : `Dismiss ${filteredDiscoveryIds.length}`}
+            </Button>
+          </div>
         </div>
         {workspaceRefreshState.kind === "failure" ? (
           <Alert>Workspace Refresh failed. Stored intake is unchanged.</Alert>
+        ) : null}
+        {decisionState.kind === "failure" ? (
+          <Alert className="space-y-2">
+            <p>
+              {decisionState.rereadFailed
+                ? "The decision was saved, but intake could not reload. Reload Discover to see the authoritative queue."
+                : "The decision could not be saved. Your current intake remains available."}
+            </p>
+            {!decisionState.rereadFailed ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  onDecision(
+                    decisionState.discoveryIds,
+                    decisionState.decision,
+                    decisionState.idempotencyKey,
+                  )
+                }
+              >
+                Retry decision
+              </Button>
+            ) : null}
+          </Alert>
         ) : null}
         {affectedNames.length > 0 ? (
           <Alert>
@@ -912,12 +1064,171 @@ function Workspace({
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredDiscoveries.map((discovery) => (
-              <DiscoveryCard key={discovery.id} discovery={discovery} />
+              <DiscoveryCard
+                key={discovery.id}
+                discovery={discovery}
+                pending={
+                  decisionState.kind === "pending" &&
+                  decisionState.discoveryIds.includes(discovery.id)
+                }
+                pendingDecision={
+                  decisionState.kind === "pending"
+                    ? decisionState.decision
+                    : null
+                }
+                onDecision={onDecision}
+              />
             ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+type HistoryState =
+  | { kind: "idle" }
+  | { kind: "loading"; discoveries: DiscoveryHistoryEntry[] }
+  | {
+      kind: "ready";
+      discoveries: DiscoveryHistoryEntry[];
+      nextCursor: DiscoverHistoryCursor | null;
+    }
+  | {
+      kind: "failure";
+      discoveries: DiscoveryHistoryEntry[];
+      cursor: DiscoverHistoryCursor | undefined;
+    };
+
+function HistoryDialog() {
+  const user = useCurrentUser();
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<HistoryState>({ kind: "idle" });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const loadHistory = async (cursor?: DiscoverHistoryCursor) => {
+    const currentDiscoveries =
+      state.kind === "ready" || state.kind === "failure"
+        ? state.discoveries
+        : [];
+    setState({ kind: "loading", discoveries: currentDiscoveries });
+    try {
+      const page = await fetchDiscoverHistory(user, cursor);
+      setState({
+        kind: "ready",
+        discoveries:
+          cursor === undefined
+            ? page.discoveries
+            : [...currentDiscoveries, ...page.discoveries],
+        nextCursor: page.nextCursor,
+      });
+    } catch {
+      setState({
+        kind: "failure",
+        discoveries: currentDiscoveries,
+        cursor,
+      });
+    }
+  };
+
+  const setDialogOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      window.setTimeout(() => triggerRef.current?.focus(), 0);
+    }
+  };
+
+  const discoveries = state.kind === "idle" ? [] : state.discoveries;
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        type="button"
+        size="touch"
+        variant="quiet"
+        onClick={() => {
+          setOpen(true);
+          void loadHistory();
+        }}
+      >
+        History
+      </Button>
+      <Dialog open={open} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discovery history</DialogTitle>
+            <DialogDescription>
+              Prior Keep and Dismiss decisions. Provider details reflect what is
+              currently available.
+            </DialogDescription>
+          </DialogHeader>
+          {state.kind === "loading" && discoveries.length === 0 ? (
+            <p role="status" aria-live="polite">
+              Loading history…
+            </p>
+          ) : null}
+          {discoveries.length === 0 && state.kind === "ready" ? (
+            <p className="text-sm text-muted-foreground">
+              No kept or dismissed Discoveries yet.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {discoveries.map((discovery) => (
+                <li
+                  key={discovery.id}
+                  className="space-y-1 rounded-[var(--radius-card)] border p-3"
+                >
+                  <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                    <span>
+                      {discovery.state === "kept" ? "Kept" : "Dismissed"}
+                    </span>
+                    <time dateTime={discovery.decidedAt}>
+                      {new Intl.DateTimeFormat(undefined, {
+                        dateStyle: "medium",
+                      }).format(new Date(discovery.decidedAt))}
+                    </time>
+                  </div>
+                  <p className="font-medium">
+                    {discovery.title ?? "Provider details unavailable"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {discovery.publisher ??
+                      discovery.followName ??
+                      "Follow unavailable"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {state.kind === "failure" ? (
+            <Alert className="space-y-2">
+              <p>History could not load. Existing entries remain available.</p>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void loadHistory(state.cursor)}
+              >
+                Retry history
+              </Button>
+            </Alert>
+          ) : null}
+          {state.kind === "ready" && state.nextCursor ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void loadHistory(state.nextCursor!)}
+            >
+              Load more history
+            </Button>
+          ) : null}
+          {state.kind === "loading" && discoveries.length > 0 ? (
+            <p role="status" aria-live="polite">
+              Loading more history…
+            </p>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -945,7 +1256,20 @@ function refreshOutcomeMessage(
   }[outcome];
 }
 
-function DiscoveryCard({ discovery }: { discovery: DiscoverySummary }) {
+function DiscoveryCard({
+  discovery,
+  pending,
+  pendingDecision,
+  onDecision,
+}: {
+  discovery: DiscoverySummary;
+  pending: boolean;
+  pendingDecision: "seen" | "dismissed" | null;
+  onDecision: (
+    discoveryIds: DiscoveryId[],
+    decision: "seen" | "dismissed",
+  ) => void;
+}) {
   return (
     <li className="overflow-hidden rounded-[var(--radius-card)] border bg-card shadow-sm">
       {discovery.thumbnailUrl ? (
@@ -980,6 +1304,13 @@ function DiscoveryCard({ discovery }: { discovery: DiscoverySummary }) {
             ? " · Duration unavailable"
             : ` · ${formatDuration(discovery.durationSeconds)}`}
         </p>
+        {discovery.priorDecisions.kept > 0 ||
+        discovery.priorDecisions.dismissed > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Prior history: {discovery.priorDecisions.kept} kept ·{" "}
+            {discovery.priorDecisions.dismissed} dismissed
+          </p>
+        ) : null}
         {discovery.source ? (
           <a
             href={discovery.source}
@@ -994,6 +1325,28 @@ function DiscoveryCard({ discovery }: { discovery: DiscoverySummary }) {
             Source unavailable
           </span>
         )}
+        <div className="flex gap-2 pt-1">
+          <Button
+            type="button"
+            size="touch"
+            variant="secondary"
+            disabled={pending}
+            onClick={() => onDecision([discovery.id], "seen")}
+          >
+            {pending && pendingDecision === "seen" ? "Saving Later…" : "Later"}
+          </Button>
+          <Button
+            type="button"
+            size="touch"
+            variant="quiet"
+            disabled={pending}
+            onClick={() => onDecision([discovery.id], "dismissed")}
+          >
+            {pending && pendingDecision === "dismissed"
+              ? "Dismissing…"
+              : "Dismiss"}
+          </Button>
+        </div>
       </div>
     </li>
   );

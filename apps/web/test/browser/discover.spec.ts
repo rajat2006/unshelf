@@ -49,6 +49,7 @@ const workspace = {
       type: Type.Video,
       thumbnailUrl: null,
       discoveredAt: "2026-08-16T12:00:00.000Z",
+      priorDecisions: { kept: 0, dismissed: 0 },
     },
   ],
 } as DiscoverWorkspace;

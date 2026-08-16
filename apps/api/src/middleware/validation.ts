@@ -44,6 +44,8 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_follow_confirmation",
   "invalid_discover_acquisition",
   "invalid_follow_lifecycle",
+  "invalid_discovery_decision",
+  "invalid_discover_history",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];

@@ -6,6 +6,7 @@ import {
   gt,
   gte,
   inArray,
+  lt,
   max,
   notInArray,
   or,
@@ -20,6 +21,11 @@ import type {
   ConfirmFollowFailure,
   ConfirmFollowRequest,
   ConfirmFollowResponse,
+  DecideDiscoveriesRequest,
+  DecideDiscoveriesResponse,
+  DiscoverHistoryCursor,
+  DiscoverHistoryPage,
+  DiscoverHistoryQuery,
   DiscoverWorkspace,
   DiscoveryId,
   DiscoverySummary,
@@ -86,6 +92,18 @@ export interface DiscoverModule {
     request: SetFollowLifecycleRequest;
     idempotencyKey: IdempotencyKey;
   }): Promise<SetFollowLifecycleResponse>;
+  decide(input: {
+    userId: UserId;
+    request: DecideDiscoveriesRequest;
+    idempotencyKey: IdempotencyKey;
+  }): Promise<DecideDiscoveriesResponse>;
+  readHistory(input: {
+    userId: UserId;
+    query: DiscoverHistoryQuery;
+  }): Promise<
+    | { ok: true; history: DiscoverHistoryPage }
+    | { ok: false; error: "invalid_cursor" }
+  >;
 }
 
 export function createDiscoverModule({
@@ -1271,6 +1289,129 @@ export function createDiscoverModule({
         return result;
       });
     },
+    decide: async ({ userId, request, idempotencyKey }) => {
+      const orderedIds = [...request.discoveryIds].sort();
+      const requestFingerprint = `${request.decision}:${orderedIds.join(",")}`;
+      return db.transaction(async (tx): Promise<DecideDiscoveriesResponse> => {
+        await tx
+          .insert(discoverIdempotency)
+          .values({
+            userId,
+            operation: "decide_discoveries",
+            requestId: idempotencyKey,
+            requestFingerprint,
+          })
+          .onConflictDoNothing();
+        const [idempotency] = await tx
+          .select({
+            requestFingerprint: discoverIdempotency.requestFingerprint,
+            resultPayload: discoverIdempotency.resultPayload,
+          })
+          .from(discoverIdempotency)
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "decide_discoveries"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          )
+          .for("update");
+        if (idempotency.requestFingerprint !== requestFingerprint) {
+          return { ok: false, error: "idempotency_conflict" };
+        }
+        if (idempotency.resultPayload !== null) {
+          return idempotency.resultPayload as DecideDiscoveriesResponse;
+        }
+
+        const rows = await tx
+          .select({
+            id: discoverDiscoveries.id,
+            state: discoverDiscoveries.state,
+            seenAt: discoverDiscoveries.seenAt,
+            decidedAt: discoverDiscoveries.decidedAt,
+          })
+          .from(discoverDiscoveries)
+          .where(
+            and(
+              eq(discoverDiscoveries.userId, userId),
+              inArray(discoverDiscoveries.id, request.discoveryIds),
+            ),
+          )
+          .for("update");
+        let result: DecideDiscoveriesResponse;
+        if (rows.length !== request.discoveryIds.length) {
+          result = { ok: false, error: "discovery_missing" };
+        } else if (
+          rows.some(({ state }) => state === "kept" || state === "dismissed")
+        ) {
+          result = { ok: false, error: "decision_conflict" };
+        } else {
+          const decidedAt = now();
+          await tx
+            .update(discoverDiscoveries)
+            .set(
+              request.decision === "seen"
+                ? { state: "seen", seenAt: decidedAt }
+                : { state: "dismissed", decidedAt },
+            )
+            .where(
+              and(
+                eq(discoverDiscoveries.userId, userId),
+                inArray(discoverDiscoveries.id, request.discoveryIds),
+                request.decision === "seen"
+                  ? eq(discoverDiscoveries.state, "new")
+                  : or(
+                      eq(discoverDiscoveries.state, "new"),
+                      eq(discoverDiscoveries.state, "seen"),
+                    ),
+              ),
+            );
+          const byId = new Map(rows.map((row) => [row.id, row]));
+          result = {
+            ok: true,
+            discoveries: request.discoveryIds.map((id) => {
+              const row = byId.get(id);
+              if (row === undefined) {
+                throw new Error("Locked Discovery disappeared");
+              }
+              return {
+                id: id,
+                state: request.decision,
+                seenAt:
+                  request.decision === "seen"
+                    ? (row.seenAt ?? decidedAt).toISOString()
+                    : (row.seenAt?.toISOString() ?? null),
+                decidedAt:
+                  request.decision === "dismissed"
+                    ? decidedAt.toISOString()
+                    : null,
+              };
+            }),
+          };
+        }
+        await tx
+          .update(discoverIdempotency)
+          .set({ resultPayload: result })
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "decide_discoveries"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          );
+        return result;
+      });
+    },
+    readHistory: async ({ userId, query }) => {
+      const cursor = decodeHistoryCursor(query.cursor);
+      if (query.cursor !== undefined && cursor === null) {
+        return { ok: false, error: "invalid_cursor" };
+      }
+      return {
+        ok: true,
+        history: await selectHistory({ query: db, userId, cursor }),
+      };
+    },
     readWorkspace: ({ userId }) => selectWorkspace({ query: db, userId }),
   };
   return module;
@@ -2150,6 +2291,39 @@ async function selectDiscoveries({
       asc(discoverDiscoveries.position),
       asc(discoverDiscoveries.discoveredAt),
     );
+  const candidateIds = [...new Set(rows.map(({ candidateId }) => candidateId))];
+  const priorRows =
+    candidateIds.length === 0
+      ? []
+      : await query
+          .select({
+            candidateId: discoverDiscoveries.candidateId,
+            state: discoverDiscoveries.state,
+          })
+          .from(discoverDiscoveries)
+          .where(
+            and(
+              eq(discoverDiscoveries.userId, userId),
+              inArray(discoverDiscoveries.candidateId, candidateIds),
+              or(
+                eq(discoverDiscoveries.state, "kept"),
+                eq(discoverDiscoveries.state, "dismissed"),
+              ),
+            ),
+          );
+  const priorDecisionsByCandidate = new Map<
+    string,
+    { kept: number; dismissed: number }
+  >();
+  for (const prior of priorRows) {
+    const counts = priorDecisionsByCandidate.get(prior.candidateId) ?? {
+      kept: 0,
+      dismissed: 0,
+    };
+    if (prior.state === "kept") counts.kept += 1;
+    if (prior.state === "dismissed") counts.dismissed += 1;
+    priorDecisionsByCandidate.set(prior.candidateId, counts);
+  }
   return rows.map((row) => ({
     id: row.id as DiscoveryId,
     candidateId: row.candidateId as CandidateId,
@@ -2164,7 +2338,160 @@ async function selectDiscoveries({
     type: row.type === Type.Video ? Type.Video : null,
     thumbnailUrl: row.thumbnailUrl,
     discoveredAt: row.discoveredAt.toISOString(),
+    priorDecisions: priorDecisionsByCandidate.get(row.candidateId) ?? {
+      kept: 0,
+      dismissed: 0,
+    },
   }));
+}
+
+const historyPageSize = 20;
+
+interface HistoryCursorValue {
+  decidedAt: Date;
+  discoveryId: string;
+}
+
+async function selectHistory({
+  query,
+  userId,
+  cursor,
+}: {
+  query: DiscoverQuery;
+  userId: UserId;
+  cursor: HistoryCursorValue | null;
+}): Promise<DiscoverHistoryPage> {
+  const terminalState = or(
+    eq(discoverDiscoveries.state, "kept"),
+    eq(discoverDiscoveries.state, "dismissed"),
+  );
+  const cursorBoundary =
+    cursor === null
+      ? undefined
+      : or(
+          lt(discoverDiscoveries.decidedAt, cursor.decidedAt),
+          and(
+            eq(discoverDiscoveries.decidedAt, cursor.decidedAt),
+            lt(discoverDiscoveries.id, cursor.discoveryId),
+          ),
+        );
+  const rows = await query
+    .select({
+      id: discoverDiscoveries.id,
+      candidateId: discoverDiscoveries.candidateId,
+      followId: discoverDiscoveries.followId,
+      followName: discoverProviderTargetProjections.publisher,
+      state: discoverDiscoveries.state,
+      title: discoverProviderResultProjections.title,
+      source: discoverProviderResultProjections.source,
+      publisher: discoverProviderResultProjections.publisher,
+      publishedAt: discoverProviderResultProjections.publishedAt,
+      durationSeconds: discoverProviderResultProjections.durationSeconds,
+      type: discoverProviderResultProjections.type,
+      thumbnailUrl: discoverProviderResultProjections.thumbnailUrl,
+      discoveredAt: discoverDiscoveries.discoveredAt,
+      seenAt: discoverDiscoveries.seenAt,
+      decidedAt: discoverDiscoveries.decidedAt,
+    })
+    .from(discoverDiscoveries)
+    .innerJoin(
+      discoverCandidates,
+      and(
+        eq(discoverCandidates.id, discoverDiscoveries.candidateId),
+        eq(discoverCandidates.userId, discoverDiscoveries.userId),
+      ),
+    )
+    .innerJoin(
+      discoverFollows,
+      and(
+        eq(discoverFollows.id, discoverDiscoveries.followId),
+        eq(discoverFollows.userId, discoverDiscoveries.userId),
+      ),
+    )
+    .leftJoin(
+      discoverProviderResultProjections,
+      eq(
+        discoverProviderResultProjections.providerResultId,
+        discoverCandidates.providerResultId,
+      ),
+    )
+    .leftJoin(
+      discoverProviderTargetProjections,
+      eq(
+        discoverProviderTargetProjections.providerTargetId,
+        discoverFollows.providerTargetId,
+      ),
+    )
+    .where(
+      and(
+        eq(discoverDiscoveries.userId, userId),
+        terminalState,
+        cursorBoundary,
+      ),
+    )
+    .orderBy(desc(discoverDiscoveries.decidedAt), desc(discoverDiscoveries.id))
+    .limit(historyPageSize + 1);
+  const pageRows = rows.slice(0, historyPageSize);
+  const last = pageRows.at(-1);
+  const nextCursor =
+    rows.length > historyPageSize && last?.decidedAt != null
+      ? encodeHistoryCursor({
+          decidedAt: last.decidedAt,
+          discoveryId: last.id,
+        })
+      : null;
+  return {
+    discoveries: pageRows.map((row) => ({
+      id: row.id as DiscoveryId,
+      candidateId: row.candidateId as CandidateId,
+      followId: row.followId as FollowId,
+      followName: row.followName,
+      state: row.state as "kept" | "dismissed",
+      title: row.title,
+      source: row.source,
+      publisher: row.publisher,
+      publishedAt: row.publishedAt?.toISOString() ?? null,
+      durationSeconds: row.durationSeconds,
+      type: row.type === Type.Video ? Type.Video : null,
+      thumbnailUrl: row.thumbnailUrl,
+      discoveredAt: row.discoveredAt.toISOString(),
+      seenAt: row.seenAt?.toISOString() ?? null,
+      decidedAt: row.decidedAt!.toISOString(),
+    })),
+    nextCursor,
+  };
+}
+
+function encodeHistoryCursor(value: HistoryCursorValue): DiscoverHistoryCursor {
+  return Buffer.from(
+    JSON.stringify([value.decidedAt.toISOString(), value.discoveryId]),
+  ).toString("base64url") as DiscoverHistoryCursor;
+}
+
+function decodeHistoryCursor(
+  cursor: string | undefined,
+): HistoryCursorValue | null {
+  if (cursor === undefined) return null;
+  try {
+    const value: unknown = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    );
+    if (
+      !Array.isArray(value) ||
+      value.length !== 2 ||
+      typeof value[0] !== "string" ||
+      Number.isNaN(Date.parse(value[0])) ||
+      typeof value[1] !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value[1],
+      )
+    ) {
+      return null;
+    }
+    return { decidedAt: new Date(value[0]), discoveryId: value[1] };
+  } catch {
+    return null;
+  }
 }
 
 function toFollowSummary(row: {

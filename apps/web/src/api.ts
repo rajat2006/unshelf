@@ -10,6 +10,10 @@ import type {
   CreateLearningPlanRequest,
   ConfirmFollowResponse,
   DiscoverWorkspace,
+  DiscoverHistoryCursor,
+  DiscoverHistoryPage,
+  DecideDiscoveriesResponse,
+  DiscoveryId,
   FollowPreviewId,
   FollowId,
   DailyFocus,
@@ -191,6 +195,46 @@ export async function setFollowLifecycle(
     true,
   );
   return (await response.json()) as SetFollowLifecycleResponse;
+}
+
+/** Decide one exact set of Discovery occurrences with a replay-safe key. */
+export async function decideDiscoveries(
+  user: CurrentUser,
+  input: {
+    discoveryIds: DiscoveryId[];
+    decision: "seen" | "dismissed";
+    idempotencyKey: IdempotencyKey;
+  },
+): Promise<DecideDiscoveriesResponse> {
+  const response = await authenticatedRequest(
+    user,
+    "/api/discover/discovery-decisions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": input.idempotencyKey,
+      },
+      body: JSON.stringify({
+        discoveryIds: input.discoveryIds,
+        decision: input.decision,
+      }),
+    },
+    true,
+  );
+  return (await response.json()) as DecideDiscoveriesResponse;
+}
+
+/** Read one server-bounded page of the current User's terminal history. */
+export async function fetchDiscoverHistory(
+  user: CurrentUser,
+  cursor?: DiscoverHistoryCursor,
+): Promise<DiscoverHistoryPage> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return requestJson<DiscoverHistoryPage>(
+    user,
+    `/api/discover/history${query}`,
+  );
 }
 
 /** Fetch All — every Item belonging to the current User. */

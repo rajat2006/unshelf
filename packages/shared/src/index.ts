@@ -125,6 +125,8 @@ export type {
   ConfirmFollowRequest,
   AcquireAndApplyRequest,
   SetFollowLifecycleRequest,
+  DecideDiscoveriesRequest,
+  DiscoverHistoryQuery,
 } from "./validation";
 
 export type Provider = "youtube";
@@ -214,12 +216,54 @@ export interface DiscoverySummary {
   type: Type.Video | null;
   thumbnailUrl: string | null;
   discoveredAt: string;
+  priorDecisions: { kept: number; dismissed: number };
 }
 
 export interface DiscoverWorkspace {
   follows: FollowSummary[];
   discoveries: DiscoverySummary[];
   aggregateNotice?: { affectedFollowIds: FollowId[] };
+}
+
+export type DecideDiscoveriesFailure =
+  "discovery_missing" | "decision_conflict" | "idempotency_conflict";
+
+export interface DiscoveryDecisionSummary {
+  id: DiscoveryId;
+  state: "seen" | "dismissed";
+  seenAt: string | null;
+  decidedAt: string | null;
+}
+
+export type DecideDiscoveriesResponse =
+  | { ok: true; discoveries: DiscoveryDecisionSummary[] }
+  | { ok: false; error: DecideDiscoveriesFailure };
+
+export type DiscoverHistoryCursor = string & {
+  readonly [identifierBrand]: "DiscoverHistoryCursor";
+};
+
+export interface DiscoveryHistoryEntry {
+  id: DiscoveryId;
+  candidateId: CandidateId;
+  followId: FollowId;
+  followName: string | null;
+  state: "kept" | "dismissed";
+  title: string | null;
+  source: string | null;
+  publisher: string | null;
+  publishedAt: string | null;
+  durationSeconds: number | null;
+  type: Type.Video | null;
+  thumbnailUrl: string | null;
+  discoveredAt: string;
+  seenAt: string | null;
+  decidedAt: string;
+}
+
+export interface DiscoverHistoryPage {
+  discoveries: DiscoveryHistoryEntry[];
+  nextCursor: DiscoverHistoryCursor | null;
 }
 
 export type ConfirmFollowFailure =

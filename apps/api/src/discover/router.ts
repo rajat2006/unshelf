@@ -2,6 +2,8 @@ import { Router, type RequestHandler, type Response } from "express";
 import {
   acquireAndApplyRequestSchema,
   confirmFollowRequestSchema,
+  decideDiscoveriesRequestSchema,
+  discoverHistoryQuerySchema,
   idempotencyKeySchema,
   followIdSchema,
   prepareFollowRequestSchema,
@@ -88,6 +90,48 @@ export function createDiscoverRouter(
   router.get("/", async (req, res) => {
     res.json(await discover.readWorkspace({ userId: req.user!.id }));
   });
+  router.get(
+    "/history",
+    validateRequest(
+      { query: discoverHistoryQuerySchema },
+      "invalid_discover_history",
+    ),
+    async (req, res) => {
+      const result = await discover.readHistory({
+        userId: req.user!.id,
+        query: res.locals.validated.query,
+      });
+      if (!result.ok) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+      res.json(result.history);
+    },
+  );
+  router.post(
+    "/discovery-decisions",
+    validateRequest(
+      {
+        body: decideDiscoveriesRequestSchema,
+        headers: { "Idempotency-Key": idempotencyKeySchema },
+      },
+      "invalid_discovery_decision",
+    ),
+    async (req, res) => {
+      const result = await discover.decide({
+        userId: req.user!.id,
+        request: res.locals.validated.body,
+        idempotencyKey: res.locals.validated.headers["Idempotency-Key"],
+      });
+      if (!result.ok) {
+        res
+          .status(result.error === "discovery_missing" ? 404 : 409)
+          .json(result);
+        return;
+      }
+      res.json(result);
+    },
+  );
   router.post(
     "/acquisitions",
     validateRequest(
