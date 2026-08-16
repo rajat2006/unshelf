@@ -134,8 +134,9 @@ function CalendarDayButton({
       size="icon-compact"
       data-selected={modifiers.selected || undefined}
       data-today={modifiers.authoritativeToday || undefined}
+      data-outside={modifiers.outside || undefined}
       className={cn(
-        "relative size-7 rounded-[var(--radius-small)] border border-border/65 p-0 font-normal text-foreground shadow-[0_1px_0_color-mix(in_oklab,var(--color-border)_35%,transparent)] hover:border-primary/45 hover:bg-accent data-[selected=true]:border-primary data-[selected=true]:bg-primary/12 data-[selected=true]:font-semibold data-[today=true]:after:absolute data-[today=true]:after:bottom-0.5 data-[today=true]:after:left-1/2 data-[today=true]:after:size-1 data-[today=true]:after:-translate-x-1/2 data-[today=true]:after:rounded-full data-[today=true]:after:bg-primary focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring/45 disabled:border-border/35 disabled:bg-muted/25 disabled:opacity-100",
+        "relative size-7 rounded-[var(--radius-small)] border border-border/65 p-0 font-normal text-foreground shadow-[0_1px_0_color-mix(in_oklab,var(--color-border)_35%,transparent)] hover:border-primary/45 hover:bg-accent data-[outside=true]:border-border/30 data-[outside=true]:text-muted-foreground data-[selected=true]:border-primary data-[selected=true]:bg-primary/12 data-[selected=true]:font-semibold data-[today=true]:after:absolute data-[today=true]:after:bottom-0.5 data-[today=true]:after:left-1/2 data-[today=true]:after:size-1 data-[today=true]:after:-translate-x-1/2 data-[today=true]:after:rounded-full data-[today=true]:after:bg-primary focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring/45 disabled:border-border/35 disabled:bg-muted/25 disabled:opacity-100",
         className,
       )}
       {...props}

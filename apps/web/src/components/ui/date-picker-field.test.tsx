@@ -247,6 +247,57 @@ describe("DatePickerField", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not identify a supported date as Today when authoritative Today is unavailable", () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="0001-01-01"
+        today={null}
+        locale="en-US"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+
+    const selected = screen.getByRole("button", {
+      name: /January 1st, 1, selected/,
+    });
+    expect(selected).not.toHaveAccessibleName(/today/i);
+    expect(selected).not.toHaveAttribute("data-today");
+  });
+
+  it("exposes distinct selected, Today, outside-month, and disabled day states", () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-16"
+        today="2026-08-17"
+        locale="en-US"
+        min="2026-07-01"
+        max="2026-08-20"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+
+    expect(
+      screen.getByRole("button", { name: /August 16th, 2026, selected/ }),
+    ).toHaveAttribute("data-selected", "true");
+    expect(
+      screen.getByRole("button", { name: /Today.*August 17th, 2026/i }),
+    ).toHaveAttribute("data-today", "true");
+    expect(
+      screen.getByRole("button", { name: /July 26th, 2026/i }),
+    ).toHaveAttribute("data-outside", "true");
+    expect(
+      screen.getByRole("button", { name: /August 21st, 2026/i }),
+    ).toBeDisabled();
+  });
+
   it("retains an impossible draft with an associated error and emits no value", () => {
     const onValueChange = vi.fn();
     const onValidityChange = vi.fn();

@@ -1,6 +1,46 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { testApi, testAppUrl } from "./test-helpers";
+
+async function expectPopoverAccessible(page: Page) {
+  const accessibility = await new AxeBuilder({ page })
+    .include('[data-slot="popover-content"]')
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+}
+
+async function expectCalendarDayStatesDistinct(calendar: Locator) {
+  const selected = calendar.locator('button[data-selected="true"]');
+  const outside = calendar.locator('button[data-outside="true"]').first();
+  const ordinary = calendar
+    .locator(
+      'td:not([data-outside]) > button:not([data-selected]):not([data-today]):not(:disabled)',
+    )
+    .first();
+  await expect(selected).toBeVisible();
+  await expect(outside).toBeVisible();
+  await expect(ordinary).toBeVisible();
+
+  const styles = await Promise.all(
+    [selected, outside, ordinary].map((day) =>
+      day.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          color: style.color,
+        };
+      }),
+    ),
+  );
+  expect(styles[0].backgroundColor).not.toBe(styles[2].backgroundColor);
+  expect(styles[1].color).not.toBe(styles[2].color);
+  expect(styles[1].borderColor).not.toBe(styles[2].borderColor);
+
+  const target = await selected.boundingBox();
+  expect(target?.width).toBeGreaterThanOrEqual(28);
+  expect(target?.height).toBeGreaterThanOrEqual(28);
+}
 
 async function seedPlacedItem(page: Page, user: string) {
   const learningPlan = (await (
@@ -118,6 +158,9 @@ test("the themed date picker chooses and saves a Target date across responsive i
 }, testInfo) => {
   const user = `${testInfo.project.name}-themed-target-date`;
   const { item } = await seedPlacedItem(page, user);
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
   await testApi(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
     targetDate: "2099-06-15",
   });
@@ -156,6 +199,7 @@ test("the themed date picker chooses and saves a Target date across responsive i
   await calendar.getByRole("combobox", { name: "Choose the Year" }).click();
   await page.getByRole("option", { name: "2098" }).click();
   await expect(calendar).toBeVisible();
+  await expect(calendar.getByRole("status")).toHaveText("September 2098");
 
   const septemberSeventh = calendar.getByRole("button", {
     name: "Sunday, September 7th, 2098",
@@ -174,6 +218,7 @@ test("the themed date picker chooses and saves a Target date across responsive i
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await trigger.click();
+  await expectCalendarDayStatesDistinct(calendar);
   await expect
     .poll(() =>
       calendar.evaluate((element) =>
@@ -181,10 +226,26 @@ test("the themed date picker chooses and saves a Target date across responsive i
       ),
     )
     .toBeLessThan(0.001);
-  const accessibility = await new AxeBuilder({ page })
-    .include('[data-slot="popover-content"]')
-    .analyze();
-  expect(accessibility.violations).toEqual([]);
+  await expectPopoverAccessible(page);
+
+  const [todayYear, todayMonth] = authoritativeCalendar.today.split("-");
+  await calendar.getByRole("combobox", { name: "Choose the Year" }).click();
+  await page.getByRole("option", { name: String(Number(todayYear)) }).click();
+  await calendar.getByRole("combobox", { name: "Choose the Month" }).click();
+  await page
+    .getByRole("option", {
+      name: new Intl.DateTimeFormat("en-US", { month: "long" }).format(
+        new Date(2000, Number(todayMonth) - 1, 1),
+      ),
+    })
+    .click();
+  const todayTile = calendar.locator('button[data-today="true"]');
+  await expect(todayTile).toBeVisible();
+  expect(
+    await todayTile.evaluate(
+      (element) => getComputedStyle(element, "::after").width,
+    ),
+  ).toBe("4px");
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
 
@@ -203,10 +264,8 @@ test("the themed date picker chooses and saves a Target date across responsive i
     expect(zoomedCalendar!.x + zoomedCalendar!.width).toBeLessThanOrEqual(
       viewport!.width,
     );
-    const darkAccessibility = await new AxeBuilder({ page })
-      .include('[data-slot="popover-content"]')
-      .analyze();
-    expect(darkAccessibility.violations).toEqual([]);
+    await expectCalendarDayStatesDistinct(calendar);
+    await expectPopoverAccessible(page);
   }
 });
 

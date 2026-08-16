@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDaysIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/calendar-date";
 
 const DESKTOP_DATE_PICKER_QUERY = "(min-width: 640px) and (pointer: fine)";
+const NO_AUTHORITATIVE_TODAY = fixedDateOutsideSupportedRange();
 
 interface DatePickerFieldProps {
   id: string;
@@ -227,21 +228,20 @@ export function DatePickerField({
     className: "w-auto min-w-40",
   };
 
-  const selectedDate = value ? calendarDateToLocalDate(value) : undefined;
-  const authoritativeToday = today
-    ? calendarDateToLocalDate(today)
-    : undefined;
+  const selectedDate = useMemo(
+    () => (value ? calendarDateToLocalDate(value) : undefined),
+    [value],
+  );
+  const authoritativeToday = useMemo(
+    () => (today ? calendarDateToLocalDate(today) : undefined),
+    [today],
+  );
   const openingDate = selectedDate ?? authoritativeToday;
   const [visibleMonth, setVisibleMonth] = useState(openingDate);
 
   useEffect(() => {
-    const nextOpeningDate = value
-      ? calendarDateToLocalDate(value)
-      : today
-        ? calendarDateToLocalDate(today)
-        : undefined;
-    if (nextOpeningDate) setVisibleMonth(nextOpeningDate);
-  }, [value, today]);
+    if (openingDate) setVisibleMonth(openingDate);
+  }, [openingDate]);
 
   function handleCompositeBlur(nextTarget: EventTarget | null) {
     if (
@@ -330,10 +330,7 @@ export function DatePickerField({
               required
               autoFocus
               selected={selectedDate}
-              today={
-                authoritativeToday ??
-                calendarDateToLocalDate("0001-01-01")
-              }
+              today={authoritativeToday ?? NO_AUTHORITATIVE_TODAY}
               modifiers={{ authoritativeToday }}
               month={visibleMonth}
               onMonthChange={setVisibleMonth}
@@ -543,6 +540,13 @@ function browserDatePickerLocale(): DatePickerLocale {
   return resolveDatePickerLocale(
     typeof navigator === "undefined" ? [] : navigator.languages,
   );
+}
+
+function fixedDateOutsideSupportedRange(): Date {
+  const date = new Date(0);
+  date.setHours(12, 0, 0, 0);
+  date.setFullYear(0, 0, 1);
+  return date;
 }
 
 function useDesktopDatePicker(): boolean {
