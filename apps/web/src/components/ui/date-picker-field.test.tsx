@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubMatchMedia } from "@/test-support/stub-match-media";
@@ -8,10 +14,18 @@ import { DatePickerField } from "./date-picker-field";
 
 beforeEach(() => {
   stubMatchMedia(true);
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
 });
 
 afterEach(() => {
   cleanup();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: undefined,
+  });
   vi.unstubAllGlobals();
 });
 
@@ -77,6 +91,160 @@ describe("DatePickerField", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onValueChange).toHaveBeenCalledWith("2028-02-29");
+  });
+
+  it("chooses a date from the desktop calendar", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-16"
+        today="2026-08-16"
+        locale="en-US"
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Monday, August 24th, 2026" }),
+    );
+
+    expect(onValueChange).toHaveBeenCalledWith("2026-08-24");
+    expect(
+      screen.queryByRole("dialog", { name: "Choose date" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Choose date" })).toHaveFocus(),
+    );
+  });
+
+  it(
+    "navigates directly by month and year without closing the calendar",
+    async () => {
+      const onValueChange = vi.fn();
+      render(
+        <DatePickerField
+          id="target-date"
+          aria-label="Target date"
+          value="2026-08-16"
+          today="2026-08-16"
+          locale="en-US"
+          onValueChange={onValueChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Choose the Month" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("option", { name: "September" }),
+      );
+      expect(
+        screen.getByRole("dialog", { name: "Choose date" }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Choose the Year" }),
+      );
+      fireEvent.click(await screen.findByRole("option", { name: "2035" }));
+      expect(
+        screen.getByRole("dialog", { name: "Choose date" }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Friday, September 7th, 2035",
+        }),
+      );
+      expect(onValueChange).toHaveBeenCalledWith("2035-09-07");
+    },
+    10_000,
+  );
+
+  it("constrains calendar navigation, day selection, and Today to the bounds", () => {
+    const onValueChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-15"
+        today="2026-08-05"
+        locale="en-US"
+        min="2026-08-10"
+        max="2026-08-20"
+        allowToday
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Sunday, August 9th, 2026" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Friday, August 21st, 2026" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /previous month/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /next month/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it("focuses the selected day and returns focus to the trigger on Escape", async () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-16"
+        today="2026-08-05"
+        locale="en-US"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Choose date" });
+    fireEvent.click(trigger);
+    const selectedDay = screen.getByRole("button", {
+      name: "Sunday, August 16th, 2026, selected",
+    });
+    await waitFor(() => expect(selectedDay).toHaveFocus());
+
+    fireEvent.keyDown(selectedDay, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Choose date" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not open an empty calendar without authoritative Today", () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value={null}
+        today={null}
+        locale="en-US"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Choose date" })).toBeDisabled();
+    expect(
+      screen.queryByRole("dialog", { name: "Choose date" }),
+    ).not.toBeInTheDocument();
   });
 
   it("retains an impossible draft with an associated error and emits no value", () => {
@@ -216,6 +384,8 @@ describe("DatePickerField", () => {
     );
 
     const input = screen.getByLabelText("Target date");
+    const trigger = screen.getByRole("button", { name: "Choose date" });
+    fireEvent.click(trigger);
     const today = screen.getByRole("button", { name: "Today" });
     fireEvent.change(input, { target: { value: "02/29/20" } });
     fireEvent.blur(input, { relatedTarget: today });
@@ -224,6 +394,7 @@ describe("DatePickerField", () => {
     fireEvent.click(today);
     expect(onValueChange).toHaveBeenCalledWith("2026-08-16");
 
+    fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onValueChange).toHaveBeenCalledWith(null);
   });

@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { testApi, testAppUrl } from "./test-helpers";
 
@@ -110,6 +111,103 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
     page: document.documentElement.scrollWidth,
   }));
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+});
+
+test("the themed date picker chooses and saves a Target date across responsive inputs", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-themed-target-date`;
+  const { item } = await seedPlacedItem(page, user);
+  await testApi(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
+    targetDate: "2099-06-15",
+  });
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const input = sidebar.getByLabel(`Target date for ${item.title}`);
+  await expect(input).toHaveCount(1);
+
+  if (testInfo.project.name === "phone") {
+    await expect(input).toHaveAttribute("type", "date");
+    await expect(
+      sidebar.getByRole("button", { name: "Choose date" }),
+    ).toHaveCount(0);
+    await input.fill("2098-09-08");
+    await expect(input).toHaveValue("2098-09-08");
+    const widths = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      page: document.documentElement.scrollWidth,
+    }));
+    expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+    return;
+  }
+
+  await expect(input).toHaveAttribute("type", "text");
+  const trigger = sidebar.getByRole("button", { name: "Choose date" });
+  await trigger.click();
+  const calendar = page.getByRole("dialog", { name: "Choose date" });
+  await expect(calendar).toBeVisible();
+
+  await calendar.getByRole("combobox", { name: "Choose the Month" }).click();
+  await page.getByRole("option", { name: "September" }).click();
+  await expect(calendar).toBeVisible();
+  await calendar.getByRole("combobox", { name: "Choose the Year" }).click();
+  await page.getByRole("option", { name: "2098" }).click();
+  await expect(calendar).toBeVisible();
+
+  const septemberSeventh = calendar.getByRole("button", {
+    name: "Sunday, September 7th, 2098",
+  });
+  await septemberSeventh.focus();
+  await septemberSeventh.press("ArrowRight");
+  const septemberEighth = calendar.getByRole("button", {
+    name: "Monday, September 8th, 2098",
+  });
+  await expect(septemberEighth).toBeFocused();
+  await septemberEighth.press("Enter");
+
+  await expect(input).toHaveValue("09/08/2098");
+  await expect(trigger).toBeEnabled();
+  await expect(trigger).toBeFocused();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await trigger.click();
+  await expect
+    .poll(() =>
+      calendar.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).animationDuration),
+      ),
+    )
+    .toBeLessThan(0.001);
+  const accessibility = await new AxeBuilder({ page })
+    .include('[data-slot="popover-content"]')
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+
+  if (testInfo.project.name === "desktop") {
+    await page.getByLabel("Theme", { exact: true }).click();
+    await page.getByRole("option", { name: "Dark" }).click();
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "2";
+    });
+    await trigger.click();
+    const zoomedCalendar = await calendar.boundingBox();
+    const viewport = page.viewportSize();
+    expect(zoomedCalendar).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(zoomedCalendar!.x).toBeGreaterThanOrEqual(0);
+    expect(zoomedCalendar!.x + zoomedCalendar!.width).toBeLessThanOrEqual(
+      viewport!.width,
+    );
+    const darkAccessibility = await new AxeBuilder({ page })
+      .include('[data-slot="popover-content"]')
+      .analyze();
+    expect(darkAccessibility.violations).toEqual([]);
+  }
 });
 
 test("an Item can be structured and maintain its ordered Part checklist", async ({

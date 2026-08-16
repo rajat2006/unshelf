@@ -74,6 +74,24 @@ export function parseLocalizedCalendarDate({
   return { ok: true, value: canonical };
 }
 
+export function calendarDateToLocalDate(value: string): Date | undefined {
+  const parts = parseCanonicalCalendarDate(value);
+  if (!parts) return undefined;
+
+  const date = new Date(0);
+  date.setHours(12, 0, 0, 0);
+  date.setFullYear(parts.year, parts.month - 1, parts.day);
+  return date;
+}
+
+export function localDateToCalendarDate(value: Date): string | undefined {
+  const year = value.getFullYear();
+  const month = value.getMonth() + 1;
+  const day = value.getDate();
+  const canonical = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return parseCanonicalCalendarDate(canonical) ? canonical : undefined;
+}
+
 function parseCanonicalCalendarDate(value: string): CalendarDateParts | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;

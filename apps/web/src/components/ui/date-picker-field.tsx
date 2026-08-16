@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
+import { CalendarDaysIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  calendarDateToLocalDate,
   formatLocalizedCalendarDate,
+  localDateToCalendarDate,
   parseLocalizedCalendarDate,
   resolveDatePickerLocale,
   type DatePickerLocale,
@@ -47,6 +56,7 @@ export function DatePickerField({
   "aria-describedby": ariaDescribedBy,
 }: DatePickerFieldProps) {
   const isDesktop = useDesktopDatePicker();
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [draft, setDraft] = useState(() =>
     value ? formatLocalizedCalendarDate(value, locale) : "",
   );
@@ -62,6 +72,10 @@ export function DatePickerField({
   });
   const lastEmittedValue = useRef<string | null | undefined>(undefined);
   const currentValidity = useRef(validationError === undefined);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const calendarContentRef = useRef<HTMLDivElement>(null);
+  const calendarTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreCalendarTriggerFocus = useRef(false);
   const canClear = allowClear && !required;
 
   function reportValidity(valid: boolean) {
@@ -72,6 +86,13 @@ export function DatePickerField({
   useEffect(() => {
     onValidityChange?.(currentValidity.current);
   }, [onValidityChange]);
+
+  useEffect(() => {
+    if (!disabled && restoreCalendarTriggerFocus.current) {
+      restoreCalendarTriggerFocus.current = false;
+      calendarTriggerRef.current?.focus();
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (
@@ -128,7 +149,11 @@ export function DatePickerField({
           className="min-h-11 sm:min-h-8"
           disabled={disabled || !todayIsInBounds}
           onClick={() => {
-            if (todayIsInBounds) emitAction(today);
+            if (todayIsInBounds) {
+              if (isDesktop) restoreCalendarTriggerFocus.current = true;
+              emitAction(today);
+              setCalendarOpen(false);
+            }
           }}
         >
           Today
@@ -141,7 +166,11 @@ export function DatePickerField({
           size="compact"
           className="min-h-11 sm:min-h-8"
           disabled={disabled}
-          onClick={() => emitAction(null)}
+          onClick={() => {
+            if (isDesktop) restoreCalendarTriggerFocus.current = true;
+            emitAction(null);
+            setCalendarOpen(false);
+          }}
         >
           Clear
         </Button>
@@ -198,31 +227,145 @@ export function DatePickerField({
     className: "w-auto min-w-40",
   };
 
+  const selectedDate = value ? calendarDateToLocalDate(value) : undefined;
+  const authoritativeToday = today
+    ? calendarDateToLocalDate(today)
+    : undefined;
+  const openingDate = selectedDate ?? authoritativeToday;
+  const [visibleMonth, setVisibleMonth] = useState(openingDate);
+
+  useEffect(() => {
+    const nextOpeningDate = value
+      ? calendarDateToLocalDate(value)
+      : today
+        ? calendarDateToLocalDate(today)
+        : undefined;
+    if (nextOpeningDate) setVisibleMonth(nextOpeningDate);
+  }, [value, today]);
+
+  function handleCompositeBlur(nextTarget: EventTarget | null) {
+    if (
+      nextTarget instanceof Node &&
+      (fieldRef.current?.contains(nextTarget) ||
+        calendarContentRef.current?.contains(nextTarget))
+    ) {
+      return;
+    }
+    if (
+      nextTarget instanceof Element &&
+      nextTarget.closest('[data-slot="select-content"]')
+    ) {
+      return;
+    }
+    validateDraft();
+  }
+
+  const calendarBounds = openingDate
+    ? getCalendarBounds({ today: authoritativeToday, selected: selectedDate, min, max })
+    : undefined;
+
   const input = isDesktop ? (
-    <Input
-      {...sharedInputProps}
-      type="text"
-      inputMode="numeric"
-      value={draft}
-      onChange={(event) => {
-        const nextDraft = event.target.value;
-        setDraft(nextDraft);
-        setValidationError(undefined);
-        reportValidity(
-          nextDraft === ""
-            ? canClear
-            : parseLocalizedCalendarDate({
-                value: nextDraft,
-                locale,
-                min,
-                max,
-              }).ok,
-        );
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") validateDraft();
-      }}
-    />
+    <>
+      <Input
+        {...sharedInputProps}
+        type="text"
+        inputMode="numeric"
+        value={draft}
+        onChange={(event) => {
+          const nextDraft = event.target.value;
+          setDraft(nextDraft);
+          setValidationError(undefined);
+          reportValidity(
+            nextDraft === ""
+              ? canClear
+              : parseLocalizedCalendarDate({
+                  value: nextDraft,
+                  locale,
+                  min,
+                  max,
+                }).ok,
+          );
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") validateDraft();
+        }}
+      />
+      <Popover
+        open={calendarOpen}
+        onOpenChange={(open) => {
+          if (open && openingDate) setVisibleMonth(openingDate);
+          setCalendarOpen(open && openingDate !== undefined);
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            ref={calendarTriggerRef}
+            type="button"
+            variant="secondary"
+            size="icon-compact"
+            aria-label="Choose date"
+            aria-describedby={describedBy || undefined}
+            disabled={disabled || openingDate === undefined}
+          >
+            <CalendarDaysIcon aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        {openingDate && calendarBounds && (
+          <PopoverContent
+            ref={calendarContentRef}
+            role="dialog"
+            aria-label="Choose date"
+            className="w-[252px] gap-1 p-1.5"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (!calendarTriggerRef.current?.disabled) {
+                restoreCalendarTriggerFocus.current = false;
+                calendarTriggerRef.current?.focus();
+              }
+            }}
+            onBlur={(event) => handleCompositeBlur(event.relatedTarget)}
+          >
+            <Calendar
+              mode="single"
+              required
+              autoFocus
+              selected={selectedDate}
+              today={
+                authoritativeToday ??
+                calendarDateToLocalDate("0001-01-01")
+              }
+              modifiers={{ authoritativeToday }}
+              month={visibleMonth}
+              onMonthChange={setVisibleMonth}
+              startMonth={calendarBounds.start}
+              endMonth={calendarBounds.end}
+              captionLayout="dropdown"
+              navLayout="around"
+              disabled={[
+                ...(calendarBounds.minimum
+                  ? [{ before: calendarBounds.minimum }]
+                  : []),
+                ...(calendarBounds.maximum
+                  ? [{ after: calendarBounds.maximum }]
+                  : []),
+              ]}
+              onSelect={(date) => {
+                const nextValue = localDateToCalendarDate(date);
+                if (!nextValue) return;
+                restoreCalendarTriggerFocus.current = true;
+                emitAction(nextValue);
+                setCalendarOpen(false);
+              }}
+            />
+            {(allowToday || (canClear && value !== null)) && (
+              <div className="flex items-center justify-end gap-1 border-t border-border px-1 pt-1">
+                {actions}
+              </div>
+            )}
+          </PopoverContent>
+        )}
+      </Popover>
+    </>
   ) : (
     <Input
       {...sharedInputProps}
@@ -264,31 +407,81 @@ export function DatePickerField({
 
   return (
     <div
+      ref={fieldRef}
       className="grid gap-2"
       onBlur={
         isDesktop
           ? (event) => {
-              const nextTarget = event.relatedTarget;
-              if (
-                nextTarget instanceof Node &&
-                event.currentTarget.contains(nextTarget)
-              ) {
-                return;
-              }
-              validateDraft();
+              handleCompositeBlur(event.relatedTarget);
             }
           : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
         {input}
-        {actions}
+        {!isDesktop && actions}
       </div>
       {validationError && (
         <FieldError id={errorId}>{validationError}</FieldError>
       )}
     </div>
   );
+}
+
+interface CalendarBoundsOptions {
+  today?: Date;
+  selected?: Date;
+  min?: string;
+  max?: string;
+}
+
+interface CalendarBounds {
+  start: Date;
+  end: Date;
+  minimum?: Date;
+  maximum?: Date;
+}
+
+function getCalendarBounds({
+  today,
+  selected,
+  min,
+  max,
+}: CalendarBoundsOptions): CalendarBounds {
+  const anchor = today ?? selected;
+  if (!anchor) throw new Error("Calendar bounds require an opening date.");
+
+  const selectedYear = selected?.getFullYear();
+  const startYear = Math.max(
+    1,
+    Math.min(anchor.getFullYear() - 100, selectedYear ?? Number.POSITIVE_INFINITY),
+  );
+  const endYear = Math.min(
+    9999,
+    Math.max(anchor.getFullYear() + 20, selectedYear ?? Number.NEGATIVE_INFINITY),
+  );
+  const rangeStart = calendarDateToLocalDate(
+    `${String(startYear).padStart(4, "0")}-01-01`,
+  );
+  const rangeEnd = calendarDateToLocalDate(
+    `${String(endYear).padStart(4, "0")}-12-31`,
+  );
+  if (!rangeStart || !rangeEnd) {
+    throw new Error("Calendar navigation range is invalid.");
+  }
+
+  const minimum = min ? calendarDateToLocalDate(min) : undefined;
+  const maximum = max ? calendarDateToLocalDate(max) : undefined;
+  return {
+    start:
+      minimum && minimum.getTime() > rangeStart.getTime()
+        ? minimum
+        : rangeStart,
+    end:
+      maximum && maximum.getTime() < rangeEnd.getTime() ? maximum : rangeEnd,
+    minimum,
+    maximum,
+  };
 }
 
 interface ValidationMessageOptions {

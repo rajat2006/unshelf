@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  calendarDateToLocalDate,
   formatLocalizedCalendarDate,
+  localDateToCalendarDate,
   parseLocalizedCalendarDate,
   resolveDatePickerLocale,
 } from "./calendar-date";
@@ -78,6 +80,27 @@ describe("calendar date adapter", () => {
         );
       }
       expect(observedHours.size).toBeGreaterThan(1);
+    } finally {
+      if (originalTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTimezone;
+    }
+  });
+
+  it("round-trips local calendar dates without timezone conversion, including years below 100", () => {
+    const originalTimezone = process.env.TZ;
+    try {
+      for (const timezone of [
+        "UTC",
+        "America/Los_Angeles",
+        "Pacific/Auckland",
+      ]) {
+        process.env.TZ = timezone;
+        const earlyLeapDay = calendarDateToLocalDate("0004-02-29");
+        expect(earlyLeapDay?.getFullYear()).toBe(4);
+        expect(earlyLeapDay?.getMonth()).toBe(1);
+        expect(earlyLeapDay?.getDate()).toBe(29);
+        expect(localDateToCalendarDate(earlyLeapDay!)).toBe("0004-02-29");
+      }
     } finally {
       if (originalTimezone === undefined) delete process.env.TZ;
       else process.env.TZ = originalTimezone;
