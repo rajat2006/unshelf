@@ -1,7 +1,7 @@
 import { createApp } from "./app";
 import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./middleware/auth";
-import { createDatabase } from "./db";
+import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
 
@@ -44,14 +44,7 @@ await superviseApiProcess({
           });
     }
 
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error("DATABASE_URL is required");
-    }
-    const databaseTimeZone = process.env.DATABASE_TIME_ZONE;
-    if (!databaseTimeZone) {
-      throw new Error("DATABASE_TIME_ZONE is required");
-    }
+    const databaseConfig = readDatabaseConfig(process.env);
 
     // Clerk needs its keys to verify sessions on protected routes.
     // `clerkMiddleware` reads them from the environment; fail fast rather than
@@ -67,10 +60,7 @@ await superviseApiProcess({
     }
 
     const port = Number(process.env.PORT ?? 3001);
-    const db = createDatabase({
-      connectionString,
-      timeZone: databaseTimeZone,
-    });
+    const db = createDatabase(databaseConfig);
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.

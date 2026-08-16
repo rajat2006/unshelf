@@ -49,7 +49,7 @@ function CalendarReader() {
 }
 
 function renderProvider() {
-  render(
+  return render(
     <ApplicationAuthProvider auth={auth}>
       <ServerCalendarProvider>
         <CalendarReader />
@@ -121,9 +121,12 @@ describe("signed-in server calendar", () => {
     );
   });
 
-  it("refreshes an unknown document when the app becomes visible", async () => {
+  it("refreshes an expired document when the app becomes visible", async () => {
     vi.mocked(fetchServerCalendar)
-      .mockRejectedValueOnce(new Error("api responded 503"))
+      .mockResolvedValueOnce({
+        today: "2000-01-01",
+        validUntil: "2000-01-02T00:00:00.000Z",
+      })
       .mockResolvedValueOnce({
         today: "2026-08-16",
         validUntil: "2026-08-17T00:00:00.000Z",
@@ -137,5 +140,53 @@ describe("signed-in server calendar", () => {
     expect(screen.getByLabelText("Authoritative Today")).toHaveTextContent(
       "2026-08-16",
     );
+  });
+
+  it("keeps an older User's response out after the signed-in User changes", async () => {
+    const firstUser = { getToken: async () => "first-token" };
+    const secondUser = { getToken: async () => "second-token" };
+    let resolveFirst:
+      ((calendar: { today: string; validUntil: string }) => void) | undefined;
+    vi.mocked(fetchServerCalendar)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        today: "2026-08-17",
+        validUntil: "2099-08-18T00:00:00.000Z",
+      });
+    const firstAuth = { ...auth, user: firstUser };
+    const secondAuth = { ...auth, user: secondUser };
+    const view = render(
+      <ApplicationAuthProvider auth={firstAuth}>
+        <ServerCalendarProvider>
+          <CalendarReader />
+        </ServerCalendarProvider>
+      </ApplicationAuthProvider>,
+    );
+
+    view.rerender(
+      <ApplicationAuthProvider auth={secondAuth}>
+        <ServerCalendarProvider>
+          <CalendarReader />
+        </ServerCalendarProvider>
+      </ApplicationAuthProvider>,
+    );
+    await waitFor(() => expect(fetchServerCalendar).toHaveBeenCalledTimes(2));
+
+    resolveFirst?.({
+      today: "2026-08-16",
+      validUntil: "2099-08-17T00:00:00.000Z",
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Authoritative Today")).toHaveTextContent(
+        "2026-08-17",
+      ),
+    );
+    expect(fetchServerCalendar).toHaveBeenLastCalledWith(secondUser);
   });
 });

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -23,10 +24,13 @@ export type ServerCalendarValue = ServerCalendarState & {
   retry: () => void;
 };
 
-const unavailableCalendar: ServerCalendarValue = {
+const unavailableState: ServerCalendarState = {
   status: "unavailable",
   today: null,
   validUntil: null,
+};
+const unavailableCalendar: ServerCalendarValue = {
+  ...unavailableState,
   retry: () => undefined,
 };
 const ServerCalendarContext =
@@ -44,6 +48,7 @@ export function ServerCalendarProvider({ children }: { children: ReactNode }) {
   });
   const inFlight = useRef<Promise<void> | null>(null);
   const newestRequest = useRef(0);
+  const requestUser = useRef(user);
 
   const load = useCallback(() => {
     if (inFlight.current) return inFlight.current;
@@ -54,22 +59,14 @@ export function ServerCalendarProvider({ children }: { children: ReactNode }) {
       .then((calendar) => {
         if (requestId !== newestRequest.current) return;
         if (!isCurrentCalendar(calendar)) {
-          setState({
-            status: "unavailable",
-            today: null,
-            validUntil: null,
-          });
+          setState(unavailableState);
           return;
         }
         setState({ status: "available", ...calendar });
       })
       .catch(() => {
         if (requestId === newestRequest.current) {
-          setState({
-            status: "unavailable",
-            today: null,
-            validUntil: null,
-          });
+          setState(unavailableState);
         }
       })
       .finally(() => {
@@ -79,9 +76,14 @@ export function ServerCalendarProvider({ children }: { children: ReactNode }) {
     return request;
   }, [user]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (requestUser.current !== user) {
+      requestUser.current = user;
+      newestRequest.current += 1;
+      inFlight.current = null;
+    }
     void load();
-  }, [load]);
+  }, [load, user]);
 
   useEffect(() => {
     if (state.status !== "available") return;
@@ -95,7 +97,7 @@ export function ServerCalendarProvider({ children }: { children: ReactNode }) {
       }
       timeout = window.setTimeout(
         () => {
-          setState({ status: "unavailable", today: null, validUntil: null });
+          setState(unavailableState);
           void load();
         },
         Math.max(remaining, 0),

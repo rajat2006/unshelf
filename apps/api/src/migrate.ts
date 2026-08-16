@@ -1,18 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { createDatabase } from "./db";
+import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel } from "./logging";
 import { runMigration, type MigrationMode } from "./migration-runner";
 import { verifyMigrationHistory } from "./migration-verifier";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required");
-}
-const databaseTimeZone = process.env.DATABASE_TIME_ZONE;
-if (!databaseTimeZone) {
-  throw new Error("DATABASE_TIME_ZONE is required");
-}
+const databaseConfig = readDatabaseConfig(process.env);
 
 const mode = parseMigrationMode(process.env.MIGRATION_MODE);
 
@@ -20,15 +13,12 @@ const logger = createProductionLogger({
   level: parseLogLevel(process.env.LOG_LEVEL),
 });
 const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
-const db = createDatabase({
-  connectionString,
-  timeZone: databaseTimeZone,
-});
+const db = createDatabase(databaseConfig);
 
 try {
   await runMigration({
     logger,
-    diagnosticSecrets: [connectionString],
+    diagnosticSecrets: [databaseConfig.connectionString],
     mode,
     migrate: () =>
       mode === "apply"

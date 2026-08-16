@@ -374,6 +374,41 @@ test("Target date recovers authoritative Today without using the browser clock",
   }
 });
 
+test("Target date refreshes when the authoritative calendar expires", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-today-expiry`;
+  const { item } = await seedPlacedItem(page, user);
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
+  let calendarRequests = 0;
+  await page.route("**/api/server-calendar", async (route) => {
+    calendarRequests += 1;
+    if (calendarRequests === 1) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          today: authoritativeCalendar.today,
+          validUntil: new Date(Date.now() + 2_000).toISOString(),
+        },
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const today = sidebar.getByRole("button", { name: "Today", exact: true });
+  await expect(today).toBeEnabled();
+
+  await expect.poll(() => calendarRequests).toBe(2);
+  await expect(today).toBeEnabled();
+});
+
 test("navigating between Item sidebars keeps every shared Item synchronized", async ({
   page,
 }, testInfo) => {
