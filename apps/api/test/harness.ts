@@ -130,13 +130,17 @@ export async function seedLegacyLearningPlanFixture(
   `);
 }
 
-export async function startTestApp(
-  identify: Identify = identifyFromTestHeader,
-): Promise<TestApp> {
+export async function startTestApp({
+  identify = identifyFromTestHeader,
+  timeZone = "UTC",
+}: { identify?: Identify; timeZone?: string } = {}): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
-  const db = createDatabase(container.getConnectionUri());
+  const db = createDatabase({
+    connectionString: container.getConnectionUri(),
+    timeZone,
+  });
   await migrateTestDatabase(db);
 
   return runningTestApp({ container, db, identify });
@@ -155,7 +159,10 @@ export async function startTestAppWithLegacyFixture(
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
-  const db = createDatabase(container.getConnectionUri());
+  const db = createDatabase({
+    connectionString: container.getConnectionUri(),
+    timeZone: "UTC",
+  });
   const migrations = readMigrationFiles({
     migrationsFolder: MIGRATIONS_FOLDER,
   });

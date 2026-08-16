@@ -6,6 +6,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { updateItemTargetDate } from "../api";
 import type { CurrentUser } from "../application-auth/types";
+import { useServerCalendar } from "../server-calendar/ServerCalendarProvider";
 import { ItemPastTargetBadge } from "./ItemPastTargetBadge";
 
 interface ItemTargetDateProps {
@@ -25,11 +26,16 @@ interface ItemTargetDateProps {
  */
 export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
   const inputId = useId();
+  const calendar = useServerCalendar();
   const [saving, setSaving] = useState(false);
+  const [pendingTargetDate, setPendingTargetDate] = useState<
+    string | null | undefined
+  >();
   const [failedTargetDate, setFailedTargetDate] = useState<string | null>();
 
   async function change(targetDate: string | null) {
     setSaving(true);
+    setPendingTargetDate(targetDate);
     setFailedTargetDate(undefined);
     try {
       onChanged(await updateItemTargetDate(user, item.id, targetDate));
@@ -37,6 +43,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
       setFailedTargetDate(targetDate);
     } finally {
       setSaving(false);
+      setPendingTargetDate(undefined);
     }
   }
 
@@ -48,11 +55,27 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
           id={inputId}
           aria-label={`Target date for ${item.title}`}
           type="date"
-          value={item.targetDate ?? ""}
+          value={
+            (pendingTargetDate === undefined
+              ? item.targetDate
+              : pendingTargetDate) ?? ""
+          }
           disabled={saving}
           onChange={(event) => void change(event.target.value || null)}
           className="w-auto min-w-40"
         />
+        <Button
+          type="button"
+          variant="quiet"
+          size="compact"
+          className="min-h-11 sm:min-h-8"
+          disabled={saving || calendar.status !== "available"}
+          onClick={() => {
+            if (calendar.status === "available") void change(calendar.today);
+          }}
+        >
+          Today
+        </Button>
         {item.targetDate && (
           <Button
             type="button"
@@ -69,6 +92,23 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
       </div>
       {saving && (
         <FieldDescription role="status">Saving Target date…</FieldDescription>
+      )}
+      {calendar.status === "loading" && (
+        <FieldDescription>Loading authoritative Today…</FieldDescription>
+      )}
+      {calendar.status === "unavailable" && (
+        <FieldDescription className="flex flex-wrap items-center gap-2">
+          Authoritative Today is unavailable.
+          <Button
+            type="button"
+            variant="secondary"
+            size="compact"
+            className="min-h-11 sm:min-h-8"
+            onClick={calendar.retry}
+          >
+            Retry Today
+          </Button>
+        </FieldDescription>
       )}
       {failedTargetDate !== undefined && (
         <Alert className="grid gap-2">

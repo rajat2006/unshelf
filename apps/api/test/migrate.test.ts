@@ -22,7 +22,10 @@ describe("migration CLI", () => {
     const container = await new PostgreSqlContainer(
       "postgres:18-alpine",
     ).start();
-    const db = createDatabase(container.getConnectionUri());
+    const db = createDatabase({
+      connectionString: container.getConnectionUri(),
+      timeZone: "UTC",
+    });
 
     try {
       const { stdout } = await execFileAsync(
@@ -33,6 +36,7 @@ describe("migration CLI", () => {
           env: {
             ...process.env,
             DATABASE_URL: container.getConnectionUri(),
+            DATABASE_TIME_ZONE: "UTC",
             MIGRATION_MODE: "apply",
           },
         },
@@ -121,6 +125,7 @@ describe("migration CLI", () => {
           env: {
             ...process.env,
             DATABASE_URL: verificationUrl.toString(),
+            DATABASE_TIME_ZONE: "UTC",
             MIGRATION_MODE: "verify",
           },
         },
@@ -159,6 +164,7 @@ describe("migration CLI", () => {
           env: {
             ...process.env,
             DATABASE_URL: verificationUrl.toString(),
+            DATABASE_TIME_ZONE: "UTC",
             MIGRATION_MODE: "verify",
           },
         }),

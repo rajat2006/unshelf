@@ -9,6 +9,10 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error("DATABASE_URL is required");
 }
+const databaseTimeZone = process.env.DATABASE_TIME_ZONE;
+if (!databaseTimeZone) {
+  throw new Error("DATABASE_TIME_ZONE is required");
+}
 
 const mode = parseMigrationMode(process.env.MIGRATION_MODE);
 
@@ -16,7 +20,10 @@ const logger = createProductionLogger({
   level: parseLogLevel(process.env.LOG_LEVEL),
 });
 const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
-const db = createDatabase(connectionString);
+const db = createDatabase({
+  connectionString,
+  timeZone: databaseTimeZone,
+});
 
 try {
   await runMigration({

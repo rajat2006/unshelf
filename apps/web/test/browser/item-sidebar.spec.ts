@@ -331,6 +331,49 @@ test("Item detail edits synchronize with the same Item in the underlying Library
   ).toHaveAttribute("aria-pressed", "true");
 });
 
+test("Target date recovers authoritative Today without using the browser clock", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-authoritative-today`;
+  const { item } = await seedPlacedItem(page, user);
+  let calendarRequests = 0;
+  await page.route("**/api/server-calendar", async (route) => {
+    calendarRequests += 1;
+    if (calendarRequests === 1) {
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const input = sidebar.getByLabel(`Target date for ${item.title}`);
+  const today = sidebar.getByRole("button", { name: "Today", exact: true });
+
+  await expect(
+    sidebar.getByText("Authoritative Today is unavailable."),
+  ).toBeVisible();
+  await expect(today).toBeDisabled();
+  await input.fill("2099-08-20");
+  await expect(input).toHaveValue("2099-08-20");
+
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
+  await sidebar.getByRole("button", { name: "Retry Today" }).click();
+  await expect(today).toBeEnabled();
+  await today.click();
+  await expect(input).toHaveValue(authoritativeCalendar.today);
+
+  if (testInfo.project.name === "phone") {
+    const touchTarget = await today.boundingBox();
+    expect(touchTarget?.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
 test("navigating between Item sidebars keeps every shared Item synchronized", async ({
   page,
 }, testInfo) => {

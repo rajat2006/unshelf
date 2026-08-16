@@ -48,6 +48,10 @@ await superviseApiProcess({
     if (!connectionString) {
       throw new Error("DATABASE_URL is required");
     }
+    const databaseTimeZone = process.env.DATABASE_TIME_ZONE;
+    if (!databaseTimeZone) {
+      throw new Error("DATABASE_TIME_ZONE is required");
+    }
 
     // Clerk needs its keys to verify sessions on protected routes.
     // `clerkMiddleware` reads them from the environment; fail fast rather than
@@ -63,7 +67,10 @@ await superviseApiProcess({
     }
 
     const port = Number(process.env.PORT ?? 3001);
-    const db = createDatabase(connectionString);
+    const db = createDatabase({
+      connectionString,
+      timeZone: databaseTimeZone,
+    });
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.
