@@ -1067,6 +1067,7 @@ function Workspace({
               <DiscoveryCard
                 key={discovery.id}
                 discovery={discovery}
+                disabled={bulkPending}
                 pending={
                   decisionState.kind === "pending" &&
                   decisionState.discoveryIds.includes(discovery.id)
@@ -1258,11 +1259,13 @@ function refreshOutcomeMessage(
 
 function DiscoveryCard({
   discovery,
+  disabled,
   pending,
   pendingDecision,
   onDecision,
 }: {
   discovery: DiscoverySummary;
+  disabled: boolean;
   pending: boolean;
   pendingDecision: "seen" | "dismissed" | null;
   onDecision: (
@@ -1330,7 +1333,7 @@ function DiscoveryCard({
             type="button"
             size="touch"
             variant="secondary"
-            disabled={pending}
+            disabled={disabled}
             onClick={() => onDecision([discovery.id], "seen")}
           >
             {pending && pendingDecision === "seen" ? "Saving Later…" : "Later"}
@@ -1339,7 +1342,7 @@ function DiscoveryCard({
             type="button"
             size="touch"
             variant="quiet"
-            disabled={pending}
+            disabled={disabled}
             onClick={() => onDecision([discovery.id], "dismissed")}
           >
             {pending && pendingDecision === "dismissed"

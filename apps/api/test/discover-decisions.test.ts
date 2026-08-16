@@ -271,13 +271,29 @@ describe("Discover decisions and history", () => {
       })
       .expect(200);
     await harness.pool.query(
-      `DELETE FROM discover_provider_result_projections
+      `UPDATE discover_provider_result_projections
+       SET fetched_at = CURRENT_TIMESTAMP - INTERVAL '2 days',
+           expires_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
        WHERE provider_result_id = (
          SELECT candidate.provider_result_id
          FROM discover_candidates candidate
          JOIN discover_discoveries discovery
            ON discovery.candidate_id = candidate.id
           AND discovery.user_id = candidate.user_id
+         WHERE discovery.id = $1
+       )`,
+      [ownerDiscoveries[0].id],
+    );
+    await harness.pool.query(
+      `UPDATE discover_provider_target_projections
+       SET fetched_at = CURRENT_TIMESTAMP - INTERVAL '2 days',
+           expires_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       WHERE provider_target_id = (
+         SELECT follow.provider_target_id
+         FROM discover_follows follow
+         JOIN discover_discoveries discovery
+           ON discovery.follow_id = follow.id
+          AND discovery.user_id = follow.user_id
          WHERE discovery.id = $1
        )`,
       [ownerDiscoveries[0].id],
@@ -296,6 +312,7 @@ describe("Discover decisions and history", () => {
           title: null,
           source: null,
           publisher: null,
+          followName: null,
           decidedAt: now.toISOString(),
         }),
       ],
@@ -388,6 +405,7 @@ describe("Discover decisions and history", () => {
       .set("Idempotency-Key", crypto.randomUUID())
       .send({ discoveryIds: [discoveries[0].id], decision: "dismissed" })
       .expect(200);
+    currentNow = new Date("2026-08-16T12:10:00.000Z");
     acquireChannel.mockResolvedValueOnce({
       ok: true,
       outcome: "empty",

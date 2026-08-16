@@ -227,6 +227,9 @@ describe("Discover channel setup", () => {
     expect(bulkDecision?.[1].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
     expect(screen.getByText("A deep module")).toBeVisible();
     expect(screen.getByText("Understand queues")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Later" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    expect(decideDiscoveries).toHaveBeenCalledTimes(1);
     await act(async () => {
       finish({
         ok: true,

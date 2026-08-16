@@ -1326,6 +1326,7 @@ export function createDiscoverModule({
         const rows = await tx
           .select({
             id: discoverDiscoveries.id,
+            candidateId: discoverDiscoveries.candidateId,
             state: discoverDiscoveries.state,
             seenAt: discoverDiscoveries.seenAt,
             decidedAt: discoverDiscoveries.decidedAt,
@@ -1341,53 +1342,70 @@ export function createDiscoverModule({
         let result: DecideDiscoveriesResponse;
         if (rows.length !== request.discoveryIds.length) {
           result = { ok: false, error: "discovery_missing" };
-        } else if (
-          rows.some(({ state }) => state === "kept" || state === "dismissed")
-        ) {
-          result = { ok: false, error: "decision_conflict" };
         } else {
-          const decidedAt = now();
-          await tx
-            .update(discoverDiscoveries)
-            .set(
-              request.decision === "seen"
-                ? { state: "seen", seenAt: decidedAt }
-                : { state: "dismissed", decidedAt },
-            )
+          const candidateIds = [
+            ...new Set(rows.map(({ candidateId }) => candidateId)),
+          ];
+          const lockedCandidates = await tx
+            .select({ id: discoverCandidates.id })
+            .from(discoverCandidates)
             .where(
               and(
-                eq(discoverDiscoveries.userId, userId),
-                inArray(discoverDiscoveries.id, request.discoveryIds),
-                request.decision === "seen"
-                  ? eq(discoverDiscoveries.state, "new")
-                  : or(
-                      eq(discoverDiscoveries.state, "new"),
-                      eq(discoverDiscoveries.state, "seen"),
-                    ),
+                eq(discoverCandidates.userId, userId),
+                inArray(discoverCandidates.id, candidateIds),
               ),
-            );
-          const byId = new Map(rows.map((row) => [row.id, row]));
-          result = {
-            ok: true,
-            discoveries: request.discoveryIds.map((id) => {
-              const row = byId.get(id);
-              if (row === undefined) {
-                throw new Error("Locked Discovery disappeared");
-              }
-              return {
-                id: id,
-                state: request.decision,
-                seenAt:
+            )
+            .for("update");
+          if (lockedCandidates.length !== candidateIds.length) {
+            result = { ok: false, error: "discovery_missing" };
+          } else if (
+            rows.some(({ state }) => state === "kept" || state === "dismissed")
+          ) {
+            result = { ok: false, error: "decision_conflict" };
+          } else {
+            const decidedAt = now();
+            await tx
+              .update(discoverDiscoveries)
+              .set(
+                request.decision === "seen"
+                  ? { state: "seen", seenAt: decidedAt }
+                  : { state: "dismissed", decidedAt },
+              )
+              .where(
+                and(
+                  eq(discoverDiscoveries.userId, userId),
+                  inArray(discoverDiscoveries.id, request.discoveryIds),
                   request.decision === "seen"
-                    ? (row.seenAt ?? decidedAt).toISOString()
-                    : (row.seenAt?.toISOString() ?? null),
-                decidedAt:
-                  request.decision === "dismissed"
-                    ? decidedAt.toISOString()
-                    : null,
-              };
-            }),
-          };
+                    ? eq(discoverDiscoveries.state, "new")
+                    : or(
+                        eq(discoverDiscoveries.state, "new"),
+                        eq(discoverDiscoveries.state, "seen"),
+                      ),
+                ),
+              );
+            const byId = new Map(rows.map((row) => [row.id, row]));
+            result = {
+              ok: true,
+              discoveries: request.discoveryIds.map((id) => {
+                const row = byId.get(id);
+                if (row === undefined) {
+                  throw new Error("Locked Discovery disappeared");
+                }
+                return {
+                  id,
+                  state: request.decision,
+                  seenAt:
+                    request.decision === "seen"
+                      ? (row.seenAt ?? decidedAt).toISOString()
+                      : (row.seenAt?.toISOString() ?? null),
+                  decidedAt:
+                    request.decision === "dismissed"
+                      ? decidedAt.toISOString()
+                      : null,
+                };
+              }),
+            };
+          }
         }
         await tx
           .update(discoverIdempotency)
@@ -1409,7 +1427,12 @@ export function createDiscoverModule({
       }
       return {
         ok: true,
-        history: await selectHistory({ query: db, userId, cursor }),
+        history: await selectHistory({
+          query: db,
+          userId,
+          cursor,
+          currentTime: now(),
+        }),
       };
     },
     readWorkspace: ({ userId }) => selectWorkspace({ query: db, userId }),
@@ -2299,6 +2322,7 @@ async function selectDiscoveries({
           .select({
             candidateId: discoverDiscoveries.candidateId,
             state: discoverDiscoveries.state,
+            decidedAt: discoverDiscoveries.decidedAt,
           })
           .from(discoverDiscoveries)
           .where(
@@ -2311,38 +2335,39 @@ async function selectDiscoveries({
               ),
             ),
           );
-  const priorDecisionsByCandidate = new Map<
-    string,
-    { kept: number; dismissed: number }
-  >();
+  const priorDecisionsByCandidate = new Map<string, typeof priorRows>();
   for (const prior of priorRows) {
-    const counts = priorDecisionsByCandidate.get(prior.candidateId) ?? {
-      kept: 0,
-      dismissed: 0,
-    };
-    if (prior.state === "kept") counts.kept += 1;
-    if (prior.state === "dismissed") counts.dismissed += 1;
-    priorDecisionsByCandidate.set(prior.candidateId, counts);
+    const decisions = priorDecisionsByCandidate.get(prior.candidateId) ?? [];
+    decisions.push(prior);
+    priorDecisionsByCandidate.set(prior.candidateId, decisions);
   }
-  return rows.map((row) => ({
-    id: row.id as DiscoveryId,
-    candidateId: row.candidateId as CandidateId,
-    followId: row.followId as FollowId,
-    followName: row.followName,
-    state: row.state as "new" | "seen",
-    title: row.title,
-    source: row.source,
-    publisher: row.publisher,
-    publishedAt: row.publishedAt?.toISOString() ?? null,
-    durationSeconds: row.durationSeconds,
-    type: row.type === Type.Video ? Type.Video : null,
-    thumbnailUrl: row.thumbnailUrl,
-    discoveredAt: row.discoveredAt.toISOString(),
-    priorDecisions: priorDecisionsByCandidate.get(row.candidateId) ?? {
-      kept: 0,
-      dismissed: 0,
-    },
-  }));
+  return rows.map((row) => {
+    const priorDecisions = (
+      priorDecisionsByCandidate.get(row.candidateId) ?? []
+    ).filter(
+      ({ decidedAt }) => decidedAt !== null && decidedAt < row.discoveredAt,
+    );
+    return {
+      id: row.id as DiscoveryId,
+      candidateId: row.candidateId as CandidateId,
+      followId: row.followId as FollowId,
+      followName: row.followName,
+      state: row.state as "new" | "seen",
+      title: row.title,
+      source: row.source,
+      publisher: row.publisher,
+      publishedAt: row.publishedAt?.toISOString() ?? null,
+      durationSeconds: row.durationSeconds,
+      type: row.type === Type.Video ? Type.Video : null,
+      thumbnailUrl: row.thumbnailUrl,
+      discoveredAt: row.discoveredAt.toISOString(),
+      priorDecisions: {
+        kept: priorDecisions.filter(({ state }) => state === "kept").length,
+        dismissed: priorDecisions.filter(({ state }) => state === "dismissed")
+          .length,
+      },
+    };
+  });
 }
 
 const historyPageSize = 20;
@@ -2356,10 +2381,12 @@ async function selectHistory({
   query,
   userId,
   cursor,
+  currentTime,
 }: {
   query: DiscoverQuery;
   userId: UserId;
   cursor: HistoryCursorValue | null;
+  currentTime: Date;
 }): Promise<DiscoverHistoryPage> {
   const terminalState = or(
     eq(discoverDiscoveries.state, "kept"),
@@ -2410,16 +2437,22 @@ async function selectHistory({
     )
     .leftJoin(
       discoverProviderResultProjections,
-      eq(
-        discoverProviderResultProjections.providerResultId,
-        discoverCandidates.providerResultId,
+      and(
+        eq(
+          discoverProviderResultProjections.providerResultId,
+          discoverCandidates.providerResultId,
+        ),
+        gt(discoverProviderResultProjections.expiresAt, currentTime),
       ),
     )
     .leftJoin(
       discoverProviderTargetProjections,
-      eq(
-        discoverProviderTargetProjections.providerTargetId,
-        discoverFollows.providerTargetId,
+      and(
+        eq(
+          discoverProviderTargetProjections.providerTargetId,
+          discoverFollows.providerTargetId,
+        ),
+        gt(discoverProviderTargetProjections.expiresAt, currentTime),
       ),
     )
     .where(
