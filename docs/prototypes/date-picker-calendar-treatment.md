@@ -37,6 +37,11 @@ state, Today/Clear, Light/Dark, a simulated disabled/saving state, selected,
 today, keyboard-focus, and disabled specimens, plus visible current-versus-
 committed values to expose the two feature semantics.
 
+Following the first HITL review, every treatment was reduced to a compact
+desktop footprint: smaller popovers, tighter internal spacing, 32px calendar
+cells and navigation controls, compact field actions, and reduced display type.
+The coarse-pointer theme contract still expands shared controls to touch size.
+
 ## Review checklist
 
 - Compare the closed field, open popover, information hierarchy, and density in
