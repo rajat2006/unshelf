@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -16,6 +17,7 @@ type ResolvedService = {
   labels?: Record<string, string>;
   networks?: Record<string, unknown>;
   ports?: unknown[];
+  profiles?: string[];
 };
 
 type ResolvedCompose = {
@@ -24,11 +26,18 @@ type ResolvedCompose = {
   volumes?: Record<string, unknown>;
 };
 
-function resolveDeploymentCompose(): ResolvedCompose {
+function resolveDeploymentCompose({
+  maintenanceProfile = false,
+  discoverEnabled = "false",
+}: {
+  maintenanceProfile?: boolean;
+  discoverEnabled?: "true" | "false";
+} = {}): ResolvedCompose {
   const output = execFileSync(
     "docker",
     [
       "compose",
+      ...(maintenanceProfile ? ["--profile", "maintenance"] : []),
       "--project-directory",
       repoRoot,
       "--file",
@@ -51,6 +60,9 @@ function resolveDeploymentCompose(): ResolvedCompose {
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
         MIGRATION_MODE: "apply",
+        DISCOVER_ENABLED: discoverEnabled,
+        YOUTUBE_API_KEY:
+          discoverEnabled === "true" ? "youtube-runtime-secret" : "",
       },
     },
   );
@@ -113,10 +125,84 @@ describe("deployment Compose contract", () => {
       CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
       CLERK_SECRET_KEY: "test-clerk-secret",
       DATABASE_URL: "postgresql://opaque-runtime-value",
+      DISCOVER_ENABLED: "false",
       LOG_LEVEL: "info",
       PORT: "3001",
       PUBLIC_ORIGIN: "https://generated.example.com",
+      YOUTUBE_API_KEY: "",
     });
-    expect(services.web?.environment).toBeUndefined();
+    expect(services.web?.environment).toEqual({ DISCOVER_ENABLED: "false" });
+  });
+
+  it("builds and schedules maintenance from the API image without Provider credentials", () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(repoRoot, "apps/api/package.json"), "utf8"),
+    ) as { scripts: { build: string } };
+    const dockerfile = readFileSync(
+      resolve(repoRoot, "apps/api/Dockerfile"),
+      "utf8",
+    );
+    const { services } = resolveDeploymentCompose({
+      maintenanceProfile: true,
+    });
+
+    expect(packageJson.scripts.build).toContain("src/discover-maintenance.ts");
+    expect(dockerfile).toContain("/app/deploy/dist");
+    expect(services["discover-maintenance"]).toMatchObject({
+      image: services.api?.image,
+      command: [
+        "node",
+        "dist/discover-maintenance.js",
+        "expire-due",
+        "--execute",
+      ],
+      profiles: ["maintenance"],
+      environment: {
+        APPLICATION_NAME: "unshelf-development",
+        DATABASE_URL: "postgresql://opaque-runtime-value",
+        LOG_LEVEL: "info",
+      },
+      networks: { database: null },
+    });
+    expect(services["discover-maintenance"]?.environment).not.toHaveProperty(
+      "YOUTUBE_API_KEY",
+    );
+    expect(services["discover-maintenance"]?.ports).toBeUndefined();
+  });
+
+  it("binds API acquisition and web navigation to one deployment flag", () => {
+    const { services } = resolveDeploymentCompose({
+      discoverEnabled: "true",
+    });
+
+    expect(services.api?.environment).toMatchObject({
+      DISCOVER_ENABLED: "true",
+      YOUTUBE_API_KEY: "youtube-runtime-secret",
+    });
+    expect(services.web?.environment).toEqual({ DISCOVER_ENABLED: "true" });
+  });
+
+  it("documents retention scheduling and additive Discover rollout and rollback", () => {
+    const runbook = readFileSync(resolve(repoRoot, "docs/deploy.md"), "utf8");
+    const normalized = runbook.replace(/\s+/g, " ");
+    const requiredExcerpts = [
+      "docker compose --profile maintenance run --rm discover-maintenance",
+      "once every day",
+      "failedOperations",
+      "deadlineRiskRows",
+      "cleanup runs even when no User opens Unshelf",
+      "--confirm-suspension-termination",
+      "DISCOVER_ENABLED=false",
+      "retention dry run",
+      "no-payload health probe",
+      "enable API acquisition and web navigation together",
+      "deployment secret update and API process restart",
+      "preserve the additive Discover tables and User history",
+      "maintenance schedule remains active",
+    ];
+
+    expect(
+      requiredExcerpts.filter((excerpt) => !normalized.includes(excerpt)),
+    ).toEqual([]);
   });
 });

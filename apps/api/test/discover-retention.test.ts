@@ -90,6 +90,55 @@ afterAll(async () => {
 });
 
 describe("Discover Provider retention", () => {
+  it("reports a bounded expire-due dry run without mutating or acquiring", async () => {
+    const clerkUserId = "clerk_retention_dry_run";
+    await createFollow({
+      clerkUserId,
+      channelId: "UC_retention_dry_run",
+    });
+    currentNow = new Date("2026-09-14T12:00:00.000Z");
+    const discover = createDiscoverModule({
+      db: drizzle(harness.pool, { schema }),
+      youtube: adapter,
+      now: () => currentNow,
+      logger: harness.logger,
+    });
+    const providerCallsBefore =
+      previewChannel.mock.calls.length +
+      acquireChannel.mock.calls.length +
+      acquireChannelByUrl.mock.calls.length;
+
+    await expect(
+      discover.purgeProviderData({
+        kind: "expire_due",
+        dryRun: true,
+        batchSize: 1,
+      }),
+    ).resolves.toEqual({
+      kind: "expire_due",
+      provider: "youtube",
+      dryRun: true,
+      clearedRows: 0,
+      skippedGenerationRows: 0,
+      failedOperations: 0,
+      dueRows: 4,
+      deadlineRiskRows: 0,
+      truncated: true,
+    });
+
+    expect(
+      previewChannel.mock.calls.length +
+        acquireChannel.mock.calls.length +
+        acquireChannelByUrl.mock.calls.length,
+    ).toBe(providerCallsBefore);
+    expect((await readWorkspace(clerkUserId)).discoveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Keep this title" }),
+        expect.objectContaining({ title: "Current Provider title" }),
+      ]),
+    );
+  });
+
   it("expires due YouTube data while preserving User history and confirmed Item fields", async () => {
     const clerkUserId = "clerk_retention_due";
     const prepared = await request(harness.app)
@@ -152,10 +201,13 @@ describe("Discover Provider retention", () => {
     expect(report).toEqual({
       kind: "expire_due",
       provider: "youtube",
+      dryRun: false,
       clearedRows: 6,
       skippedGenerationRows: 0,
       failedOperations: 0,
       dueRows: 6,
+      deadlineRiskRows: 0,
+      truncated: false,
     });
     const retentionLogs = harness.logger.records.slice(logOffset);
     expect(retentionLogs).toEqual(
@@ -273,10 +325,13 @@ describe("Discover Provider retention", () => {
     ).resolves.toEqual({
       kind: "expire_due",
       provider: "youtube",
+      dryRun: false,
       clearedRows: 0,
       skippedGenerationRows: 0,
       failedOperations: 0,
       dueRows: 0,
+      deadlineRiskRows: 0,
+      truncated: false,
     });
   });
 
@@ -503,10 +558,13 @@ describe("Discover Provider retention", () => {
       await expect(cleanup).resolves.toEqual({
         kind: "expire_due",
         provider: "youtube",
+        dryRun: false,
         clearedRows: 0,
         skippedGenerationRows: 1,
         failedOperations: 0,
         dueRows: 1,
+        deadlineRiskRows: 0,
+        truncated: false,
       });
     } finally {
       if (!lockCommitted) await publicationLock.query("ROLLBACK");
@@ -629,10 +687,13 @@ describe("Discover Provider retention", () => {
     expect(first).toEqual({
       kind: "complete",
       provider: "youtube",
+      dryRun: false,
       clearedRows: 7,
       skippedGenerationRows: 0,
       failedOperations: 0,
       dueRows: 0,
+      deadlineRiskRows: 0,
+      truncated: false,
     });
     const callsBeforeRefresh = acquireChannel.mock.calls.length;
     const refresh = await request(harness.app)
@@ -679,10 +740,13 @@ describe("Discover Provider retention", () => {
     ).resolves.toEqual({
       kind: "complete",
       provider: "youtube",
+      dryRun: false,
       clearedRows: 0,
       skippedGenerationRows: 0,
       failedOperations: 0,
       dueRows: 0,
+      deadlineRiskRows: 0,
+      truncated: false,
     });
   });
 

@@ -32,7 +32,9 @@ RUN pnpm --filter @unshelf/web... build
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM caddy:2-alpine AS runtime
 COPY apps/web/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=755 apps/web/docker-entrypoint.sh /usr/local/bin/unshelf-web-entrypoint
 COPY --from=build /app/apps/web/dist /usr/share/caddy
 # Documentation only — advertises the port, does NOT publish it. Traefik routes
 # via the loadbalancer.server.port label, so functionally this is a no-op here.
 EXPOSE 80
+ENTRYPOINT ["/usr/local/bin/unshelf-web-entrypoint"]

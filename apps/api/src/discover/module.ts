@@ -117,7 +117,7 @@ export interface DiscoverModule {
   >;
   purgeProviderData(
     input:
-      | { kind: "expire_due"; batchSize?: number }
+      | { kind: "expire_due"; batchSize?: number; dryRun?: boolean }
       | { kind: "complete"; provider: "youtube"; batchSize?: number },
   ): Promise<ProviderPurgeReport>;
 }
@@ -125,10 +125,13 @@ export interface DiscoverModule {
 export interface ProviderPurgeReport {
   kind: "expire_due" | "complete";
   provider: "youtube";
+  dryRun: boolean;
   clearedRows: number;
   skippedGenerationRows: number;
   failedOperations: number;
   dueRows: number;
+  deadlineRiskRows: number;
+  truncated: boolean;
 }
 
 export function createDiscoverModule({
@@ -1652,14 +1655,37 @@ export function createDiscoverModule({
       const report: ProviderPurgeReport = {
         kind,
         provider: "youtube",
+        dryRun: input.kind === "expire_due" && input.dryRun === true,
         clearedRows: 0,
         skippedGenerationRows: 0,
         failedOperations: 0,
         dueRows: 0,
+        deadlineRiskRows: 0,
+        truncated: false,
       };
       const dueAt = new Date(
-        now().getTime() + providerRetentionSafetyMilliseconds,
+        startedAt.getTime() + providerRetentionSafetyMilliseconds,
       );
+      if (report.dryRun) {
+        const inspection = await inspectDueProviderData({
+          db,
+          dueAt,
+          deadlineAt: startedAt,
+          batchSize,
+        });
+        report.dueRows = inspection.dueRows;
+        report.deadlineRiskRows = inspection.deadlineRiskRows;
+        report.truncated = inspection.truncated;
+        recordRetention({
+          logger,
+          report,
+          durationMs: elapsedMilliseconds({
+            startedAt,
+            finishedAt: now(),
+          }),
+        });
+        return report;
+      }
       if (kind === "complete") {
         await db.transaction(async (tx) => {
           await lockProviderPublication({ tx, provider: "youtube" });
@@ -1768,6 +1794,84 @@ type PurgeCountRow = {
   selected_count: number | string;
   completed_count: number | string;
 };
+
+type DueProviderDataRow = {
+  operation: string;
+  expires_at: Date | string;
+};
+
+async function inspectDueProviderData({
+  db,
+  dueAt,
+  deadlineAt,
+  batchSize,
+}: {
+  db: Database;
+  dueAt: Date;
+  deadlineAt: Date;
+  batchSize: number;
+}): Promise<{
+  dueRows: number;
+  deadlineRiskRows: number;
+  truncated: boolean;
+}> {
+  const inspectionLimit = batchSize + 1;
+  const result = await db.execute<DueProviderDataRow>(sql`
+    (SELECT 'target_data' AS operation, expires_at
+     FROM discover_provider_targets
+     WHERE provider = 'youtube' AND expires_at <= ${dueAt}
+     ORDER BY expires_at, id
+     LIMIT ${inspectionLimit})
+    UNION ALL
+    (SELECT 'checkpoint_data' AS operation, checkpoint_expires_at AS expires_at
+     FROM discover_provider_targets
+     WHERE provider = 'youtube' AND checkpoint_expires_at <= ${dueAt}
+     ORDER BY checkpoint_expires_at, id
+     LIMIT ${inspectionLimit})
+    UNION ALL
+    (SELECT 'target_projection' AS operation, projection.expires_at
+     FROM discover_provider_target_projections AS projection
+     INNER JOIN discover_provider_targets AS target
+       ON target.id = projection.provider_target_id
+     WHERE target.provider = 'youtube' AND projection.expires_at <= ${dueAt}
+     ORDER BY projection.expires_at, projection.provider_target_id
+     LIMIT ${inspectionLimit})
+    UNION ALL
+    (SELECT 'result_reference' AS operation, expires_at
+     FROM discover_provider_results
+     WHERE provider = 'youtube' AND expires_at <= ${dueAt}
+     ORDER BY expires_at, id
+     LIMIT ${inspectionLimit})
+    UNION ALL
+    (SELECT 'result_projection' AS operation, projection.expires_at
+     FROM discover_provider_result_projections AS projection
+     INNER JOIN discover_provider_results AS result
+       ON result.id = projection.provider_result_id
+     WHERE result.provider = 'youtube' AND projection.expires_at <= ${dueAt}
+     ORDER BY projection.expires_at, projection.provider_result_id
+     LIMIT ${inspectionLimit})
+  `);
+  const operationCounts = new Map<string, number>();
+  let deadlineRiskRows = 0;
+  for (const row of result.rows) {
+    const operationCount = operationCounts.get(row.operation) ?? 0;
+    operationCounts.set(row.operation, operationCount + 1);
+    if (
+      operationCount < batchSize &&
+      new Date(row.expires_at).getTime() <= deadlineAt.getTime()
+    ) {
+      deadlineRiskRows += 1;
+    }
+  }
+  return {
+    dueRows: [...operationCounts.values()].reduce(
+      (total, count) => total + Math.min(count, batchSize),
+      0,
+    ),
+    deadlineRiskRows,
+    truncated: [...operationCounts.values()].some((count) => count > batchSize),
+  };
+}
 
 async function purgeDueTargetData({
   db,

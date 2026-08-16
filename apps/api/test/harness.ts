@@ -51,6 +51,7 @@ export const TEST_USER_HEADER = "x-test-clerk-user-id";
 
 export interface TestApp {
   app: Express;
+  databaseUrl: string;
   pool: Pool;
   logger: CollectingLogger;
   stop: () => Promise<void>;
@@ -207,6 +208,7 @@ function runningTestApp({
 
   return {
     app,
+    databaseUrl: container.getConnectionUri(),
     pool: db.$client,
     logger,
     stop: async () => {

@@ -40,10 +40,88 @@ The required resource environment is:
 | `CLERK_PUBLISHABLE_KEY` | api | Matching Clerk publishable key. |
 | `MIGRATION_MODE` | migrate | `apply` for development/production/schema previews; `verify` for ordinary previews. |
 | `LOG_LEVEL` | migrate, api | Optional; defaults to `info`. |
+| `DISCOVER_ENABLED` | api, web | One `true`/`false` runtime flag for API acquisition and web navigation; defaults to `false`. |
+| `YOUTUBE_API_KEY` | api | Deployment secret required only when Discover is enabled; never pass it to web or maintenance. |
 
 The web publishable key is compiled into each environment-specific web image.
 There is no frontend build argument at runtime and no artifact promotion between
 channels.
+
+## Discover rollout and retention maintenance
+
+`DISCOVER_ENABLED` is the one runtime deployment flag for both services. The API
+uses it to mount acquisition routes, while the web container writes the same
+boolean into its public runtime configuration before Caddy starts. Keep
+`DISCOVER_ENABLED=false` during additive deployment and rollback. Disabled mode
+does not require `YOUTUBE_API_KEY`; enabled API startup fails before listening
+when the key is absent. `YOUTUBE_API_KEY` belongs only in the API service's
+deployment secrets. Rotation is a deployment secret update and API process
+restart; the browser and maintenance service never receive it.
+
+The API image also contains `dist/discover-maintenance.js`. Compose exposes it as
+the profile-only `discover-maintenance` service on the private database network,
+without ports, Clerk configuration, or YouTube credentials. It never starts the
+HTTP server and makes no YouTube request.
+
+Before scheduling cleanup, run a retention dry run. It reads at most one bounded
+batch per retained field kind and reports `dueRows`, `deadlineRiskRows`, and
+`truncated` without mutation:
+
+```sh
+docker compose --profile maintenance run --rm discover-maintenance \
+  node dist/discover-maintenance.js expire-due --dry-run
+```
+
+Configure the deployment scheduler to run the committed default command once
+every day, independently of API traffic:
+
+```sh
+docker compose --profile maintenance run --rm discover-maintenance
+```
+
+This guarantees cleanup runs even when no User opens Unshelf. A successful run
+exits zero only after reporting `clearedRows`, `skippedGenerationRows`, and zero
+`failedOperations`. Alert on a non-zero exit, any `failedOperations`, any
+`deadlineRiskRows`, or repeated dry runs with `truncated=true`. Keep the bounded
+structured logs but do not capture environment output. On failure, repair
+database access or the reported bounded database error, rerun the same command,
+and verify a following dry run. The operation is generation-safe and idempotent;
+do not disable the schedule to recover.
+
+A complete YouTube suspension/termination purge is not ordinary cleanup. Obtain
+the required operational authorization, gate rollout with
+`DISCOVER_ENABLED=false`, and invoke the explicit destructive mode exactly:
+
+```sh
+docker compose --profile maintenance run --rm discover-maintenance \
+  node dist/discover-maintenance.js complete-youtube-purge --execute \
+  --confirm-suspension-termination
+```
+
+The module suspends new YouTube acquisition before deleting purgeable YouTube
+fields. Repeating the command is safe. Verify zero remaining purgeable Provider
+fields and preserved internal target/result tombstones, Follows, Candidates,
+Discoveries, decisions, Candidate-to-Item links, and confirmed Item fields.
+
+Roll out in this order:
+
+1. Deploy the additive schema, module, command, and web runtime configuration
+   with `DISCOVER_ENABLED=false`.
+2. Verify migration/schema fidelity and run the retention dry run.
+3. Through an approved secret-aware deployment diagnostic, perform the real-key
+   no-payload health probe. Record only reachability, bounded quota
+   classification, and pass/fail redaction evidence—never the request URL, key,
+   response body, Provider metadata, or User identity.
+4. Verify quota/error redaction, one successful scheduler run, and its failure
+   notification.
+5. Set `DISCOVER_ENABLED=true` once to enable API acquisition and web navigation
+   together, then restart both services and complete the production checks in
+   #421.
+
+Rollback sets `DISCOVER_ENABLED=false` and restarts API and web together. Do not
+reverse migrations or delete data: preserve the additive Discover tables and
+User history. The maintenance schedule remains active until all retained
+Provider data has expired or an authorized complete purge has removed it.
 
 ## Installed-version gate
 
