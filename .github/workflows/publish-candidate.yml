@@ -117,6 +117,20 @@ jobs:
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
             io.unshelf.channel=${{ env.CHANNEL }}
 
+      - name: Verify API image maintenance entrypoint
+        shell: bash
+        run: |
+          api_trace_image="ghcr.io/rajat2006/unshelf-api:${TRACE}"
+          docker pull "$api_trace_image"
+          if docker run --rm --entrypoint node "$api_trace_image" \
+            dist/discover-maintenance.js > maintenance-entrypoint.log 2>&1; then
+            echo "Maintenance entrypoint accepted an ambiguous invocation" >&2
+            exit 1
+          fi
+          grep -F \
+            "Maintenance mode must be expire-due or complete-youtube-purge" \
+            maintenance-entrypoint.log
+
   web-image:
     needs: preflight
     runs-on: ubuntu-24.04

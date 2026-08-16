@@ -58,26 +58,35 @@ when the key is absent. `YOUTUBE_API_KEY` belongs only in the API service's
 deployment secrets. Rotation is a deployment secret update and API process
 restart; the browser and maintenance service never receive it.
 
-The API image also contains `dist/discover-maintenance.js`. Compose exposes it as
-the profile-only `discover-maintenance` service on the private database network,
-without ports, Clerk configuration, or YouTube credentials. It never starts the
-HTTP server and makes no YouTube request.
+The API image also contains `dist/discover-maintenance.js`. Scheduled and manual
+runs override the existing one-shot `migrate` service command, preserving
+ADR-0017's three-service graph while reusing its private database network and
+credential boundary. That execution envelope has no ports, Clerk configuration,
+or YouTube credentials. Maintenance never starts the HTTP server and makes no
+YouTube request.
 
 Before scheduling cleanup, run a retention dry run. It reads at most one bounded
 batch per retained field kind and reports `dueRows`, `deadlineRiskRows`, and
 `truncated` without mutation:
 
 ```sh
-docker compose --profile maintenance run --rm discover-maintenance \
-  node dist/discover-maintenance.js expire-due --dry-run
+docker compose run --rm migrate node dist/discover-maintenance.js \
+  expire-due --dry-run
 ```
 
 Configure the deployment scheduler to run the committed default command once
 every day, independently of API traffic:
 
 ```sh
-docker compose --profile maintenance run --rm discover-maintenance
+docker compose run --rm migrate node dist/discover-maintenance.js \
+  expire-due --execute
 ```
+
+Create this as a Dokploy scheduled task with cron `17 3 * * *` in UTC, a
+ten-minute timeout, and overlapping runs disabled. Send non-zero task exits to
+the deployment's existing failure email; also alert when no successful
+maintenance completion has been observed for 26 hours. The schedule invokes one
+container and must not target the long-running API service.
 
 This guarantees cleanup runs even when no User opens Unshelf. A successful run
 exits zero only after reporting `clearedRows`, `skippedGenerationRows`, and zero
@@ -93,8 +102,8 @@ the required operational authorization, gate rollout with
 `DISCOVER_ENABLED=false`, and invoke the explicit destructive mode exactly:
 
 ```sh
-docker compose --profile maintenance run --rm discover-maintenance \
-  node dist/discover-maintenance.js complete-youtube-purge --execute \
+docker compose run --rm migrate node dist/discover-maintenance.js \
+  complete-youtube-purge --execute \
   --confirm-suspension-termination
 ```
 

@@ -7,6 +7,18 @@ import { afterEach, describe, expect, it } from "vitest";
 const temporaryDirectories: string[] = [];
 
 describe("web runtime configuration", () => {
+  it("loads runtime configuration before the application bundle", () => {
+    const html = readFileSync(
+      resolve(import.meta.dirname, "../index.html"),
+      "utf8",
+    );
+
+    expect(html.indexOf('src="/runtime-config.js"')).toBeGreaterThan(-1);
+    expect(html.indexOf('src="/runtime-config.js"')).toBeLessThan(
+      html.indexOf('src="/src/main.tsx"'),
+    );
+  });
+
   it("writes only the shared Discover deployment flag", () => {
     const webRoot = mkdtempSync(resolve(tmpdir(), "unshelf-web-config-"));
     temporaryDirectories.push(webRoot);

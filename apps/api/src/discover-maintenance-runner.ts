@@ -16,6 +16,8 @@ export type DiscoverMaintenanceCommand =
 
 type DiscoverMaintenanceFacade = Pick<DiscoverModule, "purgeProviderData">;
 
+export class ReportedDiscoverMaintenanceFailure extends Error {}
+
 export function parseDiscoverMaintenanceCommand(
   arguments_: readonly string[],
 ): DiscoverMaintenanceCommand {
@@ -121,7 +123,10 @@ export async function runDiscoverMaintenance({
     } catch {
       // Preserve the maintenance failure if reporting cannot flush.
     }
-    throw failure;
+    throw new ReportedDiscoverMaintenanceFailure(
+      "Discover maintenance failed",
+      { cause: failure },
+    );
   }
   const durationMs = monotonicNow() - startedAt;
   if (report.failedOperations > 0) {
@@ -132,7 +137,9 @@ export async function runDiscoverMaintenance({
       durationMs,
     });
     await logger.flush();
-    throw new Error("Discover maintenance completed with failed work");
+    throw new ReportedDiscoverMaintenanceFailure(
+      "Discover maintenance completed with failed work",
+    );
   }
   logger.info({
     event: "unshelf.discover.maintenance.completed",
@@ -140,5 +147,6 @@ export async function runDiscoverMaintenance({
     ...report,
     durationMs,
   });
+  await logger.flush();
   return report;
 }

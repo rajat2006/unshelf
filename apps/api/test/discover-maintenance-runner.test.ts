@@ -19,6 +19,8 @@ describe("Discover maintenance runner", () => {
       truncated: false,
     });
     const logger = createCollectingLogger();
+    const flush = vi.fn(async () => undefined);
+    logger.flush = flush;
     const command = parseDiscoverMaintenanceCommand([
       "expire-due",
       "--dry-run",
@@ -56,6 +58,7 @@ describe("Discover maintenance runner", () => {
         durationMs: 12,
       }),
     ]);
+    expect(flush).toHaveBeenCalledOnce();
   });
 
   it("requires explicit execution and suspension/termination confirmation for complete purge", () => {
@@ -141,7 +144,7 @@ describe("Discover maintenance runner", () => {
         logger,
         diagnosticSecrets: [databaseUrl, youtubeKey],
       }),
-    ).rejects.toThrow(databaseUrl);
+    ).rejects.toThrow("Discover maintenance failed");
 
     expect(logger.records.at(-1)).toMatchObject({
       level: "fatal",

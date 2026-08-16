@@ -24,7 +24,7 @@ const diagnosticSecrets = [
   process.env.DATABASE_URL,
   process.env.CLERK_SECRET_KEY,
   process.env.YOUTUBE_API_KEY,
-].filter((value): value is string => value !== undefined);
+].filter((value): value is string => value !== undefined && value.length > 0);
 
 const runtime: ProcessRuntime = {
   once: (signal, listener) =>

@@ -17,7 +17,6 @@ type ResolvedService = {
   labels?: Record<string, string>;
   networks?: Record<string, unknown>;
   ports?: unknown[];
-  profiles?: string[];
 };
 
 type ResolvedCompose = {
@@ -27,17 +26,14 @@ type ResolvedCompose = {
 };
 
 function resolveDeploymentCompose({
-  maintenanceProfile = false,
   discoverEnabled = "false",
 }: {
-  maintenanceProfile?: boolean;
   discoverEnabled?: "true" | "false";
 } = {}): ResolvedCompose {
   const output = execFileSync(
     "docker",
     [
       "compose",
-      ...(maintenanceProfile ? ["--profile", "maintenance"] : []),
       "--project-directory",
       repoRoot,
       "--file",
@@ -134,7 +130,7 @@ describe("deployment Compose contract", () => {
     expect(services.web?.environment).toEqual({ DISCOVER_ENABLED: "false" });
   });
 
-  it("builds and schedules maintenance from the API image without Provider credentials", () => {
+  it("builds maintenance into the API image and gives its one-shot envelope no Provider credentials", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(repoRoot, "apps/api/package.json"), "utf8"),
     ) as { scripts: { build: string } };
@@ -142,32 +138,34 @@ describe("deployment Compose contract", () => {
       resolve(repoRoot, "apps/api/Dockerfile"),
       "utf8",
     );
-    const { services } = resolveDeploymentCompose({
-      maintenanceProfile: true,
-    });
+    const publishWorkflow = readFileSync(
+      resolve(repoRoot, ".github/workflows/publish-candidate.yml"),
+      "utf8",
+    );
+    const { services } = resolveDeploymentCompose();
 
     expect(packageJson.scripts.build).toContain("src/discover-maintenance.ts");
     expect(dockerfile).toContain("/app/deploy/dist");
-    expect(services["discover-maintenance"]).toMatchObject({
+    expect(publishWorkflow).toContain(
+      "Verify API image maintenance entrypoint",
+    );
+    expect(publishWorkflow).toContain(
+      'docker run --rm --entrypoint node "$api_trace_image"',
+    );
+    expect(publishWorkflow).toContain("dist/discover-maintenance.js");
+    expect(services.migrate).toMatchObject({
       image: services.api?.image,
-      command: [
-        "node",
-        "dist/discover-maintenance.js",
-        "expire-due",
-        "--execute",
-      ],
-      profiles: ["maintenance"],
+      command: ["node", "dist/migrate.js"],
       environment: {
         APPLICATION_NAME: "unshelf-development",
         DATABASE_URL: "postgresql://opaque-runtime-value",
         LOG_LEVEL: "info",
+        MIGRATION_MODE: "apply",
       },
       networks: { database: null },
     });
-    expect(services["discover-maintenance"]?.environment).not.toHaveProperty(
-      "YOUTUBE_API_KEY",
-    );
-    expect(services["discover-maintenance"]?.ports).toBeUndefined();
+    expect(services.migrate?.environment).not.toHaveProperty("YOUTUBE_API_KEY");
+    expect(services.migrate?.ports).toBeUndefined();
   });
 
   it("binds API acquisition and web navigation to one deployment flag", () => {
@@ -186,8 +184,12 @@ describe("deployment Compose contract", () => {
     const runbook = readFileSync(resolve(repoRoot, "docs/deploy.md"), "utf8");
     const normalized = runbook.replace(/\s+/g, " ");
     const requiredExcerpts = [
-      "docker compose --profile maintenance run --rm discover-maintenance",
+      "docker compose run --rm migrate node dist/discover-maintenance.js",
       "once every day",
+      "17 3 * * *",
+      "overlapping runs disabled",
+      "ten-minute timeout",
+      "26 hours",
       "failedOperations",
       "deadlineRiskRows",
       "cleanup runs even when no User opens Unshelf",

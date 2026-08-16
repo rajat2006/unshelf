@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -90,6 +90,93 @@ describe("Discover maintenance CLI", () => {
     });
     expect(await readExternalReference(targetId)).toBeNull();
   });
+
+  it("starts disabled without a YouTube key and fails enabled startup without it", async () => {
+    const disabled = spawn(
+      process.execPath,
+      ["--import", "tsx", "src/server.ts"],
+      {
+        cwd: API_ROOT,
+        env: apiEnvironment({ DISCOVER_ENABLED: "false" }),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    try {
+      const output = await waitForOutput(disabled, "unshelf.api.started");
+      expect(output).not.toContain("YOUTUBE_API_KEY is required");
+    } finally {
+      disabled.kill("SIGTERM");
+      await new Promise((resolve) => disabled.once("close", resolve));
+    }
+
+    const enabledFailure = await captureFailure(
+      execFileAsync(process.execPath, ["--import", "tsx", "src/server.ts"], {
+        cwd: API_ROOT,
+        env: apiEnvironment({ DISCOVER_ENABLED: "true" }),
+      }),
+    );
+    expect(enabledFailure.code).not.toBe(0);
+    expect(`${enabledFailure.stdout}\n${enabledFailure.stderr}`).toContain(
+      "YOUTUBE_API_KEY is required when Discover is enabled",
+    );
+  });
+
+  it("runs an idempotent complete YouTube purge through the CLI", async () => {
+    const fetchedAt = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+    const expiresAt = new Date(Date.now() + 29 * 24 * 60 * 60 * 1_000);
+    const inserted = await harness.pool.query<{ id: string }>(
+      `INSERT INTO discover_provider_targets (
+         provider,
+         target_kind,
+         acquisition_scope,
+         external_reference,
+         target_payload,
+         fetched_at,
+         expires_at
+       ) VALUES ('youtube', 'channel', 'system', $1, $2, $3, $4)
+       RETURNING id`,
+      [
+        "UC_cli_complete",
+        JSON.stringify({
+          schemaVersion: 1,
+          uploadsPlaylistId: "UU_cli_complete",
+        }),
+        fetchedAt,
+        expiresAt,
+      ],
+    );
+    const targetId = inserted.rows[0]?.id;
+    if (targetId === undefined) throw new Error("expected target fixture");
+    const command = [
+      "complete-youtube-purge",
+      "--execute",
+      "--confirm-suspension-termination",
+    ];
+
+    const first = await runCli(command);
+    expect(first.at(-1)).toMatchObject({
+      event: "unshelf.discover.maintenance.completed",
+      kind: "complete",
+      clearedRows: 1,
+    });
+    const second = await runCli(command);
+    expect(second.at(-1)).toMatchObject({
+      event: "unshelf.discover.maintenance.completed",
+      kind: "complete",
+      clearedRows: 0,
+    });
+    expect(await readExternalReference(targetId)).toBeNull();
+    const retained = await harness.pool.query<{ gate: string; target: string }>(
+      `SELECT
+         (SELECT error_class FROM discover_provider_gates WHERE provider = 'youtube') AS gate,
+         (SELECT count(*)::text FROM discover_provider_targets WHERE id = $1) AS target`,
+      [targetId],
+    );
+    expect(retained.rows[0]).toEqual({
+      gate: "provider_suspended",
+      target: "1",
+    });
+  });
 });
 
 async function runCli(arguments_: readonly string[]) {
@@ -115,6 +202,48 @@ async function readExternalReference(targetId: string): Promise<string | null> {
     targetId,
   ]);
   return result.rows[0]?.external_reference ?? null;
+}
+
+function apiEnvironment(
+  overrides: Readonly<Record<string, string>>,
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    DATABASE_URL: harness.databaseUrl,
+    PORT: "0",
+    PUBLIC_ORIGIN: "https://startup.example.com",
+    CLERK_SECRET_KEY: "sk_test_startup",
+    CLERK_PUBLISHABLE_KEY: "pk_test_startup",
+    YOUTUBE_API_KEY: undefined,
+    ...overrides,
+  };
+}
+
+async function waitForOutput(
+  child: ReturnType<typeof spawn>,
+  expected: string,
+): Promise<string> {
+  let output = "";
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Timed out waiting for ${expected}`));
+    }, 10_000);
+    const collect = (chunk: Buffer): void => {
+      output += chunk.toString("utf8");
+      if (output.includes(expected)) {
+        clearTimeout(timeout);
+        resolve(output);
+      }
+    };
+    child.stdout?.on("data", collect);
+    child.stderr?.on("data", collect);
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(`API exited before startup with ${String(code)}: ${output}`),
+      );
+    });
+  });
 }
 
 async function captureFailure(

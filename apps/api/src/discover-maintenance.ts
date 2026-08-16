@@ -2,10 +2,10 @@ import { createDatabase, type DatabaseWithClient } from "./db";
 import { serializeFailure } from "./diagnostics";
 import {
   parseDiscoverMaintenanceCommand,
+  ReportedDiscoverMaintenanceFailure,
   runDiscoverMaintenance,
 } from "./discover-maintenance-runner";
-import { createDiscoverModule } from "./discover/module";
-import type { YouTubeAdapter } from "./discover/youtube-adapter";
+import { createDiscoverMaintenanceModule } from "./discover/module";
 import { createProductionLogger, parseLogLevel } from "./logging";
 
 const diagnosticSecrets = [
@@ -16,24 +16,14 @@ const logger = createProductionLogger({
   level: parseLogLevel(process.env.LOG_LEVEL),
 });
 let db: DatabaseWithClient | undefined;
-const acquisitionUnavailable = (): Promise<never> =>
-  Promise.reject(
-    new Error("Provider acquisition is unavailable during maintenance"),
-  );
-const noAcquisitionAdapter: YouTubeAdapter = {
-  previewChannel: acquisitionUnavailable,
-  acquireChannel: acquisitionUnavailable,
-  acquireChannelByUrl: acquisitionUnavailable,
-};
 
 try {
   const command = parseDiscoverMaintenanceCommand(process.argv.slice(2));
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required");
   db = createDatabase(connectionString);
-  const discover = createDiscoverModule({
+  const discover = createDiscoverMaintenanceModule({
     db,
-    youtube: noAcquisitionAdapter,
     now: () => new Date(),
     logger,
   });
@@ -44,16 +34,19 @@ try {
     diagnosticSecrets,
   });
 } catch (failure) {
-  logger.fatal({
-    event: "unshelf.discover.maintenance.process_failed",
-    msg: "Discover maintenance process failed",
-    ...serializeFailure(failure, { secrets: diagnosticSecrets }),
-  });
-  try {
-    await logger.flush();
-  } finally {
-    process.exitCode = 1;
+  if (!(failure instanceof ReportedDiscoverMaintenanceFailure)) {
+    logger.fatal({
+      event: "unshelf.discover.maintenance.process_failed",
+      msg: "Discover maintenance process failed",
+      ...serializeFailure(failure, { secrets: diagnosticSecrets }),
+    });
+    try {
+      await logger.flush();
+    } catch {
+      // The non-zero process outcome still preserves the bootstrap failure.
+    }
   }
+  process.exitCode = 1;
 } finally {
   if (db !== undefined) {
     try {

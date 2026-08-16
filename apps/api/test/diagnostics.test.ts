@@ -3,6 +3,14 @@ import { DrizzleQueryError } from "drizzle-orm/errors";
 import { serializeDiagnosticValue, serializeFailure } from "../src/diagnostics";
 
 describe("failure diagnostics", () => {
+  it("ignores an empty optional secret without corrupting diagnostics", () => {
+    expect(
+      serializeFailure(new Error("retained disabled-mode startup detail"), {
+        secrets: [""],
+      }).error,
+    ).toMatchObject({ message: "retained disabled-mode startup detail" });
+  });
+
   it("retains five nested Error causes and safely represents non-Error throws", () => {
     const deepest = new Error("level six");
     const levelFive = new Error("level five", { cause: deepest });

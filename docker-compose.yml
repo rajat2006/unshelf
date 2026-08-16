@@ -26,23 +26,6 @@ services:
       MIGRATION_MODE: ${MIGRATION_MODE:?MIGRATION_MODE is required}
     networks: [database]
 
-  discover-maintenance:
-    <<: *api-image
-    profiles: [maintenance]
-    command: ["node", "dist/discover-maintenance.js", "expire-due", "--execute"]
-    restart: "no"
-    logging:
-      driver: local
-      options:
-        max-size: "5m"
-        max-file: "3"
-        mode: blocking
-    environment:
-      APPLICATION_NAME: ${APPLICATION_NAME:?APPLICATION_NAME is required}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    networks: [database]
-
   api:
     <<: *api-image
     restart: unless-stopped

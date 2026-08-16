@@ -1643,115 +1643,134 @@ export function createDiscoverModule({
     },
     readWorkspace: ({ userId }) =>
       selectWorkspace({ query: db, userId, currentTime: now() }),
-    purgeProviderData: async (input) => {
-      const startedAt = now();
-      const { kind } = input;
-      const batchSize = input.batchSize ?? 100;
-      if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1_000) {
-        throw new RangeError(
-          "Provider purge batch size must be from 1 to 1000",
-        );
-      }
-      const report: ProviderPurgeReport = {
-        kind,
-        provider: "youtube",
-        dryRun: input.kind === "expire_due" && input.dryRun === true,
-        clearedRows: 0,
-        skippedGenerationRows: 0,
-        failedOperations: 0,
-        dueRows: 0,
-        deadlineRiskRows: 0,
-        truncated: false,
-      };
-      const dueAt = new Date(
-        startedAt.getTime() + providerRetentionSafetyMilliseconds,
-      );
-      if (report.dryRun) {
-        const inspection = await inspectDueProviderData({
-          db,
-          dueAt,
-          deadlineAt: startedAt,
-          batchSize,
-        });
-        report.dueRows = inspection.dueRows;
-        report.deadlineRiskRows = inspection.deadlineRiskRows;
-        report.truncated = inspection.truncated;
-        recordRetention({
-          logger,
-          report,
-          durationMs: elapsedMilliseconds({
-            startedAt,
-            finishedAt: now(),
-          }),
-        });
-        return report;
-      }
-      if (kind === "complete") {
-        await db.transaction(async (tx) => {
-          await lockProviderPublication({ tx, provider: "youtube" });
-          await tx
-            .insert(discoverProviderGates)
-            .values({
-              provider: "youtube",
-              nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
-              errorClass: "provider_suspended",
-              updatedAt: now(),
-            })
-            .onConflictDoUpdate({
-              target: discoverProviderGates.provider,
-              set: {
-                nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
-                errorClass: "provider_suspended",
-                updatedAt: now(),
-              },
-            });
-          await tx
-            .update(discoverProviderTargets)
-            .set({
-              acquisitionGeneration: sql`${discoverProviderTargets.acquisitionGeneration} + 1`,
-            })
-            .where(eq(discoverProviderTargets.provider, "youtube"));
-        });
-      }
-      const operations = [
-        purgeDueTargetData,
-        purgeDueCheckpointData,
-        purgeDueTargetProjections,
-        purgeDueResultReferences,
-        purgeDueResultProjections,
-      ] as const;
-      for (const operation of operations) {
-        try {
-          while (true) {
-            const batch = await operation({ db, dueAt, batchSize, kind });
-            report.clearedRows += batch.clearedRows;
-            report.skippedGenerationRows +=
-              batch.selectedRows - batch.clearedRows;
-            if (kind === "expire_due") {
-              report.dueRows += batch.selectedRows;
-            }
-            if (batch.selectedRows < batchSize) break;
-          }
-        } catch {
-          report.failedOperations += 1;
-          logger.error({
-            event: "discover.retention.batch_failed",
-            msg: "Discover Provider retention batch failed",
-            provider: "youtube",
-            kind,
-            errorClass: "database_error",
-          });
-        }
-      }
+    purgeProviderData: createPurgeProviderData({ db, now, logger }),
+  };
+  return module;
+}
+
+export function createDiscoverMaintenanceModule({
+  db,
+  now,
+  logger,
+}: {
+  db: Database;
+  now: () => Date;
+  logger: Logger;
+}): Pick<DiscoverModule, "purgeProviderData"> {
+  return {
+    purgeProviderData: createPurgeProviderData({ db, now, logger }),
+  };
+}
+
+function createPurgeProviderData({
+  db,
+  now,
+  logger,
+}: {
+  db: Database;
+  now: () => Date;
+  logger: Logger;
+}): DiscoverModule["purgeProviderData"] {
+  return async (input) => {
+    const startedAt = now();
+    const { kind } = input;
+    const batchSize = input.batchSize ?? 100;
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1_000) {
+      throw new RangeError("Provider purge batch size must be from 1 to 1000");
+    }
+    const report: ProviderPurgeReport = {
+      kind,
+      provider: "youtube",
+      dryRun: input.kind === "expire_due" && input.dryRun === true,
+      clearedRows: 0,
+      skippedGenerationRows: 0,
+      failedOperations: 0,
+      dueRows: 0,
+      deadlineRiskRows: 0,
+      truncated: false,
+    };
+    const dueAt = new Date(
+      startedAt.getTime() + providerRetentionSafetyMilliseconds,
+    );
+    if (report.dryRun) {
+      const inspection = await inspectDueProviderData({
+        db,
+        dueAt,
+        deadlineAt: startedAt,
+        batchSize,
+      });
+      report.dueRows = inspection.dueRows;
+      report.deadlineRiskRows = inspection.deadlineRiskRows;
+      report.truncated = inspection.truncated;
       recordRetention({
         logger,
         report,
         durationMs: elapsedMilliseconds({ startedAt, finishedAt: now() }),
       });
       return report;
-    },
+    }
+    if (kind === "complete") {
+      await db.transaction(async (tx) => {
+        await lockProviderPublication({ tx, provider: "youtube" });
+        await tx
+          .insert(discoverProviderGates)
+          .values({
+            provider: "youtube",
+            nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
+            errorClass: "provider_suspended",
+            updatedAt: now(),
+          })
+          .onConflictDoUpdate({
+            target: discoverProviderGates.provider,
+            set: {
+              nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
+              errorClass: "provider_suspended",
+              updatedAt: now(),
+            },
+          });
+        await tx
+          .update(discoverProviderTargets)
+          .set({
+            acquisitionGeneration: sql`${discoverProviderTargets.acquisitionGeneration} + 1`,
+          })
+          .where(eq(discoverProviderTargets.provider, "youtube"));
+      });
+    }
+    const operations = [
+      purgeDueTargetData,
+      purgeDueCheckpointData,
+      purgeDueTargetProjections,
+      purgeDueResultReferences,
+      purgeDueResultProjections,
+    ] as const;
+    for (const operation of operations) {
+      try {
+        while (true) {
+          const batch = await operation({ db, dueAt, batchSize, kind });
+          report.clearedRows += batch.clearedRows;
+          report.skippedGenerationRows +=
+            batch.selectedRows - batch.clearedRows;
+          if (kind === "expire_due") report.dueRows += batch.selectedRows;
+          if (batch.selectedRows < batchSize) break;
+        }
+      } catch {
+        report.failedOperations += 1;
+        logger.error({
+          event: "discover.retention.batch_failed",
+          msg: "Discover Provider retention batch failed",
+          provider: "youtube",
+          kind,
+          errorClass: "database_error",
+        });
+      }
+    }
+    recordRetention({
+      logger,
+      report,
+      durationMs: elapsedMilliseconds({ startedAt, finishedAt: now() }),
+    });
+    return report;
   };
-  return module;
 }
 
 function recordRetention({
