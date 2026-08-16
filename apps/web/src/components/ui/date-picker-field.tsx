@@ -187,16 +187,21 @@ export function DatePickerField({
     reportValidity(false);
   }
 
+  const sharedInputProps = {
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledBy,
+    "aria-describedby": describedBy || undefined,
+    "aria-invalid": validationError ? true : undefined,
+    id,
+    required,
+    disabled,
+    className: "w-auto min-w-40",
+  };
+
   const input = isDesktop ? (
     <Input
-      aria-label={ariaLabel}
-      aria-labelledby={ariaLabelledBy}
-      aria-describedby={describedBy || undefined}
-      aria-invalid={validationError ? true : undefined}
-      id={id}
+      {...sharedInputProps}
       type="text"
-      required={required}
-      disabled={disabled}
       inputMode="numeric"
       value={draft}
       onChange={(event) => {
@@ -217,18 +222,11 @@ export function DatePickerField({
       onKeyDown={(event) => {
         if (event.key === "Enter") validateDraft();
       }}
-      className="w-auto min-w-40"
     />
   ) : (
     <Input
-      aria-label={ariaLabel}
-      aria-labelledby={ariaLabelledBy}
-      aria-describedby={describedBy || undefined}
-      aria-invalid={validationError ? true : undefined}
-      id={id}
+      {...sharedInputProps}
       type="date"
-      required={required}
-      disabled={disabled}
       min={min}
       max={max}
       value={value ?? ""}
@@ -261,7 +259,6 @@ export function DatePickerField({
         setValidationError(validationMessage({ error, locale, min, max }));
         reportValidity(false);
       }}
-      className="w-auto min-w-40"
     />
   );
 
