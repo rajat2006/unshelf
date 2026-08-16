@@ -219,6 +219,7 @@ export interface DiscoverySummary {
 export interface DiscoverWorkspace {
   follows: FollowSummary[];
   discoveries: DiscoverySummary[];
+  aggregateNotice?: { affectedFollowIds: FollowId[] };
 }
 
 export type ConfirmFollowFailure =
@@ -261,6 +262,8 @@ export interface FollowPreview {
   rejectedCount: number;
   coverageStartedAt: string;
   expiresAt: string;
+  /** Present when confirmation restores this removed Follow's identity. */
+  restoresFollowId?: FollowId;
 }
 
 export type PrepareFollowFailure =

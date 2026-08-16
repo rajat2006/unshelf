@@ -110,6 +110,9 @@ const severalFollowsWorkspace: DiscoverWorkspace = {
       publisher: "Systems Studio",
     },
   ],
+  aggregateNotice: {
+    affectedFollowIds: ["00000000-0000-0000-0000-000000000011" as FollowId],
+  },
 };
 
 const auth: ApplicationAuth = {
@@ -138,7 +141,11 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
-  it("combines several Follows in one intake and filters the same feed accessibly", async () => {
+  it("combines and filters the same feed across phone reflow and desktop rail layouts", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
     vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
       severalFollowsWorkspace,
     );
@@ -148,6 +155,9 @@ describe("Discover channel setup", () => {
     expect(all).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("A deep module")).toBeVisible();
     expect(screen.getByText("Understand queues")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Systems Studio could not refresh",
+    );
     fireEvent.click(screen.getByRole("button", { name: /Systems Studio.*1/ }));
     expect(screen.queryByText("A deep module")).not.toBeInTheDocument();
     expect(screen.getByText("Understand queues")).toBeVisible();
@@ -157,10 +167,18 @@ describe("Discover channel setup", () => {
     fireEvent.click(all);
     expect(screen.getByText("A deep module")).toBeVisible();
 
-    expect(screen.getByTestId("discover-workspace")).toHaveClass(
+    const responsiveWorkspace = screen.getByTestId("discover-workspace");
+    expect(responsiveWorkspace).toHaveClass("grid", "min-w-0");
+    expect(responsiveWorkspace).toHaveClass(
       "lg:grid-cols-[16rem_minmax(0,1fr)]",
     );
-    expect(screen.getByLabelText("Follows")).toHaveClass("lg:sticky");
+    const followControls = screen.getByLabelText("Follows");
+    expect(followControls).toHaveClass("min-w-0", "lg:sticky");
+    expect(
+      followControls.compareDocumentPosition(
+        screen.getByRole("heading", { name: "Intake" }).closest("section")!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("distinguishes a clear Follow from an empty combined intake", async () => {
@@ -222,6 +240,50 @@ describe("Discover channel setup", () => {
         }),
       ),
     );
+  });
+
+  it("labels an exact removed-Follow preview as Follow again", async () => {
+    const removedFollow = {
+      ...storedWorkspace.follows[0],
+      lifecycle: "removed" as const,
+    };
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue({
+      follows: [removedFollow],
+      discoveries: storedWorkspace.discoveries,
+    });
+    vi.mocked(prepareFollowPreview).mockResolvedValue({
+      ok: true,
+      preview: {
+        outcome: "empty",
+        previewId: "00000000-0000-0000-0000-000000000004" as FollowPreviewId,
+        provider: "youtube",
+        target: {
+          kind: "channel",
+          channelId: "UC_removed",
+          publisher: "Quiet Learning",
+        },
+        videos: [],
+        rejectedCount: 0,
+        coverageStartedAt: "2026-07-17T12:00:00.000Z",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        restoresFollowId: removedFollow.id,
+      },
+    });
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Follow another channel" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Public YouTube channel URL",
+    });
+    fireEvent.change(input, {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(
+      await screen.findByRole("button", { name: "Follow again" }),
+    ).toBeVisible();
   });
 
   it("refreshes the active workspace and reports only affected Follows", async () => {

@@ -157,6 +157,9 @@ describe("POST /api/discover/acquisitions", () => {
       .set(TEST_USER_HEADER, clerkUserId)
       .expect(200);
     const workspaceBody = workspace.body as DiscoverWorkspace;
+    expect(workspaceBody.aggregateNotice).toEqual({
+      affectedFollowIds: [second.followId],
+    });
     expect(workspaceBody.discoveries.map(({ title }) => title)).toEqual(
       expect.arrayContaining([
         "Accepted during refresh",

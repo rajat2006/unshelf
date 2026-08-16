@@ -399,6 +399,7 @@ export function DiscoverSurface() {
           <div className="flex justify-end">
             <Button
               type="button"
+              size="touch"
               variant="quiet"
               onClick={() => setShowSetup((visible) => !visible)}
             >
@@ -443,6 +444,7 @@ export function DiscoverSurface() {
           <p>{setupState.follow.name ?? "This channel"} is paused.</p>
           <Button
             type="button"
+            size="touch"
             variant="secondary"
             disabled={
               lifecycleState.kind === "pending" &&
@@ -631,14 +633,19 @@ function Workspace({
   const selectedFollow = workspace.follows.find(
     ({ id }) => id === selectedFollowId,
   );
-  const affectedNames =
+  const refreshingFollowName =
+    refreshState.kind === "idle"
+      ? "this Follow"
+      : (workspace.follows.find(({ id }) => id === refreshState.followId)
+          ?.name ?? "this Follow");
+  const affectedFollowIds =
     workspaceRefreshState.kind === "result"
-      ? workspaceRefreshState.affectedFollowIds.map(
-          (followId) =>
-            workspace.follows.find(({ id }) => id === followId)?.name ??
-            "One Follow",
-        )
-      : [];
+      ? workspaceRefreshState.affectedFollowIds
+      : (workspace.aggregateNotice?.affectedFollowIds ?? []);
+  const affectedNames = affectedFollowIds.map(
+    (followId) =>
+      workspace.follows.find(({ id }) => id === followId)?.name ?? "One Follow",
+  );
   return (
     <div
       data-testid="discover-workspace"
@@ -652,7 +659,7 @@ function Workspace({
           <h2 className="font-semibold">Follows</h2>
           <Button
             type="button"
-            size="compact"
+            size="touch"
             variant="secondary"
             disabled={workspaceRefreshState.kind === "pending"}
             onClick={onRefreshWorkspace}
@@ -664,6 +671,7 @@ function Workspace({
         </div>
         <Button
           type="button"
+          size="touch"
           variant="quiet"
           aria-pressed={selectedFollowId === null}
           className="w-full justify-between"
@@ -703,6 +711,7 @@ function Workspace({
               >
                 <Button
                   type="button"
+                  size="touch"
                   variant="quiet"
                   aria-pressed={selectedFollowId === follow.id}
                   className="w-full justify-between px-0"
@@ -723,9 +732,7 @@ function Workspace({
                   {formatHealthTime(follow.health.latestCompleteAt)}
                   <br />
                   Verified since:{" "}
-                  {formatHealthTime(
-                    follow.health.verifiedCoverageStartedAt,
-                  )}
+                  {formatHealthTime(follow.health.verifiedCoverageStartedAt)}
                   {follow.health.nextEligibleAt ? (
                     <>
                       <br />
@@ -739,7 +746,7 @@ function Workspace({
                     <>
                       <Button
                         type="button"
-                        size="compact"
+                        size="touch"
                         variant="secondary"
                         disabled={refreshForFollow.kind === "pending"}
                         onClick={() => onRefresh(follow)}
@@ -752,7 +759,7 @@ function Workspace({
                       </Button>
                       <Button
                         type="button"
-                        size="compact"
+                        size="touch"
                         variant="quiet"
                         disabled={lifecycleForFollow.kind === "pending"}
                         onClick={() => onLifecycleChange(follow, "paused")}
@@ -766,7 +773,7 @@ function Workspace({
                   ) : follow.lifecycle === "paused" ? (
                     <Button
                       type="button"
-                      size="compact"
+                      size="touch"
                       variant="secondary"
                       disabled={lifecycleForFollow.kind === "pending"}
                       onClick={() => onLifecycleChange(follow, "active")}
@@ -780,7 +787,7 @@ function Workspace({
                   {follow.lifecycle !== "removed" ? (
                     <Button
                       type="button"
-                      size="compact"
+                      size="touch"
                       variant="quiet"
                       disabled={lifecycleForFollow.kind === "pending"}
                       onClick={() => onLifecycleChange(follow, "removed")}
@@ -817,7 +824,7 @@ function Workspace({
         {workspaceRefreshState.kind === "failure" ? (
           <Alert>Workspace Refresh failed. Stored intake is unchanged.</Alert>
         ) : null}
-        {workspaceRefreshState.kind === "result" && affectedNames.length > 0 ? (
+        {affectedNames.length > 0 ? (
           <Alert>
             {affectedNames.join(", ")} could not refresh completely. Other
             Follow results remain available.
@@ -836,24 +843,18 @@ function Workspace({
             aria-live="polite"
             className="text-sm text-muted-foreground"
           >
-            Refreshing{" "}
-            {workspace.follows.find(({ id }) => id === refreshState.followId)
-              ?.name ?? "Follow"}
-            . Stored intake remains available.
+            Refreshing {refreshingFollowName}. Stored intake remains available.
           </p>
         ) : null}
         {refreshState.kind === "failure" ? (
           <Alert>
-            Refresh failed for{" "}
-            {workspace.follows.find(({ id }) => id === refreshState.followId)
-              ?.name ?? "this Follow"}
-            . Stored intake is unchanged; retry when ready.
+            Refresh failed for {refreshingFollowName}. Stored intake is
+            unchanged; retry when ready.
           </Alert>
         ) : null}
         {refreshState.kind === "result" && refreshState.rereadFailed ? (
           <Alert>
-            {workspace.follows.find(({ id }) => id === refreshState.followId)
-              ?.name ?? "This Follow"}
+            {refreshingFollowName}
             {refreshState.outcome === "partial"
               ? " partially refreshed"
               : " refreshed"}
@@ -869,10 +870,8 @@ function Workspace({
             aria-live="polite"
             className="text-sm text-muted-foreground"
           >
-            Partial refresh for{" "}
-            {workspace.follows.find(({ id }) => id === refreshState.followId)
-              ?.name ?? "this Follow"}
-            : {refreshState.rejectedCount} invalid or unavailable records were
+            Partial refresh for {refreshingFollowName}:{" "}
+            {refreshState.rejectedCount} invalid or unavailable records were
             excluded. Stored intake was preserved.
           </p>
         ) : null}
@@ -880,9 +879,7 @@ function Workspace({
         !refreshState.rereadFailed &&
         refreshState.outcome === "complete" ? (
           <p role="status" aria-live="polite" className="text-sm text-primary">
-            {workspace.follows.find(({ id }) => id === refreshState.followId)
-              ?.name ?? "Follow"}{" "}
-            refreshed.
+            {refreshingFollowName} refreshed.
           </p>
         ) : null}
         {refreshState.kind === "result" &&
@@ -890,11 +887,7 @@ function Workspace({
         refreshState.outcome !== "complete" &&
         refreshState.outcome !== "partial" ? (
           <Alert>
-            {refreshOutcomeMessage(
-              refreshState.outcome,
-              workspace.follows.find(({ id }) => id === refreshState.followId)
-                ?.name ?? "this Follow",
-            )}{" "}
+            {refreshOutcomeMessage(refreshState.outcome, refreshingFollowName)}{" "}
             Stored intake is unchanged.
           </Alert>
         ) : null}
@@ -908,6 +901,7 @@ function Workspace({
             {selectedFollow ? (
               <Button
                 type="button"
+                size="touch"
                 variant="secondary"
                 onClick={() => setSelectedFollowId(null)}
               >
@@ -1041,7 +1035,13 @@ function Preview({
           </Button>
           {!expired ? (
             <Button type="button" onClick={onConfirm} disabled={confirming}>
-              {confirming ? "Following…" : "Follow channel"}
+              {confirming
+                ? preview.restoresFollowId
+                  ? "Following again…"
+                  : "Following…"
+                : preview.restoresFollowId
+                  ? "Follow again"
+                  : "Follow channel"}
             </Button>
           ) : null}
         </div>

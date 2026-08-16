@@ -15,6 +15,7 @@ import {
   type DiscoverWorkspace,
   type FollowPreviewVideo,
   type PrepareFollowResponse,
+  type SetFollowLifecycleResponse,
 } from "@unshelf/shared";
 import type { YouTubeAdapter } from "../src/discover/youtube-adapter";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
@@ -648,6 +649,7 @@ describe("Discover Follow confirmation", () => {
     if (!followAgain.ok || !("preview" in followAgain)) {
       throw new Error("expected Follow-again preview");
     }
+    expect(followAgain.preview.restoresFollowId).toBe(firstFollowId);
     const restored = await confirm({
       clerkUserId,
       previewId: followAgain.preview.previewId,
@@ -701,14 +703,18 @@ describe("Discover Follow confirmation", () => {
         .set(TEST_USER_HEADER, clerkUserId)
         .set("Idempotency-Key", key)
         .send({ lifecycle: "paused" });
-    expect((await pause().expect(200)).body).toMatchObject({
-      ok: true,
-      follow: { id: followId, lifecycle: "paused" },
-    });
-    expect((await pause().expect(200)).body).toMatchObject({
-      ok: true,
-      follow: { id: followId, lifecycle: "paused" },
-    });
+    const concurrentReplay = await Promise.all([
+      pause().expect(200),
+      pause().expect(200),
+    ]);
+    for (const response of concurrentReplay) {
+      const body = response.body as SetFollowLifecycleResponse;
+      expect(body.ok).toBe(true);
+      if (body.ok) {
+        expect(body.follow.id).toBe(followId);
+        expect(body.follow.lifecycle).toBe("paused");
+      }
+    }
     expect(
       (
         await request(app)

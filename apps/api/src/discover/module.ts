@@ -30,6 +30,7 @@ import type {
   PrepareFollowRequest,
   PrepareFollowResponse,
   SetFollowLifecycleRequest,
+  SetFollowLifecycleFailure,
   SetFollowLifecycleResponse,
   UserId,
 } from "@unshelf/shared";
@@ -366,6 +367,9 @@ export function createDiscoverModule({
             rejectedCount: acquired.rejectedCount,
             coverageStartedAt: acquired.coverageStartedAt,
             expiresAt: previewExpiresAt.toISOString(),
+            ...(existingFollow?.lifecycle === "removed"
+              ? { restoresFollowId: existingFollow.id as FollowId }
+              : {}),
           },
         };
       });
@@ -1145,193 +1149,198 @@ export function createDiscoverModule({
       idempotencyKey,
     }) => {
       const requestFingerprint = `${followId}:${request.lifecycle}`;
-      const initial = await db.transaction(
-        async (tx): Promise<SetFollowLifecycleResponse | null> => {
+      return db.transaction(async (tx): Promise<SetFollowLifecycleResponse> => {
+        await tx
+          .insert(discoverIdempotency)
+          .values({
+            userId,
+            operation: "set_follow_lifecycle",
+            requestId: idempotencyKey,
+            requestFingerprint,
+          })
+          .onConflictDoNothing();
+        const [idempotency] = await tx
+          .select({
+            requestFingerprint: discoverIdempotency.requestFingerprint,
+            resultPayload: discoverIdempotency.resultPayload,
+          })
+          .from(discoverIdempotency)
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          )
+          .for("update");
+        if (idempotency.requestFingerprint !== requestFingerprint) {
+          return { ok: false, error: "idempotency_conflict" };
+        }
+        if (idempotency.resultPayload !== null) {
+          return idempotency.resultPayload as SetFollowLifecycleResponse;
+        }
+        const persistFailure = async (
+          error: Exclude<SetFollowLifecycleFailure, "idempotency_conflict">,
+        ): Promise<SetFollowLifecycleResponse> => {
+          const result: SetFollowLifecycleResponse = { ok: false, error };
           await tx
-            .insert(discoverIdempotency)
-            .values({
-              userId,
-              operation: "set_follow_lifecycle",
-              requestId: idempotencyKey,
-              requestFingerprint,
-            })
-            .onConflictDoNothing();
-          const [idempotency] = await tx
-            .select({
-              requestFingerprint: discoverIdempotency.requestFingerprint,
-              resultPayload: discoverIdempotency.resultPayload,
-            })
-            .from(discoverIdempotency)
+            .update(discoverIdempotency)
+            .set({ resultPayload: result })
             .where(
               and(
                 eq(discoverIdempotency.userId, userId),
                 eq(discoverIdempotency.operation, "set_follow_lifecycle"),
                 eq(discoverIdempotency.requestId, idempotencyKey),
               ),
-            )
-            .for("update");
-          if (idempotency.requestFingerprint !== requestFingerprint) {
-            return { ok: false, error: "idempotency_conflict" };
-          }
-          if (idempotency.resultPayload !== null) {
-            return idempotency.resultPayload as SetFollowLifecycleResponse;
-          }
-          const [follow] = await tx
-            .select({ lifecycle: discoverFollows.lifecycle })
-            .from(discoverFollows)
-            .where(
-              and(
-                eq(discoverFollows.id, followId),
-                eq(discoverFollows.userId, userId),
-              ),
-            )
-            .for("update");
-          if (follow === undefined) {
-            const result = {
-              ok: false as const,
-              error: "follow_missing" as const,
-            };
-            await tx
-              .update(discoverIdempotency)
-              .set({ resultPayload: result })
-              .where(
-                and(
-                  eq(discoverIdempotency.userId, userId),
-                  eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-                  eq(discoverIdempotency.requestId, idempotencyKey),
-                ),
-              );
-            return result;
-          }
-          if (
-            follow.lifecycle === "removed" &&
-            request.lifecycle !== "removed"
-          ) {
-            const result = {
-              ok: false as const,
-              error: "lifecycle_conflict" as const,
-            };
-            await tx
-              .update(discoverIdempotency)
-              .set({ resultPayload: result })
-              .where(
-                and(
-                  eq(discoverIdempotency.userId, userId),
-                  eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-                  eq(discoverIdempotency.requestId, idempotencyKey),
-                ),
-              );
-            return result;
-          }
-          await tx
-            .update(discoverFollows)
-            .set({ lifecycle: request.lifecycle, updatedAt: now() })
-            .where(
-              and(
-                eq(discoverFollows.id, followId),
-                eq(discoverFollows.userId, userId),
-              ),
             );
-          return null;
-        },
-      );
-      if (initial !== null) return initial;
-
-      if (request.lifecycle === "active") {
-        await applyAvailableSnapshots({
-          db,
-          userId,
-          followId,
-          appliedAt: now(),
-          currentOnly: true,
-        });
-      }
-      const workspace = await module.readWorkspace({ userId });
-      const follow = workspace.follows.find(({ id }) => id === followId);
-      if (follow === undefined) return { ok: false, error: "follow_missing" };
-      const result: SetFollowLifecycleResponse = { ok: true, follow };
-      await db
-        .update(discoverIdempotency)
-        .set({ resultPayload: result })
-        .where(
-          and(
-            eq(discoverIdempotency.userId, userId),
-            eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-            eq(discoverIdempotency.requestId, idempotencyKey),
-          ),
-        );
-      return result;
-    },
-    readWorkspace: async ({ userId }) => {
-      const followRows = await db
-        .select({
-          id: discoverFollows.id,
-          lifecycle: discoverFollows.lifecycle,
-          targetUrl: discoverFollows.targetUrl,
-          createdAt: discoverFollows.createdAt,
-          name: discoverProviderTargetProjections.publisher,
-          providerTargetId: discoverFollows.providerTargetId,
-          verifiedCoverageStartedAt:
-            discoverProviderTargets.verifiedCoverageStartedAt,
-          nextEligibleAt: discoverProviderTargets.nextEligibleAt,
-        })
-        .from(discoverFollows)
-        .leftJoin(
-          discoverProviderTargetProjections,
-          eq(
-            discoverProviderTargetProjections.providerTargetId,
-            discoverFollows.providerTargetId,
-          ),
-        )
-        .innerJoin(
-          discoverProviderTargets,
-          eq(discoverProviderTargets.id, discoverFollows.providerTargetId),
-        )
-        .where(eq(discoverFollows.userId, userId))
-        .orderBy(asc(discoverFollows.createdAt));
-      const targetIds = followRows.map((follow) => follow.providerTargetId);
-      const attempts =
-        targetIds.length === 0
-          ? []
-          : await db
-              .select({
-                providerTargetId: discoverAcquisitionAttempts.providerTargetId,
-                outcome: discoverAcquisitionAttempts.outcome,
-                generation: discoverAcquisitionAttempts.generation,
-                startedAt: discoverAcquisitionAttempts.startedAt,
-                finishedAt: discoverAcquisitionAttempts.finishedAt,
-                nextEligibleAt: discoverAcquisitionAttempts.nextEligibleAt,
-              })
-              .from(discoverAcquisitionAttempts)
-              .where(
-                inArray(
-                  discoverAcquisitionAttempts.providerTargetId,
-                  targetIds,
-                ),
-              )
-              .orderBy(
-                desc(discoverAcquisitionAttempts.startedAt),
-                desc(discoverAcquisitionAttempts.generation),
-              );
-      return {
-        follows: followRows.map((follow) => {
-          const targetAttempts = attempts.filter(
-            (attempt) => attempt.providerTargetId === follow.providerTargetId,
+          return result;
+        };
+        const [follow] = await tx
+          .select({ lifecycle: discoverFollows.lifecycle })
+          .from(discoverFollows)
+          .where(
+            and(
+              eq(discoverFollows.id, followId),
+              eq(discoverFollows.userId, userId),
+            ),
+          )
+          .for("update");
+        if (follow === undefined) {
+          return persistFailure("follow_missing");
+        }
+        if (follow.lifecycle === "removed" && request.lifecycle !== "removed") {
+          return persistFailure("lifecycle_conflict");
+        }
+        await tx
+          .update(discoverFollows)
+          .set({ lifecycle: request.lifecycle, updatedAt: now() })
+          .where(
+            and(
+              eq(discoverFollows.id, followId),
+              eq(discoverFollows.userId, userId),
+            ),
           );
-          return toFollowSummary({
-            ...follow,
-            health: toFollowAcquisitionHealth({
-              attempts: targetAttempts,
-              verifiedCoverageStartedAt: follow.verifiedCoverageStartedAt,
-              targetNextEligibleAt: follow.nextEligibleAt,
-            }),
+        if (request.lifecycle === "active") {
+          await applyAvailableSnapshots({
+            db: tx,
+            userId,
+            followId,
+            appliedAt: now(),
+            currentOnly: true,
           });
-        }),
-        discoveries: await selectDiscoveries({ query: db, userId }),
-      };
+        }
+        const workspace = await selectWorkspace({ query: tx, userId });
+        const updatedFollow = workspace.follows.find(
+          ({ id }) => id === followId,
+        );
+        if (updatedFollow === undefined) {
+          throw new Error("Updated Follow disappeared");
+        }
+        const result: SetFollowLifecycleResponse = {
+          ok: true,
+          follow: updatedFollow,
+        };
+        await tx
+          .update(discoverIdempotency)
+          .set({ resultPayload: result })
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          );
+        return result;
+      });
     },
+    readWorkspace: ({ userId }) => selectWorkspace({ query: db, userId }),
   };
   return module;
+}
+
+type DiscoverQuery = Pick<Database, "select">;
+
+async function selectWorkspace({
+  query,
+  userId,
+}: {
+  query: DiscoverQuery;
+  userId: UserId;
+}): Promise<DiscoverWorkspace> {
+  const followRows = await query
+    .select({
+      id: discoverFollows.id,
+      lifecycle: discoverFollows.lifecycle,
+      targetUrl: discoverFollows.targetUrl,
+      createdAt: discoverFollows.createdAt,
+      name: discoverProviderTargetProjections.publisher,
+      providerTargetId: discoverFollows.providerTargetId,
+      verifiedCoverageStartedAt:
+        discoverProviderTargets.verifiedCoverageStartedAt,
+      nextEligibleAt: discoverProviderTargets.nextEligibleAt,
+    })
+    .from(discoverFollows)
+    .leftJoin(
+      discoverProviderTargetProjections,
+      eq(
+        discoverProviderTargetProjections.providerTargetId,
+        discoverFollows.providerTargetId,
+      ),
+    )
+    .innerJoin(
+      discoverProviderTargets,
+      eq(discoverProviderTargets.id, discoverFollows.providerTargetId),
+    )
+    .where(eq(discoverFollows.userId, userId))
+    .orderBy(asc(discoverFollows.createdAt));
+  const targetIds = followRows.map((follow) => follow.providerTargetId);
+  const attempts =
+    targetIds.length === 0
+      ? []
+      : await query
+          .select({
+            providerTargetId: discoverAcquisitionAttempts.providerTargetId,
+            outcome: discoverAcquisitionAttempts.outcome,
+            generation: discoverAcquisitionAttempts.generation,
+            startedAt: discoverAcquisitionAttempts.startedAt,
+            finishedAt: discoverAcquisitionAttempts.finishedAt,
+            nextEligibleAt: discoverAcquisitionAttempts.nextEligibleAt,
+          })
+          .from(discoverAcquisitionAttempts)
+          .where(
+            inArray(discoverAcquisitionAttempts.providerTargetId, targetIds),
+          )
+          .orderBy(
+            desc(discoverAcquisitionAttempts.startedAt),
+            desc(discoverAcquisitionAttempts.generation),
+          );
+  const follows = followRows.map((follow) => {
+    const targetAttempts = attempts.filter(
+      (attempt) => attempt.providerTargetId === follow.providerTargetId,
+    );
+    return toFollowSummary({
+      ...follow,
+      health: toFollowAcquisitionHealth({
+        attempts: targetAttempts,
+        verifiedCoverageStartedAt: follow.verifiedCoverageStartedAt,
+        targetNextEligibleAt: follow.nextEligibleAt,
+      }),
+    });
+  });
+  const affectedFollowIds = follows
+    .filter(({ health }) =>
+      ["partial", "failed", "throttled", "provider_unavailable"].includes(
+        health.latestAttemptOutcome ?? "",
+      ),
+    )
+    .map(({ id }) => id);
+  return {
+    follows,
+    discoveries: await selectDiscoveries({ query, userId }),
+    ...(affectedFollowIds.length === 0
+      ? {}
+      : { aggregateNotice: { affectedFollowIds } }),
+  };
 }
 
 async function waitForAttempt({
@@ -1866,7 +1875,7 @@ async function applyAvailableSnapshots({
   appliedAt,
   currentOnly = false,
 }: {
-  db: Database;
+  db: Pick<Database, "transaction">;
   userId: UserId;
   followId: FollowId;
   appliedAt: Date;
@@ -2035,14 +2044,12 @@ async function applyAvailableSnapshots({
   });
 }
 
-type DiscoveryQuery = Pick<Database, "select">;
-
 async function selectDiscoveries({
   query,
   userId,
   discoveryIds,
 }: {
-  query: DiscoveryQuery;
+  query: DiscoverQuery;
   userId: UserId;
   discoveryIds?: string[];
 }): Promise<DiscoverySummary[]> {
