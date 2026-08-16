@@ -35,6 +35,8 @@ import type {
   MoveLearningPlanItemRequest,
   PrepareFollowRequest,
   PrepareFollowResponse,
+  SetFollowLifecycleResponse,
+  FollowLifecycle,
   PartId,
   RemoveStageRequest,
   ReorderStageItemsRequest,
@@ -139,16 +141,56 @@ export async function fetchDiscoverWorkspace(
 export async function refreshFollow(
   user: CurrentUser,
   followId: FollowId,
-): Promise<AcquireAndApplyResponse> {
-  return requestJson<AcquireAndApplyResponse>(
+): Promise<
+  | Extract<AcquireAndApplyResponse, { acquisition: unknown }>
+  | Extract<AcquireAndApplyResponse, { ok: false }>
+> {
+  return requestJson<
+    | Extract<AcquireAndApplyResponse, { acquisition: unknown }>
+    | Extract<AcquireAndApplyResponse, { ok: false }>
+  >(user, "/api/discover/acquisitions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trigger: "manual_follow", followId }),
+  });
+}
+
+/** Acquire every active Follow while preserving each independent outcome. */
+export async function refreshWorkspace(
+  user: CurrentUser,
+): Promise<Extract<AcquireAndApplyResponse, { acquisitions: unknown }>> {
+  return requestJson<
+    Extract<AcquireAndApplyResponse, { acquisitions: unknown }>
+  >(user, "/api/discover/acquisitions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trigger: "manual_workspace" }),
+  });
+}
+
+/** Change one owned Follow without coupling lifecycle to acquisition health. */
+export async function setFollowLifecycle(
+  user: CurrentUser,
+  input: {
+    followId: FollowId;
+    lifecycle: FollowLifecycle;
+    idempotencyKey: IdempotencyKey;
+  },
+): Promise<SetFollowLifecycleResponse> {
+  const response = await authenticatedRequest(
     user,
-    "/api/discover/acquisitions",
+    `/api/discover/follows/${input.followId}/lifecycle`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trigger: "manual_follow", followId }),
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": input.idempotencyKey,
+      },
+      body: JSON.stringify({ lifecycle: input.lifecycle }),
     },
+    true,
   );
+  return (await response.json()) as SetFollowLifecycleResponse;
 }
 
 /** Fetch All — every Item belonging to the current User. */

@@ -11,6 +11,7 @@ import request from "supertest";
 import type { Express } from "express";
 import {
   Type,
+  type DiscoverWorkspace,
   type FollowPreviewVideo,
   type PrepareFollowResponse,
 } from "@unshelf/shared";
@@ -111,6 +112,139 @@ async function createFollow({
 }
 
 describe("POST /api/discover/acquisitions", () => {
+  it("refreshes every active Follow independently for one workspace", async () => {
+    const clerkUserId = "clerk_workspace_refresh";
+    const first = await createFollow({
+      clerkUserId,
+      channelId: "UC_workspace_first",
+    });
+    const second = await createFollow({
+      clerkUserId,
+      channelId: "UC_workspace_second",
+    });
+    acquireChannel.mockImplementationOnce(async ({ channelId }) =>
+      successfulAcquisition(
+        [
+          {
+            ...newVideo,
+            providerIdentity: "video-workspace-first",
+            source: "https://www.youtube.com/watch?v=video-workspace-first",
+          },
+        ],
+        channelId,
+      ),
+    );
+    acquireChannel.mockResolvedValueOnce({
+      ok: false,
+      error: "provider_unavailable",
+    });
+
+    const refreshed = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ trigger: "manual_workspace" })
+      .expect(200);
+
+    expect(refreshed.body).toMatchObject({
+      ok: true,
+      acquisitions: [
+        { followId: first.followId, outcome: "complete" },
+        { followId: second.followId, outcome: "provider_unavailable" },
+      ],
+    });
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .expect(200);
+    const workspaceBody = workspace.body as DiscoverWorkspace;
+    expect(workspaceBody.discoveries.map(({ title }) => title)).toEqual(
+      expect.arrayContaining([
+        "Accepted during refresh",
+        "Stored before refresh",
+      ]),
+    );
+    expect(
+      workspaceBody.follows.find(({ id }) => id === first.followId)?.health
+        .latestAttemptOutcome,
+    ).toBe("complete");
+    expect(
+      workspaceBody.follows.find(({ id }) => id === second.followId)?.health
+        .latestAttemptOutcome,
+    ).toBe("provider_unavailable");
+  });
+
+  it("resumes at the current snapshot without backfilling the paused interval", async () => {
+    const channelId = "UC_resume_current";
+    const pausedOwner = await createFollow({
+      clerkUserId: "clerk_resume_owner",
+      channelId,
+    });
+    const activePeer = await createFollow({
+      clerkUserId: "clerk_resume_peer",
+      channelId,
+    });
+    await request(app)
+      .patch(`/api/discover/follows/${pausedOwner.followId}/lifecycle`)
+      .set(TEST_USER_HEADER, "clerk_resume_owner")
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "paused" })
+      .expect(200);
+
+    acquireChannel.mockResolvedValueOnce(
+      successfulAcquisition(
+        [
+          {
+            ...newVideo,
+            providerIdentity: "video-paused-interval",
+            title: "Only during pause",
+            source: "https://www.youtube.com/watch?v=video-paused-interval",
+          },
+        ],
+        channelId,
+      ),
+    );
+    await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_resume_peer")
+      .send({ trigger: "manual_follow", followId: activePeer.followId })
+      .expect(200);
+
+    acquireChannel.mockResolvedValueOnce(
+      successfulAcquisition(
+        [
+          {
+            ...newVideo,
+            providerIdentity: "video-current-on-resume",
+            title: "Current on resume",
+            source: "https://www.youtube.com/watch?v=video-current-on-resume",
+          },
+        ],
+        channelId,
+      ),
+    );
+    await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_resume_peer")
+      .send({ trigger: "manual_follow", followId: activePeer.followId })
+      .expect(200);
+
+    await request(app)
+      .patch(`/api/discover/follows/${pausedOwner.followId}/lifecycle`)
+      .set(TEST_USER_HEADER, "clerk_resume_owner")
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "active" })
+      .expect(200);
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, "clerk_resume_owner")
+      .expect(200);
+    const workspaceBody = workspace.body as DiscoverWorkspace;
+    expect(workspaceBody.discoveries.map(({ title }) => title)).toEqual([
+      "Stored before refresh",
+      "Current on resume",
+    ]);
+  });
+
   it("joins one shared acquisition while applying its snapshot privately for each User", async () => {
     const channelId = "UC_shared_acquisition";
     const first = await createFollow({
@@ -296,9 +430,7 @@ describe("POST /api/discover/acquisitions", () => {
     await vi.waitFor(() =>
       expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 4),
     );
-    finishCalls[0]?.(
-      successfulAcquisition([newVideo], "UC_bounded_0"),
-    );
+    finishCalls[0]?.(successfulAcquisition([newVideo], "UC_bounded_0"));
     await vi.waitFor(() =>
       expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 5),
     );

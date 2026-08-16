@@ -43,6 +43,7 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_follow_preview",
   "invalid_follow_confirmation",
   "invalid_discover_acquisition",
+  "invalid_follow_lifecycle",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];

@@ -124,6 +124,7 @@ export type {
   PrepareFollowRequest,
   ConfirmFollowRequest,
   AcquireAndApplyRequest,
+  SetFollowLifecycleRequest,
 } from "./validation";
 
 export type Provider = "youtube";
@@ -189,7 +190,15 @@ export type AcquireAndApplyFailure = "follow_missing" | "follow_inactive";
 
 export type AcquireAndApplyResponse =
   | { ok: true; acquisition: FollowAcquisitionSummary }
+  | { ok: true; acquisitions: FollowAcquisitionSummary[] }
   | { ok: false; error: AcquireAndApplyFailure };
+
+export type SetFollowLifecycleFailure =
+  "follow_missing" | "lifecycle_conflict" | "idempotency_conflict";
+
+export type SetFollowLifecycleResponse =
+  | { ok: true; follow: FollowSummary }
+  | { ok: false; error: SetFollowLifecycleFailure };
 
 export interface DiscoverySummary {
   id: DiscoveryId;

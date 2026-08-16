@@ -29,6 +29,8 @@ import type {
   IdempotencyKey,
   PrepareFollowRequest,
   PrepareFollowResponse,
+  SetFollowLifecycleRequest,
+  SetFollowLifecycleResponse,
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
@@ -77,6 +79,12 @@ export interface DiscoverModule {
     request: AcquireAndApplyRequest;
   }): Promise<AcquireAndApplyResponse>;
   readWorkspace(input: { userId: UserId }): Promise<DiscoverWorkspace>;
+  setFollowLifecycle(input: {
+    userId: UserId;
+    followId: FollowId;
+    request: SetFollowLifecycleRequest;
+    idempotencyKey: IdempotencyKey;
+  }): Promise<SetFollowLifecycleResponse>;
 }
 
 export function createDiscoverModule({
@@ -91,7 +99,7 @@ export function createDiscoverModule({
   logger: Logger;
 }): DiscoverModule {
   const providerConcurrency = pLimit(4);
-  return {
+  const module: DiscoverModule = {
     prepareFollow: async ({ userId, request }) => {
       const acquired = await providerConcurrency(() =>
         youtube.previewChannel({
@@ -660,6 +668,35 @@ export function createDiscoverModule({
         return result;
       }),
     acquireAndApply: async ({ userId, request }) => {
+      if (request.trigger === "manual_workspace") {
+        const activeFollows = await db
+          .select({ id: discoverFollows.id })
+          .from(discoverFollows)
+          .where(
+            and(
+              eq(discoverFollows.userId, userId),
+              eq(discoverFollows.lifecycle, "active"),
+            ),
+          )
+          .orderBy(asc(discoverFollows.createdAt));
+        const results = await Promise.all(
+          activeFollows.map(({ id }) =>
+            module.acquireAndApply({
+              userId,
+              request: {
+                trigger: "manual_follow",
+                followId: id as FollowId,
+              },
+            }),
+          ),
+        );
+        return {
+          ok: true,
+          acquisitions: results.flatMap((result) =>
+            result.ok && "acquisition" in result ? [result.acquisition] : [],
+          ),
+        };
+      }
       const claim = await db.transaction(async (tx) => {
         const [follow] = await tx
           .select({
@@ -1101,6 +1138,130 @@ export function createDiscoverModule({
         },
       };
     },
+    setFollowLifecycle: async ({
+      userId,
+      followId,
+      request,
+      idempotencyKey,
+    }) => {
+      const requestFingerprint = `${followId}:${request.lifecycle}`;
+      const initial = await db.transaction(
+        async (tx): Promise<SetFollowLifecycleResponse | null> => {
+          await tx
+            .insert(discoverIdempotency)
+            .values({
+              userId,
+              operation: "set_follow_lifecycle",
+              requestId: idempotencyKey,
+              requestFingerprint,
+            })
+            .onConflictDoNothing();
+          const [idempotency] = await tx
+            .select({
+              requestFingerprint: discoverIdempotency.requestFingerprint,
+              resultPayload: discoverIdempotency.resultPayload,
+            })
+            .from(discoverIdempotency)
+            .where(
+              and(
+                eq(discoverIdempotency.userId, userId),
+                eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+                eq(discoverIdempotency.requestId, idempotencyKey),
+              ),
+            )
+            .for("update");
+          if (idempotency.requestFingerprint !== requestFingerprint) {
+            return { ok: false, error: "idempotency_conflict" };
+          }
+          if (idempotency.resultPayload !== null) {
+            return idempotency.resultPayload as SetFollowLifecycleResponse;
+          }
+          const [follow] = await tx
+            .select({ lifecycle: discoverFollows.lifecycle })
+            .from(discoverFollows)
+            .where(
+              and(
+                eq(discoverFollows.id, followId),
+                eq(discoverFollows.userId, userId),
+              ),
+            )
+            .for("update");
+          if (follow === undefined) {
+            const result = {
+              ok: false as const,
+              error: "follow_missing" as const,
+            };
+            await tx
+              .update(discoverIdempotency)
+              .set({ resultPayload: result })
+              .where(
+                and(
+                  eq(discoverIdempotency.userId, userId),
+                  eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+                  eq(discoverIdempotency.requestId, idempotencyKey),
+                ),
+              );
+            return result;
+          }
+          if (
+            follow.lifecycle === "removed" &&
+            request.lifecycle !== "removed"
+          ) {
+            const result = {
+              ok: false as const,
+              error: "lifecycle_conflict" as const,
+            };
+            await tx
+              .update(discoverIdempotency)
+              .set({ resultPayload: result })
+              .where(
+                and(
+                  eq(discoverIdempotency.userId, userId),
+                  eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+                  eq(discoverIdempotency.requestId, idempotencyKey),
+                ),
+              );
+            return result;
+          }
+          await tx
+            .update(discoverFollows)
+            .set({ lifecycle: request.lifecycle, updatedAt: now() })
+            .where(
+              and(
+                eq(discoverFollows.id, followId),
+                eq(discoverFollows.userId, userId),
+              ),
+            );
+          return null;
+        },
+      );
+      if (initial !== null) return initial;
+
+      if (request.lifecycle === "active") {
+        await applyAvailableSnapshots({
+          db,
+          userId,
+          followId,
+          appliedAt: now(),
+          currentOnly: true,
+        });
+      }
+      const workspace = await module.readWorkspace({ userId });
+      const follow = workspace.follows.find(({ id }) => id === followId);
+      if (follow === undefined) return { ok: false, error: "follow_missing" };
+      const result: SetFollowLifecycleResponse = { ok: true, follow };
+      await db
+        .update(discoverIdempotency)
+        .set({ resultPayload: result })
+        .where(
+          and(
+            eq(discoverIdempotency.userId, userId),
+            eq(discoverIdempotency.operation, "set_follow_lifecycle"),
+            eq(discoverIdempotency.requestId, idempotencyKey),
+          ),
+        );
+      return result;
+    },
     readWorkspace: async ({ userId }) => {
       const followRows = await db
         .select({
@@ -1170,6 +1331,7 @@ export function createDiscoverModule({
       };
     },
   };
+  return module;
 }
 
 async function waitForAttempt({
@@ -1702,11 +1864,13 @@ async function applyAvailableSnapshots({
   userId,
   followId,
   appliedAt,
+  currentOnly = false,
 }: {
   db: Database;
   userId: UserId;
   followId: FollowId;
   appliedAt: Date;
+  currentOnly?: boolean;
 }): Promise<void> {
   await db.transaction(async (tx) => {
     const [follow] = await tx
@@ -1755,7 +1919,8 @@ async function applyAvailableSnapshots({
       )
       .orderBy(asc(discoverProviderSnapshots.sequence));
 
-    for (const snapshot of snapshots) {
+    const snapshotsToApply = currentOnly ? snapshots.slice(-1) : snapshots;
+    for (const snapshot of snapshotsToApply) {
       const members = await tx
         .select({
           providerResultId: discoverProviderSnapshotResults.providerResultId,

@@ -606,10 +606,12 @@ describe("Discover Follow confirmation", () => {
       idempotencyKey: crypto.randomUUID(),
     });
     const firstFollowId = first.body.follow.id as string;
-    await harness.pool.query(
-      `UPDATE discover_follows SET lifecycle = 'paused' WHERE id = $1`,
-      [firstFollowId],
-    );
+    await request(app)
+      .patch(`/api/discover/follows/${firstFollowId}/lifecycle`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "paused" })
+      .expect(200);
 
     const paused = await request(app)
       .post("/api/discover/follow-previews")
@@ -625,10 +627,12 @@ describe("Discover Follow confirmation", () => {
       follow: { id: firstFollowId, lifecycle: "paused" },
     });
 
-    await harness.pool.query(
-      `UPDATE discover_follows SET lifecycle = 'removed' WHERE id = $1`,
-      [firstFollowId],
-    );
+    await request(app)
+      .patch(`/api/discover/follows/${firstFollowId}/lifecycle`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "removed" })
+      .expect(200);
     const firstPresence = await harness.pool.query<{
       first_surfaced_snapshot_id: string;
     }>(
@@ -675,5 +679,69 @@ describe("Discover Follow confirmation", () => {
     expect(restoredPresence.rows[0]?.last_surfaced_snapshot_id).not.toBe(
       firstPresence.rows[0]?.first_surfaced_snapshot_id,
     );
+  });
+
+  it("mutates an owned Follow lifecycle with replay-safe conflict handling", async () => {
+    const clerkUserId = "clerk_follow_lifecycle";
+    const prepared = await prepare(clerkUserId);
+    if (!prepared.ok || !("preview" in prepared)) {
+      throw new Error("expected preview");
+    }
+    const confirmed = await confirm({
+      clerkUserId,
+      previewId: prepared.preview.previewId,
+      idempotencyKey: crypto.randomUUID(),
+    });
+    const followId = confirmed.body.follow.id as string;
+    const key = crypto.randomUUID();
+
+    const pause = () =>
+      request(app)
+        .patch(`/api/discover/follows/${followId}/lifecycle`)
+        .set(TEST_USER_HEADER, clerkUserId)
+        .set("Idempotency-Key", key)
+        .send({ lifecycle: "paused" });
+    expect((await pause().expect(200)).body).toMatchObject({
+      ok: true,
+      follow: { id: followId, lifecycle: "paused" },
+    });
+    expect((await pause().expect(200)).body).toMatchObject({
+      ok: true,
+      follow: { id: followId, lifecycle: "paused" },
+    });
+    expect(
+      (
+        await request(app)
+          .patch(`/api/discover/follows/${followId}/lifecycle`)
+          .set(TEST_USER_HEADER, clerkUserId)
+          .set("Idempotency-Key", key)
+          .send({ lifecycle: "active" })
+          .expect(409)
+      ).body,
+    ).toEqual({ ok: false, error: "idempotency_conflict" });
+    await request(app)
+      .patch(`/api/discover/follows/${followId}/lifecycle`)
+      .set(TEST_USER_HEADER, "clerk_follow_lifecycle_intruder")
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "active" })
+      .expect(404, { ok: false, error: "follow_missing" });
+    await request(app)
+      .patch(`/api/discover/follows/${followId}/lifecycle`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ lifecycle: "active" })
+      .expect(400);
+
+    const resumed = await request(app)
+      .patch(`/api/discover/follows/${followId}/lifecycle`)
+      .set(TEST_USER_HEADER, clerkUserId)
+      .set("Idempotency-Key", crypto.randomUUID())
+      .send({ lifecycle: "active" })
+      .expect(200);
+    expect(resumed.body.follow.lifecycle).toBe("active");
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .expect(200);
+    expect(workspace.body.discoveries).toHaveLength(videos.length);
   });
 });

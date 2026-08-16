@@ -3,7 +3,9 @@ import {
   acquireAndApplyRequestSchema,
   confirmFollowRequestSchema,
   idempotencyKeySchema,
+  followIdSchema,
   prepareFollowRequestSchema,
+  setFollowLifecycleRequestSchema,
 } from "@unshelf/shared/validation";
 import type {
   ConfirmFollowFailure,
@@ -35,6 +37,30 @@ export function createDiscoverRouter(
         return;
       }
       res.status("preview" in result ? 201 : 200).json(result);
+    },
+  );
+  router.patch(
+    "/follows/:followId/lifecycle",
+    validateRequest(
+      {
+        params: { followId: followIdSchema },
+        body: setFollowLifecycleRequestSchema,
+        headers: { "Idempotency-Key": idempotencyKeySchema },
+      },
+      "invalid_follow_lifecycle",
+    ),
+    async (req, res) => {
+      const result = await discover.setFollowLifecycle({
+        userId: req.user!.id,
+        followId: res.locals.validated.params.followId,
+        request: res.locals.validated.body,
+        idempotencyKey: res.locals.validated.headers["Idempotency-Key"],
+      });
+      if (!result.ok) {
+        res.status(result.error === "follow_missing" ? 404 : 409).json(result);
+        return;
+      }
+      res.json(result);
     },
   );
   router.post(

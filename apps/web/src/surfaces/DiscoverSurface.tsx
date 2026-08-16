@@ -6,6 +6,7 @@ import type {
   DiscoverySummary,
   FollowPreview,
   FollowId,
+  FollowLifecycle,
   FollowSummary,
   IdempotencyKey,
   PrepareFollowFailure,
@@ -16,6 +17,8 @@ import {
   fetchDiscoverWorkspace,
   prepareFollowPreview,
   refreshFollow,
+  refreshWorkspace,
+  setFollowLifecycle,
 } from "../api";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -28,6 +31,7 @@ type SetupState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "failure"; error: PrepareFollowFailure }
+  | { kind: "resume"; follow: FollowSummary }
   | { kind: "preview"; preview: FollowPreview; expired: boolean }
   | {
       kind: "confirming";
@@ -58,6 +62,17 @@ type RefreshState =
     }
   | { kind: "failure"; followId: FollowId };
 
+type WorkspaceRefreshState =
+  | { kind: "idle" }
+  | { kind: "pending" }
+  | { kind: "failure" }
+  | { kind: "result"; affectedFollowIds: FollowId[]; rereadFailed: boolean };
+
+type LifecycleState =
+  | { kind: "idle" }
+  | { kind: "pending"; followId: FollowId; lifecycle: FollowLifecycle }
+  | { kind: "failure"; followId: FollowId };
+
 export function DiscoverSurface() {
   const user = useCurrentUser();
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
@@ -69,6 +84,12 @@ export function DiscoverSurface() {
   const [refreshState, setRefreshState] = useState<RefreshState>({
     kind: "idle",
   });
+  const [workspaceRefreshState, setWorkspaceRefreshState] =
+    useState<WorkspaceRefreshState>({ kind: "idle" });
+  const [lifecycleState, setLifecycleState] = useState<LifecycleState>({
+    kind: "idle",
+  });
+  const [showSetup, setShowSetup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const previewExpiresAt =
@@ -137,12 +158,14 @@ export function DiscoverSurface() {
         });
       } else {
         await loadWorkspace();
-        setSetupState({ kind: "idle" });
-        setAnnouncement(
-          result.outcome === "already_following"
-            ? `${result.follow.name ?? "This channel"} is already being followed.`
-            : `${result.follow.name ?? "This channel"} is paused. Resume controls are coming next.`,
-        );
+        if (result.outcome === "resume_available") {
+          setSetupState({ kind: "resume", follow: result.follow });
+        } else {
+          setSetupState({ kind: "idle" });
+          setAnnouncement(
+            `${result.follow.name ?? "This channel"} is already being followed.`,
+          );
+        }
       }
     } catch {
       setSetupState({ kind: "failure", error: "provider_unavailable" });
@@ -195,6 +218,68 @@ export function DiscoverSurface() {
     }
   };
 
+  const runWorkspaceRefresh = async () => {
+    setWorkspaceRefreshState({ kind: "pending" });
+    try {
+      const result = await refreshWorkspace(user);
+      const affectedFollowIds = result.acquisitions
+        .filter(({ outcome }) => outcome !== "complete" && outcome !== "joined")
+        .map(({ followId }) => followId);
+      try {
+        await loadWorkspace();
+        setWorkspaceRefreshState({
+          kind: "result",
+          affectedFollowIds,
+          rereadFailed: false,
+        });
+      } catch {
+        setWorkspaceRefreshState({
+          kind: "result",
+          affectedFollowIds,
+          rereadFailed: true,
+        });
+      }
+    } catch {
+      setWorkspaceRefreshState({ kind: "failure" });
+    }
+  };
+
+  const runLifecycleChange = async (
+    follow: FollowSummary,
+    lifecycle: FollowLifecycle,
+  ) => {
+    setLifecycleState({ kind: "pending", followId: follow.id, lifecycle });
+    try {
+      const result = await setFollowLifecycle(user, {
+        followId: follow.id,
+        lifecycle,
+        idempotencyKey: crypto.randomUUID() as IdempotencyKey,
+      });
+      if (!result.ok) {
+        setLifecycleState({ kind: "failure", followId: follow.id });
+        return;
+      }
+      setWorkspaceState((current) =>
+        current.kind === "ready"
+          ? {
+              kind: "ready",
+              workspace: {
+                ...current.workspace,
+                follows: current.workspace.follows.map((entry) =>
+                  entry.id === result.follow.id ? result.follow : entry,
+                ),
+              },
+            }
+          : current,
+      );
+      setLifecycleState({ kind: "idle" });
+      if (lifecycle === "active") setSetupState({ kind: "idle" });
+      await loadWorkspace();
+    } catch {
+      setLifecycleState({ kind: "failure", followId: follow.id });
+    }
+  };
+
   const confirmPreview = async (
     preview: FollowPreview,
     idempotencyKey: IdempotencyKey = crypto.randomUUID() as IdempotencyKey,
@@ -226,13 +311,25 @@ export function DiscoverSurface() {
     }
 
     const followName = result.follow.name ?? "This channel";
-    setWorkspaceState({
+    setWorkspaceState((current) => ({
       kind: "ready",
-      workspace: {
-        follows: [result.follow],
-        discoveries: result.discoveries,
-      },
-    });
+      workspace:
+        current.kind === "ready"
+          ? {
+              follows: [
+                ...current.workspace.follows.filter(
+                  ({ id }) => id !== result.follow.id,
+                ),
+                result.follow,
+              ],
+              discoveries: [
+                ...current.workspace.discoveries,
+                ...result.discoveries,
+              ],
+            }
+          : { follows: [result.follow], discoveries: result.discoveries },
+    }));
+    setShowSetup(false);
     setSetupState({ kind: "idle" });
     setAnnouncement(`${followName} is now in Discover.`);
     try {
@@ -298,11 +395,39 @@ export function DiscoverSurface() {
           onRetry={() => void runPreview()}
         />
       ) : (
-        <Workspace
-          workspace={workspaceState.workspace}
-          refreshState={refreshState}
-          onRefresh={(follow) => void runFollowRefresh(follow)}
-        />
+        <>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="quiet"
+              onClick={() => setShowSetup((visible) => !visible)}
+            >
+              {showSetup ? "Close Follow setup" : "Follow another channel"}
+            </Button>
+          </div>
+          {showSetup ? (
+            <SetupForm
+              url={url}
+              state={setupState}
+              inputRef={inputRef}
+              alertRef={alertRef}
+              onUrlChange={setUrl}
+              onSubmit={submit}
+              onRetry={() => void runPreview()}
+            />
+          ) : null}
+          <Workspace
+            workspace={workspaceState.workspace}
+            refreshState={refreshState}
+            workspaceRefreshState={workspaceRefreshState}
+            lifecycleState={lifecycleState}
+            onRefresh={(follow) => void runFollowRefresh(follow)}
+            onRefreshWorkspace={() => void runWorkspaceRefresh()}
+            onLifecycleChange={(follow, lifecycle) =>
+              void runLifecycleChange(follow, lifecycle)
+            }
+          />
+        </>
       )}
 
       {setupState.kind === "preview" ? (
@@ -312,6 +437,22 @@ export function DiscoverSurface() {
           onCancel={reset}
           onConfirm={() => void confirmPreview(setupState.preview)}
         />
+      ) : null}
+      {setupState.kind === "resume" ? (
+        <Alert className="flex flex-wrap items-center justify-between gap-3">
+          <p>{setupState.follow.name ?? "This channel"} is paused.</p>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={
+              lifecycleState.kind === "pending" &&
+              lifecycleState.followId === setupState.follow.id
+            }
+            onClick={() => void runLifecycleChange(setupState.follow, "active")}
+          >
+            Resume Follow
+          </Button>
+        </Alert>
       ) : null}
       {setupState.kind === "confirming" ? (
         <Preview
@@ -461,116 +602,338 @@ function SetupForm({
 function Workspace({
   workspace,
   refreshState,
+  workspaceRefreshState,
+  lifecycleState,
   onRefresh,
+  onRefreshWorkspace,
+  onLifecycleChange,
 }: {
   workspace: DiscoverWorkspace;
   refreshState: RefreshState;
+  workspaceRefreshState: WorkspaceRefreshState;
+  lifecycleState: LifecycleState;
   onRefresh: (follow: FollowSummary) => void;
+  onRefreshWorkspace: () => void;
+  onLifecycleChange: (
+    follow: FollowSummary,
+    lifecycle: FollowLifecycle,
+  ) => void;
 }) {
-  const follow = workspace.follows[0];
-  const followName = follow?.name ?? "This Follow";
-  const refreshForFollow =
-    follow !== undefined &&
-    refreshState.kind !== "idle" &&
-    refreshState.followId === follow.id
-      ? refreshState
-      : { kind: "idle" as const };
+  const [selectedFollowId, setSelectedFollowId] = useState<FollowId | null>(
+    null,
+  );
+  const filteredDiscoveries =
+    selectedFollowId === null
+      ? workspace.discoveries
+      : workspace.discoveries.filter(
+          ({ followId }) => followId === selectedFollowId,
+        );
+  const selectedFollow = workspace.follows.find(
+    ({ id }) => id === selectedFollowId,
+  );
+  const affectedNames =
+    workspaceRefreshState.kind === "result"
+      ? workspaceRefreshState.affectedFollowIds.map(
+          (followId) =>
+            workspace.follows.find(({ id }) => id === followId)?.name ??
+            "One Follow",
+        )
+      : [];
   return (
-    <section className="space-y-4" aria-labelledby="discover-intake-heading">
-      <div className="flex items-end justify-between gap-4 border-b pb-3">
-        <div>
-          <h2 id="discover-intake-heading" className="text-xl font-semibold">
-            Intake
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {workspace.discoveries.length} new
-          </p>
-        </div>
-        {follow?.lifecycle === "active" ? (
+    <div
+      data-testid="discover-workspace"
+      className="grid min-w-0 gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]"
+    >
+      <aside
+        aria-label="Follows"
+        className="min-w-0 space-y-3 lg:sticky lg:top-4 lg:self-start"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-semibold">Follows</h2>
           <Button
             type="button"
+            size="compact"
             variant="secondary"
-            disabled={refreshForFollow.kind === "pending"}
-            onClick={() => onRefresh(follow)}
+            disabled={workspaceRefreshState.kind === "pending"}
+            onClick={onRefreshWorkspace}
           >
-            {refreshForFollow.kind === "pending"
-              ? `Refreshing ${followName}…`
-              : refreshForFollow.kind === "failure" ||
-                  (refreshForFollow.kind === "result" &&
-                    (refreshForFollow.outcome !== "complete" ||
-                      refreshForFollow.rereadFailed))
-                ? `Retry ${followName}`
-                : `Refresh ${followName}`}
+            {workspaceRefreshState.kind === "pending"
+              ? "Refreshing all…"
+              : "Refresh all"}
           </Button>
+        </div>
+        <Button
+          type="button"
+          variant="quiet"
+          aria-pressed={selectedFollowId === null}
+          className="w-full justify-between"
+          onClick={() => setSelectedFollowId(null)}
+        >
+          <span>All Follows</span>
+          <span>{workspace.discoveries.length}</span>
+        </Button>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          {workspace.follows.map((follow) => {
+            const followName = follow.name ?? "Follow unavailable";
+            const unresolvedCount = workspace.discoveries.filter(
+              ({ followId }) => followId === follow.id,
+            ).length;
+            const refreshForFollow =
+              refreshState.kind !== "idle" &&
+              refreshState.followId === follow.id
+                ? refreshState
+                : { kind: "idle" as const };
+            const lifecycleForFollow =
+              lifecycleState.kind !== "idle" &&
+              lifecycleState.followId === follow.id
+                ? lifecycleState
+                : { kind: "idle" as const };
+            const recoveryNeeded =
+              refreshForFollow.kind === "failure" ||
+              (refreshForFollow.kind === "result" &&
+                (refreshForFollow.outcome !== "complete" ||
+                  refreshForFollow.rereadFailed)) ||
+              (refreshForFollow.kind === "idle" &&
+                follow.health.latestAttemptOutcome !== null &&
+                follow.health.latestAttemptOutcome !== "complete");
+            return (
+              <article
+                key={follow.id}
+                className="min-w-0 space-y-2 rounded-[var(--radius-card)] border bg-card p-3"
+              >
+                <Button
+                  type="button"
+                  variant="quiet"
+                  aria-pressed={selectedFollowId === follow.id}
+                  className="w-full justify-between px-0"
+                  onClick={() => setSelectedFollowId(follow.id)}
+                >
+                  <span className="truncate">{followName}</span>
+                  <span>{unresolvedCount}</span>
+                </Button>
+                <p className="text-xs capitalize text-muted-foreground">
+                  {follow.lifecycle} ·{" "}
+                  {follow.health.latestAttemptOutcome ?? "not checked"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Latest attempt:{" "}
+                  {formatHealthTime(follow.health.latestAttemptAt)}
+                  <br />
+                  Latest complete:{" "}
+                  {formatHealthTime(follow.health.latestCompleteAt)}
+                  <br />
+                  Verified since:{" "}
+                  {formatHealthTime(
+                    follow.health.verifiedCoverageStartedAt,
+                  )}
+                  {follow.health.nextEligibleAt ? (
+                    <>
+                      <br />
+                      Retry after:{" "}
+                      {formatHealthTime(follow.health.nextEligibleAt)}
+                    </>
+                  ) : null}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {follow.lifecycle === "active" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        disabled={refreshForFollow.kind === "pending"}
+                        onClick={() => onRefresh(follow)}
+                      >
+                        {refreshForFollow.kind === "pending"
+                          ? `Refreshing ${followName}…`
+                          : recoveryNeeded
+                            ? `Retry ${followName}`
+                            : `Refresh ${followName}`}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="compact"
+                        variant="quiet"
+                        disabled={lifecycleForFollow.kind === "pending"}
+                        onClick={() => onLifecycleChange(follow, "paused")}
+                      >
+                        {lifecycleForFollow.kind === "pending" &&
+                        lifecycleForFollow.lifecycle === "paused"
+                          ? `Pausing ${followName}`
+                          : `Pause ${followName}`}
+                      </Button>
+                    </>
+                  ) : follow.lifecycle === "paused" ? (
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="secondary"
+                      disabled={lifecycleForFollow.kind === "pending"}
+                      onClick={() => onLifecycleChange(follow, "active")}
+                    >
+                      {lifecycleForFollow.kind === "pending" &&
+                      lifecycleForFollow.lifecycle === "active"
+                        ? `Resuming ${followName}`
+                        : `Resume ${followName}`}
+                    </Button>
+                  ) : null}
+                  {follow.lifecycle !== "removed" ? (
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="quiet"
+                      disabled={lifecycleForFollow.kind === "pending"}
+                      onClick={() => onLifecycleChange(follow, "removed")}
+                    >
+                      {lifecycleForFollow.kind === "pending" &&
+                      lifecycleForFollow.lifecycle === "removed"
+                        ? `Removing ${followName}`
+                        : `Remove ${followName}`}
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </aside>
+      <section
+        className="min-w-0 space-y-4"
+        aria-labelledby="discover-intake-heading"
+      >
+        <div className="flex items-end justify-between gap-4 border-b pb-3">
+          <div>
+            <h2 id="discover-intake-heading" className="text-xl font-semibold">
+              Intake
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {filteredDiscoveries.length} unresolved
+              {selectedFollow
+                ? ` from ${selectedFollow.name ?? "this Follow"}`
+                : ""}
+            </p>
+          </div>
+        </div>
+        {workspaceRefreshState.kind === "failure" ? (
+          <Alert>Workspace Refresh failed. Stored intake is unchanged.</Alert>
         ) : null}
-      </div>
-      {refreshForFollow.kind === "pending" ? (
-        <p
-          role="status"
-          aria-live="polite"
-          className="text-sm text-muted-foreground"
-        >
-          Refreshing {followName}. Stored intake remains available.
-        </p>
-      ) : null}
-      {refreshForFollow.kind === "failure" ? (
-        <Alert>
-          Refresh failed for {followName}. Stored intake is unchanged; retry
-          when ready.
-        </Alert>
-      ) : null}
-      {refreshForFollow.kind === "result" && refreshForFollow.rereadFailed ? (
-        <Alert>
-          {followName}
-          {refreshForFollow.outcome === "partial"
-            ? " partially refreshed"
-            : " refreshed"}
-          , but the intake could not reload. Stored cards remain available;
-          retry when ready.
-        </Alert>
-      ) : null}
-      {refreshForFollow.kind === "result" &&
-      !refreshForFollow.rereadFailed &&
-      refreshForFollow.outcome === "partial" ? (
-        <p
-          role="status"
-          aria-live="polite"
-          className="text-sm text-muted-foreground"
-        >
-          Partial refresh for {followName}: {refreshForFollow.rejectedCount}{" "}
-          invalid or unavailable records were excluded. Stored intake was
-          preserved.
-        </p>
-      ) : null}
-      {refreshForFollow.kind === "result" &&
-      !refreshForFollow.rereadFailed &&
-      refreshForFollow.outcome === "complete" ? (
-        <p role="status" aria-live="polite" className="text-sm text-primary">
-          {followName} refreshed.
-        </p>
-      ) : null}
-      {refreshForFollow.kind === "result" &&
-      !refreshForFollow.rereadFailed &&
-      refreshForFollow.outcome !== "complete" &&
-      refreshForFollow.outcome !== "partial" ? (
-        <Alert>
-          {refreshOutcomeMessage(refreshForFollow.outcome, followName)} Stored
-          intake is unchanged.
-        </Alert>
-      ) : null}
-      {workspace.discoveries.length === 0 ? (
-        <p className="rounded-[var(--radius-card)] border border-dashed p-8 text-center text-muted-foreground">
-          You’re caught up. New Discoveries will appear here.
-        </p>
-      ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {workspace.discoveries.map((discovery) => (
-            <DiscoveryCard key={discovery.id} discovery={discovery} />
-          ))}
-        </ul>
-      )}
-    </section>
+        {workspaceRefreshState.kind === "result" && affectedNames.length > 0 ? (
+          <Alert>
+            {affectedNames.join(", ")} could not refresh completely. Other
+            Follow results remain available.
+          </Alert>
+        ) : null}
+        {workspaceRefreshState.kind === "result" &&
+        workspaceRefreshState.rereadFailed ? (
+          <Alert>
+            Refresh finished, but the intake could not reload. Stored cards
+            remain available.
+          </Alert>
+        ) : null}
+        {refreshState.kind === "pending" ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-sm text-muted-foreground"
+          >
+            Refreshing{" "}
+            {workspace.follows.find(({ id }) => id === refreshState.followId)
+              ?.name ?? "Follow"}
+            . Stored intake remains available.
+          </p>
+        ) : null}
+        {refreshState.kind === "failure" ? (
+          <Alert>
+            Refresh failed for{" "}
+            {workspace.follows.find(({ id }) => id === refreshState.followId)
+              ?.name ?? "this Follow"}
+            . Stored intake is unchanged; retry when ready.
+          </Alert>
+        ) : null}
+        {refreshState.kind === "result" && refreshState.rereadFailed ? (
+          <Alert>
+            {workspace.follows.find(({ id }) => id === refreshState.followId)
+              ?.name ?? "This Follow"}
+            {refreshState.outcome === "partial"
+              ? " partially refreshed"
+              : " refreshed"}
+            , but the intake could not reload. Stored cards remain available;
+            retry when ready.
+          </Alert>
+        ) : null}
+        {refreshState.kind === "result" &&
+        !refreshState.rereadFailed &&
+        refreshState.outcome === "partial" ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-sm text-muted-foreground"
+          >
+            Partial refresh for{" "}
+            {workspace.follows.find(({ id }) => id === refreshState.followId)
+              ?.name ?? "this Follow"}
+            : {refreshState.rejectedCount} invalid or unavailable records were
+            excluded. Stored intake was preserved.
+          </p>
+        ) : null}
+        {refreshState.kind === "result" &&
+        !refreshState.rereadFailed &&
+        refreshState.outcome === "complete" ? (
+          <p role="status" aria-live="polite" className="text-sm text-primary">
+            {workspace.follows.find(({ id }) => id === refreshState.followId)
+              ?.name ?? "Follow"}{" "}
+            refreshed.
+          </p>
+        ) : null}
+        {refreshState.kind === "result" &&
+        !refreshState.rereadFailed &&
+        refreshState.outcome !== "complete" &&
+        refreshState.outcome !== "partial" ? (
+          <Alert>
+            {refreshOutcomeMessage(
+              refreshState.outcome,
+              workspace.follows.find(({ id }) => id === refreshState.followId)
+                ?.name ?? "this Follow",
+            )}{" "}
+            Stored intake is unchanged.
+          </Alert>
+        ) : null}
+        {filteredDiscoveries.length === 0 ? (
+          <div className="space-y-3 rounded-[var(--radius-card)] border border-dashed p-8 text-center text-muted-foreground">
+            <p>
+              {selectedFollow
+                ? `${selectedFollow.name ?? "This Follow"} is clear.`
+                : "You’re caught up. New Discoveries will appear here."}
+            </p>
+            {selectedFollow ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSelectedFollowId(null)}
+              >
+                Return to All Follows
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredDiscoveries.map((discovery) => (
+              <DiscoveryCard key={discovery.id} discovery={discovery} />
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   );
+}
+
+function formatHealthTime(value: string | null): string {
+  return value === null
+    ? "Never"
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value));
 }
 
 function refreshOutcomeMessage(

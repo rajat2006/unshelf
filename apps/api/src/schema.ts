@@ -1271,7 +1271,7 @@ export const discoverIdempotency = pgTable(
     primaryKey({ columns: [table.userId, table.operation, table.requestId] }),
     check(
       "discover_idempotency_operation_check",
-      sql`${table.operation} = 'confirm_follow'`,
+      sql`${table.operation} IN ('confirm_follow', 'set_follow_lifecycle')`,
     ),
   ],
 );

@@ -17,6 +17,8 @@ import {
   fetchDiscoverWorkspace,
   prepareFollowPreview,
   refreshFollow,
+  refreshWorkspace,
+  setFollowLifecycle,
 } from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
 import {
@@ -34,6 +36,8 @@ vi.mock("../api", async (importOriginal) => ({
   confirmFollow: vi.fn(),
   fetchDiscoverWorkspace: vi.fn(),
   refreshFollow: vi.fn(),
+  refreshWorkspace: vi.fn(),
+  setFollowLifecycle: vi.fn(),
 }));
 
 const emptyWorkspace: DiscoverWorkspace = { follows: [], discoveries: [] };
@@ -75,6 +79,39 @@ const storedWorkspace: DiscoverWorkspace = {
   ],
 };
 
+const severalFollowsWorkspace: DiscoverWorkspace = {
+  follows: [
+    storedWorkspace.follows[0],
+    {
+      ...storedWorkspace.follows[0],
+      id: "00000000-0000-0000-0000-000000000011" as FollowId,
+      name: "Systems Studio",
+      targetUrl: "https://youtube.com/@systemsstudio",
+      health: {
+        latestAttemptAt: "2026-08-16T12:05:00.000Z",
+        latestAttemptOutcome: "provider_unavailable",
+        latestCompleteAt: "2026-08-16T11:00:00.000Z",
+        verifiedCoverageStartedAt: "2026-07-17T12:00:00.000Z",
+        nextEligibleAt: null,
+      },
+    },
+  ],
+  discoveries: [
+    storedWorkspace.discoveries[0],
+    {
+      ...storedWorkspace.discoveries[0],
+      id: "00000000-0000-0000-0000-000000000021" as DiscoveryId,
+      candidateId: "00000000-0000-0000-0000-000000000031" as CandidateId,
+      followId: "00000000-0000-0000-0000-000000000011" as FollowId,
+      followName: "Systems Studio",
+      state: "seen",
+      title: "Understand queues",
+      source: "https://www.youtube.com/watch?v=video-2",
+      publisher: "Systems Studio",
+    },
+  ],
+};
+
 const auth: ApplicationAuth = {
   status: "signed-in",
   user: { getToken: async () => "token" },
@@ -101,6 +138,155 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
+  it("combines several Follows in one intake and filters the same feed accessibly", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
+      severalFollowsWorkspace,
+    );
+    renderDiscover();
+
+    const all = await screen.findByRole("button", { name: /All Follows.*2/ });
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByText("Understand queues")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /Systems Studio.*1/ }));
+    expect(screen.queryByText("A deep module")).not.toBeInTheDocument();
+    expect(screen.getByText("Understand queues")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Systems Studio.*1/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(all);
+    expect(screen.getByText("A deep module")).toBeVisible();
+
+    expect(screen.getByTestId("discover-workspace")).toHaveClass(
+      "lg:grid-cols-[16rem_minmax(0,1fr)]",
+    );
+    expect(screen.getByLabelText("Follows")).toHaveClass("lg:sticky");
+  });
+
+  it("distinguishes a clear Follow from an empty combined intake", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue({
+      ...severalFollowsWorkspace,
+      discoveries: [severalFollowsWorkspace.discoveries[0]],
+    });
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Systems Studio.*0/ }),
+    );
+
+    expect(screen.getByText("Systems Studio is clear.")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Return to All Follows" }),
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+  });
+
+  it("offers Resume when setup resolves to an existing paused Follow", async () => {
+    const pausedFollow = {
+      ...storedWorkspace.follows[0],
+      lifecycle: "paused" as const,
+    };
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue({
+      follows: [pausedFollow],
+      discoveries: storedWorkspace.discoveries,
+    });
+    vi.mocked(prepareFollowPreview).mockResolvedValue({
+      ok: true,
+      outcome: "resume_available",
+      follow: pausedFollow,
+    });
+    vi.mocked(setFollowLifecycle).mockResolvedValue({
+      ok: true,
+      follow: { ...pausedFollow, lifecycle: "active" },
+    });
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Follow another channel" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Public YouTube channel URL",
+    });
+    fireEvent.change(input, {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.submit(input.closest("form")!);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Resume Follow" }),
+    );
+
+    await waitFor(() =>
+      expect(setFollowLifecycle).toHaveBeenCalledWith(
+        auth.user,
+        expect.objectContaining({
+          followId: pausedFollow.id,
+          lifecycle: "active",
+        }),
+      ),
+    );
+  });
+
+  it("refreshes the active workspace and reports only affected Follows", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
+      severalFollowsWorkspace,
+    );
+    vi.mocked(refreshWorkspace).mockResolvedValue({
+      ok: true,
+      acquisitions: [
+        {
+          followId: severalFollowsWorkspace.follows[0].id,
+          outcome: "complete",
+          acceptedCount: 1,
+          rejectedCount: 0,
+          ...severalFollowsWorkspace.follows[0].health,
+        },
+        {
+          followId: severalFollowsWorkspace.follows[1].id,
+          outcome: "provider_unavailable",
+          acceptedCount: 0,
+          rejectedCount: 0,
+          ...severalFollowsWorkspace.follows[1].health,
+        },
+      ],
+    });
+    renderDiscover();
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh all" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Systems Studio could not refresh",
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByText("Understand queues")).toBeVisible();
+  });
+
+  it("keeps intake visible while a Follow lifecycle action is pending", async () => {
+    let finish!: (
+      value: Awaited<ReturnType<typeof setFollowLifecycle>>,
+    ) => void;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
+      severalFollowsWorkspace,
+    );
+    vi.mocked(setFollowLifecycle).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Pause Quiet Learning" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Pausing Quiet Learning" }),
+    ).toBeDisabled();
+    expect(screen.getByText("A deep module")).toBeVisible();
+    await act(async () => {
+      finish({
+        ok: true,
+        follow: { ...severalFollowsWorkspace.follows[0], lifecycle: "paused" },
+      });
+    });
+    await waitFor(() => expect(setFollowLifecycle).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps stored intake visible while a local refresh accepts partial data", async () => {
     let finishRefresh!: (
       result: Awaited<ReturnType<typeof refreshFollow>>,

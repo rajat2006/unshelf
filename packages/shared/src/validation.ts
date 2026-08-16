@@ -88,10 +88,18 @@ export const confirmFollowRequestSchema = z.strictObject({
   previewId: followPreviewIdSchema,
 });
 
-/** The first acquisition slice refreshes exactly one owned Follow. */
-export const acquireAndApplyRequestSchema = z.strictObject({
-  trigger: z.literal("manual_follow"),
-  followId: followIdSchema,
+/** Acquisition scope is explicit so a Follow id cannot leak into workspace refresh. */
+export const acquireAndApplyRequestSchema = z.discriminatedUnion("trigger", [
+  z.strictObject({
+    trigger: z.literal("manual_follow"),
+    followId: followIdSchema,
+  }),
+  z.strictObject({ trigger: z.literal("manual_workspace") }),
+]);
+
+/** Follow lifecycle remains independent from acquisition health. */
+export const setFollowLifecycleRequestSchema = z.strictObject({
+  lifecycle: z.enum(["active", "paused", "removed"]),
 });
 
 /** Mutation replays are scoped by a client-generated UUID. */
@@ -186,6 +194,9 @@ export type PrepareFollowRequest = z.infer<typeof prepareFollowRequestSchema>;
 export type ConfirmFollowRequest = z.infer<typeof confirmFollowRequestSchema>;
 export type AcquireAndApplyRequest = z.infer<
   typeof acquireAndApplyRequestSchema
+>;
+export type SetFollowLifecycleRequest = z.infer<
+  typeof setFollowLifecycleRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
