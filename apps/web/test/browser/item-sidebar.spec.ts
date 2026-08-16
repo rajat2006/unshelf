@@ -21,25 +21,96 @@ async function expectCalendarDayStatesDistinct(calendar: Locator) {
   await expect(outside).toBeVisible();
   await expect(ordinary).toBeVisible();
 
-  const styles = await Promise.all(
+  const [selectedStyle, outsideStyle, ordinaryStyle] = await Promise.all(
     [selected, outside, ordinary].map((day) =>
       day.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
           backgroundColor: style.backgroundColor,
           borderColor: style.borderColor,
+          boxShadow: style.boxShadow,
           color: style.color,
         };
       }),
     ),
   );
-  expect(styles[0].backgroundColor).not.toBe(styles[2].backgroundColor);
-  expect(styles[1].color).not.toBe(styles[2].color);
-  expect(styles[1].borderColor).not.toBe(styles[2].borderColor);
+  expect(selectedStyle.backgroundColor).not.toBe(
+    ordinaryStyle.backgroundColor,
+  );
+  expect(outsideStyle.color).not.toBe(ordinaryStyle.color);
+  expect(outsideStyle.borderColor).not.toBe(ordinaryStyle.borderColor);
+  await expect(selected).toBeFocused();
+  expect(selectedStyle.boxShadow).not.toBe(ordinaryStyle.boxShadow);
 
-  const target = await selected.boundingBox();
-  expect(target?.width).toBeGreaterThanOrEqual(28);
-  expect(target?.height).toBeGreaterThanOrEqual(28);
+  const disabledStyle = await ordinary.evaluate((element) => {
+    const disabledDay = element.cloneNode(true) as HTMLButtonElement;
+    disabledDay.disabled = true;
+    disabledDay.dataset.disabled = "true";
+    disabledDay.style.transition = "none";
+    element.after(disabledDay);
+    const style = getComputedStyle(disabledDay);
+    const result = { borderColor: style.borderColor, color: style.color };
+    disabledDay.remove();
+    return result;
+  });
+  expect(disabledStyle.color).not.toBe(ordinaryStyle.color);
+  expect(disabledStyle.borderColor).not.toBe(ordinaryStyle.borderColor);
+
+  const selectedBounds = await selected.boundingBox();
+  expect(selectedBounds?.width).toBeGreaterThanOrEqual(28);
+  expect(selectedBounds?.height).toBeGreaterThanOrEqual(28);
+}
+
+async function showCalendarMonth({
+  page,
+  calendar,
+  year,
+  month,
+}: {
+  page: Page;
+  calendar: Locator;
+  year: string;
+  month: string;
+}) {
+  const yearPicker = calendar.getByRole("combobox", {
+    name: "Choose the Year",
+  });
+  await yearPicker.focus();
+  await yearPicker.press("Enter");
+  await page
+    .getByRole("option", { name: String(Number(year)) })
+    .press("Enter");
+  const monthPicker = calendar.getByRole("combobox", {
+    name: "Choose the Month",
+  });
+  await monthPicker.focus();
+  await monthPicker.press("Enter");
+  await page
+    .getByRole("option", {
+      name: new Intl.DateTimeFormat("en-US", { month: "long" }).format(
+        new Date(2000, Number(month) - 1, 1),
+      ),
+    })
+    .press("Enter");
+}
+
+async function expectTodayMarkerVisible(calendar: Locator) {
+  const todayTile = calendar.locator('button[data-today="true"]');
+  await expect(todayTile).toBeVisible();
+  const marker = await todayTile.evaluate((element) => {
+    const style = getComputedStyle(element, "::after");
+    return {
+      backgroundColor: style.backgroundColor,
+      height: style.height,
+      width: style.width,
+    };
+  });
+  const tileBackground = await todayTile.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(marker.width).toBe("4px");
+  expect(marker.height).toBe("4px");
+  expect(marker.backgroundColor).not.toBe(tileBackground);
 }
 
 async function seedPlacedItem(page: Page, user: string) {
@@ -189,23 +260,37 @@ test("the themed date picker chooses and saves a Target date across responsive i
 
   await expect(input).toHaveAttribute("type", "text");
   const trigger = sidebar.getByRole("button", { name: "Choose date" });
-  await trigger.click();
+  await trigger.focus();
+  await trigger.press("Enter");
   const calendar = page.getByRole("dialog", { name: "Choose date" });
   await expect(calendar).toBeVisible();
 
-  await calendar.getByRole("combobox", { name: "Choose the Month" }).click();
-  await page.getByRole("option", { name: "September" }).click();
+  const monthPicker = calendar.getByRole("combobox", {
+    name: "Choose the Month",
+  });
+  await monthPicker.focus();
+  await monthPicker.press("Enter");
+  await page.getByRole("option", { name: "September" }).press("Enter");
   await expect(calendar).toBeVisible();
-  await calendar.getByRole("combobox", { name: "Choose the Year" }).click();
-  await page.getByRole("option", { name: "2098" }).click();
+  const yearPicker = calendar.getByRole("combobox", {
+    name: "Choose the Year",
+  });
+  await yearPicker.focus();
+  await yearPicker.press("Enter");
+  await page.getByRole("option", { name: "2098" }).press("Enter");
   await expect(calendar).toBeVisible();
   await expect(calendar.getByRole("status")).toHaveText("September 2098");
+  await expect(yearPicker).toBeFocused();
 
-  const septemberSeventh = calendar.getByRole("button", {
-    name: "Sunday, September 7th, 2098",
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  const septemberFirst = calendar.getByRole("button", {
+    name: "Monday, September 1st, 2098",
   });
-  await septemberSeventh.focus();
-  await septemberSeventh.press("ArrowRight");
+  await expect(septemberFirst).toBeFocused();
+  for (let day = 1; day < 8; day += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
   const septemberEighth = calendar.getByRole("button", {
     name: "Monday, September 8th, 2098",
   });
@@ -229,42 +314,54 @@ test("the themed date picker chooses and saves a Target date across responsive i
   await expectPopoverAccessible(page);
 
   const [todayYear, todayMonth] = authoritativeCalendar.today.split("-");
-  await calendar.getByRole("combobox", { name: "Choose the Year" }).click();
-  await page.getByRole("option", { name: String(Number(todayYear)) }).click();
-  await calendar.getByRole("combobox", { name: "Choose the Month" }).click();
-  await page
-    .getByRole("option", {
-      name: new Intl.DateTimeFormat("en-US", { month: "long" }).format(
-        new Date(2000, Number(todayMonth) - 1, 1),
-      ),
-    })
-    .click();
-  const todayTile = calendar.locator('button[data-today="true"]');
-  await expect(todayTile).toBeVisible();
-  expect(
-    await todayTile.evaluate(
-      (element) => getComputedStyle(element, "::after").width,
-    ),
-  ).toBe("4px");
+  await showCalendarMonth({
+    page,
+    calendar,
+    year: todayYear,
+    month: todayMonth,
+  });
+  await expectTodayMarkerVisible(calendar);
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
 
   if (testInfo.project.name === "desktop") {
     await page.getByLabel("Theme", { exact: true }).click();
     await page.getByRole("option", { name: "Dark" }).click();
-    await page.evaluate(() => {
-      document.documentElement.style.zoom = "2";
+    const browserSession = await page.context().newCDPSession(page);
+    await browserSession.send("Emulation.setPageScaleFactor", {
+      pageScaleFactor: 2,
     });
-    await trigger.click();
-    const zoomedCalendar = await calendar.boundingBox();
-    const viewport = page.viewportSize();
-    expect(zoomedCalendar).not.toBeNull();
-    expect(viewport).not.toBeNull();
-    expect(zoomedCalendar!.x).toBeGreaterThanOrEqual(0);
-    expect(zoomedCalendar!.x + zoomedCalendar!.width).toBeLessThanOrEqual(
-      viewport!.width,
-    );
+    await expect
+      .poll(() => page.evaluate(() => window.visualViewport?.scale))
+      .toBe(2);
+    await trigger.focus();
+    await trigger.press("Enter");
+    const layout = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }));
+    expect(layout.page).toBeLessThanOrEqual(layout.viewport);
+    await expect(calendar).toBeVisible();
+    await expect
+      .poll(async () => {
+        const bounds = await calendar.boundingBox();
+        return bounds ? bounds.x : Number.NEGATIVE_INFINITY;
+      })
+      .toBeGreaterThanOrEqual(0);
+    await expect
+      .poll(async () => {
+        const bounds = await calendar.boundingBox();
+        return bounds ? bounds.x + bounds.width : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThanOrEqual(layout.viewport);
     await expectCalendarDayStatesDistinct(calendar);
+    await showCalendarMonth({
+      page,
+      calendar,
+      year: todayYear,
+      month: todayMonth,
+    });
+    await expectTodayMarkerVisible(calendar);
     await expectPopoverAccessible(page);
   }
 });

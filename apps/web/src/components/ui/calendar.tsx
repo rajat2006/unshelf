@@ -21,6 +21,10 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+const CalendarOwnerContext = React.createContext<string | undefined>(
+  undefined,
+);
+
 function Calendar({
   className,
   classNames,
@@ -29,9 +33,12 @@ function Calendar({
   ...props
 }: React.ComponentProps<typeof DayPicker>) {
   const defaults = getDefaultClassNames();
+  const calendarOwner = React.useId();
 
   return (
-    <DayPicker
+    <CalendarOwnerContext.Provider value={calendarOwner}>
+      <DayPicker
+        data-calendar-owner={calendarOwner}
       showOutsideDays={showOutsideDays}
       className={cn("w-fit bg-popover p-2", className)}
       classNames={{
@@ -110,8 +117,9 @@ function Calendar({
         YearsDropdown: CalendarDropdown,
         ...components,
       }}
-      {...props}
-    />
+        {...props}
+      />
+    </CalendarOwnerContext.Provider>
   );
 }
 
@@ -135,8 +143,9 @@ function CalendarDayButton({
       data-selected={modifiers.selected || undefined}
       data-today={modifiers.authoritativeToday || undefined}
       data-outside={modifiers.outside || undefined}
+      data-disabled={modifiers.disabled || undefined}
       className={cn(
-        "relative size-7 rounded-[var(--radius-small)] border border-border/65 p-0 font-normal text-foreground shadow-[0_1px_0_color-mix(in_oklab,var(--color-border)_35%,transparent)] hover:border-primary/45 hover:bg-accent data-[outside=true]:border-border/30 data-[outside=true]:text-muted-foreground data-[selected=true]:border-primary data-[selected=true]:bg-primary/12 data-[selected=true]:font-semibold data-[today=true]:after:absolute data-[today=true]:after:bottom-0.5 data-[today=true]:after:left-1/2 data-[today=true]:after:size-1 data-[today=true]:after:-translate-x-1/2 data-[today=true]:after:rounded-full data-[today=true]:after:bg-primary focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring/45 disabled:border-border/35 disabled:bg-muted/25 disabled:opacity-100",
+        "relative size-7 rounded-[var(--radius-small)] border border-border/65 p-0 font-normal text-foreground shadow-[0_1px_0_color-mix(in_oklab,var(--color-border)_35%,transparent)] hover:border-primary/45 hover:bg-accent data-[disabled=true]:border-border/35 data-[disabled=true]:bg-muted/25 data-[disabled=true]:text-muted-foreground data-[outside=true]:border-border/30 data-[outside=true]:text-muted-foreground data-[selected=true]:border-primary data-[selected=true]:bg-primary/12 data-[selected=true]:font-semibold data-[today=true]:after:absolute data-[today=true]:after:bottom-0.5 data-[today=true]:after:left-1/2 data-[today=true]:after:size-1 data-[today=true]:after:-translate-x-1/2 data-[today=true]:after:rounded-full data-[today=true]:after:bg-primary focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-100",
         className,
       )}
       {...props}
@@ -151,6 +160,7 @@ function CalendarDropdown({
   "aria-label": ariaLabel,
   disabled,
 }: DropdownProps) {
+  const calendarOwner = React.useContext(CalendarOwnerContext);
   const selectedValue = value === undefined ? undefined : String(value);
 
   return (
@@ -161,9 +171,24 @@ function CalendarDropdown({
         onChange?.(
           { target: { value: nextValue } } as React.ChangeEvent<HTMLSelectElement>,
         );
+        setTimeout(() => {
+          const calendar = Array.from(
+            document.querySelectorAll<HTMLElement>("[data-calendar-owner]"),
+          ).find((root) => root.dataset.calendarOwner === calendarOwner);
+          if (!calendar) return;
+          const nextTrigger = Array.from(
+            calendar.querySelectorAll<HTMLButtonElement>(
+              "[data-calendar-dropdown]",
+            ),
+          ).find(
+            (trigger) => trigger.dataset.calendarDropdown === ariaLabel,
+          );
+          nextTrigger?.focus();
+        }, 0);
       }}
     >
       <SelectTrigger
+        data-calendar-dropdown={ariaLabel}
         aria-label={ariaLabel}
         size="sm"
         className="h-7 gap-1 border-transparent bg-transparent px-1.5 text-xs font-semibold hover:border-input"
