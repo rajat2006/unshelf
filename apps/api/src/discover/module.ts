@@ -399,52 +399,21 @@ export function createDiscoverModule({
     confirmFollow: async ({ userId, request, idempotencyKey }) =>
       db.transaction(async (tx): Promise<ConfirmFollowResponse> => {
         const requestFingerprint = request.previewId;
-        await tx
-          .insert(discoverIdempotency)
-          .values({
+        const idempotency =
+          await beginIdempotentMutation<ConfirmFollowResponse>({
+            tx,
             userId,
             operation: "confirm_follow",
-            requestId: idempotencyKey,
+            idempotencyKey,
             requestFingerprint,
-          })
-          .onConflictDoNothing();
-        const [idempotency] = await tx
-          .select({
-            requestFingerprint: discoverIdempotency.requestFingerprint,
-            resultPayload: discoverIdempotency.resultPayload,
-          })
-          .from(discoverIdempotency)
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "confirm_follow"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          )
-          .for("update");
-        if (idempotency.requestFingerprint !== requestFingerprint) {
-          return { ok: false, error: "idempotency_conflict" };
-        }
-        if (idempotency.resultPayload !== null) {
-          return idempotency.resultPayload as ConfirmFollowResponse;
-        }
+          });
+        if (!idempotency.ok) return idempotency;
+        if (idempotency.replay !== null) return idempotency.replay;
 
         const fail = async (
           error: ConfirmFollowFailure,
-        ): Promise<ConfirmFollowResponse> => {
-          const result: ConfirmFollowResponse = { ok: false, error };
-          await tx
-            .update(discoverIdempotency)
-            .set({ resultPayload: result })
-            .where(
-              and(
-                eq(discoverIdempotency.userId, userId),
-                eq(discoverIdempotency.operation, "confirm_follow"),
-                eq(discoverIdempotency.requestId, idempotencyKey),
-              ),
-            );
-          return result;
-        };
+        ): Promise<ConfirmFollowResponse> =>
+          idempotency.persist({ ok: false, error });
 
         const [preview] = await tx
           .select()
@@ -682,17 +651,7 @@ export function createDiscoverModule({
           follow,
           discoveries,
         };
-        await tx
-          .update(discoverIdempotency)
-          .set({ resultPayload: result })
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "confirm_follow"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          );
-        return result;
+        return idempotency.persist(result);
       }),
     acquireAndApply: async ({
       userId,
@@ -1286,51 +1245,20 @@ export function createDiscoverModule({
     }) => {
       const requestFingerprint = `${followId}:${request.lifecycle}`;
       return db.transaction(async (tx): Promise<SetFollowLifecycleResponse> => {
-        await tx
-          .insert(discoverIdempotency)
-          .values({
+        const idempotency =
+          await beginIdempotentMutation<SetFollowLifecycleResponse>({
+            tx,
             userId,
             operation: "set_follow_lifecycle",
-            requestId: idempotencyKey,
+            idempotencyKey,
             requestFingerprint,
-          })
-          .onConflictDoNothing();
-        const [idempotency] = await tx
-          .select({
-            requestFingerprint: discoverIdempotency.requestFingerprint,
-            resultPayload: discoverIdempotency.resultPayload,
-          })
-          .from(discoverIdempotency)
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          )
-          .for("update");
-        if (idempotency.requestFingerprint !== requestFingerprint) {
-          return { ok: false, error: "idempotency_conflict" };
-        }
-        if (idempotency.resultPayload !== null) {
-          return idempotency.resultPayload as SetFollowLifecycleResponse;
-        }
+          });
+        if (!idempotency.ok) return idempotency;
+        if (idempotency.replay !== null) return idempotency.replay;
         const persistFailure = async (
           error: Exclude<SetFollowLifecycleFailure, "idempotency_conflict">,
-        ): Promise<SetFollowLifecycleResponse> => {
-          const result: SetFollowLifecycleResponse = { ok: false, error };
-          await tx
-            .update(discoverIdempotency)
-            .set({ resultPayload: result })
-            .where(
-              and(
-                eq(discoverIdempotency.userId, userId),
-                eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-                eq(discoverIdempotency.requestId, idempotencyKey),
-              ),
-            );
-          return result;
-        };
+        ): Promise<SetFollowLifecycleResponse> =>
+          idempotency.persist({ ok: false, error });
         const [follow] = await tx
           .select({ lifecycle: discoverFollows.lifecycle })
           .from(discoverFollows)
@@ -1380,52 +1308,23 @@ export function createDiscoverModule({
           ok: true,
           follow: updatedFollow,
         };
-        await tx
-          .update(discoverIdempotency)
-          .set({ resultPayload: result })
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "set_follow_lifecycle"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          );
-        return result;
+        return idempotency.persist(result);
       });
     },
     decide: async ({ userId, request, idempotencyKey }) => {
       const orderedIds = [...request.discoveryIds].sort();
       const requestFingerprint = `${request.decision}:${orderedIds.join(",")}`;
       return db.transaction(async (tx): Promise<DecideDiscoveriesResponse> => {
-        await tx
-          .insert(discoverIdempotency)
-          .values({
+        const idempotency =
+          await beginIdempotentMutation<DecideDiscoveriesResponse>({
+            tx,
             userId,
             operation: "decide_discoveries",
-            requestId: idempotencyKey,
+            idempotencyKey,
             requestFingerprint,
-          })
-          .onConflictDoNothing();
-        const [idempotency] = await tx
-          .select({
-            requestFingerprint: discoverIdempotency.requestFingerprint,
-            resultPayload: discoverIdempotency.resultPayload,
-          })
-          .from(discoverIdempotency)
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "decide_discoveries"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          )
-          .for("update");
-        if (idempotency.requestFingerprint !== requestFingerprint) {
-          return { ok: false, error: "idempotency_conflict" };
-        }
-        if (idempotency.resultPayload !== null) {
-          return idempotency.resultPayload as DecideDiscoveriesResponse;
-        }
+          });
+        if (!idempotency.ok) return idempotency;
+        if (idempotency.replay !== null) return idempotency.replay;
 
         const rows = await tx
           .select({
@@ -1511,51 +1410,22 @@ export function createDiscoverModule({
             };
           }
         }
-        await tx
-          .update(discoverIdempotency)
-          .set({ resultPayload: result })
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "decide_discoveries"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          );
-        return result;
+        return idempotency.persist(result);
       });
     },
     keep: async ({ userId, discoveryId, request, idempotencyKey }) => {
       const requestFingerprint = JSON.stringify({ discoveryId, ...request });
       return db.transaction(async (tx): Promise<KeepDiscoveryResponse> => {
-        await tx
-          .insert(discoverIdempotency)
-          .values({
+        const idempotency =
+          await beginIdempotentMutation<KeepDiscoveryResponse>({
+            tx,
             userId,
             operation: "keep_discovery",
-            requestId: idempotencyKey,
+            idempotencyKey,
             requestFingerprint,
-          })
-          .onConflictDoNothing();
-        const [idempotency] = await tx
-          .select({
-            requestFingerprint: discoverIdempotency.requestFingerprint,
-            resultPayload: discoverIdempotency.resultPayload,
-          })
-          .from(discoverIdempotency)
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "keep_discovery"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          )
-          .for("update");
-        if (idempotency.requestFingerprint !== requestFingerprint) {
-          return { ok: false, error: "idempotency_conflict" };
-        }
-        if (idempotency.resultPayload !== null) {
-          return idempotency.resultPayload as KeepDiscoveryResponse;
-        }
+          });
+        if (!idempotency.ok) return idempotency;
+        if (idempotency.replay !== null) return idempotency.replay;
 
         const [discovery] = await tx
           .select({
@@ -1687,17 +1557,7 @@ export function createDiscoverModule({
             }
           }
         }
-        await tx
-          .update(discoverIdempotency)
-          .set({ resultPayload: result })
-          .where(
-            and(
-              eq(discoverIdempotency.userId, userId),
-              eq(discoverIdempotency.operation, "keep_discovery"),
-              eq(discoverIdempotency.requestId, idempotencyKey),
-            ),
-          );
-        return result;
+        return idempotency.persist(result);
       });
     },
     readHistory: async ({ userId, query }) => {
@@ -2625,6 +2485,78 @@ async function finishAttempt({
 type DiscoverTransaction = Parameters<
   Parameters<Database["transaction"]>[0]
 >[0];
+
+type IdempotentOperation =
+  | "confirm_follow"
+  | "set_follow_lifecycle"
+  | "decide_discoveries"
+  | "keep_discovery";
+
+async function beginIdempotentMutation<Result>({
+  tx,
+  userId,
+  operation,
+  idempotencyKey,
+  requestFingerprint,
+}: {
+  tx: DiscoverTransaction;
+  userId: UserId;
+  operation: IdempotentOperation;
+  idempotencyKey: IdempotencyKey;
+  requestFingerprint: string;
+}): Promise<
+  | { ok: false; error: "idempotency_conflict" }
+  | {
+      ok: true;
+      replay: Result | null;
+      persist: (result: Result) => Promise<Result>;
+    }
+> {
+  await tx
+    .insert(discoverIdempotency)
+    .values({
+      userId,
+      operation,
+      requestId: idempotencyKey,
+      requestFingerprint,
+    })
+    .onConflictDoNothing();
+  const [record] = await tx
+    .select({
+      requestFingerprint: discoverIdempotency.requestFingerprint,
+      resultPayload: discoverIdempotency.resultPayload,
+    })
+    .from(discoverIdempotency)
+    .where(
+      and(
+        eq(discoverIdempotency.userId, userId),
+        eq(discoverIdempotency.operation, operation),
+        eq(discoverIdempotency.requestId, idempotencyKey),
+      ),
+    )
+    .for("update");
+  if (record.requestFingerprint !== requestFingerprint) {
+    return { ok: false, error: "idempotency_conflict" };
+  }
+  return {
+    ok: true,
+    replay:
+      record.resultPayload === null ? null : (record.resultPayload as Result),
+    persist: async (result) => {
+      await tx
+        .update(discoverIdempotency)
+        .set({ resultPayload: result })
+        .where(
+          and(
+            eq(discoverIdempotency.userId, userId),
+            eq(discoverIdempotency.operation, operation),
+            eq(discoverIdempotency.requestId, idempotencyKey),
+          ),
+        );
+      return result;
+    },
+  };
+}
 
 async function publishTargetProjection({
   tx,
