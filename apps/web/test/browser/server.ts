@@ -3,7 +3,11 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import type { ClerkUserId } from "@unshelf/shared";
+import {
+  Type,
+  type ClerkUserId,
+  type FollowPreviewVideo,
+} from "@unshelf/shared";
 import { createServer as createViteServer } from "vite";
 import {
   seedLegacyLearningPlanFixture,
@@ -18,6 +22,101 @@ import {
   testUserFromAuthorization,
 } from "./harness";
 import { LEGACY_LEARNING_PLAN_FIXTURE as legacy } from "./legacy-learning-plan-fixture";
+import type { YouTubeAdapter } from "../../../api/src/discover/youtube-adapter";
+
+const discoverNow = new Date("2026-08-16T12:00:00.000Z");
+
+function providerVideo({
+  identity,
+  title,
+  publisher,
+  publishedAt,
+}: {
+  identity: string;
+  title: string;
+  publisher: string;
+  publishedAt: string;
+}): FollowPreviewVideo {
+  return {
+    provider: "youtube",
+    providerIdentity: identity,
+    title,
+    source: `https://www.youtube.com/watch?v=${identity}`,
+    publisher,
+    publishedAt,
+    durationSeconds: 601,
+    type: Type.Video,
+    thumbnailUrl: null,
+  };
+}
+
+const quietVideos = [
+  providerVideo({
+    identity: "quiet-deep-module",
+    title: "A deep module",
+    publisher: "Quiet Learning",
+    publishedAt: "2026-08-15T10:00:00.000Z",
+  }),
+  providerVideo({
+    identity: "quiet-boundaries",
+    title: "Designing boundaries",
+    publisher: "Quiet Learning",
+    publishedAt: "2026-08-14T10:00:00.000Z",
+  }),
+  ...Array.from({ length: 6 }, (_, index) =>
+    providerVideo({
+      identity: `quiet-extra-${index + 1}`,
+      title: `Quiet lesson ${index + 1}`,
+      publisher: "Quiet Learning",
+      publishedAt: `2026-08-${String(13 - index).padStart(2, "0")}T10:00:00.000Z`,
+    }),
+  ),
+];
+const systemsVideos = [
+  providerVideo({
+    identity: "systems-queues",
+    title: "Understand queues",
+    publisher: "Systems Studio",
+    publishedAt: "2026-08-13T10:00:00.000Z",
+  }),
+  providerVideo({
+    identity: "systems-retries",
+    title: "Retries without surprises",
+    publisher: "Systems Studio",
+    publishedAt: "2026-08-12T10:00:00.000Z",
+  }),
+];
+
+const browserDiscoverAdapter: YouTubeAdapter = {
+  previewChannel: async ({ url }) => {
+    const systems = url.includes("systemsstudio");
+    return {
+      ok: true,
+      outcome: "preview",
+      channelId: systems ? "UC_systems_studio" : "UC_quiet_learning",
+      uploadsPlaylistId: systems ? "UU_systems_studio" : "UU_quiet_learning",
+      publisher: systems ? "Systems Studio" : "Quiet Learning",
+      videos: systems ? systemsVideos : quietVideos,
+      rejectedCount: 0,
+      coverageStartedAt: "2026-07-17T12:00:00.000Z",
+    };
+  },
+  acquireChannel: async ({ channelId }) => {
+    const systems = channelId === "UC_systems_studio";
+    return {
+      ok: true,
+      outcome: systems ? "partial" : "preview",
+      channelId,
+      uploadsPlaylistId: systems ? "UU_systems_studio" : "UU_quiet_learning",
+      publisher: systems ? "Systems Studio" : "Quiet Learning",
+      videos: systems ? systemsVideos : quietVideos,
+      rejectedCount: systems ? 1 : 0,
+      coverageStartedAt: "2026-07-17T12:00:00.000Z",
+    };
+  },
+  acquireChannelByUrl: async ({ url }) =>
+    browserDiscoverAdapter.previewChannel({ url }),
+};
 
 const testApp = await startTestAppWithLegacyFixture(
   (req) => {
@@ -25,6 +124,13 @@ const testApp = await startTestAppWithLegacyFixture(
     return userId ? (userId as unknown as ClerkUserId) : null;
   },
   (db) => seedLegacyLearningPlanFixture(db, legacy),
+  {
+    discover: {
+      enabled: true,
+      adapter: browserDiscoverAdapter,
+      now: () => discoverNow,
+    },
+  },
 );
 const apiServer = createHttpServer((req, res) => {
   void handleApiRequest(req, res).catch((error: unknown) => {

@@ -23,7 +23,7 @@ async function pageHasNoHorizontalOverflow(page: Page): Promise<boolean> {
   });
 }
 
-test("the top bar carries the four workspace rooms with Today as home", async ({
+test("the top bar carries the four production workspace rooms with Today as home", async ({
   page,
 }, testInfo) => {
   await page.goto(appUrl(testInfo, "/"));
@@ -31,16 +31,15 @@ test("the top bar carries the four workspace rooms with Today as home", async ({
   await expect(page).toHaveURL(/\/test\/browser\/today$/);
 
   const todayDoor = page.getByRole("link", { name: "Today", exact: true });
-  const discoverDoor = page.getByRole("button", {
-    name: "Discover — Coming later",
+  const discoverDoor = page.getByRole("link", {
+    name: "Discover",
+    exact: true,
   });
 
   const plansDoor = page.getByRole("link", { name: "Plans", exact: true });
   const libraryDoor = page.getByRole("link", { name: "Library", exact: true });
   await expect(todayDoor).toHaveAttribute("aria-current", "page");
   await expect(discoverDoor).toBeVisible();
-  await expect(discoverDoor).toBeDisabled();
-  await expect(discoverDoor).toHaveText("DiscoverComing later");
   await expect(libraryDoor).toBeVisible();
   await expect(plansDoor).toBeVisible();
   await expect(
@@ -56,6 +55,12 @@ test("the top bar carries the four workspace rooms with Today as home", async ({
   await expect(libraryDoor).toHaveAttribute("aria-current", "page");
   // The doors persist across the surface change.
   await expect(todayDoor).toBeVisible();
+
+  await discoverDoor.click();
+  await expect(page).toHaveURL(/\/test\/browser\/discover(\?|$)/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Discover" }),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "Unshelf — go to Today" }).click();
   await expect(page).toHaveURL(/\/test\/browser\/today$/);

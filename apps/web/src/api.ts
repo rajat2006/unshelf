@@ -143,6 +143,19 @@ export async function fetchDiscoverWorkspace(
   return requestJson<DiscoverWorkspace>(user, "/api/discover");
 }
 
+/** Ask the server to refresh eligible active Follows on application startup. */
+export async function requestAppOpenAcquisition(
+  user: CurrentUser,
+): Promise<Extract<AcquireAndApplyResponse, { acquisitions: unknown }>> {
+  return requestJson<
+    Extract<AcquireAndApplyResponse, { acquisitions: unknown }>
+  >(user, "/api/discover/acquisitions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trigger: "app_open" }),
+  });
+}
+
 /** Acquire current Provider results for one active Follow and apply them privately. */
 export async function refreshFollow(
   user: CurrentUser,

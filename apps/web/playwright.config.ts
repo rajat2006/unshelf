@@ -13,7 +13,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "tsx test/browser/server.ts",
+    command: "VITE_DISCOVER_ENABLED=true tsx test/browser/server.ts",
     url: BROWSER_HARNESS_WEB_ORIGIN,
     reuseExistingServer: false,
     timeout: 120_000,

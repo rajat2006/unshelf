@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import type {
@@ -20,6 +26,10 @@ import type {
 import type { ItemBackgroundLocation } from "../items/item-route-state";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
+import {
+  usePendingAppOpenAcquisition,
+  useStartAppOpenAcquisitionAfterStoredRender,
+} from "../discover/AppOpenAcquisitionProvider";
 import {
   confirmFollow,
   decideDiscoveries,
@@ -120,6 +130,8 @@ export function DiscoverSurface({
   backgroundLocation?: ItemBackgroundLocation;
 } = {}) {
   const user = useCurrentUser();
+  const pendingAppOpenAcquisition = usePendingAppOpenAcquisition();
+  const startAppOpenAcquisition = useStartAppOpenAcquisitionAfterStoredRender();
   const location = useLocation();
   const navigate = useNavigate();
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
@@ -142,28 +154,59 @@ export function DiscoverSurface({
   const [showSetup, setShowSetup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
+  const initialWorkspaceRead = useRef<Promise<void> | null>(null);
   const previewExpiresAt =
     setupState.kind === "preview" ? setupState.preview.expiresAt : null;
 
-  const loadWorkspace = async () => {
+  const loadWorkspace = useCallback(async () => {
     const workspace = await fetchDiscoverWorkspace(user);
     setWorkspaceState({ kind: "ready", workspace });
     return workspace;
-  };
+  }, [user]);
 
   useEffect(() => {
     let active = true;
-    void fetchDiscoverWorkspace(user)
+    const read = fetchDiscoverWorkspace(user)
       .then((workspace) => {
         if (active) setWorkspaceState({ kind: "ready", workspace });
       })
       .catch(() => {
         if (active) setWorkspaceState({ kind: "failure" });
       });
+    initialWorkspaceRead.current = read;
     return () => {
       active = false;
     };
   }, [user]);
+
+  useEffect(() => {
+    if (pendingAppOpenAcquisition === null) return;
+    let active = true;
+    void Promise.all([
+      pendingAppOpenAcquisition,
+      initialWorkspaceRead.current ?? Promise.resolve(),
+    ]).then(() => {
+      if (active) void loadWorkspace().catch(() => undefined);
+    });
+    return () => {
+      active = false;
+    };
+  }, [loadWorkspace, pendingAppOpenAcquisition]);
+
+  useEffect(() => {
+    if (workspaceState.kind === "loading") return;
+
+    let acquisitionFrame: number | null = null;
+    const storedStateFrame = window.requestAnimationFrame(() => {
+      acquisitionFrame = window.requestAnimationFrame(startAppOpenAcquisition);
+    });
+    return () => {
+      window.cancelAnimationFrame(storedStateFrame);
+      if (acquisitionFrame !== null) {
+        window.cancelAnimationFrame(acquisitionFrame);
+      }
+    };
+  }, [startAppOpenAcquisition, workspaceState.kind]);
 
   useEffect(() => {
     if (
@@ -453,7 +496,7 @@ export function DiscoverSurface({
   if (workspaceState.kind === "failure") {
     return (
       <section
-        className="mx-auto max-w-6xl space-y-6"
+        className="discover-surface mx-auto flex h-full max-w-6xl flex-col gap-6 overflow-y-auto"
         aria-labelledby="discover-heading"
       >
         <DiscoverHeader />
@@ -479,10 +522,22 @@ export function DiscoverSurface({
   const hasFollow = workspaceState.workspace.follows.length > 0;
   return (
     <section
-      className="mx-auto max-w-6xl space-y-6"
+      className="discover-surface mx-auto flex h-full max-w-6xl flex-col gap-3 sm:gap-6"
       aria-labelledby="discover-heading"
     >
-      <DiscoverHeader />
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <DiscoverHeader />
+        {hasFollow ? (
+          <Button
+            type="button"
+            size="touch"
+            variant="quiet"
+            onClick={() => setShowSetup((visible) => !visible)}
+          >
+            {showSetup ? "Close Follow setup" : "Follow another channel"}
+          </Button>
+        ) : null}
+      </div>
       {announcement ? (
         <p role="status" aria-live="polite" className="text-sm text-primary">
           {announcement}
@@ -501,16 +556,6 @@ export function DiscoverSurface({
         />
       ) : (
         <>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="touch"
-              variant="quiet"
-              onClick={() => setShowSetup((visible) => !visible)}
-            >
-              {showSetup ? "Close Follow setup" : "Follow another channel"}
-            </Button>
-          </div>
           {showSetup ? (
             <SetupForm
               url={url}
@@ -620,15 +665,17 @@ export function DiscoverSurface({
 
 function DiscoverHeader() {
   return (
-    <header className="space-y-2">
-      <p className="text-sm font-medium text-primary">Discover</p>
+    <header className="space-y-1 sm:space-y-2">
+      <p className="hidden text-sm font-medium text-primary sm:block">
+        Discover
+      </p>
       <h1
         id="discover-heading"
-        className="text-3xl font-semibold tracking-tight"
+        className="text-2xl font-semibold tracking-tight sm:text-3xl"
       >
         Discover
       </h1>
-      <p className="max-w-2xl text-muted-foreground">
+      <p className="hidden max-w-2xl text-muted-foreground sm:block">
         A calm intake of current learning material from Providers you Follow.
       </p>
     </header>
@@ -638,7 +685,7 @@ function DiscoverHeader() {
 function DiscoverSkeleton() {
   return (
     <section
-      className="mx-auto max-w-6xl space-y-6"
+      className="discover-surface mx-auto flex h-full max-w-6xl flex-col gap-6"
       aria-labelledby="discover-heading"
     >
       <DiscoverHeader />
@@ -789,18 +836,19 @@ function Workspace({
   return (
     <div
       data-testid="discover-workspace"
-      className="grid min-w-0 gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]"
+      className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 lg:gap-6"
     >
-      <aside
-        aria-label="Follows"
-        className="min-w-0 space-y-3 lg:sticky lg:top-4 lg:self-start"
-      >
-        <div className="flex items-center justify-between gap-2">
+      <aside aria-label="Follows" className="min-w-0 space-y-2 lg:self-start">
+        <h2 className="sr-only">Follows</h2>
+        <div className="hidden items-center lg:flex">
           <h2 className="font-semibold">Follows</h2>
+        </div>
+        <div className="flex min-w-0 gap-3 overflow-x-auto pb-1 lg:grid lg:overflow-visible">
           <Button
             type="button"
             size="touch"
             variant="secondary"
+            className="shrink-0"
             disabled={workspaceRefreshState.kind === "pending"}
             onClick={onRefreshWorkspace}
           >
@@ -808,19 +856,17 @@ function Workspace({
               ? "Refreshing all…"
               : "Refresh all"}
           </Button>
-        </div>
-        <Button
-          type="button"
-          size="touch"
-          variant="quiet"
-          aria-pressed={selectedFollowId === null}
-          className="w-full justify-between"
-          onClick={() => onSelectFollow(null)}
-        >
-          <span>All Follows</span>
-          <span>{workspace.discoveries.length}</span>
-        </Button>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          <Button
+            type="button"
+            size="touch"
+            variant="quiet"
+            aria-pressed={selectedFollowId === null}
+            className="w-40 shrink-0 justify-between lg:w-full"
+            onClick={() => onSelectFollow(null)}
+          >
+            <span>All Follows</span>
+            <span>{workspace.discoveries.length}</span>
+          </Button>
           {workspace.follows.map((follow) => {
             const followName = follow.name ?? "Follow unavailable";
             const unresolvedCount = workspace.discoveries.filter(
@@ -847,7 +893,7 @@ function Workspace({
             return (
               <article
                 key={follow.id}
-                className="min-w-0 space-y-2 rounded-[var(--radius-card)] border bg-card p-3"
+                className="w-80 shrink-0 space-y-2 rounded-[var(--radius-card)] border bg-card p-3 lg:w-auto"
               >
                 <Button
                   type="button"
@@ -864,7 +910,7 @@ function Workspace({
                   {follow.lifecycle} ·{" "}
                   {follow.health.latestAttemptOutcome ?? "not checked"}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="hidden text-xs text-muted-foreground lg:block">
                   Latest attempt:{" "}
                   {formatHealthTime(follow.health.latestAttemptAt)}
                   <br />
@@ -945,10 +991,10 @@ function Workspace({
         </div>
       </aside>
       <section
-        className="min-w-0 space-y-4"
+        className="flex min-h-0 min-w-0 flex-col gap-4"
         aria-labelledby="discover-intake-heading"
       >
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-3">
+        <div className="flex flex-col gap-2 border-b pb-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
           <div>
             <h2 id="discover-intake-heading" className="text-xl font-semibold">
               Intake
@@ -961,7 +1007,7 @@ function Workspace({
             </p>
           </div>
           <div
-            className="flex flex-wrap gap-2"
+            className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap"
             aria-label="Filtered intake actions"
           >
             <HistoryDialog />
@@ -989,140 +1035,154 @@ function Workspace({
             </Button>
           </div>
         </div>
-        {workspaceRefreshState.kind === "failure" ? (
-          <Alert>Workspace Refresh failed. Stored intake is unchanged.</Alert>
-        ) : null}
-        {decisionState.kind === "failure" ? (
-          <Alert className="space-y-2">
-            <p>
-              {decisionState.rereadFailed
-                ? "The decision was saved, but intake could not reload. Reload Discover to see the authoritative queue."
-                : "The decision could not be saved. Your current intake remains available."}
+        <div
+          role="region"
+          aria-label="Candidate feed"
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1"
+        >
+          {workspaceRefreshState.kind === "failure" ? (
+            <Alert>Workspace Refresh failed. Stored intake is unchanged.</Alert>
+          ) : null}
+          {decisionState.kind === "failure" ? (
+            <Alert className="space-y-2">
+              <p>
+                {decisionState.rereadFailed
+                  ? "The decision was saved, but intake could not reload. Reload Discover to see the authoritative queue."
+                  : "The decision could not be saved. Your current intake remains available."}
+              </p>
+              {!decisionState.rereadFailed ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    onDecision(
+                      decisionState.discoveryIds,
+                      decisionState.decision,
+                      decisionState.idempotencyKey,
+                    )
+                  }
+                >
+                  Retry decision
+                </Button>
+              ) : null}
+            </Alert>
+          ) : null}
+          {affectedNames.length > 0 ? (
+            <Alert>
+              {affectedNames.join(", ")} could not refresh completely. Other
+              Follow results remain available.
+            </Alert>
+          ) : null}
+          {workspaceRefreshState.kind === "result" &&
+          workspaceRefreshState.rereadFailed ? (
+            <Alert>
+              Refresh finished, but the intake could not reload. Stored cards
+              remain available.
+            </Alert>
+          ) : null}
+          {refreshState.kind === "pending" ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+            >
+              Refreshing {refreshingFollowName}. Stored intake remains
+              available.
             </p>
-            {!decisionState.rereadFailed ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() =>
-                  onDecision(
-                    decisionState.discoveryIds,
-                    decisionState.decision,
-                    decisionState.idempotencyKey,
-                  )
-                }
-              >
-                Retry decision
-              </Button>
-            ) : null}
-          </Alert>
-        ) : null}
-        {affectedNames.length > 0 ? (
-          <Alert>
-            {affectedNames.join(", ")} could not refresh completely. Other
-            Follow results remain available.
-          </Alert>
-        ) : null}
-        {workspaceRefreshState.kind === "result" &&
-        workspaceRefreshState.rereadFailed ? (
-          <Alert>
-            Refresh finished, but the intake could not reload. Stored cards
-            remain available.
-          </Alert>
-        ) : null}
-        {refreshState.kind === "pending" ? (
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-sm text-muted-foreground"
-          >
-            Refreshing {refreshingFollowName}. Stored intake remains available.
-          </p>
-        ) : null}
-        {refreshState.kind === "failure" ? (
-          <Alert>
-            Refresh failed for {refreshingFollowName}. Stored intake is
-            unchanged; retry when ready.
-          </Alert>
-        ) : null}
-        {refreshState.kind === "result" && refreshState.rereadFailed ? (
-          <Alert>
-            {refreshingFollowName}
-            {refreshState.outcome === "partial"
-              ? " partially refreshed"
-              : " refreshed"}
-            , but the intake could not reload. Stored cards remain available;
-            retry when ready.
-          </Alert>
-        ) : null}
-        {refreshState.kind === "result" &&
-        !refreshState.rereadFailed &&
-        refreshState.outcome === "partial" ? (
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-sm text-muted-foreground"
-          >
-            Partial refresh for {refreshingFollowName}:{" "}
-            {refreshState.rejectedCount} invalid or unavailable records were
-            excluded. Stored intake was preserved.
-          </p>
-        ) : null}
-        {refreshState.kind === "result" &&
-        !refreshState.rereadFailed &&
-        refreshState.outcome === "complete" ? (
-          <p role="status" aria-live="polite" className="text-sm text-primary">
-            {refreshingFollowName} refreshed.
-          </p>
-        ) : null}
-        {refreshState.kind === "result" &&
-        !refreshState.rereadFailed &&
-        refreshState.outcome !== "complete" &&
-        refreshState.outcome !== "partial" ? (
-          <Alert>
-            {refreshOutcomeMessage(refreshState.outcome, refreshingFollowName)}{" "}
-            Stored intake is unchanged.
-          </Alert>
-        ) : null}
-        {filteredDiscoveries.length === 0 ? (
-          <div className="space-y-3 rounded-[var(--radius-card)] border border-dashed p-8 text-center text-muted-foreground">
-            <p>
-              {selectedFollow
-                ? `${selectedFollow.name ?? "This Follow"} is clear.`
-                : "You’re caught up. New Discoveries will appear here."}
+          ) : null}
+          {refreshState.kind === "failure" ? (
+            <Alert>
+              Refresh failed for {refreshingFollowName}. Stored intake is
+              unchanged; retry when ready.
+            </Alert>
+          ) : null}
+          {refreshState.kind === "result" && refreshState.rereadFailed ? (
+            <Alert>
+              {refreshingFollowName}
+              {refreshState.outcome === "partial"
+                ? " partially refreshed"
+                : " refreshed"}
+              , but the intake could not reload. Stored cards remain available;
+              retry when ready.
+            </Alert>
+          ) : null}
+          {refreshState.kind === "result" &&
+          !refreshState.rereadFailed &&
+          refreshState.outcome === "partial" ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+            >
+              Partial refresh for {refreshingFollowName}:{" "}
+              {refreshState.rejectedCount} invalid or unavailable records were
+              excluded. Stored intake was preserved.
             </p>
-            {selectedFollow ? (
-              <Button
-                type="button"
-                size="touch"
-                variant="secondary"
-                onClick={() => onSelectFollow(null)}
-              >
-                Return to All Follows
-              </Button>
-            ) : null}
-          </div>
-        ) : (
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredDiscoveries.map((discovery) => (
-              <DiscoveryCard
-                key={discovery.id}
-                discovery={discovery}
-                disabled={bulkPending}
-                pending={
-                  decisionState.kind === "pending" &&
-                  decisionState.discoveryIds.includes(discovery.id)
-                }
-                pendingDecision={
-                  decisionState.kind === "pending"
-                    ? decisionState.decision
-                    : null
-                }
-                onDecision={onDecision}
-                itemBackgroundLocation={itemBackgroundLocation}
-              />
-            ))}
-          </ul>
-        )}
+          ) : null}
+          {refreshState.kind === "result" &&
+          !refreshState.rereadFailed &&
+          refreshState.outcome === "complete" ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-sm text-primary"
+            >
+              {refreshingFollowName} refreshed.
+            </p>
+          ) : null}
+          {refreshState.kind === "result" &&
+          !refreshState.rereadFailed &&
+          refreshState.outcome !== "complete" &&
+          refreshState.outcome !== "partial" ? (
+            <Alert>
+              {refreshOutcomeMessage(
+                refreshState.outcome,
+                refreshingFollowName,
+              )}{" "}
+              Stored intake is unchanged.
+            </Alert>
+          ) : null}
+          {filteredDiscoveries.length === 0 ? (
+            <div className="min-h-0 flex-1 space-y-3 rounded-[var(--radius-card)] border border-dashed p-8 text-center text-muted-foreground">
+              <p>
+                {selectedFollow
+                  ? `${selectedFollow.name ?? "This Follow"} is clear.`
+                  : "You’re caught up. New Discoveries will appear here."}
+              </p>
+              {selectedFollow ? (
+                <Button
+                  type="button"
+                  size="touch"
+                  variant="secondary"
+                  onClick={() => onSelectFollow(null)}
+                >
+                  Return to All Follows
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <ul className="grid auto-rows-max gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredDiscoveries.map((discovery) => (
+                <DiscoveryCard
+                  key={discovery.id}
+                  discovery={discovery}
+                  disabled={bulkPending}
+                  pending={
+                    decisionState.kind === "pending" &&
+                    decisionState.discoveryIds.includes(discovery.id)
+                  }
+                  pendingDecision={
+                    decisionState.kind === "pending"
+                      ? decisionState.decision
+                      : null
+                  }
+                  onDecision={onDecision}
+                  itemBackgroundLocation={itemBackgroundLocation}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </div>
   );
@@ -1324,12 +1384,15 @@ function DiscoveryCard({
   const [keepType, setKeepType] = useState<Type>(discovery.type ?? Type.Video);
   const [keepPending, setKeepPending] = useState(false);
   const [keepFailure, setKeepFailure] = useState<string | null>(null);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [keepIdempotencyKey, setKeepIdempotencyKey] =
     useState<IdempotencyKey | null>(null);
   const metadataAvailable =
     discovery.title !== null &&
     discovery.source !== null &&
     discovery.type !== null;
+
+  useEffect(() => setThumbnailFailed(false), [discovery.thumbnailUrl]);
 
   const openKeep = () => {
     if (!metadataAvailable || discovery.itemId !== null) return;
@@ -1378,11 +1441,12 @@ function DiscoveryCard({
 
   return (
     <li className="overflow-hidden rounded-[var(--radius-card)] border bg-card shadow-sm">
-      {discovery.thumbnailUrl ? (
+      {discovery.thumbnailUrl && !thumbnailFailed ? (
         <img
           src={discovery.thumbnailUrl}
           alt=""
           className="aspect-video w-full object-cover"
+          onError={() => setThumbnailFailed(true)}
         />
       ) : (
         <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
@@ -1603,18 +1667,21 @@ function Preview({
   onConfirm: () => void;
 }) {
   return (
-    <section className="space-y-4" aria-labelledby="channel-preview-heading">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="channel-preview-heading" className="text-xl font-semibold">
-            {preview.target.publisher}
-          </h2>
-          <p className="text-sm text-muted-foreground">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !confirming) onCancel();
+      }}
+    >
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{preview.target.publisher}</DialogTitle>
+          <DialogDescription>
             {preview.videos.length} eligible{" "}
             {preview.videos.length === 1 ? "video" : "videos"}
-          </p>
-        </div>
-        <div className="flex gap-2">
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -1635,58 +1702,58 @@ function Preview({
             </Button>
           ) : null}
         </div>
-      </div>
-      {preview.outcome === "partial" ? (
-        <p
-          role="status"
-          className="rounded-[var(--radius-card)] border bg-muted p-3 text-sm text-muted-foreground"
-        >
-          Partial preview: {preview.rejectedCount} invalid or unavailable{" "}
-          {preview.rejectedCount === 1 ? "record was" : "records were"}{" "}
-          excluded.
-        </p>
-      ) : null}
-      {expired ? (
-        <Alert>
-          Preview expired. Start over to inspect a fresh exact result.
-        </Alert>
-      ) : null}
-      {preview.videos.length === 0 ? (
-        <p className="rounded-[var(--radius-card)] border border-dashed p-6 text-center text-muted-foreground">
-          No eligible videos in the last 30 days.
-        </p>
-      ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {preview.videos.map((video) => (
-            <li
-              key={video.providerIdentity}
-              className="overflow-hidden rounded-[var(--radius-card)] border bg-card"
-            >
-              {video.thumbnailUrl ? (
-                <img
-                  src={video.thumbnailUrl}
-                  alt=""
-                  className="aspect-video w-full object-cover"
-                />
-              ) : (
-                <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
-                  Video preview unavailable
+        {preview.outcome === "partial" ? (
+          <p
+            role="status"
+            className="rounded-[var(--radius-card)] border bg-muted p-3 text-sm text-muted-foreground"
+          >
+            Partial preview: {preview.rejectedCount} invalid or unavailable{" "}
+            {preview.rejectedCount === 1 ? "record was" : "records were"}{" "}
+            excluded.
+          </p>
+        ) : null}
+        {expired ? (
+          <Alert>
+            Preview expired. Start over to inspect a fresh exact result.
+          </Alert>
+        ) : null}
+        {preview.videos.length === 0 ? (
+          <p className="rounded-[var(--radius-card)] border border-dashed p-6 text-center text-muted-foreground">
+            No eligible videos in the last 30 days.
+          </p>
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {preview.videos.map((video) => (
+              <li
+                key={video.providerIdentity}
+                className="overflow-hidden rounded-[var(--radius-card)] border bg-card"
+              >
+                {video.thumbnailUrl ? (
+                  <img
+                    src={video.thumbnailUrl}
+                    alt=""
+                    className="aspect-video w-full object-cover"
+                  />
+                ) : (
+                  <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
+                    Video preview unavailable
+                  </div>
+                )}
+                <div className="space-y-1 p-4">
+                  <h3 className="font-medium leading-snug">{video.title}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {video.publisher}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDuration(video.durationSeconds)}
+                  </p>
                 </div>
-              )}
-              <div className="space-y-1 p-4">
-                <h3 className="font-medium leading-snug">{video.title}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {video.publisher}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDuration(video.durationSeconds)}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

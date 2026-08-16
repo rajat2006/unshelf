@@ -567,7 +567,7 @@ describe("Discover channel setup", () => {
       "lg:grid-cols-[16rem_minmax(0,1fr)]",
     );
     const followControls = screen.getByLabelText("Follows");
-    expect(followControls).toHaveClass("min-w-0", "lg:sticky");
+    expect(followControls).toHaveClass("min-w-0", "lg:self-start");
     expect(
       followControls.compareDocumentPosition(
         screen.getByRole("heading", { name: "Intake" }).closest("section")!,
@@ -899,6 +899,15 @@ describe("Discover channel setup", () => {
 
   it("shows a first-load skeleton, then renders stored intake with a local thumbnail fallback across reload", async () => {
     let resolve!: (workspace: DiscoverWorkspace) => void;
+    const remoteThumbnailWorkspace: DiscoverWorkspace = {
+      ...storedWorkspace,
+      discoveries: [
+        {
+          ...storedWorkspace.discoveries[0],
+          thumbnailUrl: "https://i.ytimg.com/vi/video-1/mqdefault.jpg",
+        },
+      ],
+    };
     vi.mocked(fetchDiscoverWorkspace).mockReturnValueOnce(
       new Promise((next) => {
         resolve = next;
@@ -907,8 +916,11 @@ describe("Discover channel setup", () => {
     const firstRender = renderDiscover();
     expect(screen.getByRole("status")).toHaveTextContent("Loading Discover");
 
-    await act(async () => resolve(storedWorkspace));
+    await act(async () => resolve(remoteThumbnailWorkspace));
     expect(screen.getByRole("heading", { name: "Intake" })).toBeVisible();
+    const thumbnail = firstRender.container.querySelector("img");
+    expect(thumbnail).not.toBeNull();
+    fireEvent.error(thumbnail!);
     expect(screen.getByText("Video preview unavailable")).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Open on YouTube" }),

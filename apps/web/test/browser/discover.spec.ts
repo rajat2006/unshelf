@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { Type, type DiscoverWorkspace } from "@unshelf/shared";
+import { testAppUrl } from "./test-helpers";
 
 const workspace = {
   follows: [
@@ -54,14 +55,238 @@ const workspace = {
   ],
 } as DiscoverWorkspace;
 
-test("Discover reflows Follow controls without phone-width overflow", async ({
+test("the signed-in shell starts app-open acquisition once after stored Discover state renders", async ({
   page,
 }, testInfo) => {
+  const requests: string[] = [];
+  let workspaceReadsAtAcquisition = 0;
+  await page.addInitScript(() => {
+    const fetchFromWindow = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const requestUrl =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (
+        requestUrl.endsWith("/api/discover/acquisitions") &&
+        init?.body === '{"trigger":"app_open"}'
+      ) {
+        window.sessionStorage.setItem(
+          "stored-visible-at-app-open",
+          String(document.body.innerText.includes("A deep module")),
+        );
+      }
+      return fetchFromWindow(input, init);
+    };
+  });
+  await page.route("**/api/discover", async (route) => {
+    requests.push("workspace");
+    await route.fulfill({ json: workspace });
+  });
+  await page.route("**/api/discover/acquisitions", async (route) => {
+    workspaceReadsAtAcquisition = requests.filter(
+      (value) => value === "workspace",
+    ).length;
+    requests.push(`acquisition:${route.request().postData()}`);
+    await route.fulfill({ json: { ok: true, acquisitions: [] } });
+  });
+
+  await page.goto(
+    testAppUrl("/discover", `${testInfo.project.name}-app-open-discover`),
+  );
+  await expect(page.getByText("A deep module")).toBeVisible();
+  await expect
+    .poll(
+      () => requests.filter((value) => value.startsWith("acquisition:")).length,
+    )
+    .toBe(1);
+  expect(requests[0]).toBe("workspace");
+  expect(requests.find((value) => value.startsWith("acquisition:"))).toBe(
+    'acquisition:{"trigger":"app_open"}',
+  );
+  expect(
+    await page.evaluate(
+      () => sessionStorage.getItem("stored-visible-at-app-open") === "true",
+    ),
+  ).toBe(true);
+  await expect
+    .poll(() => requests.filter((value) => value === "workspace").length)
+    .toBeGreaterThan(workspaceReadsAtAcquisition);
+
+  await page.getByRole("link", { name: "Library", exact: true }).click();
+  await page.getByRole("link", { name: "Discover", exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(50);
+
+  expect(
+    requests.filter((value) => value.startsWith("acquisition:")),
+  ).toHaveLength(1);
+});
+
+test("a User can manage several Follows and decide the combined Discover intake", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-discover-journey`;
+  let appOpenCount = 0;
+  await page.clock.setFixedTime(new Date("2026-08-16T12:00:00.000Z"));
+  await page.addInitScript(() => {
+    const fetchFromWindow = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const requestUrl =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (
+        requestUrl.endsWith("/api/discover/acquisitions") &&
+        init?.body === '{"trigger":"app_open"}'
+      ) {
+        window.sessionStorage.setItem(
+          "empty-state-visible-at-app-open",
+          String(
+            document.body.innerText.includes("Public YouTube channel URL"),
+          ),
+        );
+      }
+      return fetchFromWindow(input, init);
+    };
+  });
+  await page.route("**/api/discover/acquisitions", async (route) => {
+    if (route.request().postData() === '{"trigger":"app_open"}') {
+      appOpenCount += 1;
+    }
+    await route.continue();
+  });
+  await page.goto(testAppUrl("/discover", user));
+
+  const channelUrl = page.getByRole("textbox", {
+    name: "Public YouTube channel URL",
+  });
+  await expect.poll(() => appOpenCount).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        sessionStorage.getItem("empty-state-visible-at-app-open") === "true",
+    ),
+  ).toBe(true);
+  await channelUrl.fill("https://youtube.com/@quietlearning");
+  await page.getByRole("button", { name: "Preview channel" }).click();
+  const quietPreview = page.getByRole("dialog", { name: "Quiet Learning" });
+  await expect(quietPreview.getByText("A deep module")).toBeVisible();
+  expect(
+    await quietPreview.evaluate((dialog) =>
+      dialog.contains(document.activeElement),
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Tab");
+  expect(
+    await quietPreview.evaluate((dialog) =>
+      dialog.contains(document.activeElement),
+    ),
+  ).toBe(true);
+  await quietPreview.getByRole("button", { name: "Follow channel" }).click();
+  await expect(page.getByText("A deep module", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Follow another channel" }).click();
+  await channelUrl.fill("https://youtube.com/@systemsstudio");
+  await page.getByRole("button", { name: "Preview channel" }).click();
+  const systemsPreview = page.getByRole("dialog", {
+    name: "Systems Studio",
+  });
+  await expect(systemsPreview.getByText("Understand queues")).toBeVisible();
+  await systemsPreview.getByRole("button", { name: "Follow channel" }).click();
+  await expect(
+    page.getByText("Understand queues", { exact: true }),
+  ).toBeVisible();
+
+  const candidateFeed = page.getByRole("region", { name: "Candidate feed" });
+  const intakeHeading = page.getByRole("heading", { name: "Intake" });
+  await expect
+    .poll(() =>
+      candidateFeed.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
+      ),
+    )
+    .toBe(true);
+  const intakeTop = await intakeHeading.boundingBox();
+  await candidateFeed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect((await intakeHeading.boundingBox())?.y).toBe(intakeTop?.y);
+
+  await page.getByRole("button", { name: "Refresh all" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Systems Studio could not refresh completely",
+  );
+  await page.getByRole("button", { name: "Retry Systems Studio" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Systems Studio could not refresh completely",
+  );
+
+  await page.getByRole("button", { name: /Systems Studio.*2/ }).click();
+  const queuesCard = page
+    .getByRole("listitem")
+    .filter({ hasText: "Understand queues" });
+  await queuesCard.getByRole("button", { name: "Later" }).click();
+  await expect(queuesCard.getByText("seen", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss 2" }).click();
+  await expect(page.getByText("Systems Studio is clear.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Pause Systems Studio" }).click();
+  await expect(
+    page.getByRole("button", { name: "Resume Systems Studio" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Resume Systems Studio" }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove Systems Studio" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Remove Systems Studio" }).click();
+
+  await page.getByRole("button", { name: /^All Follows/ }).click();
+  const keepCard = page
+    .getByRole("listitem")
+    .filter({ hasText: "A deep module" });
+  await keepCard.getByRole("button", { name: "Keep" }).click();
+  const keepDialog = page.getByRole("dialog", { name: "Keep in Library" });
+  await keepDialog
+    .getByRole("textbox", { name: "Item title" })
+    .fill("My approved deep module");
+  await keepDialog.getByRole("button", { name: "Keep in Library" }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/items\//);
+  await page.getByRole("button", { name: "Close details" }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/discover/);
+
+  await page.getByRole("button", { name: "History" }).click();
+  const history = page.getByRole("dialog", { name: "Discovery history" });
+  await expect(history.getByText("A deep module")).toBeVisible();
+  await expect(history.getByText("Dismissed").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Capture" }).click();
+  await expect(page.getByRole("dialog", { name: "Capture" })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("Discover keeps its chrome stationary while only the Candidate feed scrolls", async ({
+  page,
+}, testInfo) => {
+  const discoveries = Array.from({ length: 12 }, (_, index) => ({
+    ...workspace.discoveries[0],
+    id: `00000000-0000-0000-0000-${String(index + 20).padStart(12, "0")}`,
+    candidateId: `00000000-0000-0000-0000-${String(index + 40).padStart(12, "0")}`,
+    title: `A deep module ${index + 1}`,
+  }));
   await page.route("**/api/discover", (route) =>
-    route.fulfill({ json: workspace }),
+    route.fulfill({ json: { ...workspace, discoveries } }),
+  );
+  await page.route("**/api/discover/acquisitions", (route) =>
+    route.fulfill({ json: { ok: true, acquisitions: [] } }),
   );
   await page.goto(
-    `/test/browser/?testUser=${testInfo.project.name}-discover&surface=discover`,
+    testAppUrl("/discover", `${testInfo.project.name}-discover-layout`),
   );
 
   const follows = page.getByRole("complementary", { name: "Follows" });
@@ -72,6 +297,28 @@ test("Discover reflows Follow controls without phone-width overflow", async ({
   const intakeBox = await intake.boundingBox();
   expect(followBox).not.toBeNull();
   expect(intakeBox).not.toBeNull();
+
+  const feed = page.getByRole("region", { name: "Candidate feed" });
+  const feedBox = await feed.boundingBox();
+  expect(feedBox).not.toBeNull();
+  expect(feedBox!.height).toBeGreaterThan(0);
+  expect(
+    await feed.evaluate(
+      (element) => element.scrollHeight > element.clientHeight,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollHeight <= window.innerHeight,
+    ),
+  ).toBe(true);
+
+  const topBefore = await intake.boundingBox();
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const topAfter = await intake.boundingBox();
+  expect(topAfter?.y).toBe(topBefore?.y);
 
   if (testInfo.project.name === "phone") {
     expect(followBox!.y).toBeLessThan(intakeBox!.y);

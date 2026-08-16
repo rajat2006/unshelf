@@ -152,6 +152,7 @@ export async function startTestApp(
 export async function startTestAppWithLegacyFixture(
   identify: Identify,
   seedLegacyDatabase: (db: Database) => Promise<void>,
+  options: Pick<AppOptions, "discover"> = {},
 ): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
@@ -175,7 +176,7 @@ export async function startTestAppWithLegacyFixture(
   );
   await seedLegacyDatabase(db);
   await applyMigrationFiles(db, migrations.slice(learningPlanMigrationIndex));
-  return runningTestApp({ container, db, identify });
+  return runningTestApp({ container, db, identify, options });
 }
 
 async function applyMigrationFiles(
