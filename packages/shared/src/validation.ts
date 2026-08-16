@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   DailyFocusId,
+  FollowPreviewId,
   ItemId,
   LabelId,
   LearningPlanId,
@@ -28,6 +29,7 @@ export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
 export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
 export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
+export const followPreviewIdSchema = identifierSchema<FollowPreviewId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -77,6 +79,14 @@ export const prepareFollowRequestSchema = z.strictObject({
     url: z.url(),
   }),
 });
+
+/** Consume only the opaque preview receipt issued by Unshelf. */
+export const confirmFollowRequestSchema = z.strictObject({
+  previewId: followPreviewIdSchema,
+});
+
+/** Mutation replays are scoped by a client-generated UUID. */
+export const idempotencyKeySchema = z.uuid();
 
 export const createPartsRequestSchema = z.strictObject({
   titles: z
@@ -164,6 +174,7 @@ export type SuppressDailyPlanningItemRequest = z.infer<
   typeof suppressDailyPlanningItemRequestSchema
 >;
 export type PrepareFollowRequest = z.infer<typeof prepareFollowRequestSchema>;
+export type ConfirmFollowRequest = z.infer<typeof confirmFollowRequestSchema>;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
 export type UpdatePartCompletionRequest = z.infer<

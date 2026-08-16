@@ -7,6 +7,9 @@ import type {
   CreateStageRequest,
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
+  ConfirmFollowResponse,
+  DiscoverWorkspace,
+  FollowPreviewId,
   DailyFocus,
   DailyPlanning,
   DailyPlanningQuery,
@@ -99,6 +102,34 @@ export async function prepareFollowPreview(
     return { ok: false, error: "invalid_target" };
   }
   throw new Error(`api responded ${response.status}`);
+}
+
+/** Confirm one exact preview receipt with a replay-safe mutation key. */
+export async function confirmFollow(
+  user: CurrentUser,
+  input: { previewId: FollowPreviewId; idempotencyKey: string },
+): Promise<ConfirmFollowResponse> {
+  const response = await authenticatedRequest(
+    user,
+    "/api/discover/follows",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": input.idempotencyKey,
+      },
+      body: JSON.stringify({ previewId: input.previewId }),
+    },
+    true,
+  );
+  return (await response.json()) as ConfirmFollowResponse;
+}
+
+/** Read the current User's durable Follow and unresolved intake projection. */
+export async function fetchDiscoverWorkspace(
+  user: CurrentUser,
+): Promise<DiscoverWorkspace> {
+  return requestJson<DiscoverWorkspace>(user, "/api/discover");
 }
 
 /** Fetch All — every Item belonging to the current User. */

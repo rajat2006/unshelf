@@ -955,6 +955,231 @@ export const discoverFollowPreviewResults = pgTable(
   ],
 );
 
+/** One User-owned Follow per shared target across every lifecycle. */
+export const discoverFollows = pgTable(
+  "discover_follows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    providerTargetId: uuid("provider_target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    targetUrl: text("target_url").notNull(),
+    lifecycle: text("lifecycle").notNull().default("active"),
+    lastAppliedProviderSnapshotId: uuid("last_applied_provider_snapshot_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_follows_user_target_unique").on(
+      table.userId,
+      table.providerTargetId,
+    ),
+    unique("discover_follows_identity_owner_unique").on(table.id, table.userId),
+    unique("discover_follows_identity_target_unique").on(
+      table.id,
+      table.userId,
+      table.providerTargetId,
+    ),
+    foreignKey({
+      name: "discover_follows_applied_snapshot_target_fk",
+      columns: [table.lastAppliedProviderSnapshotId, table.providerTargetId],
+      foreignColumns: [
+        discoverProviderSnapshots.id,
+        discoverProviderSnapshots.providerTargetId,
+      ],
+    }),
+    index("discover_follows_user_lifecycle_idx").on(
+      table.userId,
+      table.lifecycle,
+    ),
+    check(
+      "discover_follows_lifecycle_check",
+      sql`${table.lifecycle} IN ('active', 'paused', 'removed')`,
+    ),
+  ],
+);
+
+/** One private Candidate for one retained Provider result and User. */
+export const discoverCandidates = pgTable(
+  "discover_candidates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    providerResultId: uuid("provider_result_id")
+      .notNull()
+      .references(() => discoverProviderResults.id),
+    itemId: uuid("item_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_candidates_user_result_unique").on(
+      table.userId,
+      table.providerResultId,
+    ),
+    unique("discover_candidates_identity_owner_unique").on(
+      table.id,
+      table.userId,
+    ),
+    unique("discover_candidates_item_unique").on(table.itemId),
+    foreignKey({
+      name: "discover_candidates_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }),
+    index("discover_candidates_user_id_idx").on(table.userId),
+  ],
+);
+
+/** Detection state for one Follow surfacing one Candidate. */
+export const discoverFollowCandidatePresence = pgTable(
+  "discover_follow_candidate_presence",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    followId: uuid("follow_id").notNull(),
+    candidateId: uuid("candidate_id").notNull(),
+    appearanceSequence: integer("appearance_sequence").notNull().default(1),
+    present: boolean("present").notNull().default(true),
+    firstSurfacedSnapshotId: uuid("first_surfaced_snapshot_id")
+      .notNull()
+      .references(() => discoverProviderSnapshots.id),
+    lastSurfacedSnapshotId: uuid("last_surfaced_snapshot_id")
+      .notNull()
+      .references(() => discoverProviderSnapshots.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.followId, table.candidateId] }),
+    unique("discover_presence_identity_owner_unique").on(
+      table.followId,
+      table.candidateId,
+      table.userId,
+    ),
+    unique("discover_presence_occurrence_owner_unique").on(
+      table.followId,
+      table.candidateId,
+      table.appearanceSequence,
+      table.userId,
+    ),
+    foreignKey({
+      name: "discover_presence_follow_owner_fk",
+      columns: [table.followId, table.userId],
+      foreignColumns: [discoverFollows.id, discoverFollows.userId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "discover_presence_candidate_owner_fk",
+      columns: [table.candidateId, table.userId],
+      foreignColumns: [discoverCandidates.id, discoverCandidates.userId],
+    }).onDelete("cascade"),
+    index("discover_presence_user_id_idx").on(table.userId),
+    check(
+      "discover_presence_sequence_check",
+      sql`${table.appearanceSequence} > 0`,
+    ),
+  ],
+);
+
+/** One durable occurrence in the User's Discover intake. */
+export const discoverDiscoveries = pgTable(
+  "discover_discoveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    followId: uuid("follow_id").notNull(),
+    candidateId: uuid("candidate_id").notNull(),
+    appearanceSequence: integer("appearance_sequence").notNull(),
+    position: integer("position").notNull(),
+    state: text("state").notNull().default("new"),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("discover_discoveries_occurrence_unique").on(
+      table.followId,
+      table.candidateId,
+      table.appearanceSequence,
+    ),
+    unique("discover_discoveries_identity_owner_unique").on(
+      table.id,
+      table.userId,
+    ),
+    foreignKey({
+      name: "discover_discoveries_presence_owner_fk",
+      columns: [table.followId, table.candidateId, table.userId],
+      foreignColumns: [
+        discoverFollowCandidatePresence.followId,
+        discoverFollowCandidatePresence.candidateId,
+        discoverFollowCandidatePresence.userId,
+      ],
+    }).onDelete("cascade"),
+    index("discover_discoveries_user_state_idx").on(
+      table.userId,
+      table.state,
+      table.discoveredAt,
+    ),
+    check("discover_discoveries_position_check", sql`${table.position} >= 0`),
+    check(
+      "discover_discoveries_state_check",
+      sql`${table.state} IN ('new', 'seen', 'kept', 'dismissed')`,
+    ),
+    check(
+      "discover_discoveries_state_timestamps_check",
+      sql`(
+        ${table.state} = 'new'
+        AND ${table.seenAt} IS NULL
+        AND ${table.decidedAt} IS NULL
+      ) OR (
+        ${table.state} = 'seen'
+        AND ${table.seenAt} IS NOT NULL
+        AND ${table.decidedAt} IS NULL
+      ) OR (
+        ${table.state} IN ('kept', 'dismissed')
+        AND ${table.decidedAt} IS NOT NULL
+      )`,
+    ),
+  ],
+);
+
+/** Stable mutation results keyed within one User and operation. */
+export const discoverIdempotency = pgTable(
+  "discover_idempotency",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    operation: text("operation").notNull(),
+    requestId: uuid("request_id").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    resultPayload: jsonb("result_payload"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.operation, table.requestId] }),
+    check(
+      "discover_idempotency_operation_check",
+      sql`${table.operation} = 'confirm_follow'`,
+    ),
+  ],
+);
+
 /**
  * Render a shared enum as a SQL `IN` list. The values come from
  * `@unshelf/shared`, so a new Type or Status changes the generated `CHECK`

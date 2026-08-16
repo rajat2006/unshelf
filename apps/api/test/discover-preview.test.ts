@@ -79,7 +79,7 @@ describe("POST /api/discover/follow-previews", () => {
         expiresAt: "2026-08-16T12:15:00.000Z",
       },
     });
-    if (!body.ok) throw new Error("expected preview");
+    if (!body.ok || !("preview" in body)) throw new Error("expected preview");
     expect(body.preview.previewId).toMatch(/^[0-9a-f-]{36}$/);
 
     const persisted = await harness.pool.query<{

@@ -3,12 +3,14 @@ import {
   addDailyFocusItemRequestSchema,
   addStageItemRequestSchema,
   connectLearningPlanNodesRequestSchema,
+  confirmFollowRequestSchema,
   createItemRequestSchema,
   createPartsRequestSchema,
   createLabelRequestSchema,
   createLearningPlanRequestSchema,
   createStageRequestSchema,
   prepareFollowRequestSchema,
+  idempotencyKeySchema,
   itemIdSchema,
   labelIdSchema,
   learningPlanIdSchema,
@@ -21,6 +23,22 @@ import {
 } from "@unshelf/shared/validation";
 
 const uuid = "123e4567-e89b-42d3-a456-426614174000";
+
+describe("Discover confirmation request schemas", () => {
+  it("accepts only an opaque preview receipt and a separate UUID replay key", () => {
+    expect(confirmFollowRequestSchema.parse({ previewId: uuid })).toEqual({
+      previewId: uuid,
+    });
+    expect(idempotencyKeySchema.parse(uuid)).toBe(uuid);
+    expect(
+      confirmFollowRequestSchema.safeParse({
+        previewId: uuid,
+        candidates: [{ title: "browser-owned" }],
+      }).success,
+    ).toBe(false);
+    expect(idempotencyKeySchema.safeParse("reused-name").success).toBe(false);
+  });
+});
 
 describe("named record request schemas", () => {
   it.each([

@@ -122,6 +122,7 @@ export type {
   DailyPlanningQuery,
   SuppressDailyPlanningItemRequest,
   PrepareFollowRequest,
+  ConfirmFollowRequest,
 } from "./validation";
 
 export type Provider = "youtube";
@@ -130,6 +131,66 @@ export type FollowTargetKind = "channel";
 export type FollowPreviewId = string & {
   readonly [identifierBrand]: "FollowPreviewId";
 };
+
+export type FollowId = string & {
+  readonly [identifierBrand]: "FollowId";
+};
+
+export type CandidateId = string & {
+  readonly [identifierBrand]: "CandidateId";
+};
+
+export type DiscoveryId = string & {
+  readonly [identifierBrand]: "DiscoveryId";
+};
+
+export type FollowLifecycle = "active" | "paused" | "removed";
+export type DiscoveryState = "new" | "seen" | "kept" | "dismissed";
+
+export interface FollowSummary {
+  id: FollowId;
+  provider: "youtube";
+  lifecycle: FollowLifecycle;
+  name: string | null;
+  targetUrl: string;
+  createdAt: string;
+}
+
+export interface DiscoverySummary {
+  id: DiscoveryId;
+  candidateId: CandidateId;
+  followId: FollowId;
+  followName: string | null;
+  state: "new" | "seen";
+  title: string | null;
+  source: string | null;
+  publisher: string | null;
+  publishedAt: string | null;
+  durationSeconds: number | null;
+  type: Type.Video | null;
+  thumbnailUrl: string | null;
+  discoveredAt: string;
+}
+
+export interface DiscoverWorkspace {
+  follows: FollowSummary[];
+  discoveries: DiscoverySummary[];
+}
+
+export type ConfirmFollowFailure =
+  | "preview_missing"
+  | "preview_expired"
+  | "preview_consumed"
+  | "preview_unverifiable"
+  | "idempotency_conflict";
+
+export type ConfirmFollowResponse =
+  | {
+      ok: true;
+      follow: FollowSummary;
+      discoveries: DiscoverySummary[];
+    }
+  | { ok: false; error: ConfirmFollowFailure };
 
 export interface FollowPreviewVideo {
   provider: "youtube";
@@ -167,6 +228,11 @@ export type PrepareFollowFailure =
 
 export type PrepareFollowResponse =
   | { ok: true; preview: FollowPreview }
+  | {
+      ok: true;
+      outcome: "already_following" | "resume_available";
+      follow: FollowSummary;
+    }
   | { ok: false; error: PrepareFollowFailure };
 
 /** A private, free-text marker the User applies across Library Items. */
