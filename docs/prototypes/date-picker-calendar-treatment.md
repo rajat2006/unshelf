@@ -1,6 +1,6 @@
 # Date-picker calendar treatment prototype
 
-Status: **awaiting human review**
+Status: **accepted — B, Separate tiles**
 
 This throwaway prototype supports
 [Choose the warm-editorial desktop calendar treatment](https://github.com/rajat2006/unshelf/issues/417)
@@ -65,6 +65,33 @@ space beyond month/year navigation, the grid, and Today/Clear.
 
 ## Verdict
 
-Pending a live human-in-the-loop comparison. Record the winning treatment,
-borrowed details, rejected alternatives, and any accessibility blockers here
-before resolving the ticket.
+**Accepted: B — Separate tiles.**
+
+Carry the compact Bookplate structure into the implementation specification:
+
+- A 252px desktop popover with no explanatory title, Item context, or repeated
+  selected-date badge. Month/year navigation, the calendar grid, and compact
+  Today/Clear actions are the complete visual hierarchy.
+- Each date is a discrete square tile with a quiet hairline border and a small
+  gutter. The geometry makes scanning, hover, and keyboard focus unambiguous
+  without making the calendar read as a dense spreadsheet.
+- Selection uses a soft accent fill, stronger primary border, and heavier text.
+  Today remains a small dot, keyboard focus remains an outer ring, outside-month
+  dates are muted, and disabled dates remain visibly subdued. These states must
+  stay independently recognizable in Light and Dark.
+- The closed field retains localized typing and an icon-only calendar trigger.
+  Target date still commits immediately; Daily Focus still stages until **View
+  date**. The visual decision changes neither domain semantic.
+- Natural month height is preferred over forcing six weeks, avoiding empty
+  calendar rows. The production implementation may adjust exact pixels only as
+  accessibility testing requires; compactness and absence of redundant chrome
+  are the intent to preserve.
+
+The circular selector was rejected because separate boxes make the scan and
+interaction boundary clearer at this size. The continuous ledger was too rigid
+and visually dense; underline-only selection was too weak; the soft square did
+not communicate the boundary of every available date as clearly as B.
+
+No `CONTEXT.md` or ADR change is needed: this resolves a reversible visual and
+interaction treatment while preserving the existing meanings of Target date and
+Daily Focus.

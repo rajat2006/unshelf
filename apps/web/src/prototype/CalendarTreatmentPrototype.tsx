@@ -96,9 +96,13 @@ const DATE_PATTERN = "dd/MM/yyyy";
 
 function parseVariant(): VariantKey {
   const value = new URLSearchParams(window.location.search).get("variant");
-  return value === "B" || value === "C" || value === "D" || value === "E"
+  return value === "A" ||
+    value === "B" ||
+    value === "C" ||
+    value === "D" ||
+    value === "E"
     ? value
-    : "A";
+    : "B";
 }
 
 function CalendarTreatmentPrototype() {
