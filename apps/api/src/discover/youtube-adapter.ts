@@ -53,6 +53,7 @@ const defaultRetryPolicy: RetryPolicy = {
 export interface YouTubeAdapter {
   previewChannel(input: { url: string }): Promise<ProviderPreviewResult>;
   acquireChannel(input: { channelId: string }): Promise<ProviderPreviewResult>;
+  acquireChannelByUrl(input: { url: string }): Promise<ProviderPreviewResult>;
 }
 
 export function createYouTubeAdapter({
@@ -68,8 +69,7 @@ export function createYouTubeAdapter({
 }): YouTubeAdapter {
   const acquire = (
     input: Parameters<typeof acquireChannelResults>[0],
-  ): Promise<ProviderPreviewResult> =>
-    acquireWithRetry({ input, now, retry });
+  ): Promise<ProviderPreviewResult> => acquireWithRetry({ input, now, retry });
   return {
     previewChannel: async ({ url }) => {
       const target = parseChannelUrl(url);
@@ -89,6 +89,12 @@ export function createYouTubeAdapter({
         now,
         target: { id: channelId },
       }),
+    acquireChannelByUrl: ({ url }) => {
+      const target = parseChannelUrl(url);
+      if (target === null)
+        return Promise.resolve({ ok: false, error: "unverifiable" });
+      return acquire({ apiKey, fetch, now, target });
+    },
   };
 }
 
@@ -118,7 +124,10 @@ async function acquireWithRetry({
         maxRetryTime: retry.budgetMilliseconds,
         signal,
         onFailedAttempt: async ({ error, attemptNumber, retriesLeft }) => {
-          if (error instanceof RetryableProviderError && error.retryAt !== null) {
+          if (
+            error instanceof RetryableProviderError &&
+            error.retryAt !== null
+          ) {
             providerRetryAt =
               providerRetryAt === null || error.retryAt > providerRetryAt
                 ? error.retryAt

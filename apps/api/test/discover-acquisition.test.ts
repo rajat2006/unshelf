@@ -59,7 +59,11 @@ const successfulAcquisition = (
 
 const previewChannel = vi.fn<YouTubeAdapter["previewChannel"]>();
 const acquireChannel = vi.fn<YouTubeAdapter["acquireChannel"]>();
-const adapter: YouTubeAdapter = { previewChannel, acquireChannel };
+const adapter: YouTubeAdapter = {
+  previewChannel,
+  acquireChannel,
+  acquireChannelByUrl: vi.fn(),
+};
 let harness: TestApp;
 let app: Express;
 

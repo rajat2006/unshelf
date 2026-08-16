@@ -709,6 +709,13 @@ export const discoverProviderTargets = pgTable(
     externalReference: text("external_reference"),
     targetPayload: jsonb("target_payload"),
     checkpointPayload: jsonb("checkpoint_payload"),
+    checkpointFetchedAt: timestamp("checkpoint_fetched_at", {
+      withTimezone: true,
+    }),
+    checkpointExpiresAt: timestamp("checkpoint_expires_at", {
+      withTimezone: true,
+    }),
+    dataGeneration: integer("data_generation").notNull().default(0),
     acquisitionGeneration: integer("acquisition_generation")
       .notNull()
       .default(0),
@@ -721,6 +728,10 @@ export const discoverProviderTargets = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [
+    index("discover_provider_targets_expiry_idx").on(table.expiresAt),
+    index("discover_provider_targets_checkpoint_expiry_idx").on(
+      table.checkpointExpiresAt,
+    ),
     uniqueIndex("discover_provider_targets_identity_unique")
       .on(
         table.provider,
@@ -739,7 +750,7 @@ export const discoverProviderTargets = pgTable(
     ),
     check(
       "discover_provider_targets_generation_check",
-      sql`${table.acquisitionGeneration} >= 0`,
+      sql`${table.dataGeneration} >= 0 AND ${table.acquisitionGeneration} >= 0`,
     ),
     check(
       "discover_provider_targets_expiry_check",
@@ -753,6 +764,18 @@ export const discoverProviderTargets = pgTable(
         AND ${table.targetPayload} IS NOT NULL
         AND ${table.fetchedAt} IS NOT NULL
         AND ${table.expiresAt} > ${table.fetchedAt}
+      )`,
+    ),
+    check(
+      "discover_provider_targets_checkpoint_expiry_check",
+      sql`(
+        ${table.checkpointPayload} IS NULL
+        AND ${table.checkpointFetchedAt} IS NULL
+        AND ${table.checkpointExpiresAt} IS NULL
+      ) OR (
+        ${table.checkpointPayload} IS NOT NULL
+        AND ${table.checkpointFetchedAt} IS NOT NULL
+        AND ${table.checkpointExpiresAt} > ${table.checkpointFetchedAt}
       )`,
     ),
   ],
@@ -846,10 +869,16 @@ export const discoverProviderTargetProjections = pgTable(
       .primaryKey()
       .references(() => discoverProviderTargets.id),
     publisher: text("publisher").notNull(),
+    generation: integer("generation").notNull().default(0),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
+    index("discover_target_projection_expiry_idx").on(table.expiresAt),
+    check(
+      "discover_target_projection_generation_check",
+      sql`${table.generation} >= 0`,
+    ),
     check(
       "discover_target_projection_expiry_check",
       sql`${table.expiresAt} > ${table.fetchedAt}`,
@@ -864,6 +893,9 @@ export const discoverProviderResults = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     provider: text("provider").notNull(),
     externalReference: text("external_reference"),
+    dataGeneration: integer("data_generation").notNull().default(0),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("discover_provider_results_identity_unique")
@@ -873,6 +905,23 @@ export const discoverProviderResults = pgTable(
       "discover_provider_results_provider_check",
       sql`${table.provider} = 'youtube'`,
     ),
+    check(
+      "discover_provider_results_generation_check",
+      sql`${table.dataGeneration} >= 0`,
+    ),
+    check(
+      "discover_provider_results_expiry_check",
+      sql`(
+        ${table.externalReference} IS NULL
+        AND ${table.fetchedAt} IS NULL
+        AND ${table.expiresAt} IS NULL
+      ) OR (
+        ${table.externalReference} IS NOT NULL
+        AND ${table.fetchedAt} IS NOT NULL
+        AND ${table.expiresAt} > ${table.fetchedAt}
+      )`,
+    ),
+    index("discover_provider_results_expiry_idx").on(table.expiresAt),
   ],
 );
 
@@ -889,10 +938,16 @@ export const discoverProviderResultProjections = pgTable(
     durationSeconds: integer("duration_seconds").notNull(),
     type: text("type").notNull(),
     thumbnailUrl: text("thumbnail_url"),
+    generation: integer("generation").notNull().default(0),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
+    index("discover_result_projection_expiry_idx").on(table.expiresAt),
+    check(
+      "discover_result_projection_generation_check",
+      sql`${table.generation} >= 0`,
+    ),
     check(
       "discover_result_projection_type_check",
       sql`${table.type} = 'video'`,

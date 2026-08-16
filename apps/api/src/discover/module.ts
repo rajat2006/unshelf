@@ -71,6 +71,7 @@ import type {
 
 const previewLifetimeMilliseconds = 15 * 60 * 1_000;
 const providerRetentionMilliseconds = 30 * 24 * 60 * 60 * 1_000;
+const providerRetentionSafetyMilliseconds = 24 * 60 * 60 * 1_000;
 const acquisitionLeaseMilliseconds = 35 * 1_000;
 const joinPollMilliseconds = 10;
 const providerGateFallbackMilliseconds = 15 * 60 * 1_000;
@@ -114,6 +115,20 @@ export interface DiscoverModule {
     | { ok: true; history: DiscoverHistoryPage }
     | { ok: false; error: "invalid_cursor" }
   >;
+  purgeProviderData(
+    input:
+      | { kind: "expire_due"; batchSize?: number }
+      | { kind: "complete"; provider: "youtube"; batchSize?: number },
+  ): Promise<ProviderPurgeReport>;
+}
+
+export interface ProviderPurgeReport {
+  kind: "expire_due" | "complete";
+  provider: "youtube";
+  clearedRows: number;
+  skippedGenerationRows: number;
+  failedOperations: number;
+  dueRows: number;
 }
 
 export function createDiscoverModule({
@@ -130,6 +145,9 @@ export function createDiscoverModule({
   const providerConcurrency = pLimit(4);
   const module: DiscoverModule = {
     prepareFollow: async ({ userId, request }) => {
+      if (await isProviderSuspended({ db, provider: "youtube" })) {
+        return { ok: false, error: "provider_unavailable" };
+      }
       const acquired = await providerConcurrency(() =>
         youtube.previewChannel({
           url: request.target.url,
@@ -146,6 +164,14 @@ export function createDiscoverModule({
       );
 
       return db.transaction(async (tx): Promise<PrepareFollowResponse> => {
+        await lockProviderPublication({ tx, provider: "youtube" });
+        const [providerGate] = await tx
+          .select({ errorClass: discoverProviderGates.errorClass })
+          .from(discoverProviderGates)
+          .where(eq(discoverProviderGates.provider, "youtube"));
+        if (providerGate?.errorClass === "provider_suspended") {
+          return { ok: false, error: "provider_unavailable" };
+        }
         const [target] = await tx
           .insert(discoverProviderTargets)
           .values({
@@ -173,27 +199,24 @@ export function createDiscoverModule({
                 schemaVersion: 1,
                 uploadsPlaylistId: acquired.uploadsPlaylistId,
               },
+              acquisitionGeneration: sql`${discoverProviderTargets.acquisitionGeneration} + 1`,
+              dataGeneration: sql`${discoverProviderTargets.dataGeneration} + 1`,
               fetchedAt: createdAt,
               expiresAt: providerExpiresAt,
             },
           })
-          .returning({ id: discoverProviderTargets.id });
-        await tx
-          .insert(discoverProviderTargetProjections)
-          .values({
-            providerTargetId: target.id,
-            publisher: acquired.publisher,
-            fetchedAt: createdAt,
-            expiresAt: providerExpiresAt,
-          })
-          .onConflictDoUpdate({
-            target: discoverProviderTargetProjections.providerTargetId,
-            set: {
-              publisher: acquired.publisher,
-              fetchedAt: createdAt,
-              expiresAt: providerExpiresAt,
-            },
+          .returning({
+            id: discoverProviderTargets.id,
+            generation: discoverProviderTargets.dataGeneration,
           });
+        await publishTargetProjection({
+          tx,
+          providerTargetId: target.id,
+          publisher: acquired.publisher,
+          generation: target.generation,
+          fetchedAt: createdAt,
+          expiresAt: providerExpiresAt,
+        });
 
         const [existingFollow] = await tx
           .select({
@@ -226,53 +249,12 @@ export function createDiscoverModule({
           };
         }
 
-        const resultIds = new Map<string, string>();
-        for (const video of acquired.videos) {
-          const [result] = await tx
-            .insert(discoverProviderResults)
-            .values({
-              provider: "youtube",
-              externalReference: video.providerIdentity,
-            })
-            .onConflictDoUpdate({
-              target: [
-                discoverProviderResults.provider,
-                discoverProviderResults.externalReference,
-              ],
-              targetWhere: sql`${discoverProviderResults.externalReference} IS NOT NULL`,
-              set: { externalReference: video.providerIdentity },
-            })
-            .returning({ id: discoverProviderResults.id });
-          resultIds.set(video.providerIdentity, result.id);
-          await tx
-            .insert(discoverProviderResultProjections)
-            .values({
-              providerResultId: result.id,
-              title: video.title,
-              source: video.source,
-              publisher: video.publisher,
-              publishedAt: new Date(video.publishedAt),
-              durationSeconds: video.durationSeconds,
-              type: video.type,
-              thumbnailUrl: video.thumbnailUrl,
-              fetchedAt: createdAt,
-              expiresAt: providerExpiresAt,
-            })
-            .onConflictDoUpdate({
-              target: discoverProviderResultProjections.providerResultId,
-              set: {
-                title: video.title,
-                source: video.source,
-                publisher: video.publisher,
-                publishedAt: new Date(video.publishedAt),
-                durationSeconds: video.durationSeconds,
-                type: video.type,
-                thumbnailUrl: video.thumbnailUrl,
-                fetchedAt: createdAt,
-                expiresAt: providerExpiresAt,
-              },
-            });
-        }
+        const resultIds = await publishProviderResults({
+          tx,
+          videos: acquired.videos,
+          fetchedAt: createdAt,
+          expiresAt: providerExpiresAt,
+        });
 
         const orderedResultIds = acquired.videos.map((video) => {
           const resultId = resultIds.get(video.providerIdentity);
@@ -780,13 +762,23 @@ export function createDiscoverModule({
           .where(eq(discoverProviderTargets.id, follow.providerTargetId))
           .for("update");
         const [providerGate] = await tx
-          .select({ nextEligibleAt: discoverProviderGates.nextEligibleAt })
+          .select({
+            nextEligibleAt: discoverProviderGates.nextEligibleAt,
+            errorClass: discoverProviderGates.errorClass,
+          })
           .from(discoverProviderGates)
           .where(eq(discoverProviderGates.provider, "youtube"));
         if (
           providerGate !== undefined &&
           providerGate.nextEligibleAt > startedAt
         ) {
+          if (providerGate.errorClass === "provider_suspended") {
+            return {
+              ok: true as const,
+              role: "suspended" as const,
+              follow,
+            };
+          }
           return {
             ok: true as const,
             role: "gated" as const,
@@ -871,6 +863,24 @@ export function createDiscoverModule({
       });
       if (!claim.ok) return claim;
 
+      if (claim.role === "suspended") {
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: "provider_unavailable",
+            acceptedCount: 0,
+            rejectedCount: 0,
+            ...health,
+            nextEligibleAt: null,
+          },
+        };
+      }
+
       if (claim.role === "gated") {
         const health = await readTargetHealth({
           db,
@@ -944,7 +954,9 @@ export function createDiscoverModule({
         if (!ownsAttempt) return { ownsAttempt: false as const };
         const acquired =
           claim.follow.channelId === null
-            ? ({ ok: false, error: "unverifiable" } as const)
+            ? await youtube.acquireChannelByUrl({
+                url: claim.follow.targetUrl,
+              })
             : await youtube.acquireChannel({
                 channelId: claim.follow.channelId,
               });
@@ -1628,11 +1640,333 @@ export function createDiscoverModule({
     },
     readWorkspace: ({ userId }) =>
       selectWorkspace({ query: db, userId, currentTime: now() }),
+    purgeProviderData: async (input) => {
+      const startedAt = now();
+      const { kind } = input;
+      const batchSize = input.batchSize ?? 100;
+      if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1_000) {
+        throw new RangeError(
+          "Provider purge batch size must be from 1 to 1000",
+        );
+      }
+      const report: ProviderPurgeReport = {
+        kind,
+        provider: "youtube",
+        clearedRows: 0,
+        skippedGenerationRows: 0,
+        failedOperations: 0,
+        dueRows: 0,
+      };
+      const dueAt = new Date(
+        now().getTime() + providerRetentionSafetyMilliseconds,
+      );
+      if (kind === "complete") {
+        await db.transaction(async (tx) => {
+          await lockProviderPublication({ tx, provider: "youtube" });
+          await tx
+            .insert(discoverProviderGates)
+            .values({
+              provider: "youtube",
+              nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
+              errorClass: "provider_suspended",
+              updatedAt: now(),
+            })
+            .onConflictDoUpdate({
+              target: discoverProviderGates.provider,
+              set: {
+                nextEligibleAt: new Date("9999-12-31T23:59:59.999Z"),
+                errorClass: "provider_suspended",
+                updatedAt: now(),
+              },
+            });
+          await tx
+            .update(discoverProviderTargets)
+            .set({
+              acquisitionGeneration: sql`${discoverProviderTargets.acquisitionGeneration} + 1`,
+            })
+            .where(eq(discoverProviderTargets.provider, "youtube"));
+        });
+      }
+      const operations = [
+        purgeDueTargetData,
+        purgeDueCheckpointData,
+        purgeDueTargetProjections,
+        purgeDueResultReferences,
+        purgeDueResultProjections,
+      ] as const;
+      for (const operation of operations) {
+        try {
+          while (true) {
+            const batch = await operation({ db, dueAt, batchSize, kind });
+            report.clearedRows += batch.clearedRows;
+            report.skippedGenerationRows +=
+              batch.selectedRows - batch.clearedRows;
+            if (kind === "expire_due") {
+              report.dueRows += batch.selectedRows;
+            }
+            if (batch.selectedRows < batchSize) break;
+          }
+        } catch {
+          report.failedOperations += 1;
+          logger.error({
+            event: "discover.retention.batch_failed",
+            msg: "Discover Provider retention batch failed",
+            provider: "youtube",
+            kind,
+            errorClass: "database_error",
+          });
+        }
+      }
+      recordRetention({
+        logger,
+        report,
+        durationMs: elapsedMilliseconds({ startedAt, finishedAt: now() }),
+      });
+      return report;
+    },
   };
   return module;
 }
 
+function recordRetention({
+  logger,
+  report,
+  durationMs,
+}: {
+  logger: Logger;
+  report: ProviderPurgeReport;
+  durationMs: number;
+}): void {
+  const measurements = { ...report, durationMs };
+  logger.info({
+    event: "unshelf.discover.retention.ended",
+    msg: "Discover Provider retention ended",
+    ...measurements,
+  });
+  logger.info({
+    event: "unshelf.discover.retention.metric",
+    msg: "Discover Provider retention metric",
+    ...measurements,
+  });
+}
+
 type DiscoverQuery = Pick<Database, "select">;
+
+interface PurgeBatchResult {
+  selectedRows: number;
+  clearedRows: number;
+}
+
+interface PurgeBatchInput {
+  db: Database;
+  dueAt: Date;
+  batchSize: number;
+  kind: "expire_due" | "complete";
+}
+
+type PurgeCountRow = {
+  selected_count: number | string;
+  completed_count: number | string;
+};
+
+async function purgeDueTargetData({
+  db,
+  dueAt,
+  batchSize,
+  kind,
+}: PurgeBatchInput): Promise<PurgeBatchResult> {
+  const retentionFilter =
+    kind === "complete"
+      ? sql`external_reference IS NOT NULL`
+      : sql`expires_at <= ${dueAt}`;
+  const result = await db.execute<PurgeCountRow>(sql`
+    WITH selected AS MATERIALIZED (
+      SELECT id, data_generation
+      FROM discover_provider_targets
+      WHERE provider = 'youtube' AND ${retentionFilter}
+      ORDER BY expires_at, id
+      LIMIT ${batchSize}
+    ), cleared AS (
+      UPDATE discover_provider_targets AS target
+      SET external_reference = NULL,
+          target_payload = NULL,
+          fetched_at = NULL,
+          expires_at = NULL
+      FROM selected
+      WHERE target.id = selected.id
+        AND target.data_generation = selected.data_generation
+      RETURNING target.id
+    )
+    SELECT
+      (SELECT count(*) FROM selected) AS selected_count,
+      (SELECT count(*) FROM cleared) AS completed_count
+  `);
+  return toPurgeBatchResult(result.rows[0]);
+}
+
+async function purgeDueTargetProjections({
+  db,
+  dueAt,
+  batchSize,
+  kind,
+}: PurgeBatchInput): Promise<PurgeBatchResult> {
+  const retentionFilter =
+    kind === "complete" ? sql`TRUE` : sql`projection.expires_at <= ${dueAt}`;
+  const result = await db.execute<PurgeCountRow>(sql`
+    WITH selected AS MATERIALIZED (
+      SELECT projection.provider_target_id, projection.generation
+      FROM discover_provider_target_projections AS projection
+      INNER JOIN discover_provider_targets AS target
+        ON target.id = projection.provider_target_id
+      WHERE target.provider = 'youtube' AND ${retentionFilter}
+      ORDER BY projection.expires_at, projection.provider_target_id
+      LIMIT ${batchSize}
+    ), cleared AS (
+      DELETE FROM discover_provider_target_projections AS projection
+      USING selected
+      WHERE projection.provider_target_id = selected.provider_target_id
+        AND projection.generation = selected.generation
+      RETURNING projection.provider_target_id
+    )
+    SELECT
+      (SELECT count(*) FROM selected) AS selected_count,
+      (SELECT count(*) FROM cleared) AS completed_count
+  `);
+  return toPurgeBatchResult(result.rows[0]);
+}
+
+async function purgeDueCheckpointData({
+  db,
+  dueAt,
+  batchSize,
+  kind,
+}: PurgeBatchInput): Promise<PurgeBatchResult> {
+  const retentionFilter =
+    kind === "complete"
+      ? sql`checkpoint_payload IS NOT NULL`
+      : sql`checkpoint_expires_at <= ${dueAt}`;
+  const result = await db.execute<PurgeCountRow>(sql`
+    WITH selected AS MATERIALIZED (
+      SELECT id, data_generation
+      FROM discover_provider_targets
+      WHERE provider = 'youtube' AND ${retentionFilter}
+      ORDER BY checkpoint_expires_at, id
+      LIMIT ${batchSize}
+    ), cleared AS (
+      UPDATE discover_provider_targets AS target
+      SET checkpoint_payload = NULL,
+          checkpoint_fetched_at = NULL,
+          checkpoint_expires_at = NULL,
+          verified_coverage_started_at = NULL
+      FROM selected
+      WHERE target.id = selected.id
+        AND target.data_generation = selected.data_generation
+      RETURNING target.id
+    )
+    SELECT
+      (SELECT count(*) FROM selected) AS selected_count,
+      (SELECT count(*) FROM cleared) AS completed_count
+  `);
+  return toPurgeBatchResult(result.rows[0]);
+}
+
+async function purgeDueResultReferences({
+  db,
+  dueAt,
+  batchSize,
+  kind,
+}: PurgeBatchInput): Promise<PurgeBatchResult> {
+  const retentionFilter =
+    kind === "complete"
+      ? sql`external_reference IS NOT NULL`
+      : sql`expires_at <= ${dueAt}`;
+  const result = await db.execute<PurgeCountRow>(sql`
+    WITH selected AS MATERIALIZED (
+      SELECT id, data_generation
+      FROM discover_provider_results
+      WHERE provider = 'youtube' AND ${retentionFilter}
+      ORDER BY expires_at, id
+      LIMIT ${batchSize}
+    ), cleared AS (
+      UPDATE discover_provider_results AS result
+      SET external_reference = NULL,
+          fetched_at = NULL,
+          expires_at = NULL
+      FROM selected
+      WHERE result.id = selected.id
+        AND result.data_generation = selected.data_generation
+      RETURNING result.id
+    )
+    SELECT
+      (SELECT count(*) FROM selected) AS selected_count,
+      (SELECT count(*) FROM cleared) AS completed_count
+  `);
+  return toPurgeBatchResult(result.rows[0]);
+}
+
+async function purgeDueResultProjections({
+  db,
+  dueAt,
+  batchSize,
+  kind,
+}: PurgeBatchInput): Promise<PurgeBatchResult> {
+  const retentionFilter =
+    kind === "complete" ? sql`TRUE` : sql`projection.expires_at <= ${dueAt}`;
+  const result = await db.execute<PurgeCountRow>(sql`
+    WITH selected AS MATERIALIZED (
+      SELECT projection.provider_result_id, projection.generation
+      FROM discover_provider_result_projections AS projection
+      INNER JOIN discover_provider_results AS result
+        ON result.id = projection.provider_result_id
+      WHERE result.provider = 'youtube' AND ${retentionFilter}
+      ORDER BY projection.expires_at, projection.provider_result_id
+      LIMIT ${batchSize}
+    ), cleared AS (
+      DELETE FROM discover_provider_result_projections AS projection
+      USING selected
+      WHERE projection.provider_result_id = selected.provider_result_id
+        AND projection.generation = selected.generation
+      RETURNING projection.provider_result_id
+    )
+    SELECT
+      (SELECT count(*) FROM selected) AS selected_count,
+      (SELECT count(*) FROM cleared) AS completed_count
+  `);
+  return toPurgeBatchResult(result.rows[0]);
+}
+
+function toPurgeBatchResult(row: PurgeCountRow | undefined): PurgeBatchResult {
+  return {
+    selectedRows: Number(row?.selected_count ?? 0),
+    clearedRows: Number(row?.completed_count ?? 0),
+  };
+}
+
+async function lockProviderPublication({
+  tx,
+  provider,
+}: {
+  tx: DiscoverTransaction;
+  provider: "youtube";
+}): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`unshelf:discover:provider:${provider}`}, 0))`,
+  );
+}
+
+async function isProviderSuspended({
+  db,
+  provider,
+}: {
+  db: Database;
+  provider: "youtube";
+}): Promise<boolean> {
+  const [gate] = await db
+    .select({ errorClass: discoverProviderGates.errorClass })
+    .from(discoverProviderGates)
+    .where(eq(discoverProviderGates.provider, provider));
+  return gate?.errorClass === "provider_suspended";
+}
 
 async function selectWorkspace({
   query,
@@ -1934,7 +2268,11 @@ async function setProviderGate({
       target: discoverProviderGates.provider,
       set: {
         nextEligibleAt: sql`greatest(${discoverProviderGates.nextEligibleAt}, ${nextEligibleAt})`,
-        errorClass,
+        errorClass: sql`CASE
+          WHEN ${discoverProviderGates.errorClass} = 'provider_suspended'
+          THEN ${discoverProviderGates.errorClass}
+          ELSE ${errorClass}
+        END`,
         updatedAt,
       },
     });
@@ -2087,6 +2425,113 @@ async function finishAttempt({
   });
 }
 
+type DiscoverTransaction = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
+
+async function publishTargetProjection({
+  tx,
+  providerTargetId,
+  publisher,
+  generation,
+  fetchedAt,
+  expiresAt,
+}: {
+  tx: DiscoverTransaction;
+  providerTargetId: string;
+  publisher: string;
+  generation: number;
+  fetchedAt: Date;
+  expiresAt: Date;
+}): Promise<void> {
+  await tx
+    .insert(discoverProviderTargetProjections)
+    .values({
+      providerTargetId,
+      publisher,
+      generation,
+      fetchedAt,
+      expiresAt,
+    })
+    .onConflictDoUpdate({
+      target: discoverProviderTargetProjections.providerTargetId,
+      set: { publisher, generation, fetchedAt, expiresAt },
+    });
+}
+
+async function publishProviderResults({
+  tx,
+  videos,
+  fetchedAt,
+  expiresAt,
+}: {
+  tx: DiscoverTransaction;
+  videos: ProviderPreview["videos"];
+  fetchedAt: Date;
+  expiresAt: Date;
+}): Promise<Map<string, string>> {
+  const resultIds = new Map<string, string>();
+  for (const video of videos) {
+    const [result] = await tx
+      .insert(discoverProviderResults)
+      .values({
+        provider: "youtube",
+        externalReference: video.providerIdentity,
+        fetchedAt,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          discoverProviderResults.provider,
+          discoverProviderResults.externalReference,
+        ],
+        targetWhere: sql`${discoverProviderResults.externalReference} IS NOT NULL`,
+        set: {
+          externalReference: video.providerIdentity,
+          dataGeneration: sql`${discoverProviderResults.dataGeneration} + 1`,
+          fetchedAt,
+          expiresAt,
+        },
+      })
+      .returning({
+        id: discoverProviderResults.id,
+        generation: discoverProviderResults.dataGeneration,
+      });
+    resultIds.set(video.providerIdentity, result.id);
+    await tx
+      .insert(discoverProviderResultProjections)
+      .values({
+        providerResultId: result.id,
+        title: video.title,
+        source: video.source,
+        publisher: video.publisher,
+        publishedAt: new Date(video.publishedAt),
+        durationSeconds: video.durationSeconds,
+        type: video.type,
+        thumbnailUrl: video.thumbnailUrl,
+        generation: result.generation,
+        fetchedAt,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: discoverProviderResultProjections.providerResultId,
+        set: {
+          title: video.title,
+          source: video.source,
+          publisher: video.publisher,
+          publishedAt: new Date(video.publishedAt),
+          durationSeconds: video.durationSeconds,
+          type: video.type,
+          thumbnailUrl: video.thumbnailUrl,
+          generation: result.generation,
+          fetchedAt,
+          expiresAt,
+        },
+      });
+  }
+  return resultIds;
+}
+
 async function publishAcquisition({
   db,
   acquired,
@@ -2128,88 +2573,45 @@ async function publishAcquisition({
     if (target?.generation !== generation || attempt?.outcome !== "running") {
       return { outcome: "skipped" as const };
     }
-    if (target.externalReference !== acquired.channelId) {
+    if (
+      target.externalReference !== null &&
+      target.externalReference !== acquired.channelId
+    ) {
       return { outcome: "failed" as const };
     }
 
     const providerExpiresAt = new Date(
       publishedAt.getTime() + providerRetentionMilliseconds,
     );
-    await tx
+    const [publishedTarget] = await tx
       .update(discoverProviderTargets)
       .set({
+        externalReference: acquired.channelId,
         targetPayload: {
           schemaVersion: 1,
           uploadsPlaylistId: acquired.uploadsPlaylistId,
         },
         fetchedAt: publishedAt,
         expiresAt: providerExpiresAt,
+        dataGeneration: sql`${discoverProviderTargets.dataGeneration} + 1`,
       })
-      .where(eq(discoverProviderTargets.id, providerTargetId));
-    await tx
-      .insert(discoverProviderTargetProjections)
-      .values({
-        providerTargetId,
-        publisher: acquired.publisher,
-        fetchedAt: publishedAt,
-        expiresAt: providerExpiresAt,
-      })
-      .onConflictDoUpdate({
-        target: discoverProviderTargetProjections.providerTargetId,
-        set: {
-          publisher: acquired.publisher,
-          fetchedAt: publishedAt,
-          expiresAt: providerExpiresAt,
-        },
-      });
+      .where(eq(discoverProviderTargets.id, providerTargetId))
+      .returning({ generation: discoverProviderTargets.dataGeneration });
+    await publishTargetProjection({
+      tx,
+      providerTargetId,
+      publisher: acquired.publisher,
+      generation: publishedTarget.generation,
+      fetchedAt: publishedAt,
+      expiresAt: providerExpiresAt,
+    });
 
-    const resultIds = new Map<string, string>();
-    for (const video of acquired.videos) {
-      const [result] = await tx
-        .insert(discoverProviderResults)
-        .values({
-          provider: "youtube",
-          externalReference: video.providerIdentity,
-        })
-        .onConflictDoUpdate({
-          target: [
-            discoverProviderResults.provider,
-            discoverProviderResults.externalReference,
-          ],
-          targetWhere: sql`${discoverProviderResults.externalReference} IS NOT NULL`,
-          set: { externalReference: video.providerIdentity },
-        })
-        .returning({ id: discoverProviderResults.id });
-      resultIds.set(video.providerIdentity, result.id);
-      await tx
-        .insert(discoverProviderResultProjections)
-        .values({
-          providerResultId: result.id,
-          title: video.title,
-          source: video.source,
-          publisher: video.publisher,
-          publishedAt: new Date(video.publishedAt),
-          durationSeconds: video.durationSeconds,
-          type: video.type,
-          thumbnailUrl: video.thumbnailUrl,
-          fetchedAt: publishedAt,
-          expiresAt: providerExpiresAt,
-        })
-        .onConflictDoUpdate({
-          target: discoverProviderResultProjections.providerResultId,
-          set: {
-            title: video.title,
-            source: video.source,
-            publisher: video.publisher,
-            publishedAt: new Date(video.publishedAt),
-            durationSeconds: video.durationSeconds,
-            type: video.type,
-            thumbnailUrl: video.thumbnailUrl,
-            fetchedAt: publishedAt,
-            expiresAt: providerExpiresAt,
-          },
-        });
-    }
+    const resultIds = await publishProviderResults({
+      tx,
+      videos: acquired.videos,
+      fetchedAt: publishedAt,
+      expiresAt: providerExpiresAt,
+    });
 
     const [latest] = await tx
       .select({ sequence: max(discoverProviderSnapshots.sequence) })
@@ -2247,6 +2649,8 @@ async function publishAcquisition({
                 schemaVersion: 1,
                 coverageStartedAt: acquired.coverageStartedAt,
               },
+              checkpointFetchedAt: publishedAt,
+              checkpointExpiresAt: providerExpiresAt,
               verifiedCoverageStartedAt: new Date(acquired.coverageStartedAt),
             }
           : {}),

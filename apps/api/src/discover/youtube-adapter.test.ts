@@ -182,9 +182,11 @@ describe("YouTube Provider adapter", () => {
   });
 
   it("does not let Provider retry timing extend the total attempt budget", async () => {
-    const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
-      response({ error: "slow down" }, 429, { "retry-after": "60" }),
-    );
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValue(
+        response({ error: "slow down" }, 429, { "retry-after": "60" }),
+      );
     const startedAt = performance.now();
 
     const result = await createYouTubeAdapter({
@@ -209,13 +211,13 @@ describe("YouTube Provider adapter", () => {
   });
 
   it("carries Provider quota timing without retrying or exposing credentials", async () => {
-    const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
-      response(
-        { error: { errors: [{ reason: "quotaExceeded" }] } },
-        403,
-        { "retry-after": "60" },
-      ),
-    );
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValue(
+        response({ error: { errors: [{ reason: "quotaExceeded" }] } }, 403, {
+          "retry-after": "60",
+        }),
+      );
 
     const result = await createYouTubeAdapter({
       apiKey: "server-secret",
@@ -345,6 +347,39 @@ describe("YouTube Provider adapter", () => {
       "UC_immutable",
     );
     expect(fetch.mock.calls[0]?.[0].searchParams.has("forHandle")).toBe(false);
+  });
+
+  it("re-resolves a purged channel URL without applying the setup preview cap", async () => {
+    const dates = Array.from({ length: 12 }, (_, index) =>
+      new Date(now.getTime() - (index + 1) * 86_400_000).toISOString(),
+    );
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((publishedAt, index) =>
+            playlistItem({ videoId: `restored-${index}`, publishedAt }),
+          ),
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((publishedAt, index) =>
+            video({ id: `restored-${index}`, publishedAt }),
+          ),
+        }),
+      );
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).acquireChannelByUrl({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result.ok && result.videos).toHaveLength(12);
+    expect(fetch.mock.calls[0]?.[0].searchParams.get("forHandle")).toBe(
+      "@quietlearning",
+    );
   });
 
   it("accepts short landscape videos and excludes short vertical, square, unknown-ratio, livestream, and unplayable records", async () => {

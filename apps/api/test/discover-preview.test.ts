@@ -33,7 +33,12 @@ const previewChannel = vi.fn<YouTubeAdapter["previewChannel"]>(async () => ({
   coverageStartedAt: "2026-07-17T12:00:00.000Z",
 }));
 const acquireChannel = vi.fn<YouTubeAdapter["acquireChannel"]>();
-const adapter: YouTubeAdapter = { previewChannel, acquireChannel };
+const acquireChannelByUrl = vi.fn<YouTubeAdapter["acquireChannelByUrl"]>();
+const adapter: YouTubeAdapter = {
+  previewChannel,
+  acquireChannel,
+  acquireChannelByUrl,
+};
 
 let harness: TestApp;
 let app: Express;
