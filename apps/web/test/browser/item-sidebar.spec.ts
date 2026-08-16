@@ -91,7 +91,7 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   await doneOption.click();
   await expect(status).toContainText("Done");
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "2099-06-15",
+    testInfo.project.name === "phone" ? "2099-06-15" : "06/15/2099",
   );
   await expect(
     sidebar.getByRole("link", { name: "https://example.com/course" }),
@@ -307,9 +307,11 @@ test("Item detail edits synchronize with the same Item in the underlying Library
       .getByRole("button", { name: "Done" }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  await sidebar.getByLabel(`Target date for ${item.title}`).fill("2099-08-20");
+  const targetDate = sidebar.getByLabel(`Target date for ${item.title}`);
+  await targetDate.fill("08/20/2099");
+  await targetDate.press("Enter");
   await expect(library.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "2099-08-20",
+    "08/20/2099",
   );
 
   await library
@@ -357,8 +359,11 @@ test("Target date recovers authoritative Today without using the browser clock",
     sidebar.getByText("Authoritative Today is unavailable."),
   ).toBeVisible();
   await expect(today).toBeDisabled();
-  await input.fill("2099-08-20");
-  await expect(input).toHaveValue("2099-08-20");
+  const typedDate =
+    testInfo.project.name === "phone" ? "2099-08-20" : "08/20/2099";
+  await input.fill(typedDate);
+  if (testInfo.project.name !== "phone") await input.press("Enter");
+  await expect(input).toHaveValue(typedDate);
 
   const authoritativeCalendar = (await (
     await testApi(page, user, "/api/server-calendar")
@@ -366,7 +371,12 @@ test("Target date recovers authoritative Today without using the browser clock",
   await sidebar.getByRole("button", { name: "Retry Today" }).click();
   await expect(today).toBeEnabled();
   await today.click();
-  await expect(input).toHaveValue(authoritativeCalendar.today);
+  const [year, month, day] = authoritativeCalendar.today.split("-");
+  await expect(input).toHaveValue(
+    testInfo.project.name === "phone"
+      ? authoritativeCalendar.today
+      : `${month}/${day}/${year}`,
+  );
 
   if (testInfo.project.name === "phone") {
     const touchTarget = await today.boundingBox();

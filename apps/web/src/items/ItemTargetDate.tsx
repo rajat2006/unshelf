@@ -2,8 +2,8 @@ import { useId, useState } from "react";
 import type { Item } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { updateItemTargetDate } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { useServerCalendar } from "../server-calendar/ServerCalendarProvider";
@@ -18,11 +18,11 @@ interface ItemTargetDateProps {
 /**
  * The Item-level Target date control — the User's soft "by when" (ADR-0005).
  *
- * A native date input carries set and change (and gives phones their own picker
- * for free); Clear appears only when there is a date to clear. The *past target*
- * state beside it is read from the Item the api just returned — never computed
- * here — so the whole app derives it in exactly one place. It states the fact and
- * stages: no red, no warning icon, no count of days. Unshelf never nags.
+ * The shared date field owns localized entry and the native phone fallback. The
+ * *past target* state beside it is read from the Item the api just returned —
+ * never computed here — so the whole app derives it in exactly one place. It
+ * states the fact and stages: no red, no warning icon, no count of days. Unshelf
+ * never nags.
  */
 export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
   const inputId = useId();
@@ -51,43 +51,21 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
     <Field>
       <FieldLabel htmlFor={inputId}>Target date</FieldLabel>
       <div className="flex flex-wrap items-center gap-2">
-        <Input
+        <DatePickerField
+          key={failedTargetDate === undefined ? "ready" : "failed"}
           id={inputId}
           aria-label={`Target date for ${item.title}`}
-          type="date"
           value={
-            (pendingTargetDate === undefined
+            pendingTargetDate === undefined
               ? item.targetDate
-              : pendingTargetDate) ?? ""
+              : pendingTargetDate
           }
+          today={calendar.status === "available" ? calendar.today : null}
+          allowToday
+          allowClear
           disabled={saving}
-          onChange={(event) => void change(event.target.value || null)}
-          className="w-auto min-w-40"
+          onValueChange={(targetDate) => void change(targetDate)}
         />
-        <Button
-          type="button"
-          variant="quiet"
-          size="compact"
-          className="min-h-11 sm:min-h-8"
-          disabled={saving || calendar.status !== "available"}
-          onClick={() => {
-            if (calendar.status === "available") void change(calendar.today);
-          }}
-        >
-          Today
-        </Button>
-        {item.targetDate && (
-          <Button
-            type="button"
-            variant="quiet"
-            size="compact"
-            className="min-h-11 sm:min-h-8"
-            disabled={saving}
-            onClick={() => void change(null)}
-          >
-            Clear
-          </Button>
-        )}
         {item.pastTarget && <ItemPastTargetBadge />}
       </div>
       {saving && (

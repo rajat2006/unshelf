@@ -54,11 +54,25 @@ const item: Item = {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.mocked(fetchServerCalendar).mockReset();
   vi.mocked(updateItemTargetDate).mockReset();
 });
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("min-width") && query.includes("pointer: fine"),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
   vi.mocked(fetchServerCalendar).mockResolvedValue({
     today: "2026-08-16",
     validUntil: "2099-08-17T00:00:00.000Z",
@@ -88,8 +102,12 @@ describe("Item Target date editor", () => {
     fireEvent.change(
       screen.getByLabelText("Target date for Practical indexing"),
       {
-        target: { value: "2026-09-01" },
+        target: { value: "09/01/2026" },
       },
+    );
+    fireEvent.keyDown(
+      screen.getByLabelText("Target date for Practical indexing"),
+      { key: "Enter" },
     );
 
     expect(
@@ -110,6 +128,39 @@ describe("Item Target date editor", () => {
       item.id,
       "2026-09-01",
     );
+  });
+
+  it("immediately saves a localized typed date and presents the attempt while pending", async () => {
+    const changed = {
+      ...item,
+      targetDate: "2026-09-01",
+      pastTarget: true,
+    };
+    let resolveSave!: (saved: Item) => void;
+    vi.mocked(updateItemTargetDate).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const onChanged = renderTargetDate();
+    const input = screen.getByLabelText("Target date for Practical indexing");
+
+    fireEvent.change(input, { target: { value: "09/01/2026" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(updateItemTargetDate).toHaveBeenCalledWith(
+        user,
+        item.id,
+        "2026-09-01",
+      ),
+    );
+    expect(input).toHaveValue("09/01/2026");
+    expect(input).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Saving Target date…");
+
+    resolveSave(changed);
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(changed));
   });
 
   it("immediately saves the authoritative Today", async () => {
