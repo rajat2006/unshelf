@@ -118,6 +118,13 @@ export const decideDiscoveriesRequestSchema = z.strictObject({
   decision: z.enum(["seen", "dismissed"]),
 });
 
+/** Explicitly approve the Item fields proposed for one Discovery. */
+export const keepDiscoveryRequestSchema = z.strictObject({
+  title: titleSchema,
+  type: z.enum(Type),
+  source: z.string(),
+});
+
 /** History paging is server-bounded; the client may return only an opaque cursor. */
 export const discoverHistoryQuerySchema = z.strictObject({
   cursor: z.string().min(1).optional(),
@@ -222,6 +229,7 @@ export type SetFollowLifecycleRequest = z.infer<
 export type DecideDiscoveriesRequest = z.infer<
   typeof decideDiscoveriesRequestSchema
 >;
+export type KeepDiscoveryRequest = z.infer<typeof keepDiscoveryRequestSchema>;
 export type DiscoverHistoryQuery = z.infer<typeof discoverHistoryQuerySchema>;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;

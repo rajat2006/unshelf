@@ -43,6 +43,9 @@ vi.mock("./DailyFocusHistorySurface", () => ({
 vi.mock("./LearningPlanSurface", () => ({
   LearningPlanSurface: () => <main>Learning Plan room</main>,
 }));
+vi.mock("./DiscoverSurface", () => ({
+  DiscoverSurface: () => <main>Discover room</main>,
+}));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const itemId = "00000000-0000-0000-0000-000000000002" as ItemId;
@@ -151,6 +154,7 @@ describe("canonical Item route", () => {
     ["Library room", "/library?q=systems"],
     ["Today room", "/today"],
     ["History room", "/today/2026-08-13"],
+    ["Discover room", "/discover?follow=quiet-learning"],
     [
       "Learning Plan room",
       `/plans/${planId}/stages/00000000-0000-0000-0000-000000000004`,

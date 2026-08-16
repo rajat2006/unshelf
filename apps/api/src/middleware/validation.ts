@@ -45,6 +45,7 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_discover_acquisition",
   "invalid_follow_lifecycle",
   "invalid_discovery_decision",
+  "invalid_discovery_keep",
   "invalid_discover_history",
 ] as const;
 

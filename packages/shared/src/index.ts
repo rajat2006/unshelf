@@ -126,6 +126,7 @@ export type {
   AcquireAndApplyRequest,
   SetFollowLifecycleRequest,
   DecideDiscoveriesRequest,
+  KeepDiscoveryRequest,
   DiscoverHistoryQuery,
 } from "./validation";
 
@@ -205,6 +206,7 @@ export type SetFollowLifecycleResponse =
 export interface DiscoverySummary {
   id: DiscoveryId;
   candidateId: CandidateId;
+  itemId: ItemId | null;
   followId: FollowId;
   followName: string | null;
   state: "new" | "seen";
@@ -238,6 +240,26 @@ export interface DiscoveryDecisionSummary {
 export type DecideDiscoveriesResponse =
   | { ok: true; discoveries: DiscoveryDecisionSummary[] }
   | { ok: false; error: DecideDiscoveriesFailure };
+
+export type KeepDiscoveryFailure =
+  | "discovery_missing"
+  | "decision_conflict"
+  | "already_in_library"
+  | "keep_metadata_unavailable"
+  | "idempotency_conflict";
+
+export type KeepDiscoveryResponse =
+  | {
+      ok: true;
+      discovery: {
+        id: DiscoveryId;
+        state: "kept";
+        seenAt: string | null;
+        decidedAt: string;
+      };
+      item: Item;
+    }
+  | { ok: false; error: KeepDiscoveryFailure };
 
 export type DiscoverHistoryCursor = string & {
   readonly [identifierBrand]: "DiscoverHistoryCursor";

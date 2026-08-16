@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { ITEM_TYPES, Type } from "@unshelf/shared";
 import type {
   ConfirmFollowFailure,
   AcquisitionOutcome,
@@ -12,14 +14,18 @@ import type {
   FollowLifecycle,
   FollowSummary,
   IdempotencyKey,
+  KeepDiscoveryFailure,
   PrepareFollowFailure,
 } from "@unshelf/shared";
+import type { ItemBackgroundLocation } from "../items/item-route-state";
+import { itemDetailRouteState } from "../items/item-route-state";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import {
   confirmFollow,
   decideDiscoveries,
   fetchDiscoverHistory,
   fetchDiscoverWorkspace,
+  keepDiscovery,
   prepareFollowPreview,
   refreshFollow,
   refreshWorkspace,
@@ -29,6 +35,13 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -101,8 +114,14 @@ type DecisionState =
       idempotencyKey: IdempotencyKey;
     };
 
-export function DiscoverSurface() {
+export function DiscoverSurface({
+  backgroundLocation,
+}: {
+  backgroundLocation?: ItemBackgroundLocation;
+} = {}) {
   const user = useCurrentUser();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
     kind: "loading",
   });
@@ -517,6 +536,24 @@ export function DiscoverSurface() {
             onDecision={(discoveryIds, decision, idempotencyKey) =>
               void runDecision(discoveryIds, decision, idempotencyKey)
             }
+            selectedFollowId={selectedFollowIdFromLocation({
+              workspace: workspaceState.workspace,
+              location: backgroundLocation ?? location,
+            })}
+            onSelectFollow={(followId) => {
+              if (backgroundLocation) return;
+              const search = new URLSearchParams(location.search);
+              if (followId === null) search.delete("follow");
+              else search.set("follow", followId);
+              void navigate(
+                {
+                  pathname: "/discover",
+                  search: search.size > 0 ? `?${search.toString()}` : "",
+                },
+                { replace: true },
+              );
+            }}
+            itemBackgroundLocation={backgroundLocation ?? location}
           />
         </>
       )}
@@ -701,6 +738,9 @@ function Workspace({
   onRefreshWorkspace,
   onLifecycleChange,
   onDecision,
+  selectedFollowId,
+  onSelectFollow,
+  itemBackgroundLocation,
 }: {
   workspace: DiscoverWorkspace;
   refreshState: RefreshState;
@@ -718,10 +758,10 @@ function Workspace({
     decision: "seen" | "dismissed",
     idempotencyKey?: IdempotencyKey,
   ) => void;
+  selectedFollowId: FollowId | null;
+  onSelectFollow: (followId: FollowId | null) => void;
+  itemBackgroundLocation: ItemBackgroundLocation;
 }) {
-  const [selectedFollowId, setSelectedFollowId] = useState<FollowId | null>(
-    null,
-  );
   const filteredDiscoveries =
     selectedFollowId === null
       ? workspace.discoveries
@@ -775,7 +815,7 @@ function Workspace({
           variant="quiet"
           aria-pressed={selectedFollowId === null}
           className="w-full justify-between"
-          onClick={() => setSelectedFollowId(null)}
+          onClick={() => onSelectFollow(null)}
         >
           <span>All Follows</span>
           <span>{workspace.discoveries.length}</span>
@@ -815,7 +855,7 @@ function Workspace({
                   variant="quiet"
                   aria-pressed={selectedFollowId === follow.id}
                   className="w-full justify-between px-0"
-                  onClick={() => setSelectedFollowId(follow.id)}
+                  onClick={() => onSelectFollow(follow.id)}
                 >
                   <span className="truncate">{followName}</span>
                   <span>{unresolvedCount}</span>
@@ -1055,7 +1095,7 @@ function Workspace({
                 type="button"
                 size="touch"
                 variant="secondary"
-                onClick={() => setSelectedFollowId(null)}
+                onClick={() => onSelectFollow(null)}
               >
                 Return to All Follows
               </Button>
@@ -1078,6 +1118,7 @@ function Workspace({
                     : null
                 }
                 onDecision={onDecision}
+                itemBackgroundLocation={itemBackgroundLocation}
               />
             ))}
           </ul>
@@ -1263,6 +1304,7 @@ function DiscoveryCard({
   pending,
   pendingDecision,
   onDecision,
+  itemBackgroundLocation,
 }: {
   discovery: DiscoverySummary;
   disabled: boolean;
@@ -1272,7 +1314,68 @@ function DiscoveryCard({
     discoveryIds: DiscoveryId[],
     decision: "seen" | "dismissed",
   ) => void;
+  itemBackgroundLocation: ItemBackgroundLocation;
 }) {
+  const user = useCurrentUser();
+  const navigate = useNavigate();
+  const keepTriggerRef = useRef<HTMLButtonElement>(null);
+  const [keepOpen, setKeepOpen] = useState(false);
+  const [keepTitle, setKeepTitle] = useState(discovery.title ?? "");
+  const [keepType, setKeepType] = useState<Type>(discovery.type ?? Type.Video);
+  const [keepPending, setKeepPending] = useState(false);
+  const [keepFailure, setKeepFailure] = useState<string | null>(null);
+  const [keepIdempotencyKey, setKeepIdempotencyKey] =
+    useState<IdempotencyKey | null>(null);
+  const metadataAvailable =
+    discovery.title !== null &&
+    discovery.source !== null &&
+    discovery.type !== null;
+
+  const openKeep = () => {
+    if (!metadataAvailable || discovery.itemId !== null) return;
+    setKeepTitle(discovery.title!);
+    setKeepType(discovery.type!);
+    setKeepFailure(null);
+    setKeepIdempotencyKey(crypto.randomUUID() as IdempotencyKey);
+    setKeepOpen(true);
+  };
+
+  const submitKeep = async (event: FormEvent) => {
+    event.preventDefault();
+    if (
+      keepPending ||
+      keepTitle.trim().length === 0 ||
+      discovery.source === null ||
+      keepIdempotencyKey === null
+    ) {
+      return;
+    }
+    setKeepPending(true);
+    setKeepFailure(null);
+    try {
+      const result = await keepDiscovery(user, {
+        discoveryId: discovery.id,
+        title: keepTitle,
+        type: keepType,
+        source: discovery.source,
+        idempotencyKey: keepIdempotencyKey,
+      });
+      if (!result.ok) {
+        setKeepFailure(keepFailureMessage(result.error));
+        return;
+      }
+      void navigate(`/items/${result.item.id}`, {
+        state: itemDetailRouteState(itemBackgroundLocation),
+      });
+    } catch {
+      setKeepFailure(
+        "Keep may have completed, but its response was lost. Retry safely.",
+      );
+    } finally {
+      setKeepPending(false);
+    }
+  };
+
   return (
     <li className="overflow-hidden rounded-[var(--radius-card)] border bg-card shadow-sm">
       {discovery.thumbnailUrl ? (
@@ -1328,7 +1431,25 @@ function DiscoveryCard({
             Source unavailable
           </span>
         )}
-        <div className="flex gap-2 pt-1">
+        {discovery.itemId !== null ? (
+          <p className="text-sm font-medium text-primary">Already in Library</p>
+        ) : !metadataAvailable ? (
+          <p className="text-sm text-muted-foreground">
+            Keep unavailable. Retry this Follow to restore current details.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {discovery.itemId === null && metadataAvailable ? (
+            <Button
+              ref={keepTriggerRef}
+              type="button"
+              size="touch"
+              disabled={disabled}
+              onClick={openKeep}
+            >
+              Keep
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="touch"
@@ -1351,8 +1472,121 @@ function DiscoveryCard({
           </Button>
         </div>
       </div>
+      <Dialog open={keepOpen} onOpenChange={setKeepOpen}>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            keepTriggerRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Keep in Library</DialogTitle>
+            <DialogDescription>
+              Confirm the Item fields that will become your durable Library
+              record.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => void submitKeep(event)}
+          >
+            <Field>
+              <FieldLabel htmlFor={`keep-title-${discovery.id}`}>
+                Item title
+              </FieldLabel>
+              <Input
+                id={`keep-title-${discovery.id}`}
+                value={keepTitle}
+                required
+                disabled={keepPending}
+                onChange={(event) => setKeepTitle(event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`keep-type-${discovery.id}`}>
+                Type
+              </FieldLabel>
+              <Select
+                value={keepType}
+                disabled={keepPending}
+                onValueChange={(value) => setKeepType(value as Type)}
+              >
+                <SelectTrigger
+                  id={`keep-type-${discovery.id}`}
+                  className="w-full"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ITEM_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>Source</FieldLabel>
+              <p className="break-all text-sm text-muted-foreground">
+                {discovery.source}
+              </p>
+            </Field>
+            {keepPending ? (
+              <p role="status" aria-live="polite" className="sr-only">
+                Keeping this Discovery in your Library.
+              </p>
+            ) : null}
+            {keepFailure ? <Alert>{keepFailure}</Alert> : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="quiet"
+                disabled={keepPending}
+                onClick={() => setKeepOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={keepPending || keepTitle.trim().length === 0}
+              >
+                {keepPending
+                  ? "Keeping…"
+                  : keepFailure
+                    ? "Retry Keep"
+                    : "Keep in Library"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </li>
   );
+}
+
+function selectedFollowIdFromLocation({
+  workspace,
+  location,
+}: {
+  workspace: DiscoverWorkspace;
+  location: ItemBackgroundLocation;
+}): FollowId | null {
+  const requested = new URLSearchParams(location.search).get("follow");
+  return workspace.follows.some(({ id }) => id === requested)
+    ? (requested as FollowId)
+    : null;
+}
+
+function keepFailureMessage(error: KeepDiscoveryFailure): string {
+  return {
+    discovery_missing: "This Discovery is no longer available.",
+    decision_conflict: "This Discovery was already decided.",
+    already_in_library: "This Candidate is already in your Library.",
+    keep_metadata_unavailable:
+      "Current YouTube details are unavailable. Retry the Follow before keeping.",
+    idempotency_conflict: "This Keep conflicted with an earlier request.",
+  }[error];
 }
 
 function Preview({

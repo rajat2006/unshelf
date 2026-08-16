@@ -5,6 +5,8 @@ import {
   decideDiscoveriesRequestSchema,
   discoverHistoryQuerySchema,
   idempotencyKeySchema,
+  keepDiscoveryRequestSchema,
+  discoveryIdSchema,
   followIdSchema,
   prepareFollowRequestSchema,
   setFollowLifecycleRequestSchema,
@@ -120,6 +122,32 @@ export function createDiscoverRouter(
     async (req, res) => {
       const result = await discover.decide({
         userId: req.user!.id,
+        request: res.locals.validated.body,
+        idempotencyKey: res.locals.validated.headers["Idempotency-Key"],
+      });
+      if (!result.ok) {
+        res
+          .status(result.error === "discovery_missing" ? 404 : 409)
+          .json(result);
+        return;
+      }
+      res.json(result);
+    },
+  );
+  router.post(
+    "/discoveries/:discoveryId/keep",
+    validateRequest(
+      {
+        params: { discoveryId: discoveryIdSchema },
+        body: keepDiscoveryRequestSchema,
+        headers: { "Idempotency-Key": idempotencyKeySchema },
+      },
+      "invalid_discovery_keep",
+    ),
+    async (req, res) => {
+      const result = await discover.keep({
+        userId: req.user!.id,
+        discoveryId: res.locals.validated.params.discoveryId,
         request: res.locals.validated.body,
         idempotencyKey: res.locals.validated.headers["Idempotency-Key"],
       });

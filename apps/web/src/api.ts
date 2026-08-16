@@ -24,6 +24,7 @@ import type {
   ItemId,
   ItemPlacementCatalog,
   IdempotencyKey,
+  KeepDiscoveryResponse,
   Label,
   LabelId,
   Status,
@@ -51,6 +52,7 @@ import type {
   UpdatePartRequest,
   UpdateLearningPlanRequest,
   UpdateStageRequest,
+  Type,
 } from "@unshelf/shared";
 import type { CurrentUser } from "./application-auth/types";
 
@@ -223,6 +225,37 @@ export async function decideDiscoveries(
     true,
   );
   return (await response.json()) as DecideDiscoveriesResponse;
+}
+
+/** Keep one Discovery as an explicitly approved Library Item. */
+export async function keepDiscovery(
+  user: CurrentUser,
+  input: {
+    discoveryId: DiscoveryId;
+    title: string;
+    type: Type;
+    source: string;
+    idempotencyKey: IdempotencyKey;
+  },
+): Promise<KeepDiscoveryResponse> {
+  const response = await authenticatedRequest(
+    user,
+    `/api/discover/discoveries/${input.discoveryId}/keep`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": input.idempotencyKey,
+      },
+      body: JSON.stringify({
+        title: input.title,
+        type: input.type,
+        source: input.source,
+      }),
+    },
+    true,
+  );
+  return (await response.json()) as KeepDiscoveryResponse;
 }
 
 /** Read one server-bounded page of the current User's terminal history. */

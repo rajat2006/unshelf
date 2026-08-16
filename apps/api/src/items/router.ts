@@ -24,6 +24,7 @@ import {
   applyLabelToItem,
   getItem,
   listItems,
+  removeItem,
   removeLabelFromItem,
   updateItemStatus,
   updateItemTargetDate,
@@ -163,6 +164,23 @@ export function createItemsRouter(
     const items = await listItems(db, req.user!.id);
     res.json(items);
   });
+
+  router.delete(
+    "/:itemId",
+    validateRequest({ params: { itemId: itemIdSchema } }, "missing_item_id"),
+    async (req, res) => {
+      const removed = await removeItem(
+        db,
+        req.user!.id,
+        res.locals.validated.params.itemId,
+      );
+      if (!removed) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.status(204).send();
+    },
+  );
 
   router.get(
     "/:itemId/placements",

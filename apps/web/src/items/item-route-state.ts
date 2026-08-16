@@ -10,6 +10,7 @@ export type ItemBackgroundSurface =
   | { kind: "library" }
   | { kind: "today" }
   | { kind: "history"; date: string }
+  | { kind: "discover" }
   | { kind: "plan"; learningPlanId: LearningPlanId }
   | { kind: "unknown" };
 
@@ -72,6 +73,9 @@ export function itemBackgroundSurface(
   if (!backgroundLocation) return { kind: "unknown" };
   if (backgroundLocation.pathname === "/library") return { kind: "library" };
   if (backgroundLocation.pathname === "/today") return { kind: "today" };
+  if (backgroundLocation.pathname === "/discover") {
+    return { kind: "discover" };
+  }
   const history = /^\/today\/(\d{4}-\d{2}-\d{2})$/.exec(
     backgroundLocation.pathname,
   );

@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, useLocation } from "react-router";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import {
@@ -17,6 +18,7 @@ import {
   decideDiscoveries,
   fetchDiscoverHistory,
   fetchDiscoverWorkspace,
+  keepDiscovery,
   prepareFollowPreview,
   refreshFollow,
   refreshWorkspace,
@@ -24,6 +26,8 @@ import {
 } from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
 import {
+  Status,
+  StatusMode,
   Type,
   type CandidateId,
   type DiscoverHistoryCursor,
@@ -31,6 +35,8 @@ import {
   type DiscoverWorkspace,
   type FollowId,
   type FollowPreviewId,
+  type ItemId,
+  type UserId,
 } from "@unshelf/shared";
 
 vi.mock("../api", async (importOriginal) => ({
@@ -43,6 +49,7 @@ vi.mock("../api", async (importOriginal) => ({
   refreshFollow: vi.fn(),
   refreshWorkspace: vi.fn(),
   setFollowLifecycle: vi.fn(),
+  keepDiscovery: vi.fn(),
 }));
 
 const emptyWorkspace: DiscoverWorkspace = { follows: [], discoveries: [] };
@@ -69,6 +76,7 @@ const storedWorkspace: DiscoverWorkspace = {
     {
       id: "00000000-0000-0000-0000-000000000020" as DiscoveryId,
       candidateId: "00000000-0000-0000-0000-000000000030" as CandidateId,
+      itemId: null,
       followId: "00000000-0000-0000-0000-000000000010" as FollowId,
       followName: "Quiet Learning",
       state: "new",
@@ -108,6 +116,7 @@ const severalFollowsWorkspace: DiscoverWorkspace = {
       ...storedWorkspace.discoveries[0],
       id: "00000000-0000-0000-0000-000000000021" as DiscoveryId,
       candidateId: "00000000-0000-0000-0000-000000000031" as CandidateId,
+      itemId: null,
       followId: "00000000-0000-0000-0000-000000000011" as FollowId,
       followName: "Systems Studio",
       state: "seen",
@@ -128,10 +137,29 @@ const auth: ApplicationAuth = {
   UserButton: () => <button type="button">Account</button>,
 };
 
-function renderDiscover() {
+function TestLocation() {
+  const location = useLocation();
+  const background = (
+    location.state as {
+      backgroundLocation?: { pathname: string; search: string };
+    } | null
+  )?.backgroundLocation;
+  return (
+    <div aria-label="Test location">
+      {location.pathname}
+      {location.search}|{background?.pathname}
+      {background?.search}
+    </div>
+  );
+}
+
+function renderDiscover(initialEntry = "/discover") {
   return render(
     <ApplicationAuthProvider auth={auth}>
-      <DiscoverSurface />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <DiscoverSurface />
+        <TestLocation />
+      </MemoryRouter>
     </ApplicationAuthProvider>,
   );
 }
@@ -147,6 +175,147 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
+  it("confirms approved Item fields and opens the canonical Item over the active Follow", async () => {
+    const itemId = "00000000-0000-0000-0000-000000000040" as ItemId;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(keepDiscovery).mockResolvedValue({
+      ok: true,
+      discovery: {
+        id: storedWorkspace.discoveries[0].id,
+        state: "kept",
+        seenAt: null,
+        decidedAt: "2026-08-16T12:05:00.000Z",
+      },
+      item: {
+        id: itemId,
+        userId: "00000000-0000-0000-0000-000000000001" as UserId,
+        title: "My approved title",
+        source: storedWorkspace.discoveries[0].source,
+        createdAt: "2026-08-16T12:05:00.000Z",
+        type: Type.Video,
+        status: Status.NotStarted,
+        statusMode: StatusMode.Manual,
+        targetDate: null,
+        pastTarget: false,
+        completedAt: null,
+        labels: [],
+        partPercentage: null,
+      },
+    });
+    renderDiscover(`/discover?follow=${storedWorkspace.follows[0].id}`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Keep" }));
+    const title = screen.getByRole("textbox", { name: "Item title" });
+    expect(title).toHaveValue("A deep module");
+    expect(
+      screen.getByText(storedWorkspace.discoveries[0].source!),
+    ).toBeVisible();
+    fireEvent.change(title, { target: { value: "My approved title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Keep in Library" }));
+
+    await waitFor(() => expect(keepDiscovery).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(keepDiscovery).mock.calls[0]?.[1]).toMatchObject({
+      discoveryId: storedWorkspace.discoveries[0].id,
+      title: "My approved title",
+      source: storedWorkspace.discoveries[0].source,
+      type: Type.Video,
+    });
+    expect(vi.mocked(keepDiscovery).mock.calls[0]?.[1].idempotencyKey).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Test location")).toHaveTextContent(
+        `/items/${itemId}|/discover?follow=${storedWorkspace.follows[0].id}`,
+      ),
+    );
+  });
+
+  it("preserves confirmation edits and the mutation key through pending and failure recovery", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof keepDiscovery>>) => void;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(keepDiscovery)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: false,
+        error: "keep_metadata_unavailable",
+      });
+    renderDiscover();
+    fireEvent.click(await screen.findByRole("button", { name: "Keep" }));
+    const title = screen.getByRole("textbox", { name: "Item title" });
+    fireEvent.change(title, { target: { value: "Keep my edit" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep in Library" }));
+    expect(screen.getByRole("button", { name: "Keeping…" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Keeping this Discovery",
+    );
+    expect(title).toHaveValue("Keep my edit");
+    await act(async () => finish({ ok: false, error: "discovery_missing" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "no longer available",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry Keep" }));
+    await waitFor(() => expect(keepDiscovery).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(keepDiscovery).mock.calls[1]?.[1]).toMatchObject({
+      title: "Keep my edit",
+      idempotencyKey:
+        vi.mocked(keepDiscovery).mock.calls[0]?.[1].idempotencyKey,
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Retry the Follow",
+    );
+  });
+
+  it("requires a title and returns focus to the Keep trigger after cancellation", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    renderDiscover();
+    const trigger = await screen.findByRole("button", { name: "Keep" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const title = screen.getByRole("textbox", { name: "Item title" });
+
+    fireEvent.change(title, { target: { value: "   " } });
+    expect(
+      screen.getByRole("button", { name: "Keep in Library" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(keepDiscovery).not.toHaveBeenCalled();
+  });
+
+  it("keeps linked and unavailable Candidates independently dismissible without offering Keep", async () => {
+    const linkedItemId = "00000000-0000-0000-0000-000000000040" as ItemId;
+    const linked = {
+      ...storedWorkspace.discoveries[0],
+      itemId: linkedItemId,
+    };
+    const unavailable = {
+      ...severalFollowsWorkspace.discoveries[1],
+      itemId: null,
+      title: null,
+      source: null,
+      type: null,
+    };
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue({
+      follows: severalFollowsWorkspace.follows,
+      discoveries: [linked, unavailable],
+    });
+    renderDiscover();
+
+    expect(await screen.findByText("Already in Library")).toBeVisible();
+    expect(
+      screen.getByText(/Keep unavailable.*Retry this Follow/),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Keep" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Later" })).toHaveLength(2);
+  });
   it("keeps a card visible while Later is pending and rereads authoritative intake", async () => {
     let finish!: (value: Awaited<ReturnType<typeof decideDiscoveries>>) => void;
     const seenWorkspace: DiscoverWorkspace = {

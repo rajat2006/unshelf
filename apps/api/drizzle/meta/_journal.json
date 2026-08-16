@@ -169,6 +169,13 @@
       "when": 1786873852710,
       "tag": "0023_stormy_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786876241597,
+      "tag": "0024_cold_the_liberteens",
+      "breakpoints": true
     }
   ]
 }

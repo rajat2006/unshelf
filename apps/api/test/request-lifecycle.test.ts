@@ -552,7 +552,9 @@ function elapsedClock(durationMs: number): () => number {
 }
 
 function failingItemDatabase(failure: unknown): Database {
-  return {
+  const database = {
+    transaction: async (callback: (tx: Database) => Promise<unknown>) =>
+      callback(database as unknown as Database),
     insert: () => ({
       values: () => ({
         returning: async () => {
@@ -560,7 +562,8 @@ function failingItemDatabase(failure: unknown): Database {
         },
       }),
     }),
-  } as unknown as Database;
+  };
+  return database as unknown as Database;
 }
 
 function pendingHealthDatabase(

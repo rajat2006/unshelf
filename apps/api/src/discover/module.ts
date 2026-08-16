@@ -13,7 +13,7 @@ import {
   sql,
 } from "drizzle-orm";
 import pLimit from "p-limit";
-import { Type } from "@unshelf/shared";
+import { Status, StatusMode, Type } from "@unshelf/shared";
 import type {
   CandidateId,
   AcquireAndApplyRequest,
@@ -33,6 +33,9 @@ import type {
   FollowPreviewId,
   FollowSummary,
   IdempotencyKey,
+  ItemId,
+  KeepDiscoveryRequest,
+  KeepDiscoveryResponse,
   PrepareFollowRequest,
   PrepareFollowResponse,
   SetFollowLifecycleRequest,
@@ -58,6 +61,7 @@ import {
   discoverProviderTargetProjections,
   discoverProviderTargets,
   discoverAcquisitionAttempts,
+  items,
 } from "../schema";
 import type {
   ProviderPreview,
@@ -97,6 +101,12 @@ export interface DiscoverModule {
     request: DecideDiscoveriesRequest;
     idempotencyKey: IdempotencyKey;
   }): Promise<DecideDiscoveriesResponse>;
+  keep(input: {
+    userId: UserId;
+    discoveryId: DiscoveryId;
+    request: KeepDiscoveryRequest;
+    idempotencyKey: IdempotencyKey;
+  }): Promise<KeepDiscoveryResponse>;
   readHistory(input: {
     userId: UserId;
     query: DiscoverHistoryQuery;
@@ -671,6 +681,7 @@ export function createDiscoverModule({
           query: tx,
           userId,
           discoveryIds,
+          currentTime: confirmedAt,
         });
         const result: ConfirmFollowResponse = {
           ok: true,
@@ -1265,7 +1276,11 @@ export function createDiscoverModule({
             currentOnly: true,
           });
         }
-        const workspace = await selectWorkspace({ query: tx, userId });
+        const workspace = await selectWorkspace({
+          query: tx,
+          userId,
+          currentTime: now(),
+        });
         const updatedFollow = workspace.follows.find(
           ({ id }) => id === followId,
         );
@@ -1420,6 +1435,182 @@ export function createDiscoverModule({
         return result;
       });
     },
+    keep: async ({ userId, discoveryId, request, idempotencyKey }) => {
+      const requestFingerprint = JSON.stringify({ discoveryId, ...request });
+      return db.transaction(async (tx): Promise<KeepDiscoveryResponse> => {
+        await tx
+          .insert(discoverIdempotency)
+          .values({
+            userId,
+            operation: "keep_discovery",
+            requestId: idempotencyKey,
+            requestFingerprint,
+          })
+          .onConflictDoNothing();
+        const [idempotency] = await tx
+          .select({
+            requestFingerprint: discoverIdempotency.requestFingerprint,
+            resultPayload: discoverIdempotency.resultPayload,
+          })
+          .from(discoverIdempotency)
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "keep_discovery"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          )
+          .for("update");
+        if (idempotency.requestFingerprint !== requestFingerprint) {
+          return { ok: false, error: "idempotency_conflict" };
+        }
+        if (idempotency.resultPayload !== null) {
+          return idempotency.resultPayload as KeepDiscoveryResponse;
+        }
+
+        const [discovery] = await tx
+          .select({
+            id: discoverDiscoveries.id,
+            candidateId: discoverDiscoveries.candidateId,
+            state: discoverDiscoveries.state,
+            seenAt: discoverDiscoveries.seenAt,
+          })
+          .from(discoverDiscoveries)
+          .where(
+            and(
+              eq(discoverDiscoveries.id, discoveryId),
+              eq(discoverDiscoveries.userId, userId),
+            ),
+          )
+          .for("update");
+        let result: KeepDiscoveryResponse;
+        if (discovery === undefined) {
+          result = { ok: false, error: "discovery_missing" };
+        } else if (
+          discovery.state === "kept" ||
+          discovery.state === "dismissed"
+        ) {
+          result = { ok: false, error: "decision_conflict" };
+        } else {
+          const [candidate] = await tx
+            .select({
+              id: discoverCandidates.id,
+              providerResultId: discoverCandidates.providerResultId,
+              itemId: discoverCandidates.itemId,
+            })
+            .from(discoverCandidates)
+            .where(
+              and(
+                eq(discoverCandidates.id, discovery.candidateId),
+                eq(discoverCandidates.userId, userId),
+              ),
+            )
+            .for("update");
+          if (candidate === undefined) {
+            result = { ok: false, error: "discovery_missing" };
+          } else if (candidate.itemId !== null) {
+            result = { ok: false, error: "already_in_library" };
+          } else {
+            const [projection] = await tx
+              .select({
+                title: discoverProviderResultProjections.title,
+                source: discoverProviderResultProjections.source,
+              })
+              .from(discoverProviderResultProjections)
+              .where(
+                and(
+                  eq(
+                    discoverProviderResultProjections.providerResultId,
+                    candidate.providerResultId,
+                  ),
+                  gt(discoverProviderResultProjections.expiresAt, now()),
+                ),
+              );
+            if (
+              projection === undefined ||
+              projection.source !== request.source
+            ) {
+              result = { ok: false, error: "keep_metadata_unavailable" };
+            } else {
+              const [itemRow] = await tx
+                .insert(items)
+                .values({
+                  userId,
+                  title: request.title,
+                  source: projection.source,
+                  type: request.type,
+                })
+                .returning({
+                  id: items.id,
+                  userId: items.userId,
+                  title: items.title,
+                  source: items.source,
+                  createdAt: items.createdAt,
+                  type: items.type,
+                  status: items.status,
+                  statusMode: items.statusMode,
+                  targetDate: items.targetDate,
+                  completedAt: items.completedAt,
+                });
+              const decidedAt = now();
+              await tx
+                .update(discoverCandidates)
+                .set({ itemId: itemRow.id })
+                .where(
+                  and(
+                    eq(discoverCandidates.id, candidate.id),
+                    eq(discoverCandidates.userId, userId),
+                  ),
+                );
+              await tx
+                .update(discoverDiscoveries)
+                .set({ state: "kept", decidedAt })
+                .where(
+                  and(
+                    eq(discoverDiscoveries.id, discoveryId),
+                    eq(discoverDiscoveries.userId, userId),
+                  ),
+                );
+              result = {
+                ok: true,
+                discovery: {
+                  id: discovery.id as DiscoveryId,
+                  state: "kept",
+                  seenAt: discovery.seenAt?.toISOString() ?? null,
+                  decidedAt: decidedAt.toISOString(),
+                },
+                item: {
+                  id: itemRow.id as ItemId,
+                  userId,
+                  title: itemRow.title,
+                  source: itemRow.source,
+                  createdAt: itemRow.createdAt.toISOString(),
+                  type: itemRow.type,
+                  status: itemRow.status ?? Status.NotStarted,
+                  statusMode: itemRow.statusMode ?? StatusMode.Manual,
+                  targetDate: itemRow.targetDate,
+                  pastTarget: false,
+                  completedAt: itemRow.completedAt?.toISOString() ?? null,
+                  labels: [],
+                  partPercentage: null,
+                },
+              };
+            }
+          }
+        }
+        await tx
+          .update(discoverIdempotency)
+          .set({ resultPayload: result })
+          .where(
+            and(
+              eq(discoverIdempotency.userId, userId),
+              eq(discoverIdempotency.operation, "keep_discovery"),
+              eq(discoverIdempotency.requestId, idempotencyKey),
+            ),
+          );
+        return result;
+      });
+    },
     readHistory: async ({ userId, query }) => {
       const cursor = decodeHistoryCursor(query.cursor);
       if (query.cursor !== undefined && cursor === null) {
@@ -1435,7 +1626,8 @@ export function createDiscoverModule({
         }),
       };
     },
-    readWorkspace: ({ userId }) => selectWorkspace({ query: db, userId }),
+    readWorkspace: ({ userId }) =>
+      selectWorkspace({ query: db, userId, currentTime: now() }),
   };
   return module;
 }
@@ -1445,9 +1637,11 @@ type DiscoverQuery = Pick<Database, "select">;
 async function selectWorkspace({
   query,
   userId,
+  currentTime,
 }: {
   query: DiscoverQuery;
   userId: UserId;
+  currentTime: Date;
 }): Promise<DiscoverWorkspace> {
   const followRows = await query
     .select({
@@ -1467,9 +1661,12 @@ async function selectWorkspace({
     .from(discoverFollows)
     .leftJoin(
       discoverProviderTargetProjections,
-      eq(
-        discoverProviderTargetProjections.providerTargetId,
-        discoverFollows.providerTargetId,
+      and(
+        eq(
+          discoverProviderTargetProjections.providerTargetId,
+          discoverFollows.providerTargetId,
+        ),
+        gt(discoverProviderTargetProjections.expiresAt, currentTime),
       ),
     )
     .innerJoin(
@@ -1532,7 +1729,7 @@ async function selectWorkspace({
     .map(({ id }) => id as FollowId);
   return {
     follows,
-    discoveries: await selectDiscoveries({ query, userId }),
+    discoveries: await selectDiscoveries({ query, userId, currentTime }),
     ...(affectedFollowIds.length === 0
       ? {}
       : { aggregateNotice: { affectedFollowIds } }),
@@ -2244,10 +2441,12 @@ async function selectDiscoveries({
   query,
   userId,
   discoveryIds,
+  currentTime,
 }: {
   query: DiscoverQuery;
   userId: UserId;
   discoveryIds?: string[];
+  currentTime: Date;
 }): Promise<DiscoverySummary[]> {
   if (discoveryIds?.length === 0) return [];
   const stateFilter = or(
@@ -2258,6 +2457,7 @@ async function selectDiscoveries({
     .select({
       id: discoverDiscoveries.id,
       candidateId: discoverDiscoveries.candidateId,
+      itemId: discoverCandidates.itemId,
       followId: discoverDiscoveries.followId,
       followName: discoverProviderTargetProjections.publisher,
       state: discoverDiscoveries.state,
@@ -2288,16 +2488,22 @@ async function selectDiscoveries({
     )
     .leftJoin(
       discoverProviderResultProjections,
-      eq(
-        discoverProviderResultProjections.providerResultId,
-        discoverCandidates.providerResultId,
+      and(
+        eq(
+          discoverProviderResultProjections.providerResultId,
+          discoverCandidates.providerResultId,
+        ),
+        gt(discoverProviderResultProjections.expiresAt, currentTime),
       ),
     )
     .leftJoin(
       discoverProviderTargetProjections,
-      eq(
-        discoverProviderTargetProjections.providerTargetId,
-        discoverFollows.providerTargetId,
+      and(
+        eq(
+          discoverProviderTargetProjections.providerTargetId,
+          discoverFollows.providerTargetId,
+        ),
+        gt(discoverProviderTargetProjections.expiresAt, currentTime),
       ),
     )
     .where(
@@ -2350,6 +2556,7 @@ async function selectDiscoveries({
     return {
       id: row.id as DiscoveryId,
       candidateId: row.candidateId as CandidateId,
+      itemId: row.itemId as ItemId | null,
       followId: row.followId as FollowId,
       followName: row.followName,
       state: row.state as "new" | "seen",

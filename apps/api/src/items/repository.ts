@@ -14,7 +14,8 @@ import type {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
-import { itemLabels, items, labels } from "../schema";
+import { linkCapturedItemToRetainedCandidate } from "../discover/capture-recognition";
+import { discoverCandidates, itemLabels, items, labels } from "../schema";
 
 export interface ItemRow {
   id: string;
@@ -143,11 +144,20 @@ export async function createItem(
   input: CreateItemRequest,
 ): Promise<Item> {
   const source = input.source ?? null;
-  const rows = await db
-    .insert(items)
-    .values({ userId, title: input.title, source, type: input.type })
-    .returning({ id: items.id });
-  return (await getItemSummary(db, userId, rows[0].id as ItemId))!;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(items)
+      .values({ userId, title: input.title, source, type: input.type })
+      .returning({ id: items.id });
+    const itemId = rows[0].id as ItemId;
+    await linkCapturedItemToRetainedCandidate({
+      db: tx,
+      userId,
+      itemId,
+      source,
+    });
+    return (await getItemSummary(tx, userId, itemId))!;
+  });
 }
 
 /** The User's Library, ordered as deterministic recently captured material. */
@@ -160,8 +170,42 @@ export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   return rows.map(toItem);
 }
 
-async function getItemSummary(
+/**
+ * Remove one owned Item while retaining any Candidate and decision history that
+ * previously pointed to it. The ownership predicates and surrounding
+ * transaction keep a foreign or missing Item indistinguishable to callers.
+ */
+export async function removeItem(
   db: Database,
+  userId: UserId,
+  itemId: ItemId,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [owned] = await tx
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+      .for("update");
+    if (owned === undefined) return false;
+
+    await tx
+      .update(discoverCandidates)
+      .set({ itemId: null })
+      .where(
+        and(
+          eq(discoverCandidates.userId, userId),
+          eq(discoverCandidates.itemId, itemId),
+        ),
+      );
+    await tx
+      .delete(items)
+      .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+    return true;
+  });
+}
+
+async function getItemSummary(
+  db: Pick<Database, "select">,
   userId: UserId,
   itemId: ItemId,
 ): Promise<Item | null> {

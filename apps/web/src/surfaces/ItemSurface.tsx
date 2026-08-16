@@ -11,6 +11,7 @@ import { LibrarySurface } from "./LibrarySurface";
 import { LearningPlanSurface } from "./LearningPlanSurface";
 import { TodaySurface } from "./TodaySurface";
 import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
+import { DiscoverSurface } from "./DiscoverSurface";
 
 /**
  * An Item at its one canonical URL (design spec §4) — `/items/:itemId`, the same
@@ -71,6 +72,8 @@ export function ItemSurface() {
           <TodaySurface />
         ) : backgroundSurface.kind === "history" ? (
           <DailyFocusHistorySurface selectedDate={backgroundSurface.date} />
+        ) : backgroundSurface.kind === "discover" ? (
+          <DiscoverSurface backgroundLocation={backgroundLocation} />
         ) : (
           <LibrarySurface
             itemOverrides={itemOverrides}
