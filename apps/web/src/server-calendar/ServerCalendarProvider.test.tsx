@@ -142,6 +142,24 @@ describe("signed-in server calendar", () => {
     );
   });
 
+  it("refreshes an unknown document when the app becomes visible", async () => {
+    vi.mocked(fetchServerCalendar)
+      .mockRejectedValueOnce(new Error("api responded 503"))
+      .mockResolvedValueOnce({
+        today: "2026-08-16",
+        validUntil: "2099-08-17T00:00:00.000Z",
+      });
+    renderProvider();
+    expect(await screen.findByText("unavailable")).toBeVisible();
+
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(fetchServerCalendar).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText("Authoritative Today")).toHaveTextContent(
+      "2026-08-16",
+    );
+  });
+
   it("keeps an older User's response out after the signed-in User changes", async () => {
     const firstUser = { getToken: async () => "first-token" };
     const secondUser = { getToken: async () => "second-token" };
