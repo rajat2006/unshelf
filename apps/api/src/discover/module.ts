@@ -842,12 +842,59 @@ export function createDiscoverModule({
         };
       }
 
-      const acquired =
-        claim.follow.channelId === null
-          ? ({ ok: false, error: "unverifiable" } as const)
-          : await providerConcurrency(() =>
-              youtube.acquireChannel({ channelId: claim.follow.channelId! }),
-            );
+      const providerRun = await providerConcurrency(async () => {
+        const providerStartedAt = now();
+        const ownsAttempt = await renewAttemptLease({
+          db,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          generation: claim.generation,
+          leaseExpiresAt: new Date(
+            providerStartedAt.getTime() + acquisitionLeaseMilliseconds,
+          ),
+        });
+        if (!ownsAttempt) return { ownsAttempt: false as const };
+        const acquired =
+          claim.follow.channelId === null
+            ? ({ ok: false, error: "unverifiable" } as const)
+            : await youtube.acquireChannel({
+                channelId: claim.follow.channelId,
+              });
+        return { ownsAttempt: true as const, acquired };
+      });
+      if (!providerRun.ownsAttempt) {
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        recordAcquisition({
+          logger,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          trigger: request.trigger,
+          outcome: "skipped",
+          acceptedCount: 0,
+          rejectedCount: 0,
+          retryCount: 0,
+          leaseRecovered: claim.leaseRecovered,
+          durationMs: elapsedMilliseconds({
+            startedAt: claim.startedAt,
+            finishedAt: now(),
+          }),
+          errorClass: "attempt_superseded",
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: "skipped",
+            acceptedCount: 0,
+            rejectedCount: 0,
+            ...health,
+          },
+        };
+      }
+      const { acquired } = providerRun;
       if (!acquired.ok) {
         const outcome = acquisitionFailureOutcome(acquired);
         const retryCount =
@@ -897,7 +944,10 @@ export function createDiscoverModule({
           retryCount,
           leaseRecovered: claim.leaseRecovered,
           errorClass: acquired.error,
-          durationMs: elapsedMilliseconds(claim.startedAt, now()),
+          durationMs: elapsedMilliseconds({
+            startedAt: claim.startedAt,
+            finishedAt: now(),
+          }),
         });
         return {
           ok: true,
@@ -919,10 +969,7 @@ export function createDiscoverModule({
         generation: claim.generation,
         publishedAt: now(),
       });
-      if (
-        publication.outcome === "failed" ||
-        publication.outcome === "skipped"
-      ) {
+      if (!("snapshotId" in publication)) {
         const terminalOutcome = await finishAttempt({
           db,
           attemptId: claim.attemptId,
@@ -949,7 +996,10 @@ export function createDiscoverModule({
           rejectedCount: 0,
           retryCount: acquired.retryCount ?? 0,
           leaseRecovered: claim.leaseRecovered,
-          durationMs: elapsedMilliseconds(claim.startedAt, now()),
+          durationMs: elapsedMilliseconds({
+            startedAt: claim.startedAt,
+            finishedAt: now(),
+          }),
           errorClass:
             publication.outcome === "failed" ? "target_drift" : undefined,
         });
@@ -996,8 +1046,12 @@ export function createDiscoverModule({
           rejectedCount: acquired.rejectedCount,
           retryCount: acquired.retryCount ?? 0,
           leaseRecovered: claim.leaseRecovered,
-          durationMs: elapsedMilliseconds(claim.startedAt, now()),
+          durationMs: elapsedMilliseconds({
+            startedAt: claim.startedAt,
+            finishedAt: now(),
+          }),
           coverageStartedAt: acquired.coverageStartedAt,
+          previousCoverageStartedAt: publication.previousCoverageStartedAt,
           errorClass: "application_failed",
         });
         throw error;
@@ -1029,8 +1083,12 @@ export function createDiscoverModule({
         rejectedCount: acquired.rejectedCount,
         retryCount: acquired.retryCount ?? 0,
         leaseRecovered: claim.leaseRecovered,
-        durationMs: elapsedMilliseconds(claim.startedAt, now()),
+        durationMs: elapsedMilliseconds({
+          startedAt: claim.startedAt,
+          finishedAt: now(),
+        }),
         coverageStartedAt: acquired.coverageStartedAt,
+        previousCoverageStartedAt: publication.previousCoverageStartedAt,
       });
       return {
         ok: true,
@@ -1153,10 +1211,10 @@ async function waitForAttempt({
         acceptedCount: attempt.acceptedCount ?? 0,
         rejectedCount: attempt.rejectedCount ?? 0,
         retryCount: attempt.retryCount,
-        durationMs: elapsedMilliseconds(
-          attempt.startedAt,
-          attempt.finishedAt ?? attempt.startedAt,
-        ),
+        durationMs: elapsedMilliseconds({
+          startedAt: attempt.startedAt,
+          finishedAt: attempt.finishedAt ?? attempt.startedAt,
+        }),
         ...(attempt.coverageStartedAt === null
           ? {}
           : { coverageStartedAt: attempt.coverageStartedAt.toISOString() }),
@@ -1185,6 +1243,40 @@ async function waitForAttempt({
   }
 }
 
+async function renewAttemptLease({
+  db,
+  attemptId,
+  providerTargetId,
+  generation,
+  leaseExpiresAt,
+}: {
+  db: Database;
+  attemptId: string;
+  providerTargetId: string;
+  generation: number;
+  leaseExpiresAt: Date;
+}): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ generation: discoverProviderTargets.acquisitionGeneration })
+      .from(discoverProviderTargets)
+      .where(eq(discoverProviderTargets.id, providerTargetId))
+      .for("update");
+    if (target?.generation !== generation) return false;
+    const [renewed] = await tx
+      .update(discoverAcquisitionAttempts)
+      .set({ leaseExpiresAt })
+      .where(
+        and(
+          eq(discoverAcquisitionAttempts.id, attemptId),
+          eq(discoverAcquisitionAttempts.outcome, "running"),
+        ),
+      )
+      .returning({ id: discoverAcquisitionAttempts.id });
+    return renewed !== undefined;
+  });
+}
+
 function recordAcquisition({
   logger,
   attemptId,
@@ -1197,6 +1289,7 @@ function recordAcquisition({
   leaseRecovered,
   durationMs,
   coverageStartedAt,
+  previousCoverageStartedAt,
   errorClass,
 }: {
   logger: Logger;
@@ -1210,11 +1303,10 @@ function recordAcquisition({
   leaseRecovered: boolean;
   durationMs: number;
   coverageStartedAt?: string;
+  previousCoverageStartedAt?: string | null;
   errorClass?: string;
 }): void {
-  logger.info({
-    event: "unshelf.discover.acquisition.ended",
-    msg: "Discover Provider acquisition ended",
+  const measurements = {
     attemptId,
     providerTargetId,
     trigger,
@@ -1224,12 +1316,37 @@ function recordAcquisition({
     retryCount,
     leaseRecovered,
     durationMs,
-    ...(coverageStartedAt === undefined ? {} : { coverageStartedAt }),
+    ...(coverageStartedAt === undefined
+      ? {}
+      : {
+          coverageStartedAt,
+          previousCoverageStartedAt: previousCoverageStartedAt ?? null,
+          coverageMoved:
+            previousCoverageStartedAt !== null &&
+            previousCoverageStartedAt !== undefined &&
+            previousCoverageStartedAt !== coverageStartedAt,
+        }),
     ...(errorClass === undefined ? {} : { errorClass }),
+  };
+  logger.info({
+    event: "unshelf.discover.acquisition.ended",
+    msg: "Discover Provider acquisition ended",
+    ...measurements,
+  });
+  logger.info({
+    event: "unshelf.discover.acquisition.metric",
+    msg: "Discover Provider acquisition metric",
+    ...measurements,
   });
 }
 
-function elapsedMilliseconds(startedAt: Date, finishedAt: Date): number {
+function elapsedMilliseconds({
+  startedAt,
+  finishedAt,
+}: {
+  startedAt: Date;
+  finishedAt: Date;
+}): number {
   return Math.max(0, finishedAt.getTime() - startedAt.getTime());
 }
 
@@ -1421,7 +1538,11 @@ async function publishAcquisition({
   generation: number;
   publishedAt: Date;
 }): Promise<
-  | { outcome: "complete" | "partial"; snapshotId: string }
+  | {
+      outcome: "complete" | "partial";
+      snapshotId: string;
+      previousCoverageStartedAt: string | null;
+    }
   | { outcome: "failed" | "skipped" }
 > {
   return db.transaction(async (tx) => {
@@ -1429,6 +1550,8 @@ async function publishAcquisition({
       .select({
         generation: discoverProviderTargets.acquisitionGeneration,
         externalReference: discoverProviderTargets.externalReference,
+        verifiedCoverageStartedAt:
+          discoverProviderTargets.verifiedCoverageStartedAt,
       })
       .from(discoverProviderTargets)
       .where(eq(discoverProviderTargets.id, providerTargetId))
@@ -1565,7 +1688,12 @@ async function publishAcquisition({
           : {}),
       })
       .where(eq(discoverProviderTargets.id, providerTargetId));
-    return { outcome, snapshotId: snapshot.id };
+    return {
+      outcome,
+      snapshotId: snapshot.id,
+      previousCoverageStartedAt:
+        target.verifiedCoverageStartedAt?.toISOString() ?? null,
+    };
   });
 }
 

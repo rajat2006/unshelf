@@ -79,10 +79,13 @@ afterAll(async () => {
   await harness?.stop();
 });
 
-async function createFollow(
-  clerkUserId: string,
+async function createFollow({
+  clerkUserId,
   channelId = `UC_${clerkUserId}`,
-) {
+}: {
+  clerkUserId: string;
+  channelId?: string;
+}) {
   previewChannel.mockResolvedValueOnce(
     successfulAcquisition([originalVideo], channelId),
   );
@@ -110,8 +113,14 @@ async function createFollow(
 describe("POST /api/discover/acquisitions", () => {
   it("joins one shared acquisition while applying its snapshot privately for each User", async () => {
     const channelId = "UC_shared_acquisition";
-    const first = await createFollow("clerk_shared_first", channelId);
-    const second = await createFollow("clerk_shared_second", channelId);
+    const first = await createFollow({
+      clerkUserId: "clerk_shared_first",
+      channelId,
+    });
+    const second = await createFollow({
+      clerkUserId: "clerk_shared_second",
+      channelId,
+    });
     let finishProviderCall!: (result: ProviderPreviewResult) => void;
     const callsBeforeRefresh = acquireChannel.mock.calls.length;
     acquireChannel.mockReturnValueOnce(
@@ -186,11 +195,30 @@ describe("POST /api/discover/acquisitions", () => {
       candidates: "2",
       discoveries: "2",
     });
+    expect(
+      harness.logger.records.find(
+        (record) =>
+          record.event === "unshelf.discover.acquisition.metric" &&
+          record.acceptedCount === 1,
+      ),
+    ).toMatchObject({
+      retryCount: 0,
+      leaseRecovered: false,
+      coverageStartedAt: "2026-07-17T12:00:00.000Z",
+      previousCoverageStartedAt: null,
+      coverageMoved: false,
+    });
   });
 
   it("shares a Provider quota gate across targets and manual requests", async () => {
-    const first = await createFollow("clerk_gate_first", "UC_gate_first");
-    const second = await createFollow("clerk_gate_second", "UC_gate_second");
+    const first = await createFollow({
+      clerkUserId: "clerk_gate_first",
+      channelId: "UC_gate_first",
+    });
+    const second = await createFollow({
+      clerkUserId: "clerk_gate_second",
+      channelId: "UC_gate_second",
+    });
     const callsBeforeQuota = acquireChannel.mock.calls.length;
     acquireChannel.mockResolvedValueOnce({
       ok: false,
@@ -235,15 +263,20 @@ describe("POST /api/discover/acquisitions", () => {
   });
 
   it("bounds Provider work while allowing distinct targets to progress", async () => {
-    const follows = await Promise.all(
-      Array.from({ length: 5 }, async (_value, index) => ({
+    const follows: Array<{
+      clerkUserId: string;
+      followId: string;
+      channelId: string;
+    }> = [];
+    for (let index = 0; index < 5; index += 1) {
+      follows.push({
         clerkUserId: `clerk_bounded_${index}`,
-        ...(await createFollow(
-          `clerk_bounded_${index}`,
-          `UC_bounded_${index}`,
-        )),
-      })),
-    );
+        ...(await createFollow({
+          clerkUserId: `clerk_bounded_${index}`,
+          channelId: `UC_bounded_${index}`,
+        })),
+      });
+    }
     const callsBeforeRefresh = acquireChannel.mock.calls.length;
     const finishCalls: Array<(result: ProviderPreviewResult) => void> = [];
     acquireChannel.mockImplementation(
@@ -280,9 +313,108 @@ describe("POST /api/discover/acquisitions", () => {
     ]);
   });
 
+  it("rechecks a queued attempt after lease recovery before spending Provider quota", async () => {
+    const follows: Array<{
+      clerkUserId: string;
+      followId: string;
+      channelId: string;
+    }> = [];
+    for (let index = 0; index < 5; index += 1) {
+      follows.push({
+        clerkUserId: `clerk_queued_${index}`,
+        ...(await createFollow({
+          clerkUserId: `clerk_queued_${index}`,
+          channelId: `UC_queued_${index}`,
+        })),
+      });
+    }
+    const finishByChannel = new Map<
+      string,
+      (result: ProviderPreviewResult) => void
+    >();
+    acquireChannel.mockImplementation(
+      ({ channelId }) =>
+        new Promise((resolve) => {
+          finishByChannel.set(channelId, resolve);
+        }),
+    );
+    const callsBeforeRefresh = acquireChannel.mock.calls.length;
+    const requests = follows.slice(0, 4).map(({ clerkUserId, followId }) =>
+      request(app)
+        .post("/api/discover/acquisitions")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ trigger: "manual_follow", followId })
+        .then((response) => response),
+    );
+    await vi.waitFor(() =>
+      expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 4),
+    );
+    const queuedRequest = request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, follows[4].clerkUserId)
+      .send({ trigger: "manual_follow", followId: follows[4].followId })
+      .then((response) => response);
+    await vi.waitFor(async () => {
+      const queued = await harness.pool.query<{ running: string }>(
+        `SELECT count(*) FILTER (WHERE outcome = 'running')::text AS running
+         FROM discover_acquisition_attempts
+         WHERE provider_target_id = (
+           SELECT provider_target_id FROM discover_follows WHERE id = $1
+         )`,
+        [follows[4]?.followId],
+      );
+      expect(queued.rows[0]?.running).toBe("1");
+    });
+
+    currentNow = new Date("2026-08-16T12:01:00.000Z");
+    const reclaimed = request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, follows[4].clerkUserId)
+      .send({ trigger: "manual_follow", followId: follows[4].followId })
+      .then((response) => response);
+    await vi.waitFor(async () => {
+      const attempts = await harness.pool.query<{ attempts: string }>(
+        `SELECT count(*)::text AS attempts
+         FROM discover_acquisition_attempts
+         WHERE provider_target_id = (
+           SELECT provider_target_id FROM discover_follows WHERE id = $1
+         )`,
+        [follows[4]?.followId],
+      );
+      expect(attempts.rows[0]?.attempts).toBe("2");
+    });
+    finishByChannel.get("UC_queued_0")?.(
+      successfulAcquisition([newVideo], "UC_queued_0"),
+    );
+    await vi.waitFor(() =>
+      expect(
+        acquireChannel.mock.calls.filter(
+          ([{ channelId }]) => channelId === "UC_queued_4",
+        ),
+      ).toHaveLength(1),
+    );
+    for (let index = 1; index < 5; index += 1) {
+      finishByChannel.get(`UC_queued_${index}`)?.(
+        successfulAcquisition([newVideo], `UC_queued_${index}`),
+      );
+    }
+
+    const responses = await Promise.all([
+      ...requests,
+      queuedRequest,
+      reclaimed,
+    ]);
+    expect(
+      [
+        responses[4]?.body.acquisition.outcome,
+        responses[5]?.body.acquisition.outcome,
+      ].sort(),
+    ).toEqual(["complete", "skipped"]);
+  });
+
   it("keeps stored intake readable during Provider I/O and applies accepted results after publication", async () => {
     const clerkUserId = "clerk_manual_refresh";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
     let finishProviderCall!: (result: ProviderPreviewResult) => void;
     acquireChannel.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -333,7 +465,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("commits publication before Follow application and terminal outcome", async () => {
     const clerkUserId = "clerk_transaction_boundaries";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
     let finishProviderCall!: (result: ProviderPreviewResult) => void;
     acquireChannel.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -392,7 +524,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("accepts partial records without hiding prior presence or replacing verified coverage", async () => {
     const clerkUserId = "clerk_partial_refresh";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
 
     currentNow = new Date("2026-08-16T12:01:00.000Z");
     acquireChannel.mockResolvedValueOnce(
@@ -460,7 +592,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("makes an older failed Provider call harmless after a newer publication", async () => {
     const clerkUserId = "clerk_late_acquisition";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
     const priorAcquisitionCalls = acquireChannel.mock.calls.length;
     let finishOlder!: (result: ProviderPreviewResult) => void;
     acquireChannel.mockReturnValueOnce(
@@ -515,7 +647,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("skips an older successful Provider result after a newer publication", async () => {
     const clerkUserId = "clerk_late_success";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
     const priorAcquisitionCalls = acquireChannel.mock.calls.length;
     let finishOlder!: (result: ProviderPreviewResult) => void;
     acquireChannel.mockReturnValueOnce(
@@ -562,7 +694,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("does not duplicate continuous presence and resurfaces only after a complete disappearance", async () => {
     const clerkUserId = "clerk_reappearance";
-    const { followId, channelId } = await createFollow(clerkUserId);
+    const { followId, channelId } = await createFollow({ clerkUserId });
     acquireChannel.mockResolvedValueOnce(
       successfulAcquisition([originalVideo], channelId),
     );
@@ -618,7 +750,7 @@ describe("POST /api/discover/acquisitions", () => {
 
   it("preserves intake on Provider failure and hides a foreign Follow as missing", async () => {
     const clerkUserId = "clerk_failed_refresh";
-    const { followId } = await createFollow(clerkUserId);
+    const { followId } = await createFollow({ clerkUserId });
     acquireChannel.mockResolvedValueOnce({
       ok: false,
       error: "provider_unavailable",

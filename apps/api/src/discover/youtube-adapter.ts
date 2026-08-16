@@ -131,7 +131,7 @@ async function acquireWithRetry({
             error.retryAt === null
               ? 0
               : Math.max(0, error.retryAt.getTime() - now().getTime());
-          await delay(Math.max(jittered, providerDelay));
+          await delay(Math.max(jittered, providerDelay), signal);
         },
         shouldRetry: ({ error }) => error instanceof RetryableProviderError,
       },
@@ -159,8 +159,26 @@ class RetryableProviderError extends Error {
   }
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = (): void => {
+      clearTimeout(timeout);
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Provider attempt budget expired"),
+      );
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 async function acquireChannelResults({

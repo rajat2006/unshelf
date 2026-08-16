@@ -181,6 +181,29 @@ describe("YouTube Provider adapter", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("does not let Provider retry timing extend the total attempt budget", async () => {
+    const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
+      response({ error: "slow down" }, 429, { "retry-after": "60" }),
+    );
+    const startedAt = performance.now();
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+      retry: {
+        budgetMilliseconds: 20,
+        minDelayMilliseconds: 1,
+        maxDelayMilliseconds: 2,
+        randomize: false,
+      },
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(result).toMatchObject({ ok: false, error: "provider_unavailable" });
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("carries Provider quota timing without retrying or exposing credentials", async () => {
     const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
       response(
