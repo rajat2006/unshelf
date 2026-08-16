@@ -239,6 +239,15 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     ).toBeVisible();
     await expect(dateInput).toHaveValue(localizedDate(historicalDate));
 
+    await page.goForward();
+    await expect(page).toHaveURL(/\/today\/2001-02-03\?/);
+    await expect(dateInput).toHaveValue("02/03/2001");
+    await page.goBack();
+    await expect(page).toHaveURL(
+      new RegExp(`/today/${historicalDate}(?:\\?|$)`),
+    );
+    await expect(dateInput).toHaveValue(localizedDate(historicalDate));
+
     const [year, month, routedDay] = historicalDate.split("-").map(Number);
     const selectedDay = routedDay === 1 ? 2 : 1;
     const selectedDate = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
@@ -246,6 +255,9 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     await page
       .getByRole("button", { name: dayButtonName(selectedDate) })
       .click();
+    await expect(
+      page.getByRole("button", { name: "Choose date" }),
+    ).toBeFocused();
     await expect(page).toHaveURL(
       new RegExp(`/today/${historicalDate}(?:\\?|$)`),
     );
@@ -261,9 +273,17 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
 
     const accessibility = await new AxeBuilder({ page }).analyze();
     expect(accessibility.violations).toEqual([]);
+    const lightInputColor = await dateInput.evaluate(
+      (element) => getComputedStyle(element).color,
+    );
     await page.getByLabel("Theme").click();
     await page.getByRole("option", { name: "Dark" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect
+      .poll(() =>
+        dateInput.evaluate((element) => getComputedStyle(element).color),
+      )
+      .not.toBe(lightInputColor);
     const darkAccessibility = await new AxeBuilder({ page }).analyze();
     expect(darkAccessibility.violations).toEqual([]);
 

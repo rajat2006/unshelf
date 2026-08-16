@@ -110,6 +110,9 @@ export function DailyFocusHistorySurface({
     );
     setAddedItemIds(new Set());
     void load();
+    return () => {
+      newestHistoryRequest.current += 1;
+    };
   }, [date, load]);
 
   async function reconsider(itemId: ItemId) {

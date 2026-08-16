@@ -730,12 +730,15 @@ describe("Today room", () => {
 
 describe("Daily Focus history", () => {
   it("stages a localized date until View date preserves the query", async () => {
-    vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
-      ...focus,
-      date: "2026-08-13",
-    });
+    vi.mocked(fetchDailyFocusHistory).mockImplementation(
+      async (_user, requestedDate) => ({ ...focus, date: requestedDate }),
+    );
 
     renderHistory(["/today/2026-08-13?source=plan"]);
+
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-13",
+    });
 
     const dateField = screen.getByLabelText("Daily Focus date");
     expect(dateField).toHaveAttribute("type", "text");
@@ -747,19 +750,18 @@ describe("Daily Focus history", () => {
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
       "/today/2026-08-13?source=plan",
     );
-    expect(fetchDailyFocusHistory).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("region", { name: "Daily Focus for 2026-08-13" }),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "View date" }));
 
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
       "/today/2026-08-12?source=plan",
     );
-    await waitFor(() =>
-      expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
-        auth.user,
-        "2026-08-12",
-      ),
-    );
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-12",
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() =>
@@ -827,10 +829,9 @@ describe("Daily Focus history", () => {
         "08/13/2026",
       ),
     );
-    expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
-      auth.user,
-      "2026-08-13",
-    );
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-13",
+    });
   });
 
   it("keeps browsing usable while loading and ignores an older route response", async () => {
@@ -848,16 +849,14 @@ describe("Daily Focus history", () => {
     fireEvent.keyDown(dateField, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "View date" }));
 
-    await waitFor(() =>
-      expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
-        auth.user,
-        "2026-08-12",
-      ),
-    );
-    expect(dateField).toBeEnabled();
-    fireEvent.change(dateField, { target: { value: "08/11/2026" } });
-    fireEvent.keyDown(dateField, { key: "Enter" });
-    expect(dateField).toHaveValue("08/11/2026");
+    await screen.findByRole("status", {
+      name: "Loading Daily Focus history",
+    });
+    const liveDateField = screen.getByLabelText("Daily Focus date");
+    expect(liveDateField).toBeEnabled();
+    fireEvent.change(liveDateField, { target: { value: "08/11/2026" } });
+    fireEvent.keyDown(liveDateField, { key: "Enter" });
+    expect(liveDateField).toHaveValue("08/11/2026");
 
     newest.resolve({ ...focus, date: "2026-08-12" });
     await screen.findByRole("region", {
