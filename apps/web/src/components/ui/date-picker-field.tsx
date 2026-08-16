@@ -15,6 +15,8 @@ import {
   localDateToCalendarDate,
   parseLocalizedCalendarDate,
   resolveDatePickerLocale,
+  validateCanonicalCalendarDate,
+  type CalendarDateValidationError,
   type DatePickerLocale,
 } from "@/components/ui/calendar-date";
 
@@ -133,16 +135,14 @@ export function DatePickerField({
 
   const todayIsInBounds =
     today !== null &&
-    formatLocalizedCalendarDate(today, locale) !== "" &&
-    (!min || today >= min) &&
-    (!max || today <= max);
+    validateCanonicalCalendarDate({ value: today, min, max }).ok;
   const errorId = `${id}-error`;
   const describedBy = [ariaDescribedBy, validationError ? errorId : undefined]
     .filter(Boolean)
     .join(" ");
   const actions = (
     <>
-      {allowToday && (
+      {allowToday && today !== null && (
         <Button
           type="button"
           variant="quiet"
@@ -261,7 +261,12 @@ export function DatePickerField({
   }
 
   const calendarBounds = openingDate
-    ? getCalendarBounds({ today: authoritativeToday, selected: selectedDate, min, max })
+    ? getCalendarBounds({
+        today: authoritativeToday,
+        selected: selectedDate,
+        min,
+        max,
+      })
     : undefined;
 
   const input = isDesktop ? (
@@ -381,22 +386,19 @@ export function DatePickerField({
           return;
         }
 
-        const isValid =
-          formatLocalizedCalendarDate(nextValue, locale) !== "" &&
-          (!min || nextValue >= min) &&
-          (!max || nextValue <= max);
-        if (isValid) {
-          emitAction(nextValue);
+        const result = validateCanonicalCalendarDate({
+          value: nextValue,
+          min,
+          max,
+        });
+        if (result.ok) {
+          emitAction(result.value);
           return;
         }
 
-        const error =
-          formatLocalizedCalendarDate(nextValue, locale) === ""
-            ? "impossible"
-            : min && nextValue < min
-              ? "before-min"
-              : "after-max";
-        setValidationError(validationMessage({ error, locale, min, max }));
+        setValidationError(
+          validationMessage({ error: result.error, locale, min, max }),
+        );
         reportValidity(false);
       }}
     />
@@ -451,11 +453,17 @@ function getCalendarBounds({
   const selectedYear = selected?.getFullYear();
   const startYear = Math.max(
     1,
-    Math.min(anchor.getFullYear() - 100, selectedYear ?? Number.POSITIVE_INFINITY),
+    Math.min(
+      anchor.getFullYear() - 100,
+      selectedYear ?? Number.POSITIVE_INFINITY,
+    ),
   );
   const endYear = Math.min(
     9999,
-    Math.max(anchor.getFullYear() + 20, selectedYear ?? Number.NEGATIVE_INFINITY),
+    Math.max(
+      anchor.getFullYear() + 20,
+      selectedYear ?? Number.NEGATIVE_INFINITY,
+    ),
   );
   const rangeStart = calendarDateToLocalDate(
     `${String(startYear).padStart(4, "0")}-01-01`,
@@ -474,15 +482,14 @@ function getCalendarBounds({
       minimum && minimum.getTime() > rangeStart.getTime()
         ? minimum
         : rangeStart,
-    end:
-      maximum && maximum.getTime() < rangeEnd.getTime() ? maximum : rangeEnd,
+    end: maximum && maximum.getTime() < rangeEnd.getTime() ? maximum : rangeEnd,
     minimum,
     maximum,
   };
 }
 
 interface ValidationMessageOptions {
-  error: "incomplete" | "malformed" | "impossible" | "before-min" | "after-max";
+  error: CalendarDateValidationError;
   locale: DatePickerLocale;
   min?: string;
   max?: string;
@@ -504,15 +511,10 @@ function controlledValueError({
   max,
 }: ControlledValueErrorOptions): string | undefined {
   if (value === null) return required ? "Enter a date." : undefined;
-  if (formatLocalizedCalendarDate(value, locale) === "") {
-    return validationMessage({ error: "impossible", locale, min, max });
-  }
-  if (min && value < min) {
-    return validationMessage({ error: "before-min", locale, min, max });
-  }
-  if (max && value > max) {
-    return validationMessage({ error: "after-max", locale, min, max });
-  }
+  const result = validateCanonicalCalendarDate({ value, min, max });
+  return result.ok
+    ? undefined
+    : validationMessage({ error: result.error, locale, min, max });
 }
 
 function validationMessage({

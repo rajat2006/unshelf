@@ -120,49 +120,35 @@ describe("DatePickerField", () => {
     );
   });
 
-  it(
-    "navigates directly by month and year without closing the calendar",
-    async () => {
-      const onValueChange = vi.fn();
-      render(
-        <DatePickerField
-          id="target-date"
-          aria-label="Target date"
-          value="2026-08-16"
-          today="2026-08-16"
-          locale="en-US"
-          onValueChange={onValueChange}
-        />,
-      );
+  it("navigates directly by month and year without closing the calendar", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-16"
+        today="2026-08-16"
+        locale="en-US"
+        onValueChange={onValueChange}
+      />,
+    );
 
-      fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
-      fireEvent.click(
-        screen.getByRole("combobox", { name: "Choose the Month" }),
-      );
-      fireEvent.click(
-        await screen.findByRole("option", { name: "September" }),
-      );
-      expect(
-        screen.getByRole("dialog", { name: "Choose date" }),
-      ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Choose the Month" }));
+    fireEvent.click(await screen.findByRole("option", { name: "September" }));
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeVisible();
 
-      fireEvent.click(
-        screen.getByRole("combobox", { name: "Choose the Year" }),
-      );
-      fireEvent.click(await screen.findByRole("option", { name: "2035" }));
-      expect(
-        screen.getByRole("dialog", { name: "Choose date" }),
-      ).toBeVisible();
+    fireEvent.click(screen.getByRole("combobox", { name: "Choose the Year" }));
+    fireEvent.click(await screen.findByRole("option", { name: "2035" }));
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeVisible();
 
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: "Friday, September 7th, 2035",
-        }),
-      );
-      expect(onValueChange).toHaveBeenCalledWith("2035-09-07");
-    },
-    10_000,
-  );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Friday, September 7th, 2035",
+      }),
+    );
+    expect(onValueChange).toHaveBeenCalledWith("2035-09-07");
+  }, 10_000);
 
   it("constrains calendar navigation, day selection, and Today to the bounds", () => {
     const onValueChange = vi.fn();
@@ -189,10 +175,9 @@ describe("DatePickerField", () => {
     expect(
       screen.getByRole("button", { name: "Friday, August 21st, 2026" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: /previous month/i })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: /previous month/i }),
+    ).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: /next month/i })).toHaveAttribute(
       "aria-disabled",
       "true",
@@ -255,6 +240,7 @@ describe("DatePickerField", () => {
         value="0001-01-01"
         today={null}
         locale="en-US"
+        allowToday
         onValueChange={vi.fn()}
       />,
     );
@@ -266,6 +252,9 @@ describe("DatePickerField", () => {
     });
     expect(selected).not.toHaveAccessibleName(/today/i);
     expect(selected).not.toHaveAttribute("data-today");
+    expect(
+      screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
   });
 
   it("exposes distinct selected, Today, outside-month, and disabled day states", () => {

@@ -219,8 +219,9 @@ describe("Item Target date editor", () => {
       await screen.findByText("Authoritative Today is unavailable."),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
-    const today = screen.getByRole("button", { name: "Today" });
-    expect(today).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByLabelText("Target date for Practical indexing"),
     ).toBeEnabled();
@@ -233,9 +234,7 @@ describe("Item Target date editor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry Today" }));
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Choose date" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Choose date" })).toBeEnabled(),
     );
   });
 });

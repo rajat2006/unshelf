@@ -6,17 +6,22 @@ interface CalendarDateParts {
   day: number;
 }
 
+export type CalendarDateValidationError =
+  "incomplete" | "malformed" | "impossible" | "before-min" | "after-max";
+
 export type CalendarDateParseResult =
   | { ok: true; value: string }
-  | {
-      ok: false;
-      error:
-        "incomplete" | "malformed" | "impossible" | "before-min" | "after-max";
-    };
+  | { ok: false; error: CalendarDateValidationError };
 
 interface ParseLocalizedCalendarDateOptions {
   value: string;
   locale: DatePickerLocale;
+  min?: string;
+  max?: string;
+}
+
+interface ValidateCanonicalCalendarDateOptions {
+  value: string;
   min?: string;
   max?: string;
 }
@@ -65,13 +70,22 @@ export function parseLocalizedCalendarDate({
   const month = locale === "en-US" ? first : second;
   const day = locale === "en-US" ? second : first;
   const canonical = `${year}-${month}-${day}`;
-  if (!parseCanonicalCalendarDate(canonical)) {
+
+  return validateCanonicalCalendarDate({ value: canonical, min, max });
+}
+
+export function validateCanonicalCalendarDate({
+  value,
+  min,
+  max,
+}: ValidateCanonicalCalendarDateOptions): CalendarDateParseResult {
+  if (!parseCanonicalCalendarDate(value)) {
     return { ok: false, error: "impossible" };
   }
-  if (min && canonical < min) return { ok: false, error: "before-min" };
-  if (max && canonical > max) return { ok: false, error: "after-max" };
+  if (min && value < min) return { ok: false, error: "before-min" };
+  if (max && value > max) return { ok: false, error: "after-max" };
 
-  return { ok: true, value: canonical };
+  return { ok: true, value };
 }
 
 export function calendarDateToLocalDate(value: string): Date | undefined {

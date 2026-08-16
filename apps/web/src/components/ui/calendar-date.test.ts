@@ -5,6 +5,7 @@ import {
   localDateToCalendarDate,
   parseLocalizedCalendarDate,
   resolveDatePickerLocale,
+  validateCanonicalCalendarDate,
 } from "./calendar-date";
 
 describe("calendar date adapter", () => {
@@ -56,6 +57,32 @@ describe("calendar date adapter", () => {
         max: "2026-12-31",
       }),
     ).toEqual({ ok: false, error: "after-max" });
+  });
+
+  it("validates canonical values and bounds through the shared contract", () => {
+    expect(
+      validateCanonicalCalendarDate({
+        value: "2026-02-29",
+        min: "2026-01-01",
+        max: "2026-12-31",
+      }),
+    ).toEqual({ ok: false, error: "impossible" });
+    expect(
+      validateCanonicalCalendarDate({
+        value: "2025-12-31",
+        min: "2026-01-01",
+      }),
+    ).toEqual({ ok: false, error: "before-min" });
+    expect(
+      validateCanonicalCalendarDate({
+        value: "2027-01-01",
+        max: "2026-12-31",
+      }),
+    ).toEqual({ ok: false, error: "after-max" });
+    expect(validateCanonicalCalendarDate({ value: "0004-02-29" })).toEqual({
+      ok: true,
+      value: "0004-02-29",
+    });
   });
 
   it("keeps DST-boundary calendar fields stable across process timezones", () => {
