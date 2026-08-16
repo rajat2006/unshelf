@@ -1,2 +1,0 @@
-ALTER TABLE "discover_idempotency" DROP CONSTRAINT "discover_idempotency_operation_check";--> statement-breakpoint
-ALTER TABLE "discover_idempotency" ADD CONSTRAINT "discover_idempotency_operation_check" CHECK ("discover_idempotency"."operation" IN ('confirm_follow', 'set_follow_lifecycle', 'decide_discoveries'));
