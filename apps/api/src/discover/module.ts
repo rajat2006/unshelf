@@ -673,6 +673,7 @@ export function createDiscoverModule({
       }),
     acquireAndApply: async ({ userId, request }) => {
       if (request.trigger === "manual_workspace") {
+        const workspaceRefreshedAt = now();
         const activeFollows = await db
           .select({ id: discoverFollows.id })
           .from(discoverFollows)
@@ -694,11 +695,28 @@ export function createDiscoverModule({
             }),
           ),
         );
+        const acquisitions = results.flatMap((result) =>
+          result.ok && "acquisition" in result ? [result.acquisition] : [],
+        );
+        await db.transaction(async (tx) => {
+          for (const acquisition of acquisitions) {
+            await tx
+              .update(discoverFollows)
+              .set({
+                latestWorkspaceRefreshOutcome: acquisition.outcome,
+                latestWorkspaceRefreshedAt: workspaceRefreshedAt,
+              })
+              .where(
+                and(
+                  eq(discoverFollows.id, acquisition.followId),
+                  eq(discoverFollows.userId, userId),
+                ),
+              );
+          }
+        });
         return {
           ok: true,
-          acquisitions: results.flatMap((result) =>
-            result.ok && "acquisition" in result ? [result.acquisition] : [],
-          ),
+          acquisitions,
         };
       }
       const claim = await db.transaction(async (tx) => {
@@ -1278,6 +1296,9 @@ async function selectWorkspace({
       verifiedCoverageStartedAt:
         discoverProviderTargets.verifiedCoverageStartedAt,
       nextEligibleAt: discoverProviderTargets.nextEligibleAt,
+      latestWorkspaceRefreshOutcome:
+        discoverFollows.latestWorkspaceRefreshOutcome,
+      latestWorkspaceRefreshedAt: discoverFollows.latestWorkspaceRefreshedAt,
     })
     .from(discoverFollows)
     .leftJoin(
@@ -1327,13 +1348,24 @@ async function selectWorkspace({
       }),
     });
   });
-  const affectedFollowIds = follows
-    .filter(({ health }) =>
-      ["partial", "failed", "throttled", "provider_unavailable"].includes(
-        health.latestAttemptOutcome ?? "",
-      ),
+  const latestWorkspaceRefreshedAt = followRows.reduce<Date | null>(
+    (latest, follow) =>
+      follow.latestWorkspaceRefreshedAt !== null &&
+      (latest === null || follow.latestWorkspaceRefreshedAt > latest)
+        ? follow.latestWorkspaceRefreshedAt
+        : latest,
+    null,
+  );
+  const affectedFollowIds = followRows
+    .filter(
+      (follow) =>
+        latestWorkspaceRefreshedAt !== null &&
+        follow.latestWorkspaceRefreshedAt?.getTime() ===
+          latestWorkspaceRefreshedAt.getTime() &&
+        follow.latestWorkspaceRefreshOutcome !== "complete" &&
+        follow.latestWorkspaceRefreshOutcome !== "joined",
     )
-    .map(({ id }) => id);
+    .map(({ id }) => id as FollowId);
   return {
     follows,
     discoveries: await selectDiscoveries({ query, userId }),

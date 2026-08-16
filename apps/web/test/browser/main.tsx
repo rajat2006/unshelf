@@ -2,6 +2,7 @@ import { StrictMode, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App } from "../../src/App";
+import { DiscoverSurface } from "../../src/surfaces/DiscoverSurface";
 import { ApplicationAuthProvider } from "../../src/application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../../src/application-auth/types";
 import "../../src/styles/globals.css";
@@ -50,11 +51,12 @@ function TestApplication() {
     ),
     UserButton: EmptyControl,
   };
+  const surface = new URLSearchParams(window.location.search).get("surface");
 
   return (
     <ApplicationAuthProvider auth={auth}>
       <BrowserRouter basename="/test/browser">
-        <App />
+        {surface === "discover" ? <DiscoverSurface /> : <App />}
       </BrowserRouter>
     </ApplicationAuthProvider>
   );

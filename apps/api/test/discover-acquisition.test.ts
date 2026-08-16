@@ -908,6 +908,9 @@ describe("POST /api/discover/acquisitions", () => {
       lifecycle: "active",
       health: { latestAttemptOutcome: "provider_unavailable" },
     });
+    expect(
+      (workspace.body as DiscoverWorkspace).aggregateNotice,
+    ).toBeUndefined();
 
     const callsBeforeForeignRequest = acquireChannel.mock.calls.length;
     const foreign = await request(app)

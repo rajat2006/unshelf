@@ -1064,6 +1064,10 @@ export const discoverFollows = pgTable(
       .references(() => discoverProviderTargets.id),
     targetUrl: text("target_url").notNull(),
     lifecycle: text("lifecycle").notNull().default("active"),
+    latestWorkspaceRefreshOutcome: text("latest_workspace_refresh_outcome"),
+    latestWorkspaceRefreshedAt: timestamp("latest_workspace_refreshed_at", {
+      withTimezone: true,
+    }),
     lastAppliedProviderSnapshotId: uuid("last_applied_provider_snapshot_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1098,6 +1102,19 @@ export const discoverFollows = pgTable(
     check(
       "discover_follows_lifecycle_check",
       sql`${table.lifecycle} IN ('active', 'paused', 'removed')`,
+    ),
+    check(
+      "discover_follows_workspace_refresh_check",
+      sql`(
+        ${table.latestWorkspaceRefreshOutcome} IS NULL
+        AND ${table.latestWorkspaceRefreshedAt} IS NULL
+      ) OR (
+        ${table.latestWorkspaceRefreshOutcome} IN (
+          'joined', 'skipped', 'complete', 'partial', 'failed',
+          'throttled', 'provider_unavailable'
+        )
+        AND ${table.latestWorkspaceRefreshedAt} IS NOT NULL
+      )`,
     ),
   ],
 );
