@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,8 +10,14 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import {
   Status,
   StatusMode,
@@ -34,6 +41,7 @@ import {
 import { CaptureProvider } from "../shell/CaptureProvider";
 import { DailyFocusHistorySurface } from "./DailyFocusHistorySurface";
 import { TodaySurface } from "./TodaySurface";
+import { stubMatchMedia } from "@/test-support/stub-match-media";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
@@ -117,19 +125,49 @@ function renderToday() {
   );
 }
 
-function renderHistory() {
+function HistoryTestControls() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="Test location">
+        {location.pathname}
+        {location.search}
+      </output>
+      <button type="button" onClick={() => void navigate(-1)}>
+        Back
+      </button>
+      <button type="button" onClick={() => void navigate(1)}>
+        Forward
+      </button>
+    </>
+  );
+}
+
+function renderHistory(
+  initialEntries: Parameters<typeof MemoryRouter>[0]["initialEntries"] = [
+    "/today/2026-08-13",
+  ],
+  initialIndex?: number,
+) {
   return render(
     <ApplicationAuthProvider auth={auth}>
-      <MemoryRouter initialEntries={["/today/2026-08-13"]}>
-        <DailyFocusHistorySurface selectedDate="2026-08-13" />
+      <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
+        <HistoryTestControls />
+        <Routes>
+          <Route path="/today/:date" element={<DailyFocusHistorySurface />} />
+        </Routes>
       </MemoryRouter>
     </ApplicationAuthProvider>,
   );
 }
 
+beforeEach(() => stubMatchMedia(true));
+
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("Today room", () => {
@@ -691,6 +729,175 @@ describe("Today room", () => {
 });
 
 describe("Daily Focus history", () => {
+  it("stages a localized date until View date preserves the query", async () => {
+    vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
+      ...focus,
+      date: "2026-08-13",
+    });
+
+    renderHistory(["/today/2026-08-13?source=plan"]);
+
+    const dateField = screen.getByLabelText("Daily Focus date");
+    expect(dateField).toHaveAttribute("type", "text");
+    expect(dateField).toHaveValue("08/13/2026");
+
+    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    expect(fireEvent.keyDown(dateField, { key: "Enter" })).toBe(false);
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/today/2026-08-13?source=plan",
+    );
+    expect(fetchDailyFocusHistory).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "View date" }));
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/today/2026-08-12?source=plan",
+    );
+    await waitFor(() =>
+      expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
+        auth.user,
+        "2026-08-12",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
+        "08/13/2026",
+      ),
+    );
+  });
+
+  it("keeps an invalid draft visible and prevents submitting the older date", async () => {
+    vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
+      ...focus,
+      date: "2026-08-13",
+    });
+
+    renderHistory();
+
+    const dateField = screen.getByLabelText("Daily Focus date");
+    fireEvent.change(dateField, { target: { value: "08/1" } });
+    fireEvent.keyDown(dateField, { key: "Enter" });
+
+    expect(dateField).toHaveValue("08/1");
+    expect(dateField).toHaveAccessibleDescription(
+      "Complete the date in MM/DD/YYYY format.",
+    );
+    expect(screen.getByRole("button", { name: "View date" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  });
+
+  it("replaces an invalid draft when Back and Forward change the routed date", async () => {
+    vi.mocked(fetchDailyFocusHistory).mockImplementation(
+      async (_user, requestedDate) => ({ ...focus, date: requestedDate }),
+    );
+
+    renderHistory(
+      ["/today/2026-08-12?source=plan", "/today/2026-08-13?source=plan"],
+      1,
+    );
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-13",
+    });
+
+    const dateField = screen.getByLabelText("Daily Focus date");
+    fireEvent.change(dateField, { target: { value: "08/1" } });
+    fireEvent.keyDown(dateField, { key: "Enter" });
+    expect(screen.getByRole("button", { name: "View date" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
+        "08/12/2026",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "View date" })).toBeEnabled();
+    expect(screen.getByLabelText("Daily Focus date")).not.toHaveAttribute(
+      "aria-invalid",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
+        "08/13/2026",
+      ),
+    );
+    expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
+      auth.user,
+      "2026-08-13",
+    );
+  });
+
+  it("keeps browsing usable while loading and ignores an older route response", async () => {
+    const older = deferred<DailyFocus>();
+    const newest = deferred<DailyFocus>();
+    vi.mocked(fetchDailyFocusHistory).mockImplementation(
+      (_user, requestedDate) =>
+        requestedDate === "2026-08-13" ? older.promise : newest.promise,
+    );
+
+    renderHistory();
+
+    const dateField = screen.getByLabelText("Daily Focus date");
+    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    fireEvent.keyDown(dateField, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "View date" }));
+
+    await waitFor(() =>
+      expect(fetchDailyFocusHistory).toHaveBeenLastCalledWith(
+        auth.user,
+        "2026-08-12",
+      ),
+    );
+    expect(dateField).toBeEnabled();
+    fireEvent.change(dateField, { target: { value: "08/11/2026" } });
+    fireEvent.keyDown(dateField, { key: "Enter" });
+    expect(dateField).toHaveValue("08/11/2026");
+
+    newest.resolve({ ...focus, date: "2026-08-12" });
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-12",
+    });
+
+    await act(async () => {
+      older.resolve({ ...focus, date: "2026-08-13" });
+    });
+    expect(
+      screen.queryByRole("region", { name: "Daily Focus for 2026-08-13" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Daily Focus for 2026-08-12" }),
+    ).toBeVisible();
+  });
+
+  it("retries an unavailable record without discarding the staged date", async () => {
+    vi.mocked(fetchDailyFocusHistory)
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce({ ...focus, date: "2026-08-13" });
+
+    renderHistory();
+
+    expect(await screen.findByText("Daily Focus unavailable")).toBeVisible();
+    const dateField = screen.getByLabelText("Daily Focus date");
+    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    fireEvent.keyDown(dateField, { key: "Enter" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-13",
+    });
+    expect(dateField).toHaveValue("08/12/2026");
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/today/2026-08-13",
+    );
+  });
+
   it("presents frozen day-end progress through the shared Item language", async () => {
     vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
       ...focus,

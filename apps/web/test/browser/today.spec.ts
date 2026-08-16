@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
   elapseDailyFocus,
@@ -5,6 +6,34 @@ import {
   testApi,
   testAppUrl,
 } from "./test-helpers";
+
+function localizedDate(canonicalDate: string): string {
+  const [year, month, day] = canonicalDate.split("-");
+  return `${month}/${day}/${year}`;
+}
+
+function dayButtonName(canonicalDate: string): string {
+  const [year, month, day] = canonicalDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+  }).format(date);
+  const monthName = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+  }).format(date);
+  const remainder = day % 100;
+  const suffix =
+    remainder >= 11 && remainder <= 13
+      ? "th"
+      : day % 10 === 1
+        ? "st"
+        : day % 10 === 2
+          ? "nd"
+          : day % 10 === 3
+            ? "rd"
+            : "th";
+  return `${weekday}, ${monthName} ${day}${suffix}, ${year}`;
+}
 
 test("a User explicitly chooses and edits today's shared Library Items", async ({
   page,
@@ -100,6 +129,7 @@ test("a User explicitly chooses and edits today's shared Library Items", async (
 test("a User browses frozen Daily Focus history and explicitly re-adds unfinished work", async ({
   page,
 }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const user = `${testInfo.project.name}-daily-focus-history`;
   const item = (await (
     await testApi(page, user, "/api/items", "POST", {
@@ -137,7 +167,9 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     { completed: true },
   );
 
-  await page.goto(testAppUrl(`/today/${historicalDate}`, user));
+  await page.goto(
+    testAppUrl(`/today/${historicalDate}`, user, { source: "plan" }),
+  );
 
   await expect(
     page.getByRole("heading", { level: 1, name: "Daily Focus history" }),
@@ -167,6 +199,89 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     .click();
   await expect(page).toHaveURL(new RegExp(`/today/${historicalDate}(?:\\?|$)`));
 
+  const dateInput = page.getByLabel("Daily Focus date");
+  await expect(dateInput).toHaveCount(1);
+  if (testInfo.project.name === "phone") {
+    await expect(dateInput).toHaveAttribute("type", "date");
+    await dateInput.fill("2001-02-03");
+    await page.getByRole("button", { name: "View date" }).click();
+    await expect(page).toHaveURL(/\/today\/2001-02-03\?/);
+    expect(new URL(page.url()).searchParams.get("source")).toBe("plan");
+
+    await page.goBack();
+    await expect(dateInput).toHaveValue(historicalDate);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  } else {
+    await expect(dateInput).toHaveAttribute("type", "text");
+    await dateInput.fill("02/03/2001");
+    await dateInput.press("Enter");
+    await expect(page).toHaveURL(
+      new RegExp(`/today/${historicalDate}(?:\\?|$)`),
+    );
+    await page.getByRole("button", { name: "View date" }).click();
+    await expect(page).toHaveURL(/\/today\/2001-02-03\?/);
+    expect(new URL(page.url()).searchParams.get("source")).toBe("plan");
+
+    await page.goBack();
+    await expect(page).toHaveURL(
+      new RegExp(`/today/${historicalDate}(?:\\?|$)`),
+    );
+    await expect(
+      page.getByRole("region", {
+        name: `Daily Focus for ${historicalDate}`,
+      }),
+    ).toBeVisible();
+    await expect(dateInput).toHaveValue(localizedDate(historicalDate));
+
+    const [year, month, routedDay] = historicalDate.split("-").map(Number);
+    const selectedDay = routedDay === 1 ? 2 : 1;
+    const selectedDate = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+    await page.getByRole("button", { name: "Choose date" }).click();
+    await page
+      .getByRole("button", { name: dayButtonName(selectedDate) })
+      .click();
+    await expect(page).toHaveURL(
+      new RegExp(`/today/${historicalDate}(?:\\?|$)`),
+    );
+    await page.getByRole("button", { name: "View date" }).click();
+    await expect(page).toHaveURL(new RegExp(`/today/${selectedDate}\\?`));
+    expect(new URL(page.url()).searchParams.get("source")).toBe("plan");
+
+    await page.goBack();
+    await expect(page).toHaveURL(
+      new RegExp(`/today/${historicalDate}(?:\\?|$)`),
+    );
+    await expect(dateInput).toHaveValue(localizedDate(historicalDate));
+
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.getByLabel("Theme").click();
+    await page.getByRole("option", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    const darkAccessibility = await new AxeBuilder({ page }).analyze();
+    expect(darkAccessibility.violations).toEqual([]);
+
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "2";
+    });
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "";
+    });
+  }
+
   await page
     .getByRole("button", {
       name: "Add Finish the storage chapter to Today",
@@ -175,7 +290,91 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
   await expect(page.getByText("Added to Today")).toBeVisible();
   await page.getByRole("link", { name: "Go to Today", exact: true }).click();
   await expect(page).toHaveURL(/\/today\?/);
+  expect(new URL(page.url()).searchParams.get("source")).toBe("plan");
   await expect(page.getByText("1 of 1 done")).toBeVisible();
+});
+
+test("Daily Focus history ignores stale loading responses and retries in place", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "phone", "one transport race at desktop");
+  const user = `${testInfo.project.name}-daily-focus-history-race`;
+  const emptyHistory = (date: string) => ({
+    id: "00000000-0000-0000-0000-000000000101",
+    userId: "00000000-0000-0000-0000-000000000102",
+    date,
+    entries: [],
+    done: 0,
+    total: 0,
+  });
+  let releaseOlder: () => void;
+  const olderGate = new Promise<void>((resolve) => {
+    releaseOlder = resolve;
+  });
+  let olderRequests = 0;
+  let olderCompleted = 0;
+  await page.route("**/api/daily-focus/2001-02-03", async (route) => {
+    olderRequests += 1;
+    await olderGate;
+    await route.fulfill({ status: 200, json: emptyHistory("2001-02-03") });
+    olderCompleted += 1;
+  });
+  await page.route("**/api/daily-focus/2001-02-04", (route) =>
+    route.fulfill({ status: 200, json: emptyHistory("2001-02-04") }),
+  );
+
+  await page.goto(testAppUrl("/today/2001-02-03", user));
+  const dateInput = page.getByLabel("Daily Focus date");
+  await expect(dateInput).toBeEnabled();
+
+  await dateInput.fill("02/0");
+  await dateInput.press("Enter");
+  await expect(dateInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "View date" })).toBeDisabled();
+  const invalidAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(invalidAccessibility.violations).toEqual([]);
+
+  await dateInput.fill("02/04/2001");
+  await dateInput.press("Enter");
+  await page.getByRole("button", { name: "View date" }).click();
+  await expect(page).toHaveURL(/\/today\/2001-02-04\?/);
+  await expect(
+    page.getByRole("region", { name: "Daily Focus for 2001-02-04" }),
+  ).toBeVisible();
+
+  releaseOlder!();
+  await expect.poll(() => olderRequests).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => olderCompleted).toBe(olderRequests);
+  await expect(
+    page.getByRole("region", { name: "Daily Focus for 2001-02-04" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Daily Focus for 2001-02-03" }),
+  ).toHaveCount(0);
+
+  let failedNewest = false;
+  await page.route("**/api/daily-focus/2001-02-05", async (route) => {
+    if (!failedNewest) {
+      failedNewest = true;
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: emptyHistory("2001-02-05") });
+  });
+  await dateInput.fill("02/05/2001");
+  await dateInput.press("Enter");
+  await page.getByRole("button", { name: "View date" }).click();
+  await expect(page.getByText("Daily Focus unavailable")).toBeVisible();
+
+  await dateInput.fill("02/06/2001");
+  await dateInput.press("Enter");
+  await page.getByRole("button", { name: "Retry" }).click();
+
+  await expect(
+    page.getByRole("region", { name: "Daily Focus for 2001-02-05" }),
+  ).toBeVisible();
+  await expect(dateInput).toHaveValue("02/06/2001");
+  await expect(page).toHaveURL(/\/today\/2001-02-05\?/);
 });
 
 test("a User plans Today with a capped explained shortlist and independent search", async ({
