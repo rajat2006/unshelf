@@ -706,18 +706,20 @@ export const discoverProviderTargets = pgTable(
     provider: text("provider").notNull(),
     targetKind: text("target_kind").notNull(),
     acquisitionScope: text("acquisition_scope").notNull().default("system"),
-    externalReference: text("external_reference").notNull(),
-    targetPayload: jsonb("target_payload").notNull(),
-    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    externalReference: text("external_reference"),
+    targetPayload: jsonb("target_payload"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("discover_provider_targets_identity_unique").on(
-      table.provider,
-      table.targetKind,
-      table.acquisitionScope,
-      table.externalReference,
-    ),
+    uniqueIndex("discover_provider_targets_identity_unique")
+      .on(
+        table.provider,
+        table.targetKind,
+        table.acquisitionScope,
+        table.externalReference,
+      )
+      .where(sql`${table.externalReference} IS NOT NULL`),
     check(
       "discover_provider_targets_provider_check",
       sql`${table.provider} = 'youtube'`,
@@ -728,7 +730,17 @@ export const discoverProviderTargets = pgTable(
     ),
     check(
       "discover_provider_targets_expiry_check",
-      sql`${table.expiresAt} > ${table.fetchedAt}`,
+      sql`(
+        ${table.externalReference} IS NULL
+        AND ${table.targetPayload} IS NULL
+        AND ${table.fetchedAt} IS NULL
+        AND ${table.expiresAt} IS NULL
+      ) OR (
+        ${table.externalReference} IS NOT NULL
+        AND ${table.targetPayload} IS NOT NULL
+        AND ${table.fetchedAt} IS NOT NULL
+        AND ${table.expiresAt} > ${table.fetchedAt}
+      )`,
     ),
   ],
 );
@@ -758,13 +770,12 @@ export const discoverProviderResults = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     provider: text("provider").notNull(),
-    externalReference: text("external_reference").notNull(),
+    externalReference: text("external_reference"),
   },
   (table) => [
-    uniqueIndex("discover_provider_results_identity_unique").on(
-      table.provider,
-      table.externalReference,
-    ),
+    uniqueIndex("discover_provider_results_identity_unique")
+      .on(table.provider, table.externalReference)
+      .where(sql`${table.externalReference} IS NOT NULL`),
     check(
       "discover_provider_results_provider_check",
       sql`${table.provider} = 'youtube'`,

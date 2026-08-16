@@ -23,7 +23,13 @@ function channel(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function playlistItem(videoId: string, publishedAt: string) {
+function playlistItem({
+  videoId,
+  publishedAt,
+}: {
+  videoId: string;
+  publishedAt: string;
+}) {
   return {
     snippet: {
       title: `Playlist ${videoId}`,
@@ -35,11 +41,15 @@ function playlistItem(videoId: string, publishedAt: string) {
   };
 }
 
-function video(
-  id: string,
-  publishedAt: string,
-  overrides: Record<string, unknown> = {},
-) {
+function video({
+  id,
+  publishedAt,
+  overrides = {},
+}: {
+  id: string;
+  publishedAt: string;
+  overrides?: Record<string, unknown>;
+}) {
   return {
     id,
     snippet: {
@@ -62,6 +72,7 @@ function video(
       uploadStatus: "processed",
       embeddable: true,
     },
+    player: { embedWidth: 1280, embedHeight: 720 },
     ...overrides,
   };
 }
@@ -101,12 +112,16 @@ describe("YouTube Provider adapter", () => {
       .mockResolvedValueOnce(response(channel()))
       .mockResolvedValueOnce(
         response({
-          items: dates.map((date, index) => playlistItem(`v${index}`, date)),
+          items: dates.map((date, index) =>
+            playlistItem({ videoId: `v${index}`, publishedAt: date }),
+          ),
         }),
       )
       .mockResolvedValueOnce(
         response({
-          items: dates.map((date, index) => video(`v${index}`, date)),
+          items: dates.map((date, index) =>
+            video({ id: `v${index}`, publishedAt: date }),
+          ),
         }),
       );
     const adapter = createYouTubeAdapter({
@@ -144,7 +159,7 @@ describe("YouTube Provider adapter", () => {
     });
   });
 
-  it("accepts short landscape videos and rejects short vertical, square, unknown-ratio, livestream, and unplayable records as partial", async () => {
+  it("accepts short landscape videos and excludes short vertical, square, unknown-ratio, livestream, and unplayable records", async () => {
     const publishedAt = "2026-08-15T12:00:00.000Z";
     const ids = [
       "landscape",
@@ -159,53 +174,78 @@ describe("YouTube Provider adapter", () => {
       .fn<ProviderFetch>()
       .mockResolvedValueOnce(response(channel()))
       .mockResolvedValueOnce(
-        response({ items: ids.map((id) => playlistItem(id, publishedAt)) }),
+        response({
+          items: ids.map((id) => playlistItem({ videoId: id, publishedAt })),
+        }),
       )
       .mockResolvedValueOnce(
         response({
           items: [
-            video("landscape", publishedAt, { ...short }),
-            video("vertical", publishedAt, {
-              ...short,
-              snippet: {
-                ...video("vertical", publishedAt).snippet,
-                thumbnails: {
-                  medium: {
-                    url: "https://img/vertical",
-                    width: 180,
-                    height: 320,
+            video({ id: "landscape", publishedAt, overrides: { ...short } }),
+            video({
+              id: "vertical",
+              publishedAt,
+              overrides: {
+                ...short,
+                player: { embedWidth: 720, embedHeight: 1280 },
+                snippet: {
+                  ...video({ id: "vertical", publishedAt }).snippet,
+                  thumbnails: {
+                    medium: {
+                      url: "https://img/vertical",
+                      width: 180,
+                      height: 320,
+                    },
                   },
                 },
               },
             }),
-            video("square", publishedAt, {
-              ...short,
-              snippet: {
-                ...video("square", publishedAt).snippet,
-                thumbnails: {
-                  medium: {
-                    url: "https://img/square",
-                    width: 200,
-                    height: 200,
+            video({
+              id: "square",
+              publishedAt,
+              overrides: {
+                ...short,
+                player: { embedWidth: 1000, embedHeight: 1000 },
+                snippet: {
+                  ...video({ id: "square", publishedAt }).snippet,
+                  thumbnails: {
+                    medium: {
+                      url: "https://img/square",
+                      width: 200,
+                      height: 200,
+                    },
                   },
                 },
               },
             }),
-            video("unknown", publishedAt, {
-              ...short,
-              snippet: {
-                ...video("unknown", publishedAt).snippet,
-                thumbnails: {},
+            video({
+              id: "unknown",
+              publishedAt,
+              overrides: {
+                ...short,
+                player: undefined,
+                snippet: {
+                  ...video({ id: "unknown", publishedAt }).snippet,
+                  thumbnails: {},
+                },
               },
             }),
-            video("live", publishedAt, {
-              liveStreamingDetails: { actualStartTime: publishedAt },
+            video({
+              id: "live",
+              publishedAt,
+              overrides: {
+                liveStreamingDetails: { actualStartTime: publishedAt },
+              },
             }),
-            video("private", publishedAt, {
-              status: {
-                privacyStatus: "private",
-                uploadStatus: "processed",
-                embeddable: true,
+            video({
+              id: "private",
+              publishedAt,
+              overrides: {
+                status: {
+                  privacyStatus: "private",
+                  uploadStatus: "processed",
+                  embeddable: true,
+                },
               },
             }),
           ],
@@ -223,8 +263,8 @@ describe("YouTube Provider adapter", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      outcome: "partial",
-      rejectedCount: 5,
+      outcome: "preview",
+      rejectedCount: 0,
     });
     if (!result.ok) throw new Error("expected partial preview");
     expect(result.videos.map((entry) => entry.providerIdentity)).toEqual([
@@ -264,15 +304,24 @@ describe("YouTube Provider adapter", () => {
       .mockResolvedValueOnce(response(channel()))
       .mockResolvedValueOnce(
         response({
-          items: [playlistItem("boundary", boundary)],
+          items: [playlistItem({ videoId: "boundary", publishedAt: boundary })],
           nextPageToken: "page-2",
         }),
       )
       .mockResolvedValueOnce(
-        response({ items: [playlistItem("old", "2026-07-17T11:59:59.999Z")] }),
+        response({
+          items: [
+            playlistItem({
+              videoId: "old",
+              publishedAt: "2026-07-17T11:59:59.999Z",
+            }),
+          ],
+        }),
       )
       .mockResolvedValueOnce(
-        response({ items: [video("boundary", boundary)] }),
+        response({
+          items: [video({ id: "boundary", publishedAt: boundary })],
+        }),
       );
 
     const result = await createYouTubeAdapter({
@@ -297,15 +346,15 @@ describe("YouTube Provider adapter", () => {
       .mockResolvedValueOnce(
         response({
           items: [
-            playlistItem("valid", publishedAt),
-            playlistItem("invalid", publishedAt),
+            playlistItem({ videoId: "valid", publishedAt }),
+            playlistItem({ videoId: "invalid", publishedAt }),
           ],
         }),
       )
       .mockResolvedValueOnce(
         response({
           items: [
-            video("valid", publishedAt),
+            video({ id: "valid", publishedAt }),
             { id: "invalid", surprising: true },
           ],
         }),
@@ -328,6 +377,62 @@ describe("YouTube Provider adapter", () => {
     ]);
   });
 
+  it("fails unverifiable when a malformed video cannot be tied to one requested identity", async () => {
+    const publishedAt = "2026-08-15T12:00:00.000Z";
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: [playlistItem({ videoId: "unknown", publishedAt })],
+        }),
+      )
+      .mockResolvedValueOnce(response({ items: [{ surprising: true }] }));
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result).toEqual({ ok: false, error: "unverifiable" });
+  });
+
+  it("fails unverifiable when upload pagination drifts out of newest-first order", async () => {
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            playlistItem({
+              videoId: "older",
+              publishedAt: "2026-08-14T12:00:00.000Z",
+            }),
+          ],
+          nextPageToken: "page-2",
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            playlistItem({
+              videoId: "newer",
+              publishedAt: "2026-08-15T12:00:00.000Z",
+            }),
+          ],
+        }),
+      );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result).toEqual({ ok: false, error: "unverifiable" });
+  });
+
   it("maps network timeouts to Provider unavailable", async () => {
     const fetch = vi
       .fn()
@@ -347,15 +452,17 @@ describe("YouTube Provider adapter", () => {
       .fn<ProviderFetch>()
       .mockResolvedValueOnce(response(channel()))
       .mockResolvedValueOnce(
-        response({ items: ids.map((id) => playlistItem(id, publishedAt)) }),
-      )
-      .mockResolvedValueOnce(
         response({
-          items: ids.slice(0, 50).map((id) => video(id, publishedAt)),
+          items: ids.map((id) => playlistItem({ videoId: id, publishedAt })),
         }),
       )
       .mockResolvedValueOnce(
-        response({ items: [video(ids[50], publishedAt)] }),
+        response({
+          items: ids.slice(0, 50).map((id) => video({ id, publishedAt })),
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ items: [video({ id: ids[50], publishedAt })] }),
       );
 
     const result = await createYouTubeAdapter({

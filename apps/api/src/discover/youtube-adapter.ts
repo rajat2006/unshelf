@@ -162,6 +162,7 @@ async function readUploadsPlaylist({
   const videoIds: string[] = [];
   const seen = new Set<string>();
   let pageToken: string | undefined;
+  let previousPublishedAt: string | undefined;
   for (let page = 0; page < 20; page += 1) {
     const response = await requestJson({
       apiKey,
@@ -182,6 +183,13 @@ async function readUploadsPlaylist({
     for (const item of parsed.data.items) {
       const publishedAt =
         item.contentDetails.videoPublishedAt ?? item.snippet.publishedAt;
+      if (
+        previousPublishedAt !== undefined &&
+        publishedAt > previousPublishedAt
+      ) {
+        return { ok: false, error: "unverifiable" };
+      }
+      previousPublishedAt = publishedAt;
       if (publishedAt < coverageStartedAt) {
         reachedBoundary = true;
         continue;
@@ -230,8 +238,9 @@ async function readVideos({
       fetch,
       resource: "videos",
       query: {
-        part: "snippet,contentDetails,status,liveStreamingDetails",
+        part: "snippet,contentDetails,status,liveStreamingDetails,player",
         id: batchIds.join(","),
+        maxWidth: "1920",
       },
     });
     if (!response.ok) return response;
@@ -246,23 +255,25 @@ async function readVideos({
         returnedIds.add(item.data.id);
         validItems.push(item.data);
       } else {
-        invalidCount += 1;
         if (
           typeof candidate === "object" &&
           candidate !== null &&
           "id" in candidate &&
-          typeof candidate.id === "string"
+          typeof candidate.id === "string" &&
+          batchIds.includes(candidate.id) &&
+          !invalidIds.has(candidate.id)
         ) {
           invalidIds.add(candidate.id);
+          invalidCount += 1;
+        } else {
+          return { ok: false, error: "unverifiable" };
         }
       }
     }
   }
 
   const videos: FollowPreviewVideo[] = [];
-  let rejectedCount =
-    invalidCount +
-    videoIds.filter((id) => !returnedIds.has(id) && !invalidIds.has(id)).length;
+  const rejectedCount = invalidCount;
   for (const item of validItems) {
     const durationSeconds = parseDuration(item.contentDetails.duration);
     const thumbnail = preferredThumbnail(item.snippet.thumbnails);
@@ -270,9 +281,9 @@ async function readVideos({
     const isLandscapeShort =
       durationSeconds !== null &&
       durationSeconds <= 180 &&
-      thumbnail?.width !== undefined &&
-      thumbnail.height !== undefined &&
-      thumbnail.width > thumbnail.height;
+      item.player?.embedWidth !== undefined &&
+      item.player.embedHeight !== undefined &&
+      item.player.embedWidth > item.player.embedHeight;
     const playable =
       item.snippet.channelId === expectedChannelId &&
       item.snippet.publishedAt >= coverageStartedAt &&
@@ -282,7 +293,6 @@ async function readVideos({
       item.status.uploadStatus === "processed" &&
       item.status.embeddable === true;
     if (!playable || (!isLong && !isLandscapeShort)) {
-      rejectedCount += 1;
       continue;
     }
     videos.push({
@@ -317,7 +327,12 @@ async function requestJson({
   for (const [key, value] of Object.entries(query))
     url.searchParams.set(key, value);
   const response = await fetch(url, { headers: { "x-goog-api-key": apiKey } });
-  const body: unknown = await response.json();
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return { ok: false, error: "unverifiable" };
+  }
   if (response.ok) return { ok: true, body };
   if (response.status === 403 && quotaResponseSchema.safeParse(body).success) {
     return { ok: false, error: "quota_exceeded" };
@@ -406,6 +421,12 @@ const videoResourceSchema = z.object({
     uploadStatus: z.string(),
     embeddable: z.boolean(),
   }),
+  player: z
+    .object({
+      embedWidth: z.number().positive().optional(),
+      embedHeight: z.number().positive().optional(),
+    })
+    .optional(),
   liveStreamingDetails: z.object({}).passthrough().optional(),
 });
 type VideoResource = z.infer<typeof videoResourceSchema>;

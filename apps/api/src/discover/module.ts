@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, max } from "drizzle-orm";
+import { and, asc, desc, eq, gte, max, sql } from "drizzle-orm";
 import type {
   FollowPreview,
   FollowPreviewId,
@@ -76,6 +76,7 @@ export function createDiscoverModule({
                 discoverProviderTargets.acquisitionScope,
                 discoverProviderTargets.externalReference,
               ],
+              targetWhere: sql`${discoverProviderTargets.externalReference} IS NOT NULL`,
               set: {
                 targetPayload: {
                   schemaVersion: 1,
@@ -116,6 +117,7 @@ export function createDiscoverModule({
                   discoverProviderResults.provider,
                   discoverProviderResults.externalReference,
                 ],
+                targetWhere: sql`${discoverProviderResults.externalReference} IS NOT NULL`,
                 set: { externalReference: video.providerIdentity },
               })
               .returning({ id: discoverProviderResults.id });
@@ -160,7 +162,12 @@ export function createDiscoverModule({
             createdAt.getTime() - previewLifetimeMilliseconds,
           );
           const recentSnapshots = await tx
-            .select({ id: discoverProviderSnapshots.id })
+            .select({
+              id: discoverProviderSnapshots.id,
+              outcome: discoverProviderSnapshots.outcome,
+              rejectedCount: discoverProviderSnapshots.rejectedCount,
+              coverageStartedAt: discoverProviderSnapshots.coverageStartedAt,
+            })
             .from(discoverProviderSnapshots)
             .where(
               and(
@@ -172,6 +179,14 @@ export function createDiscoverModule({
 
           let snapshotId: string | undefined;
           for (const recent of recentSnapshots) {
+            if (
+              recent.outcome !== acquired.outcome ||
+              recent.rejectedCount !== acquired.rejectedCount ||
+              recent.coverageStartedAt.toISOString() !==
+                acquired.coverageStartedAt
+            ) {
+              continue;
+            }
             const membership = await tx
               .select({
                 providerResultId:
