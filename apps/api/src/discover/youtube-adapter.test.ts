@@ -3,10 +3,14 @@ import { createYouTubeAdapter, type ProviderFetch } from "./youtube-adapter";
 
 const now = new Date("2026-08-16T12:00:00.000Z");
 
-function response(body: unknown, status = 200): Response {
+function response(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
   });
 }
 
@@ -78,6 +82,129 @@ function video({
 }
 
 describe("YouTube Provider adapter", () => {
+  it("retries transient responses at most twice but never retries a stable request failure", async () => {
+    const transientFetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response({ error: "temporary" }, 503))
+      .mockResolvedValueOnce(response({ error: "temporary" }, 503))
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(response({ items: [] }));
+    const transient = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch: transientFetch,
+      now: () => now,
+      retry: {
+        budgetMilliseconds: 1_000,
+        minDelayMilliseconds: 1,
+        maxDelayMilliseconds: 2,
+        randomize: false,
+      },
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(transient.ok).toBe(true);
+    expect(
+      transientFetch.mock.calls.filter(([url]) =>
+        url.pathname.endsWith("/channels"),
+      ),
+    ).toHaveLength(3);
+
+    const stableFetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValue(response({ error: "bad request" }, 400));
+    const stable = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch: stableFetch,
+      now: () => now,
+      retry: {
+        budgetMilliseconds: 1_000,
+        minDelayMilliseconds: 1,
+        maxDelayMilliseconds: 2,
+        randomize: false,
+      },
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(stable).toEqual({ ok: false, error: "invalid_target" });
+    expect(stableFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors Provider retry timing ahead of fallback backoff", async () => {
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(
+        response({ error: "slow down" }, 429, { "retry-after": "0.04" }),
+      )
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(response({ items: [] }));
+    const startedAt = performance.now();
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+      retry: {
+        budgetMilliseconds: 1_000,
+        minDelayMilliseconds: 1,
+        maxDelayMilliseconds: 2,
+        randomize: false,
+      },
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(result).toMatchObject({ ok: true, retryCount: 1 });
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(30);
+  });
+
+  it("bounds the complete attempt even when a request never settles itself", async () => {
+    const fetch = vi.fn<ProviderFetch>().mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("timed out", "TimeoutError"));
+          });
+        }),
+    );
+    const startedAt = performance.now();
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+      retry: {
+        budgetMilliseconds: 20,
+        minDelayMilliseconds: 1,
+        maxDelayMilliseconds: 2,
+        randomize: false,
+      },
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(result).toMatchObject({ ok: false, error: "provider_unavailable" });
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries Provider quota timing without retrying or exposing credentials", async () => {
+    const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
+      response(
+        { error: { errors: [{ reason: "quotaExceeded" }] } },
+        403,
+        { "retry-after": "60" },
+      ),
+    );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "quota_exceeded",
+      nextEligibleAt: "2026-08-16T12:01:00.000Z",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("server-secret");
+  });
+
   it.each([
     ["https://www.youtube.com/channel/UC_immutable", "id=UC_immutable"],
     ["https://youtube.com/@quietlearning", "forHandle=%40quietlearning"],
@@ -476,7 +603,11 @@ describe("YouTube Provider adapter", () => {
       fetch,
       now: () => now,
     }).previewChannel({ url: "https://youtube.com/@quietlearning" });
-    expect(result).toEqual({ ok: false, error: "provider_unavailable" });
+    expect(result).toEqual({
+      ok: false,
+      error: "provider_unavailable",
+      retryCount: 2,
+    });
   });
 
   it("reads video resources in official 50-id batches", async () => {

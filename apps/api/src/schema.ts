@@ -770,9 +770,15 @@ export const discoverAcquisitionAttempts = pgTable(
     trigger: text("trigger").notNull(),
     outcome: text("outcome").notNull().default("running"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    leaseExpiresAt: timestamp("lease_expires_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     acceptedCount: integer("accepted_count"),
     rejectedCount: integer("rejected_count"),
+    retryCount: integer("retry_count").notNull().default(0),
     coverageStartedAt: timestamp("coverage_started_at", {
       withTimezone: true,
     }),
@@ -784,6 +790,9 @@ export const discoverAcquisitionAttempts = pgTable(
       table.providerTargetId,
       table.generation,
     ),
+    uniqueIndex("discover_acquisition_attempts_one_running_per_target")
+      .on(table.providerTargetId)
+      .where(sql`${table.outcome} = 'running'`),
     index("discover_acquisition_attempts_target_started_idx").on(
       table.providerTargetId,
       table.startedAt,
@@ -799,7 +808,8 @@ export const discoverAcquisitionAttempts = pgTable(
     check(
       "discover_acquisition_attempts_counts_check",
       sql`(${table.acceptedCount} IS NULL OR ${table.acceptedCount} >= 0)
-        AND (${table.rejectedCount} IS NULL OR ${table.rejectedCount} >= 0)`,
+        AND (${table.rejectedCount} IS NULL OR ${table.rejectedCount} >= 0)
+        AND ${table.retryCount} >= 0`,
     ),
     check(
       "discover_acquisition_attempts_terminal_check",
@@ -817,6 +827,16 @@ export const discoverAcquisitionAttempts = pgTable(
     ),
   ],
 );
+
+/** Durable Provider-wide backoff shared by every target and API process. */
+export const discoverProviderGates = pgTable("discover_provider_gates", {
+  provider: text("provider").primaryKey(),
+  nextEligibleAt: timestamp("next_eligible_at", {
+    withTimezone: true,
+  }).notNull(),
+  errorClass: text("error_class").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
 
 /** Purgeable current target display metadata, separate from stable target identity. */
 export const discoverProviderTargetProjections = pgTable(

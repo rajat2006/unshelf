@@ -101,6 +101,7 @@ export function createApp(
       db,
       youtube: options.discover.adapter,
       now: options.discover.now ?? (() => new Date()),
+      logger: options.logger,
     });
     app.use(
       "/api/discover",

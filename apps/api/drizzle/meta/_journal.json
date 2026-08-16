@@ -141,6 +141,13 @@
       "when": 1786866905133,
       "tag": "0019_overrated_george_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786869592928,
+      "tag": "0020_daily_jack_power",
+      "breakpoints": true
     }
   ]
 }

@@ -69,16 +69,20 @@ beforeAll(async () => {
   app = harness.app;
 });
 
-afterEach(() => {
+afterEach(async () => {
   currentNow = baselineNow;
+  vi.clearAllMocks();
+  await harness.pool.query("DELETE FROM discover_provider_gates");
 });
 
 afterAll(async () => {
   await harness?.stop();
 });
 
-async function createFollow(clerkUserId: string) {
-  const channelId = `UC_${clerkUserId}`;
+async function createFollow(
+  clerkUserId: string,
+  channelId = `UC_${clerkUserId}`,
+) {
   previewChannel.mockResolvedValueOnce(
     successfulAcquisition([originalVideo], channelId),
   );
@@ -104,6 +108,178 @@ async function createFollow(clerkUserId: string) {
 }
 
 describe("POST /api/discover/acquisitions", () => {
+  it("joins one shared acquisition while applying its snapshot privately for each User", async () => {
+    const channelId = "UC_shared_acquisition";
+    const first = await createFollow("clerk_shared_first", channelId);
+    const second = await createFollow("clerk_shared_second", channelId);
+    let finishProviderCall!: (result: ProviderPreviewResult) => void;
+    const callsBeforeRefresh = acquireChannel.mock.calls.length;
+    acquireChannel.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishProviderCall = resolve;
+      }),
+    );
+
+    const firstRequest = request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_shared_first")
+      .send({ trigger: "manual_follow", followId: first.followId })
+      .then((response) => response);
+    const secondRequest = request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_shared_second")
+      .send({ trigger: "manual_follow", followId: second.followId })
+      .then((response) => response);
+    await vi.waitFor(() =>
+      expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 1),
+    );
+    finishProviderCall(successfulAcquisition([newVideo], channelId));
+
+    const responses = await Promise.all([firstRequest, secondRequest]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(
+      responses.map((response) => response.body.acquisition.outcome).sort(),
+    ).toEqual(["complete", "joined"]);
+    expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 1);
+
+    for (const clerkUserId of ["clerk_shared_first", "clerk_shared_second"]) {
+      const workspace = await request(app)
+        .get("/api/discover")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .expect(200);
+      expect(workspace.body.discoveries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ title: "Accepted during refresh" }),
+        ]),
+      );
+      expect(workspace.body.follows).toHaveLength(1);
+    }
+
+    const shared = await harness.pool.query<{
+      attempts: string;
+      snapshots: string;
+      candidates: string;
+      discoveries: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM discover_acquisition_attempts
+          WHERE provider_target_id = target.id)::text AS attempts,
+         (SELECT count(*) FROM discover_provider_snapshots
+          WHERE provider_target_id = target.id
+            AND acquisition_attempt_id IS NOT NULL)::text AS snapshots,
+         (SELECT count(*) FROM discover_candidates candidate
+          JOIN discover_provider_results result
+            ON result.id = candidate.provider_result_id
+          WHERE result.external_reference = 'video-new')::text AS candidates,
+         (SELECT count(*) FROM discover_discoveries discovery
+          JOIN discover_candidates candidate ON candidate.id = discovery.candidate_id
+          JOIN discover_provider_results result
+            ON result.id = candidate.provider_result_id
+          WHERE result.external_reference = 'video-new')::text AS discoveries
+       FROM discover_provider_targets target
+       WHERE target.external_reference = $1`,
+      [channelId],
+    );
+    expect(shared.rows[0]).toEqual({
+      attempts: "1",
+      snapshots: "1",
+      candidates: "2",
+      discoveries: "2",
+    });
+  });
+
+  it("shares a Provider quota gate across targets and manual requests", async () => {
+    const first = await createFollow("clerk_gate_first", "UC_gate_first");
+    const second = await createFollow("clerk_gate_second", "UC_gate_second");
+    const callsBeforeQuota = acquireChannel.mock.calls.length;
+    acquireChannel.mockResolvedValueOnce({
+      ok: false,
+      error: "quota_exceeded",
+    });
+
+    const exhausted = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_gate_first")
+      .send({ trigger: "manual_follow", followId: first.followId })
+      .expect(200);
+    expect(exhausted.body.acquisition).toMatchObject({
+      outcome: "throttled",
+      nextEligibleAt: "2026-08-16T12:15:00.000Z",
+    });
+
+    const gated = await request(app)
+      .post("/api/discover/acquisitions")
+      .set(TEST_USER_HEADER, "clerk_gate_second")
+      .send({ trigger: "manual_follow", followId: second.followId })
+      .expect(200);
+    expect(gated.body.acquisition).toMatchObject({
+      outcome: "throttled",
+      nextEligibleAt: "2026-08-16T12:15:00.000Z",
+    });
+    expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeQuota + 1);
+    const acquisitionLog = harness.logger.records.find(
+      (record) =>
+        record.event === "unshelf.discover.acquisition.ended" &&
+        record.errorClass === "quota_exceeded",
+    );
+    expect(acquisitionLog).toMatchObject({
+      outcome: "throttled",
+      acceptedCount: 0,
+      rejectedCount: 0,
+      retryCount: 0,
+      errorClass: "quota_exceeded",
+    });
+    expect(JSON.stringify(acquisitionLog)).not.toMatch(
+      /clerk_gate|UC_gate|Quiet Learning|video-original|youtube\.com/,
+    );
+  });
+
+  it("bounds Provider work while allowing distinct targets to progress", async () => {
+    const follows = await Promise.all(
+      Array.from({ length: 5 }, async (_value, index) => ({
+        clerkUserId: `clerk_bounded_${index}`,
+        ...(await createFollow(
+          `clerk_bounded_${index}`,
+          `UC_bounded_${index}`,
+        )),
+      })),
+    );
+    const callsBeforeRefresh = acquireChannel.mock.calls.length;
+    const finishCalls: Array<(result: ProviderPreviewResult) => void> = [];
+    acquireChannel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCalls.push(resolve);
+        }),
+    );
+
+    const requests = follows.map(({ clerkUserId, followId }) =>
+      request(app)
+        .post("/api/discover/acquisitions")
+        .set(TEST_USER_HEADER, clerkUserId)
+        .send({ trigger: "manual_follow", followId })
+        .then((response) => response),
+    );
+    await vi.waitFor(() =>
+      expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 4),
+    );
+    finishCalls[0]?.(
+      successfulAcquisition([newVideo], "UC_bounded_0"),
+    );
+    await vi.waitFor(() =>
+      expect(acquireChannel).toHaveBeenCalledTimes(callsBeforeRefresh + 5),
+    );
+    for (let index = 1; index < finishCalls.length; index += 1) {
+      finishCalls[index]?.(
+        successfulAcquisition([newVideo], `UC_bounded_${index}`),
+      );
+    }
+
+    expect((await Promise.all(requests)).map(({ status }) => status)).toEqual([
+      200, 200, 200, 200, 200,
+    ]);
+  });
+
   it("keeps stored intake readable during Provider I/O and applies accepted results after publication", async () => {
     const clerkUserId = "clerk_manual_refresh";
     const { followId, channelId } = await createFollow(clerkUserId);
@@ -321,20 +497,26 @@ describe("POST /api/discover/acquisitions", () => {
       latestAttemptOutcome: "complete",
       latestAttemptAt: "2026-08-16T12:04:00.000Z",
     });
-    const attempts = await harness.pool.query<{ running: string }>(
-      `SELECT count(*) FILTER (WHERE outcome = 'running')::text AS running
+    const attempts = await harness.pool.query<{
+      running: string;
+      recovered: string;
+    }>(
+      `SELECT
+         count(*) FILTER (WHERE outcome = 'running')::text AS running,
+         count(*) FILTER (WHERE error_class = 'lease_expired')::text AS recovered
        FROM discover_acquisition_attempts
        WHERE provider_target_id = (
          SELECT provider_target_id FROM discover_follows WHERE id = $1
        )`,
       [followId],
     );
-    expect(attempts.rows[0]?.running).toBe("0");
+    expect(attempts.rows[0]).toEqual({ running: "0", recovered: "1" });
   });
 
   it("skips an older successful Provider result after a newer publication", async () => {
     const clerkUserId = "clerk_late_success";
     const { followId, channelId } = await createFollow(clerkUserId);
+    const priorAcquisitionCalls = acquireChannel.mock.calls.length;
     let finishOlder!: (result: ProviderPreviewResult) => void;
     acquireChannel.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -346,7 +528,9 @@ describe("POST /api/discover/acquisitions", () => {
       .set(TEST_USER_HEADER, clerkUserId)
       .send({ trigger: "manual_follow", followId })
       .then((response) => response);
-    await vi.waitFor(() => expect(finishOlder).toBeTypeOf("function"));
+    await vi.waitFor(() =>
+      expect(acquireChannel).toHaveBeenCalledTimes(priorAcquisitionCalls + 1),
+    );
 
     currentNow = new Date("2026-08-16T12:06:00.000Z");
     acquireChannel.mockResolvedValueOnce(

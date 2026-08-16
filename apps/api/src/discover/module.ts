@@ -11,6 +11,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import pLimit from "p-limit";
 import { Type } from "@unshelf/shared";
 import type {
   CandidateId,
@@ -31,6 +32,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import type { Logger } from "../logging";
 import {
   discoverFollowPreviewResults,
   discoverFollowPreviews,
@@ -41,6 +43,7 @@ import {
   discoverIdempotency,
   discoverProviderResultProjections,
   discoverProviderResults,
+  discoverProviderGates,
   discoverProviderSnapshotResults,
   discoverProviderSnapshots,
   discoverProviderTargetProjections,
@@ -55,6 +58,9 @@ import type {
 
 const previewLifetimeMilliseconds = 15 * 60 * 1_000;
 const providerRetentionMilliseconds = 30 * 24 * 60 * 60 * 1_000;
+const acquisitionLeaseMilliseconds = 35 * 1_000;
+const joinPollMilliseconds = 10;
+const providerGateFallbackMilliseconds = 15 * 60 * 1_000;
 
 export interface DiscoverModule {
   prepareFollow(input: {
@@ -77,17 +83,22 @@ export function createDiscoverModule({
   db,
   youtube,
   now,
+  logger,
 }: {
   db: Database;
   youtube: YouTubeAdapter;
   now: () => Date;
+  logger: Logger;
 }): DiscoverModule {
+  const providerConcurrency = pLimit(4);
   return {
     prepareFollow: async ({ userId, request }) => {
-      const acquired = await youtube.previewChannel({
-        url: request.target.url,
-      });
-      if (!acquired.ok) return acquired;
+      const acquired = await providerConcurrency(() =>
+        youtube.previewChannel({
+          url: request.target.url,
+        }),
+      );
+      if (!acquired.ok) return { ok: false, error: acquired.error };
 
       const createdAt = now();
       const previewExpiresAt = new Date(
@@ -675,6 +686,70 @@ export function createDiscoverModule({
           return { ok: false as const, error: "follow_inactive" as const };
         }
         const startedAt = now();
+        await tx
+          .select({ id: discoverProviderTargets.id })
+          .from(discoverProviderTargets)
+          .where(eq(discoverProviderTargets.id, follow.providerTargetId))
+          .for("update");
+        const [providerGate] = await tx
+          .select({ nextEligibleAt: discoverProviderGates.nextEligibleAt })
+          .from(discoverProviderGates)
+          .where(eq(discoverProviderGates.provider, "youtube"));
+        if (
+          providerGate !== undefined &&
+          providerGate.nextEligibleAt > startedAt
+        ) {
+          return {
+            ok: true as const,
+            role: "gated" as const,
+            follow,
+            nextEligibleAt: providerGate.nextEligibleAt,
+          };
+        }
+        const [runningAttempt] = await tx
+          .select({
+            id: discoverAcquisitionAttempts.id,
+            generation: discoverAcquisitionAttempts.generation,
+            leaseExpiresAt: discoverAcquisitionAttempts.leaseExpiresAt,
+          })
+          .from(discoverAcquisitionAttempts)
+          .where(
+            and(
+              eq(
+                discoverAcquisitionAttempts.providerTargetId,
+                follow.providerTargetId,
+              ),
+              eq(discoverAcquisitionAttempts.outcome, "running"),
+            ),
+          );
+        if (
+          runningAttempt !== undefined &&
+          runningAttempt.leaseExpiresAt > startedAt
+        ) {
+          return {
+            ok: true as const,
+            role: "joiner" as const,
+            follow,
+            attemptId: runningAttempt.id,
+          };
+        }
+        if (runningAttempt !== undefined) {
+          await tx
+            .update(discoverAcquisitionAttempts)
+            .set({
+              outcome: "skipped",
+              finishedAt: startedAt,
+              acceptedCount: 0,
+              rejectedCount: 0,
+              errorClass: "lease_expired",
+            })
+            .where(
+              and(
+                eq(discoverAcquisitionAttempts.id, runningAttempt.id),
+                eq(discoverAcquisitionAttempts.outcome, "running"),
+              ),
+            );
+        }
         const [target] = await tx
           .update(discoverProviderTargets)
           .set({
@@ -691,24 +766,109 @@ export function createDiscoverModule({
             generation: target.generation,
             trigger: request.trigger,
             startedAt,
+            leaseExpiresAt: new Date(
+              startedAt.getTime() + acquisitionLeaseMilliseconds,
+            ),
           })
           .returning({ id: discoverAcquisitionAttempts.id });
         return {
           ok: true as const,
+          role: "owner" as const,
           follow,
           startedAt,
           generation: target.generation,
           attemptId: attempt.id,
+          leaseRecovered: runningAttempt !== undefined,
         };
       });
       if (!claim.ok) return claim;
 
+      if (claim.role === "gated") {
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: "throttled",
+            acceptedCount: 0,
+            rejectedCount: 0,
+            ...health,
+            nextEligibleAt: claim.nextEligibleAt.toISOString(),
+          },
+        };
+      }
+
+      if (claim.role === "joiner") {
+        const joined = await waitForAttempt({
+          db,
+          attemptId: claim.attemptId,
+          now,
+        });
+        await applyAvailableSnapshots({
+          db,
+          userId,
+          followId: request.followId,
+          appliedAt: now(),
+        });
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        recordAcquisition({
+          logger,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          trigger: request.trigger,
+          outcome: joined.outcome === "skipped" ? "skipped" : "joined",
+          acceptedCount: joined.acceptedCount,
+          rejectedCount: joined.rejectedCount,
+          retryCount: joined.retryCount,
+          leaseRecovered: false,
+          durationMs: joined.durationMs,
+          coverageStartedAt: joined.coverageStartedAt,
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: joined.outcome === "skipped" ? "skipped" : "joined",
+            acceptedCount: joined.acceptedCount,
+            rejectedCount: joined.rejectedCount,
+            ...health,
+          },
+        };
+      }
+
       const acquired =
         claim.follow.channelId === null
           ? ({ ok: false, error: "unverifiable" } as const)
-          : await youtube.acquireChannel({ channelId: claim.follow.channelId });
+          : await providerConcurrency(() =>
+              youtube.acquireChannel({ channelId: claim.follow.channelId! }),
+            );
       if (!acquired.ok) {
         const outcome = acquisitionFailureOutcome(acquired);
+        const retryCount =
+          "retryCount" in acquired ? (acquired.retryCount ?? 0) : 0;
+        const providerNextEligibleAt =
+          "nextEligibleAt" in acquired ? acquired.nextEligibleAt : undefined;
+        const nextEligibleAt =
+          providerNextEligibleAt === undefined
+            ? outcome === "throttled"
+              ? new Date(now().getTime() + providerGateFallbackMilliseconds)
+              : null
+            : new Date(providerNextEligibleAt);
+        if (nextEligibleAt !== null) {
+          await setProviderGate({
+            db,
+            provider: "youtube",
+            nextEligibleAt,
+            errorClass: acquired.error,
+            updatedAt: now(),
+          });
+        }
         const terminalOutcome = await finishAttempt({
           db,
           attemptId: claim.attemptId,
@@ -719,10 +879,25 @@ export function createDiscoverModule({
           rejectedCount: 0,
           errorClass: acquired.error,
           finishedAt: now(),
+          nextEligibleAt,
+          retryCount,
         });
         const health = await readTargetHealth({
           db,
           providerTargetId: claim.follow.providerTargetId,
+        });
+        recordAcquisition({
+          logger,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          trigger: request.trigger,
+          outcome: terminalOutcome,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          retryCount,
+          leaseRecovered: claim.leaseRecovered,
+          errorClass: acquired.error,
+          durationMs: elapsedMilliseconds(claim.startedAt, now()),
         });
         return {
           ok: true,
@@ -758,10 +933,25 @@ export function createDiscoverModule({
           rejectedCount: 0,
           errorClass: publication.outcome === "failed" ? "target_drift" : null,
           finishedAt: now(),
+          retryCount: acquired.retryCount ?? 0,
         });
         const health = await readTargetHealth({
           db,
           providerTargetId: claim.follow.providerTargetId,
+        });
+        recordAcquisition({
+          logger,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          trigger: request.trigger,
+          outcome: terminalOutcome,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          retryCount: acquired.retryCount ?? 0,
+          leaseRecovered: claim.leaseRecovered,
+          durationMs: elapsedMilliseconds(claim.startedAt, now()),
+          errorClass:
+            publication.outcome === "failed" ? "target_drift" : undefined,
         });
         return {
           ok: true,
@@ -794,6 +984,21 @@ export function createDiscoverModule({
           errorClass: "application_failed",
           finishedAt: now(),
           coverageStartedAt: acquired.coverageStartedAt,
+          retryCount: acquired.retryCount ?? 0,
+        });
+        recordAcquisition({
+          logger,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          trigger: request.trigger,
+          outcome: "failed",
+          acceptedCount: acquired.videos.length,
+          rejectedCount: acquired.rejectedCount,
+          retryCount: acquired.retryCount ?? 0,
+          leaseRecovered: claim.leaseRecovered,
+          durationMs: elapsedMilliseconds(claim.startedAt, now()),
+          coverageStartedAt: acquired.coverageStartedAt,
+          errorClass: "application_failed",
         });
         throw error;
       }
@@ -808,10 +1013,24 @@ export function createDiscoverModule({
         errorClass: null,
         finishedAt: now(),
         coverageStartedAt: acquired.coverageStartedAt,
+        retryCount: acquired.retryCount ?? 0,
       });
       const health = await readTargetHealth({
         db,
         providerTargetId: claim.follow.providerTargetId,
+      });
+      recordAcquisition({
+        logger,
+        attemptId: claim.attemptId,
+        providerTargetId: claim.follow.providerTargetId,
+        trigger: request.trigger,
+        outcome: terminalOutcome,
+        acceptedCount: acquired.videos.length,
+        rejectedCount: acquired.rejectedCount,
+        retryCount: acquired.retryCount ?? 0,
+        leaseRecovered: claim.leaseRecovered,
+        durationMs: elapsedMilliseconds(claim.startedAt, now()),
+        coverageStartedAt: acquired.coverageStartedAt,
       });
       return {
         ok: true,
@@ -893,6 +1112,151 @@ export function createDiscoverModule({
       };
     },
   };
+}
+
+async function waitForAttempt({
+  db,
+  attemptId,
+  now,
+}: {
+  db: Database;
+  attemptId: string;
+  now: () => Date;
+}): Promise<{
+  outcome: string;
+  acceptedCount: number;
+  rejectedCount: number;
+  retryCount: number;
+  durationMs: number;
+  coverageStartedAt?: string;
+}> {
+  for (;;) {
+    const [attempt] = await db
+      .select({
+        outcome: discoverAcquisitionAttempts.outcome,
+        leaseExpiresAt: discoverAcquisitionAttempts.leaseExpiresAt,
+        acceptedCount: discoverAcquisitionAttempts.acceptedCount,
+        rejectedCount: discoverAcquisitionAttempts.rejectedCount,
+        retryCount: discoverAcquisitionAttempts.retryCount,
+        startedAt: discoverAcquisitionAttempts.startedAt,
+        finishedAt: discoverAcquisitionAttempts.finishedAt,
+        coverageStartedAt: discoverAcquisitionAttempts.coverageStartedAt,
+      })
+      .from(discoverAcquisitionAttempts)
+      .where(eq(discoverAcquisitionAttempts.id, attemptId));
+    if (attempt === undefined) {
+      throw new Error("Joined acquisition attempt disappeared");
+    }
+    if (attempt.outcome !== "running") {
+      return {
+        outcome: attempt.outcome,
+        acceptedCount: attempt.acceptedCount ?? 0,
+        rejectedCount: attempt.rejectedCount ?? 0,
+        retryCount: attempt.retryCount,
+        durationMs: elapsedMilliseconds(
+          attempt.startedAt,
+          attempt.finishedAt ?? attempt.startedAt,
+        ),
+        ...(attempt.coverageStartedAt === null
+          ? {}
+          : { coverageStartedAt: attempt.coverageStartedAt.toISOString() }),
+      };
+    }
+    const observedAt = now();
+    if (attempt.leaseExpiresAt <= observedAt) {
+      await db
+        .update(discoverAcquisitionAttempts)
+        .set({
+          outcome: "skipped",
+          finishedAt: observedAt,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          errorClass: "lease_expired",
+        })
+        .where(
+          and(
+            eq(discoverAcquisitionAttempts.id, attemptId),
+            eq(discoverAcquisitionAttempts.outcome, "running"),
+          ),
+        );
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, joinPollMilliseconds));
+  }
+}
+
+function recordAcquisition({
+  logger,
+  attemptId,
+  providerTargetId,
+  trigger,
+  outcome,
+  acceptedCount,
+  rejectedCount,
+  retryCount,
+  leaseRecovered,
+  durationMs,
+  coverageStartedAt,
+  errorClass,
+}: {
+  logger: Logger;
+  attemptId: string;
+  providerTargetId: string;
+  trigger: string;
+  outcome: string;
+  acceptedCount: number;
+  rejectedCount: number;
+  retryCount: number;
+  leaseRecovered: boolean;
+  durationMs: number;
+  coverageStartedAt?: string;
+  errorClass?: string;
+}): void {
+  logger.info({
+    event: "unshelf.discover.acquisition.ended",
+    msg: "Discover Provider acquisition ended",
+    attemptId,
+    providerTargetId,
+    trigger,
+    outcome,
+    acceptedCount,
+    rejectedCount,
+    retryCount,
+    leaseRecovered,
+    durationMs,
+    ...(coverageStartedAt === undefined ? {} : { coverageStartedAt }),
+    ...(errorClass === undefined ? {} : { errorClass }),
+  });
+}
+
+function elapsedMilliseconds(startedAt: Date, finishedAt: Date): number {
+  return Math.max(0, finishedAt.getTime() - startedAt.getTime());
+}
+
+async function setProviderGate({
+  db,
+  provider,
+  nextEligibleAt,
+  errorClass,
+  updatedAt,
+}: {
+  db: Database;
+  provider: string;
+  nextEligibleAt: Date;
+  errorClass: string;
+  updatedAt: Date;
+}): Promise<void> {
+  await db
+    .insert(discoverProviderGates)
+    .values({ provider, nextEligibleAt, errorClass, updatedAt })
+    .onConflictDoUpdate({
+      target: discoverProviderGates.provider,
+      set: {
+        nextEligibleAt: sql`greatest(${discoverProviderGates.nextEligibleAt}, ${nextEligibleAt})`,
+        errorClass,
+        updatedAt,
+      },
+    });
 }
 
 async function readTargetHealth({
@@ -983,6 +1347,8 @@ async function finishAttempt({
   errorClass,
   finishedAt,
   coverageStartedAt,
+  nextEligibleAt = null,
+  retryCount = 0,
 }: {
   db: Database;
   attemptId: string;
@@ -1000,6 +1366,8 @@ async function finishAttempt({
   errorClass: string | null;
   finishedAt: Date;
   coverageStartedAt?: string;
+  nextEligibleAt?: Date | null;
+  retryCount?: number;
 }): Promise<Exclude<FollowSummary["health"]["latestAttemptOutcome"], null>> {
   return db.transaction(async (tx) => {
     const [target] = await tx
@@ -1017,6 +1385,8 @@ async function finishAttempt({
         acceptedCount: outcome === "skipped" ? 0 : acceptedCount,
         rejectedCount: outcome === "skipped" ? 0 : rejectedCount,
         errorClass,
+        nextEligibleAt,
+        retryCount,
         coverageStartedAt:
           coverageStartedAt === undefined ? null : new Date(coverageStartedAt),
       })
@@ -1026,6 +1396,12 @@ async function finishAttempt({
           eq(discoverAcquisitionAttempts.outcome, "running"),
         ),
       );
+    if (outcome !== "skipped") {
+      await tx
+        .update(discoverProviderTargets)
+        .set({ nextEligibleAt })
+        .where(eq(discoverProviderTargets.id, providerTargetId));
+    }
     return outcome;
   });
 }

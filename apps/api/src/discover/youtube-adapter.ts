@@ -1,4 +1,5 @@
 import { z } from "zod";
+import pRetry from "p-retry";
 import {
   Type,
   type FollowPreviewVideo,
@@ -23,10 +24,31 @@ export interface ProviderPreview {
   videos: FollowPreviewVideo[];
   rejectedCount: number;
   coverageStartedAt: string;
+  retryCount?: number;
 }
 
 export type ProviderPreviewResult =
-  ProviderPreview | { ok: false; error: PrepareFollowFailure };
+  | ProviderPreview
+  | {
+      ok: false;
+      error: PrepareFollowFailure;
+      nextEligibleAt?: string;
+      retryCount?: number;
+    };
+
+interface RetryPolicy {
+  budgetMilliseconds: number;
+  minDelayMilliseconds: number;
+  maxDelayMilliseconds: number;
+  randomize: boolean;
+}
+
+const defaultRetryPolicy: RetryPolicy = {
+  budgetMilliseconds: 30_000,
+  minDelayMilliseconds: 250,
+  maxDelayMilliseconds: 2_000,
+  randomize: true,
+};
 
 export interface YouTubeAdapter {
   previewChannel(input: { url: string }): Promise<ProviderPreviewResult>;
@@ -37,16 +59,22 @@ export function createYouTubeAdapter({
   apiKey,
   fetch,
   now,
+  retry = defaultRetryPolicy,
 }: {
   apiKey: string;
   fetch: ProviderFetch;
   now: () => Date;
+  retry?: RetryPolicy;
 }): YouTubeAdapter {
+  const acquire = (
+    input: Parameters<typeof acquireChannelResults>[0],
+  ): Promise<ProviderPreviewResult> =>
+    acquireWithRetry({ input, now, retry });
   return {
     previewChannel: async ({ url }) => {
       const target = parseChannelUrl(url);
       if (target === null) return { ok: false, error: "unsupported_target" };
-      return acquireChannelResults({
+      return acquire({
         apiKey,
         fetch,
         now,
@@ -55,13 +83,84 @@ export function createYouTubeAdapter({
       });
     },
     acquireChannel: ({ channelId }) =>
-      acquireChannelResults({
+      acquire({
         apiKey,
         fetch,
         now,
         target: { id: channelId },
       }),
   };
+}
+
+async function acquireWithRetry({
+  input,
+  now,
+  retry,
+}: {
+  input: Parameters<typeof acquireChannelResults>[0];
+  now: () => Date;
+  retry: RetryPolicy;
+}): Promise<ProviderPreviewResult> {
+  const signal = AbortSignal.timeout(retry.budgetMilliseconds);
+  const fetchWithinBudget: ProviderFetch = (url, init) =>
+    input.fetch(url, { ...init, signal });
+  let retryCount = 0;
+  try {
+    const result = await pRetry(
+      (attemptNumber) => {
+        retryCount = attemptNumber - 1;
+        return acquireChannelResults({ ...input, fetch: fetchWithinBudget });
+      },
+      {
+        retries: 2,
+        minTimeout: 0,
+        maxRetryTime: retry.budgetMilliseconds,
+        signal,
+        onFailedAttempt: async ({ error, attemptNumber, retriesLeft }) => {
+          if (!(error instanceof RetryableProviderError) || retriesLeft === 0) {
+            return;
+          }
+          const fallback = Math.min(
+            retry.maxDelayMilliseconds,
+            retry.minDelayMilliseconds * 2 ** (attemptNumber - 1),
+          );
+          const jittered = retry.randomize
+            ? fallback * (1 + Math.random())
+            : fallback;
+          const providerDelay =
+            error.retryAt === null
+              ? 0
+              : Math.max(0, error.retryAt.getTime() - now().getTime());
+          await delay(Math.max(jittered, providerDelay));
+        },
+        shouldRetry: ({ error }) => error instanceof RetryableProviderError,
+      },
+    );
+    return retryCount === 0 ? result : { ...result, retryCount };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "provider_unavailable",
+      ...(error instanceof RetryableProviderError && error.retryAt !== null
+        ? { nextEligibleAt: error.retryAt.toISOString() }
+        : {}),
+      ...(retryCount === 0 ? {} : { retryCount }),
+    };
+  }
+}
+
+class RetryableProviderError extends Error {
+  readonly retryAt: Date | null;
+
+  constructor({ retryAt }: { retryAt: Date | null }) {
+    super("retryable_provider_failure");
+    this.name = "RetryableProviderError";
+    this.retryAt = retryAt;
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function acquireChannelResults({
@@ -81,6 +180,7 @@ async function acquireChannelResults({
     const channelResult = await requestJson({
       apiKey,
       fetch,
+      now,
       resource: "channels",
       query: { part: "id,snippet,contentDetails", ...target },
     });
@@ -102,6 +202,7 @@ async function acquireChannelResults({
       fetch,
       uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
       coverageStartedAt,
+      now,
     });
     if (!playlist.ok) return playlist;
 
@@ -111,6 +212,7 @@ async function acquireChannelResults({
       videoIds: playlist.videoIds,
       expectedChannelId: channel.id,
       coverageStartedAt,
+      now,
     });
     if (!videos.ok) return videos;
     const orderedVideos = videos.videos.sort((left, right) =>
@@ -137,7 +239,8 @@ async function acquireChannelResults({
       rejectedCount,
       coverageStartedAt,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof RetryableProviderError) throw error;
     return { ok: false, error: "provider_unavailable" };
   }
 }
@@ -180,11 +283,13 @@ async function readUploadsPlaylist({
   fetch,
   uploadsPlaylistId,
   coverageStartedAt,
+  now,
 }: {
   apiKey: string;
   fetch: ProviderFetch;
   uploadsPlaylistId: string;
   coverageStartedAt: string;
+  now: () => Date;
 }): Promise<
   { ok: true; videoIds: string[] } | { ok: false; error: PrepareFollowFailure }
 > {
@@ -196,6 +301,7 @@ async function readUploadsPlaylist({
     const response = await requestJson({
       apiKey,
       fetch,
+      now,
       resource: "playlistItems",
       query: {
         part: "snippet,contentDetails,status",
@@ -245,12 +351,14 @@ async function readVideos({
   videoIds,
   expectedChannelId,
   coverageStartedAt,
+  now,
 }: {
   apiKey: string;
   fetch: ProviderFetch;
   videoIds: string[];
   expectedChannelId: string;
   coverageStartedAt: string;
+  now: () => Date;
 }): Promise<
   | { ok: true; videos: FollowPreviewVideo[]; rejectedCount: number }
   | { ok: false; error: PrepareFollowFailure }
@@ -265,6 +373,7 @@ async function readVideos({
     const response = await requestJson({
       apiKey,
       fetch,
+      now,
       resource: "videos",
       query: {
         part: "snippet,contentDetails,status,liveStreamingDetails,player",
@@ -342,11 +451,13 @@ async function readVideos({
 async function requestJson({
   apiKey,
   fetch,
+  now,
   resource,
   query,
 }: {
   apiKey: string;
   fetch: ProviderFetch;
+  now: () => Date;
   resource: string;
   query: Record<string, string>;
 }): Promise<
@@ -355,21 +466,67 @@ async function requestJson({
   const url = new URL(`${youtubeApiOrigin}/${resource}`);
   for (const [key, value] of Object.entries(query))
     url.searchParams.set(key, value);
-  const response = await fetch(url, { headers: { "x-goog-api-key": apiKey } });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "x-goog-api-key": apiKey },
+    });
+  } catch {
+    throw new RetryableProviderError({ retryAt: null });
+  }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
+    if (isRetryableStatus(response.status)) {
+      throw new RetryableProviderError({
+        retryAt: providerRetryAt(response.headers, now()),
+      });
+    }
     return { ok: false, error: "unverifiable" };
   }
   if (response.ok) return { ok: true, body };
   if (response.status === 403 && quotaResponseSchema.safeParse(body).success) {
-    return { ok: false, error: "quota_exceeded" };
+    const retryAt = providerRetryAt(response.headers, now());
+    return {
+      ok: false,
+      error: "quota_exceeded",
+      ...(retryAt === null ? {} : { nextEligibleAt: retryAt.toISOString() }),
+    };
   }
   if (response.status === 400 || response.status === 404) {
     return { ok: false, error: "invalid_target" };
   }
+  if (isRetryableStatus(response.status)) {
+    throw new RetryableProviderError({
+      retryAt: providerRetryAt(response.headers, now()),
+    });
+  }
   return { ok: false, error: "provider_unavailable" };
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function providerRetryAt(headers: Headers, currentTime: Date): Date | null {
+  const retryAfter = headers.get("retry-after");
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return new Date(currentTime.getTime() + seconds * 1_000);
+    }
+    const date = new Date(retryAfter);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  const reset = headers.get("x-ratelimit-reset");
+  if (reset !== null) {
+    const seconds = Number(reset);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return new Date(seconds * 1_000);
+    }
+  }
+  return null;
 }
 
 function parseDuration(value: string): number | null {
