@@ -1,0 +1,383 @@
+import { describe, expect, it, vi } from "vitest";
+import { createYouTubeAdapter, type ProviderFetch } from "./youtube-adapter";
+
+const now = new Date("2026-08-16T12:00:00.000Z");
+
+function response(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function channel(overrides: Record<string, unknown> = {}) {
+  return {
+    items: [
+      {
+        id: "UC_immutable",
+        snippet: { title: "Quiet Learning" },
+        contentDetails: { relatedPlaylists: { uploads: "UU_uploads" } },
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function playlistItem(videoId: string, publishedAt: string) {
+  return {
+    snippet: {
+      title: `Playlist ${videoId}`,
+      publishedAt,
+      resourceId: { kind: "youtube#video", videoId },
+    },
+    contentDetails: { videoId, videoPublishedAt: publishedAt },
+    status: { privacyStatus: "public" },
+  };
+}
+
+function video(
+  id: string,
+  publishedAt: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    snippet: {
+      title: `Video ${id}`,
+      channelId: "UC_immutable",
+      channelTitle: "Quiet Learning",
+      publishedAt,
+      liveBroadcastContent: "none",
+      thumbnails: {
+        medium: {
+          url: `https://img.youtube.com/${id}.jpg`,
+          width: 320,
+          height: 180,
+        },
+      },
+    },
+    contentDetails: { duration: "PT4M1S" },
+    status: {
+      privacyStatus: "public",
+      uploadStatus: "processed",
+      embeddable: true,
+    },
+    ...overrides,
+  };
+}
+
+describe("YouTube Provider adapter", () => {
+  it.each([
+    ["https://www.youtube.com/channel/UC_immutable", "id=UC_immutable"],
+    ["https://youtube.com/@quietlearning", "forHandle=%40quietlearning"],
+    ["https://www.youtube.com/user/quietlearning", "forUsername=quietlearning"],
+  ])("resolves %s through channels.list", async (url, expectedQuery) => {
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(response({ items: [] }));
+    const adapter = createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    });
+
+    const result = await adapter.previewChannel({ url });
+
+    expect(result.ok).toBe(true);
+    expect(fetch.mock.calls[0]?.[0].toString()).toContain(expectedQuery);
+    expect(fetch.mock.calls[0]?.[0].toString()).not.toContain("server-secret");
+    expect(
+      new Headers(fetch.mock.calls[0]?.[1]?.headers).get("x-goog-api-key"),
+    ).toBe("server-secret");
+  });
+
+  it("returns the newest ten eligible videos within complete 30-day coverage", async () => {
+    const dates = Array.from({ length: 12 }, (_, index) =>
+      new Date(now.getTime() - (index + 1) * 86_400_000).toISOString(),
+    );
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((date, index) => playlistItem(`v${index}`, date)),
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((date, index) => video(`v${index}`, date)),
+        }),
+      );
+    const adapter = createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    });
+
+    const result = await adapter.previewChannel({
+      url: "https://youtube.com/@quietlearning",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      channelId: "UC_immutable",
+      uploadsPlaylistId: "UU_uploads",
+      publisher: "Quiet Learning",
+      rejectedCount: 0,
+    });
+    if (!result.ok) throw new Error("expected preview");
+    expect(result.videos).toHaveLength(10);
+    expect(result.videos.map((entry) => entry.providerIdentity)).toEqual(
+      dates.slice(0, 10).map((_date, index) => `v${index}`),
+    );
+    expect(result.videos[0]).toEqual({
+      provider: "youtube",
+      providerIdentity: "v0",
+      title: "Video v0",
+      source: "https://www.youtube.com/watch?v=v0",
+      publisher: "Quiet Learning",
+      publishedAt: dates[0],
+      durationSeconds: 241,
+      type: "video",
+      thumbnailUrl: "https://img.youtube.com/v0.jpg",
+    });
+  });
+
+  it("accepts short landscape videos and rejects short vertical, square, unknown-ratio, livestream, and unplayable records as partial", async () => {
+    const publishedAt = "2026-08-15T12:00:00.000Z";
+    const ids = [
+      "landscape",
+      "vertical",
+      "square",
+      "unknown",
+      "live",
+      "private",
+    ];
+    const short = { contentDetails: { duration: "PT3M" } };
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({ items: ids.map((id) => playlistItem(id, publishedAt)) }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            video("landscape", publishedAt, { ...short }),
+            video("vertical", publishedAt, {
+              ...short,
+              snippet: {
+                ...video("vertical", publishedAt).snippet,
+                thumbnails: {
+                  medium: {
+                    url: "https://img/vertical",
+                    width: 180,
+                    height: 320,
+                  },
+                },
+              },
+            }),
+            video("square", publishedAt, {
+              ...short,
+              snippet: {
+                ...video("square", publishedAt).snippet,
+                thumbnails: {
+                  medium: {
+                    url: "https://img/square",
+                    width: 200,
+                    height: 200,
+                  },
+                },
+              },
+            }),
+            video("unknown", publishedAt, {
+              ...short,
+              snippet: {
+                ...video("unknown", publishedAt).snippet,
+                thumbnails: {},
+              },
+            }),
+            video("live", publishedAt, {
+              liveStreamingDetails: { actualStartTime: publishedAt },
+            }),
+            video("private", publishedAt, {
+              status: {
+                privacyStatus: "private",
+                uploadStatus: "processed",
+                embeddable: true,
+              },
+            }),
+          ],
+        }),
+      );
+    const adapter = createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    });
+
+    const result = await adapter.previewChannel({
+      url: "https://youtube.com/@quietlearning",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: "partial",
+      rejectedCount: 5,
+    });
+    if (!result.ok) throw new Error("expected partial preview");
+    expect(result.videos.map((entry) => entry.providerIdentity)).toEqual([
+      "landscape",
+    ]);
+  });
+
+  it("fails tagged instead of publishing an empty preview for malformed coverage or quota errors", async () => {
+    const malformedFetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(response({ surprising: true }));
+    const malformed = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch: malformedFetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+    expect(malformed).toEqual({ ok: false, error: "unverifiable" });
+
+    const quotaFetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValue(
+        response({ error: { errors: [{ reason: "quotaExceeded" }] } }, 403),
+      );
+    const quota = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch: quotaFetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+    expect(quota).toEqual({ ok: false, error: "quota_exceeded" });
+  });
+
+  it("paginates until the inclusive 30-day boundary without using search.list", async () => {
+    const boundary = "2026-07-17T12:00:00.000Z";
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: [playlistItem("boundary", boundary)],
+          nextPageToken: "page-2",
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ items: [playlistItem("old", "2026-07-17T11:59:59.999Z")] }),
+      )
+      .mockResolvedValueOnce(
+        response({ items: [video("boundary", boundary)] }),
+      );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(
+      result.ok && result.videos.map((entry) => entry.providerIdentity),
+    ).toEqual(["boundary"]);
+    const urls = fetch.mock.calls.map(([url]) => url.toString());
+    expect(urls.filter((url) => url.includes("playlistItems"))).toHaveLength(2);
+    expect(urls.some((url) => url.includes("search"))).toBe(false);
+  });
+
+  it("publishes valid records as partial when one video record is individually malformed", async () => {
+    const publishedAt = "2026-08-15T12:00:00.000Z";
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            playlistItem("valid", publishedAt),
+            playlistItem("invalid", publishedAt),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            video("valid", publishedAt),
+            { id: "invalid", surprising: true },
+          ],
+        }),
+      );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: "partial",
+      rejectedCount: 1,
+    });
+    if (!result.ok) throw new Error("expected partial preview");
+    expect(result.videos.map((entry) => entry.providerIdentity)).toEqual([
+      "valid",
+    ]);
+  });
+
+  it("maps network timeouts to Provider unavailable", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+    expect(result).toEqual({ ok: false, error: "provider_unavailable" });
+  });
+
+  it("reads video resources in official 50-id batches", async () => {
+    const publishedAt = "2026-08-15T12:00:00.000Z";
+    const ids = Array.from({ length: 51 }, (_, index) => `batched-${index}`);
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({ items: ids.map((id) => playlistItem(id, publishedAt)) }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: ids.slice(0, 50).map((id) => video(id, publishedAt)),
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ items: [video(ids[50], publishedAt)] }),
+      );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result.ok).toBe(true);
+    expect(
+      fetch.mock.calls.filter(([url]) => url.pathname.endsWith("/videos")),
+    ).toHaveLength(2);
+  });
+
+  it("rejects unsupported URL forms before making a request", async () => {
+    const fetch = vi.fn<ProviderFetch>();
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/playlist?list=PL123" });
+    expect(result).toEqual({ ok: false, error: "unsupported_target" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

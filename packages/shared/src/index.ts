@@ -121,7 +121,53 @@ export type {
   AddDailyFocusItemRequest,
   DailyPlanningQuery,
   SuppressDailyPlanningItemRequest,
+  PrepareFollowRequest,
 } from "./validation";
+
+export type Provider = "youtube";
+export type FollowTargetKind = "channel";
+
+export type FollowPreviewId = string & {
+  readonly [identifierBrand]: "FollowPreviewId";
+};
+
+export interface FollowPreviewVideo {
+  provider: "youtube";
+  providerIdentity: string;
+  title: string;
+  source: string;
+  publisher: string;
+  publishedAt: string;
+  durationSeconds: number;
+  type: Type.Video;
+  thumbnailUrl: string | null;
+}
+
+export interface FollowPreview {
+  outcome: "preview" | "partial" | "empty";
+  previewId: FollowPreviewId;
+  provider: "youtube";
+  target: {
+    kind: "channel";
+    channelId: string;
+    publisher: string;
+  };
+  videos: FollowPreviewVideo[];
+  rejectedCount: number;
+  coverageStartedAt: string;
+  expiresAt: string;
+}
+
+export type PrepareFollowFailure =
+  | "invalid_target"
+  | "unsupported_target"
+  | "provider_unavailable"
+  | "quota_exceeded"
+  | "unverifiable";
+
+export type PrepareFollowResponse =
+  | { ok: true; preview: FollowPreview }
+  | { ok: false; error: PrepareFollowFailure };
 
 /** A private, free-text marker the User applies across Library Items. */
 export interface Label {

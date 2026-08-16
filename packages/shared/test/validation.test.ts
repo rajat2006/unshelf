@@ -8,6 +8,7 @@ import {
   createLabelRequestSchema,
   createLearningPlanRequestSchema,
   createStageRequestSchema,
+  prepareFollowRequestSchema,
   itemIdSchema,
   labelIdSchema,
   learningPlanIdSchema,
@@ -263,5 +264,44 @@ describe("identifier-bearing request schemas", () => {
         position: 1,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("Follow preview request schema", () => {
+  it("accepts only the first-slice public YouTube channel target", () => {
+    expect(
+      prepareFollowRequestSchema.parse({
+        provider: "youtube",
+        target: {
+          kind: "channel",
+          url: "https://www.youtube.com/@unshelf",
+        },
+      }),
+    ).toEqual({
+      provider: "youtube",
+      target: {
+        kind: "channel",
+        url: "https://www.youtube.com/@unshelf",
+      },
+    });
+  });
+
+  it.each([
+    {
+      provider: "rss",
+      target: { kind: "channel", url: "https://example.com" },
+    },
+    {
+      provider: "youtube",
+      target: { kind: "playlist", url: "https://youtube.com/playlist?list=x" },
+    },
+    { provider: "youtube", target: { kind: "channel", url: "not a url" } },
+    {
+      provider: "youtube",
+      target: { kind: "channel", url: "https://youtube.com/@x" },
+      apiKey: "secret",
+    },
+  ])("rejects unsupported or undeclared setup input", (input) => {
+    expect(prepareFollowRequestSchema.safeParse(input).success).toBe(false);
   });
 });

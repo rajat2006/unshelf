@@ -69,6 +69,15 @@ export const suppressDailyPlanningItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
+/** The only Follow target admitted by the first Discover slice. */
+export const prepareFollowRequestSchema = z.strictObject({
+  provider: z.literal("youtube"),
+  target: z.strictObject({
+    kind: z.literal("channel"),
+    url: z.url(),
+  }),
+});
+
 export const createPartsRequestSchema = z.strictObject({
   titles: z
     .array(z.string())
@@ -154,6 +163,7 @@ export type DailyPlanningQuery = z.infer<typeof dailyPlanningQuerySchema>;
 export type SuppressDailyPlanningItemRequest = z.infer<
   typeof suppressDailyPlanningItemRequestSchema
 >;
+export type PrepareFollowRequest = z.infer<typeof prepareFollowRequestSchema>;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
 export type UpdatePartCompletionRequest = z.infer<

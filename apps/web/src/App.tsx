@@ -20,6 +20,8 @@ import { LibrarySurface } from "./surfaces/LibrarySurface";
 import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
 import { TodaySurface } from "./surfaces/TodaySurface";
 import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
+import { DiscoverSurface } from "./surfaces/DiscoverSurface";
+import { isDiscoverEnabled } from "./discover/feature";
 
 /**
  * The routed Unshelf shell (design spec §3–§5, ADR-0013).
@@ -47,6 +49,9 @@ export function App() {
           <Route path="plans" element={<PlansSurface />} />
           <Route path="today" element={<TodaySurface />} />
           <Route path="today/:date" element={<DailyFocusHistorySurface />} />
+          {isDiscoverEnabled() ? (
+            <Route path="discover" element={<DiscoverSurface />} />
+          ) : null}
           <Route
             path="library"
             element={<LibrarySurface labelFilterEnabled />}

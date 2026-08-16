@@ -4,6 +4,8 @@ import { createClerkAuth } from "./middleware/auth";
 import { createDatabase } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
+import { readDiscoverConfig } from "./discover/config";
+import { createYouTubeAdapter } from "./discover/youtube-adapter";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;
@@ -21,6 +23,7 @@ try {
 const diagnosticSecrets = [
   process.env.DATABASE_URL,
   process.env.CLERK_SECRET_KEY,
+  process.env.YOUTUBE_API_KEY,
 ].filter((value): value is string => value !== undefined);
 
 const runtime: ProcessRuntime = {
@@ -64,12 +67,23 @@ await superviseApiProcess({
 
     const port = Number(process.env.PORT ?? 3001);
     const db = createDatabase(connectionString);
+    const discoverConfig = readDiscoverConfig(process.env);
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.
     const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
+      discover: discoverConfig.enabled
+        ? {
+            enabled: true,
+            adapter: createYouTubeAdapter({
+              apiKey: discoverConfig.apiKey,
+              fetch: globalThis.fetch,
+              now: () => new Date(),
+            }),
+          }
+        : { enabled: false },
     });
 
     return startApiServer(app, port, logger);

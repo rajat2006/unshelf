@@ -9,7 +9,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Express } from "express";
 import type { Pool } from "pg";
 import type { ClerkUserId } from "@unshelf/shared";
-import { createApp } from "../src/app";
+import { createApp, type AppOptions } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
 import type { Identify } from "../src/middleware/auth";
 import {
@@ -132,6 +132,7 @@ export async function seedLegacyLearningPlanFixture(
 
 export async function startTestApp(
   identify: Identify = identifyFromTestHeader,
+  options: Pick<AppOptions, "discover"> = {},
 ): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
@@ -139,7 +140,7 @@ export async function startTestApp(
   const db = createDatabase(container.getConnectionUri());
   await migrateTestDatabase(db);
 
-  return runningTestApp({ container, db, identify });
+  return runningTestApp({ container, db, identify, options });
 }
 
 /**
@@ -192,14 +193,16 @@ function runningTestApp({
   container,
   db,
   identify,
+  options = {},
 }: {
   container: StartedPostgreSqlContainer;
   db: DatabaseWithClient;
   identify: Identify;
+  options?: Pick<AppOptions, "discover">;
 }): TestApp {
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
-  const app = createApp(db, [auth], { logger });
+  const app = createApp(db, [auth], { logger, ...options });
 
   return {
     app,

@@ -27,6 +27,8 @@ import type {
   LearningPlanView,
   PlaceLearningPlanItemRequest,
   MoveLearningPlanItemRequest,
+  PrepareFollowRequest,
+  PrepareFollowResponse,
   PartId,
   RemoveStageRequest,
   ReorderStageItemsRequest,
@@ -60,13 +62,43 @@ async function authenticatedRequest(
   user: CurrentUser,
   path: string,
   init?: RequestInit,
+  acceptExpectedFailure = false,
 ): Promise<Response> {
   const token = await user.getToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...init, headers });
-  if (!response.ok) throw new Error(`api responded ${response.status}`);
+  if (!response.ok && !acceptExpectedFailure)
+    throw new Error(`api responded ${response.status}`);
   return response;
+}
+
+/** Resolve a public YouTube channel into one exact, expiring setup preview. */
+export async function prepareFollowPreview(
+  user: CurrentUser,
+  url: string,
+): Promise<PrepareFollowResponse> {
+  const body: PrepareFollowRequest = {
+    provider: "youtube",
+    target: { kind: "channel", url },
+  };
+  const response = await authenticatedRequest(
+    user,
+    "/api/discover/follow-previews",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    true,
+  );
+  const outcome = (await response.json()) as
+    PrepareFollowResponse | { error: string };
+  if ("ok" in outcome) return outcome;
+  if (outcome.error === "invalid_request") {
+    return { ok: false, error: "invalid_target" };
+  }
+  throw new Error(`api responded ${response.status}`);
 }
 
 /** Fetch All — every Item belonging to the current User. */

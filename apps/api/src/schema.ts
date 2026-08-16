@@ -6,11 +6,13 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import {
@@ -692,6 +694,252 @@ export const learningPlanEdges = pgTable(
     index("learning_plan_edges_plan_id_idx").on(
       table.userId,
       table.learningPlanId,
+    ),
+  ],
+);
+
+/** Shared Provider targets contain no User identity (ADR-0020). */
+export const discoverProviderTargets = pgTable(
+  "discover_provider_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    targetKind: text("target_kind").notNull(),
+    acquisitionScope: text("acquisition_scope").notNull().default("system"),
+    externalReference: text("external_reference").notNull(),
+    targetPayload: jsonb("target_payload").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("discover_provider_targets_identity_unique").on(
+      table.provider,
+      table.targetKind,
+      table.acquisitionScope,
+      table.externalReference,
+    ),
+    check(
+      "discover_provider_targets_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+    check(
+      "discover_provider_targets_kind_check",
+      sql`${table.targetKind} = 'channel'`,
+    ),
+    check(
+      "discover_provider_targets_expiry_check",
+      sql`${table.expiresAt} > ${table.fetchedAt}`,
+    ),
+  ],
+);
+
+/** Purgeable current target display metadata, separate from stable target identity. */
+export const discoverProviderTargetProjections = pgTable(
+  "discover_provider_target_projections",
+  {
+    providerTargetId: uuid("provider_target_id")
+      .primaryKey()
+      .references(() => discoverProviderTargets.id),
+    publisher: text("publisher").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check(
+      "discover_target_projection_expiry_check",
+      sql`${table.expiresAt} > ${table.fetchedAt}`,
+    ),
+  ],
+);
+
+/** Durable shared result identity; display metadata lives in the purgeable projection. */
+export const discoverProviderResults = pgTable(
+  "discover_provider_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    externalReference: text("external_reference").notNull(),
+  },
+  (table) => [
+    uniqueIndex("discover_provider_results_identity_unique").on(
+      table.provider,
+      table.externalReference,
+    ),
+    check(
+      "discover_provider_results_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+  ],
+);
+
+export const discoverProviderResultProjections = pgTable(
+  "discover_provider_result_projections",
+  {
+    providerResultId: uuid("provider_result_id")
+      .primaryKey()
+      .references(() => discoverProviderResults.id),
+    title: text("title").notNull(),
+    source: text("source").notNull(),
+    publisher: text("publisher").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    type: text("type").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check(
+      "discover_result_projection_type_check",
+      sql`${table.type} = 'video'`,
+    ),
+    check(
+      "discover_result_projection_duration_check",
+      sql`${table.durationSeconds} > 0`,
+    ),
+    check(
+      "discover_result_projection_expiry_check",
+      sql`${table.expiresAt} > ${table.fetchedAt}`,
+    ),
+  ],
+);
+
+export const discoverProviderSnapshots = pgTable(
+  "discover_provider_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerTargetId: uuid("provider_target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    sequence: integer("sequence").notNull(),
+    outcome: text("outcome").notNull(),
+    rejectedCount: integer("rejected_count").notNull(),
+    coverageStartedAt: timestamp("coverage_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("discover_provider_snapshots_id_target_unique").on(
+      table.id,
+      table.providerTargetId,
+    ),
+    unique("discover_provider_snapshots_target_sequence_unique").on(
+      table.providerTargetId,
+      table.sequence,
+    ),
+    check(
+      "discover_provider_snapshots_outcome_check",
+      sql`${table.outcome} IN ('preview', 'partial', 'empty')`,
+    ),
+    check(
+      "discover_provider_snapshots_rejected_count_check",
+      sql`${table.rejectedCount} >= 0`,
+    ),
+  ],
+);
+
+export const discoverProviderSnapshotResults = pgTable(
+  "discover_provider_snapshot_results",
+  {
+    snapshotId: uuid("snapshot_id")
+      .notNull()
+      .references(() => discoverProviderSnapshots.id),
+    providerResultId: uuid("provider_result_id")
+      .notNull()
+      .references(() => discoverProviderResults.id),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.snapshotId, table.providerResultId] }),
+    unique("discover_snapshot_results_position_unique").on(
+      table.snapshotId,
+      table.position,
+    ),
+    check(
+      "discover_snapshot_results_position_check",
+      sql`${table.position} >= 0`,
+    ),
+  ],
+);
+
+/** User-specific opaque receipt over one exact shared snapshot. */
+export const discoverFollowPreviews = pgTable(
+  "discover_follow_previews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    providerTargetId: uuid("provider_target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    snapshotId: uuid("snapshot_id")
+      .notNull()
+      .references(() => discoverProviderSnapshots.id),
+    targetUrl: text("target_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("discover_follow_previews_identity_unique").on(
+      table.id,
+      table.userId,
+      table.snapshotId,
+    ),
+    foreignKey({
+      columns: [table.snapshotId, table.providerTargetId],
+      foreignColumns: [
+        discoverProviderSnapshots.id,
+        discoverProviderSnapshots.providerTargetId,
+      ],
+    }),
+    index("discover_follow_previews_expiry_idx").on(table.expiresAt),
+    check(
+      "discover_follow_previews_expiry_check",
+      sql`${table.expiresAt} > ${table.createdAt}`,
+    ),
+    check(
+      "discover_follow_previews_consumed_check",
+      sql`${table.consumedAt} IS NULL OR ${table.consumedAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
+export const discoverFollowPreviewResults = pgTable(
+  "discover_follow_preview_results",
+  {
+    previewId: uuid("preview_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    snapshotId: uuid("snapshot_id").notNull(),
+    providerResultId: uuid("provider_result_id").notNull(),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.previewId, table.providerResultId] }),
+    unique("discover_follow_preview_results_position_unique").on(
+      table.previewId,
+      table.position,
+    ),
+    foreignKey({
+      columns: [table.previewId, table.userId, table.snapshotId],
+      foreignColumns: [
+        discoverFollowPreviews.id,
+        discoverFollowPreviews.userId,
+        discoverFollowPreviews.snapshotId,
+      ],
+    }),
+    foreignKey({
+      columns: [table.snapshotId, table.providerResultId],
+      foreignColumns: [
+        discoverProviderSnapshotResults.snapshotId,
+        discoverProviderSnapshotResults.providerResultId,
+      ],
+    }),
+    check(
+      "discover_follow_preview_results_position_check",
+      sql`${table.position} >= 0`,
     ),
   ],
 );

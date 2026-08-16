@@ -16,8 +16,15 @@ import {
   markRoutingResolved,
   type RequestLifecycleOptions,
 } from "./middleware/request-lifecycle";
+import type { YouTubeAdapter } from "./discover/youtube-adapter";
+import { createDiscoverModule } from "./discover/module";
+import { createDiscoverRouter } from "./discover/router";
 
-export type AppOptions = RequestLifecycleOptions;
+export type AppOptions = RequestLifecycleOptions & {
+  discover?:
+    | { enabled: false }
+    | { enabled: true; adapter: YouTubeAdapter; now?: () => Date };
+};
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -89,6 +96,18 @@ export function createApp(
     captureRouteMount,
     createDailyFocusRouter(db, auth),
   );
+  if (options.discover?.enabled) {
+    const discover = createDiscoverModule({
+      db,
+      youtube: options.discover.adapter,
+      now: options.discover.now ?? (() => new Date()),
+    });
+    app.use(
+      "/api/discover",
+      captureRouteMount,
+      createDiscoverRouter(discover, auth),
+    );
+  }
   app.use(markRoutingResolved);
   app.use(
     createApiErrorHandler({

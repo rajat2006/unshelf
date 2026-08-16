@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import { AuthPlaceholder } from "./AuthPlaceholder";
@@ -60,6 +60,14 @@ describe("routed shell states", () => {
     expect(markup).toContain("Capture");
   });
 
+  it("enables Discover navigation only behind its deployment flag", () => {
+    vi.stubEnv("VITE_DISCOVER_ENABLED", "true");
+    const markup = renderTopBar("/discover");
+
+    expect(markup).toMatch(/aria-current="page"[^>]+href="\/discover"/);
+    expect(markup).not.toContain("Coming later");
+  });
+
   it("keeps stale-route recovery inside the workspace", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
@@ -71,4 +79,8 @@ describe("routed shell states", () => {
     expect(markup).toContain('href="/today"');
     expect(markup).toContain("Go to Today");
   });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
