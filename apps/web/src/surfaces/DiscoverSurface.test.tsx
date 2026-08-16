@@ -16,6 +16,7 @@ import {
   confirmFollow,
   fetchDiscoverWorkspace,
   prepareFollowPreview,
+  refreshFollow,
 } from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
 import {
@@ -32,6 +33,7 @@ vi.mock("../api", async (importOriginal) => ({
   prepareFollowPreview: vi.fn(),
   confirmFollow: vi.fn(),
   fetchDiscoverWorkspace: vi.fn(),
+  refreshFollow: vi.fn(),
 }));
 
 const emptyWorkspace: DiscoverWorkspace = { follows: [], discoveries: [] };
@@ -45,6 +47,13 @@ const storedWorkspace: DiscoverWorkspace = {
       name: "Quiet Learning",
       targetUrl: "https://youtube.com/@quietlearning",
       createdAt: "2026-08-16T12:00:00.000Z",
+      health: {
+        latestAttemptAt: null,
+        latestAttemptOutcome: null,
+        latestCompleteAt: null,
+        verifiedCoverageStartedAt: null,
+        nextEligibleAt: null,
+      },
     },
   ],
   discoveries: [
@@ -92,6 +101,160 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
+  it("keeps stored intake visible while a local refresh accepts partial data", async () => {
+    let finishRefresh!: (
+      result: Awaited<ReturnType<typeof refreshFollow>>,
+    ) => void;
+    const refreshedWorkspace: DiscoverWorkspace = {
+      ...storedWorkspace,
+      discoveries: [
+        ...storedWorkspace.discoveries,
+        {
+          ...storedWorkspace.discoveries[0],
+          id: "00000000-0000-0000-0000-000000000021" as DiscoveryId,
+          candidateId: "00000000-0000-0000-0000-000000000031" as CandidateId,
+          title: "Accepted during refresh",
+        },
+      ],
+    };
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockResolvedValueOnce(refreshedWorkspace);
+    vi.mocked(refreshFollow).mockReturnValue(
+      new Promise((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    renderDiscover();
+    await screen.findByText("A deep module");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Refreshing Quiet Learning",
+    );
+
+    await act(async () => {
+      finishRefresh({
+        ok: true,
+        acquisition: {
+          followId: storedWorkspace.follows[0].id,
+          outcome: "partial",
+          acceptedCount: 1,
+          rejectedCount: 2,
+          latestAttemptAt: "2026-08-16T12:05:00.000Z",
+          latestAttemptOutcome: "partial",
+          latestCompleteAt: "2026-08-16T12:00:00.000Z",
+          verifiedCoverageStartedAt: "2026-07-17T12:00:00.000Z",
+          nextEligibleAt: null,
+        },
+      });
+    });
+
+    expect(await screen.findByText("Accepted during refresh")).toBeVisible();
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Partial refresh for Quiet Learning",
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
+    ).toBeVisible();
+  });
+
+  it("keeps stored intake usable when a local refresh fails and offers Retry", async () => {
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockResolvedValueOnce(storedWorkspace);
+    vi.mocked(refreshFollow)
+      .mockResolvedValueOnce({
+        ok: true,
+        acquisition: {
+          followId: storedWorkspace.follows[0].id,
+          outcome: "provider_unavailable",
+          acceptedCount: 0,
+          rejectedCount: 0,
+          latestAttemptAt: "2026-08-16T12:05:00.000Z",
+          latestAttemptOutcome: "provider_unavailable",
+          latestCompleteAt: null,
+          verifiedCoverageStartedAt: null,
+          nextEligibleAt: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        acquisition: {
+          followId: storedWorkspace.follows[0].id,
+          outcome: "complete",
+          acceptedCount: 1,
+          rejectedCount: 0,
+          latestAttemptAt: "2026-08-16T12:06:00.000Z",
+          latestAttemptOutcome: "complete",
+          latestCompleteAt: "2026-08-16T12:06:00.000Z",
+          verifiedCoverageStartedAt: "2026-07-17T12:00:00.000Z",
+          nextEligibleAt: null,
+        },
+      });
+    renderDiscover();
+    await screen.findByText("A deep module");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "YouTube is unavailable for Quiet Learning",
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open on YouTube" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Quiet Learning refreshed",
+      ),
+    );
+    expect(refreshFollow).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("A deep module")).toBeVisible();
+  });
+
+  it("preserves a successful refresh outcome when its authoritative reread fails", async () => {
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockRejectedValueOnce(new Error("reread failed"));
+    vi.mocked(refreshFollow).mockResolvedValueOnce({
+      ok: true,
+      acquisition: {
+        followId: storedWorkspace.follows[0].id,
+        outcome: "complete",
+        acceptedCount: 1,
+        rejectedCount: 0,
+        latestAttemptAt: "2026-08-16T12:05:00.000Z",
+        latestAttemptOutcome: "complete",
+        latestCompleteAt: "2026-08-16T12:05:00.000Z",
+        verifiedCoverageStartedAt: "2026-07-17T12:00:00.000Z",
+        nextEligibleAt: null,
+      },
+    });
+    renderDiscover();
+    await screen.findByText("A deep module");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Quiet Learning refreshed, but the intake could not reload",
+    );
+    expect(screen.getByText("A deep module")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
+    ).toBeVisible();
+  });
+
   it("shows a first-load skeleton, then renders stored intake with a local thumbnail fallback across reload", async () => {
     let resolve!: (workspace: DiscoverWorkspace) => void;
     vi.mocked(fetchDiscoverWorkspace).mockReturnValueOnce(

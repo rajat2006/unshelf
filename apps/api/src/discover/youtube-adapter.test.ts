@@ -159,6 +159,40 @@ describe("YouTube Provider adapter", () => {
     });
   });
 
+  it("acquires the immutable channel identity without applying the setup preview cap", async () => {
+    const dates = Array.from({ length: 12 }, (_, index) =>
+      new Date(now.getTime() - (index + 1) * 86_400_000).toISOString(),
+    );
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((publishedAt, index) =>
+            playlistItem({ videoId: `acquired-${index}`, publishedAt }),
+          ),
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: dates.map((publishedAt, index) =>
+            video({ id: `acquired-${index}`, publishedAt }),
+          ),
+        }),
+      );
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).acquireChannel({ channelId: "UC_immutable" });
+
+    expect(result.ok && result.videos).toHaveLength(12);
+    expect(fetch.mock.calls[0]?.[0].searchParams.get("id")).toBe(
+      "UC_immutable",
+    );
+    expect(fetch.mock.calls[0]?.[0].searchParams.has("forHandle")).toBe(false);
+  });
+
   it("accepts short landscape videos and excludes short vertical, square, unknown-ratio, livestream, and unplayable records", async () => {
     const publishedAt = "2026-08-15T12:00:00.000Z";
     const ids = [

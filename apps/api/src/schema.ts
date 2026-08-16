@@ -708,6 +708,15 @@ export const discoverProviderTargets = pgTable(
     acquisitionScope: text("acquisition_scope").notNull().default("system"),
     externalReference: text("external_reference"),
     targetPayload: jsonb("target_payload"),
+    checkpointPayload: jsonb("checkpoint_payload"),
+    acquisitionGeneration: integer("acquisition_generation")
+      .notNull()
+      .default(0),
+    currentSnapshotId: uuid("current_snapshot_id"),
+    verifiedCoverageStartedAt: timestamp("verified_coverage_started_at", {
+      withTimezone: true,
+    }),
+    nextEligibleAt: timestamp("next_eligible_at", { withTimezone: true }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
@@ -729,6 +738,10 @@ export const discoverProviderTargets = pgTable(
       sql`${table.targetKind} = 'channel'`,
     ),
     check(
+      "discover_provider_targets_generation_check",
+      sql`${table.acquisitionGeneration} >= 0`,
+    ),
+    check(
       "discover_provider_targets_expiry_check",
       sql`(
         ${table.externalReference} IS NULL
@@ -740,6 +753,66 @@ export const discoverProviderTargets = pgTable(
         AND ${table.targetPayload} IS NOT NULL
         AND ${table.fetchedAt} IS NOT NULL
         AND ${table.expiresAt} > ${table.fetchedAt}
+      )`,
+    ),
+  ],
+);
+
+/** One request-owned Provider attempt; no row contains User identity. */
+export const discoverAcquisitionAttempts = pgTable(
+  "discover_acquisition_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerTargetId: uuid("provider_target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    generation: integer("generation").notNull(),
+    trigger: text("trigger").notNull(),
+    outcome: text("outcome").notNull().default("running"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    acceptedCount: integer("accepted_count"),
+    rejectedCount: integer("rejected_count"),
+    coverageStartedAt: timestamp("coverage_started_at", {
+      withTimezone: true,
+    }),
+    nextEligibleAt: timestamp("next_eligible_at", { withTimezone: true }),
+    errorClass: text("error_class"),
+  },
+  (table) => [
+    unique("discover_acquisition_attempts_target_generation_unique").on(
+      table.providerTargetId,
+      table.generation,
+    ),
+    index("discover_acquisition_attempts_target_started_idx").on(
+      table.providerTargetId,
+      table.startedAt,
+    ),
+    check(
+      "discover_acquisition_attempts_trigger_check",
+      sql`${table.trigger} = 'manual_follow'`,
+    ),
+    check(
+      "discover_acquisition_attempts_outcome_check",
+      sql`${table.outcome} IN ('running', 'complete', 'partial', 'failed', 'skipped', 'throttled', 'provider_unavailable')`,
+    ),
+    check(
+      "discover_acquisition_attempts_counts_check",
+      sql`(${table.acceptedCount} IS NULL OR ${table.acceptedCount} >= 0)
+        AND (${table.rejectedCount} IS NULL OR ${table.rejectedCount} >= 0)`,
+    ),
+    check(
+      "discover_acquisition_attempts_terminal_check",
+      sql`(
+        ${table.outcome} = 'running'
+        AND ${table.finishedAt} IS NULL
+        AND ${table.acceptedCount} IS NULL
+        AND ${table.rejectedCount} IS NULL
+      ) OR (
+        ${table.outcome} <> 'running'
+        AND ${table.finishedAt} IS NOT NULL
+        AND ${table.acceptedCount} IS NOT NULL
+        AND ${table.rejectedCount} IS NOT NULL
       )`,
     ),
   ],
@@ -822,6 +895,9 @@ export const discoverProviderSnapshots = pgTable(
     providerTargetId: uuid("provider_target_id")
       .notNull()
       .references(() => discoverProviderTargets.id),
+    acquisitionAttemptId: uuid("acquisition_attempt_id")
+      .unique()
+      .references(() => discoverAcquisitionAttempts.id),
     sequence: integer("sequence").notNull(),
     outcome: text("outcome").notNull(),
     rejectedCount: integer("rejected_count").notNull(),

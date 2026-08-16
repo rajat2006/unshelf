@@ -1,7 +1,21 @@
-import { and, asc, desc, eq, gte, inArray, max, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  max,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { Type } from "@unshelf/shared";
 import type {
   CandidateId,
+  AcquireAndApplyRequest,
+  AcquireAndApplyResponse,
   ConfirmFollowFailure,
   ConfirmFollowRequest,
   ConfirmFollowResponse,
@@ -31,8 +45,13 @@ import {
   discoverProviderSnapshots,
   discoverProviderTargetProjections,
   discoverProviderTargets,
+  discoverAcquisitionAttempts,
 } from "../schema";
-import type { YouTubeAdapter } from "./youtube-adapter";
+import type {
+  ProviderPreview,
+  ProviderPreviewResult,
+  YouTubeAdapter,
+} from "./youtube-adapter";
 
 const previewLifetimeMilliseconds = 15 * 60 * 1_000;
 const providerRetentionMilliseconds = 30 * 24 * 60 * 60 * 1_000;
@@ -47,6 +66,10 @@ export interface DiscoverModule {
     request: ConfirmFollowRequest;
     idempotencyKey: IdempotencyKey;
   }): Promise<ConfirmFollowResponse>;
+  acquireAndApply(input: {
+    userId: UserId;
+    request: AcquireAndApplyRequest;
+  }): Promise<AcquireAndApplyResponse>;
   readWorkspace(input: { userId: UserId }): Promise<DiscoverWorkspace>;
 }
 
@@ -625,6 +648,182 @@ export function createDiscoverModule({
           );
         return result;
       }),
+    acquireAndApply: async ({ userId, request }) => {
+      const claim = await db.transaction(async (tx) => {
+        const [follow] = await tx
+          .select({
+            id: discoverFollows.id,
+            lifecycle: discoverFollows.lifecycle,
+            providerTargetId: discoverFollows.providerTargetId,
+            targetUrl: discoverFollows.targetUrl,
+            channelId: discoverProviderTargets.externalReference,
+          })
+          .from(discoverFollows)
+          .innerJoin(
+            discoverProviderTargets,
+            eq(discoverProviderTargets.id, discoverFollows.providerTargetId),
+          )
+          .where(
+            and(
+              eq(discoverFollows.id, request.followId),
+              eq(discoverFollows.userId, userId),
+            ),
+          );
+        if (follow === undefined)
+          return { ok: false as const, error: "follow_missing" as const };
+        if (follow.lifecycle !== "active") {
+          return { ok: false as const, error: "follow_inactive" as const };
+        }
+        const startedAt = now();
+        const [target] = await tx
+          .update(discoverProviderTargets)
+          .set({
+            acquisitionGeneration: sql`${discoverProviderTargets.acquisitionGeneration} + 1`,
+          })
+          .where(eq(discoverProviderTargets.id, follow.providerTargetId))
+          .returning({
+            generation: discoverProviderTargets.acquisitionGeneration,
+          });
+        const [attempt] = await tx
+          .insert(discoverAcquisitionAttempts)
+          .values({
+            providerTargetId: follow.providerTargetId,
+            generation: target.generation,
+            trigger: request.trigger,
+            startedAt,
+          })
+          .returning({ id: discoverAcquisitionAttempts.id });
+        return {
+          ok: true as const,
+          follow,
+          startedAt,
+          generation: target.generation,
+          attemptId: attempt.id,
+        };
+      });
+      if (!claim.ok) return claim;
+
+      const acquired =
+        claim.follow.channelId === null
+          ? ({ ok: false, error: "unverifiable" } as const)
+          : await youtube.acquireChannel({ channelId: claim.follow.channelId });
+      if (!acquired.ok) {
+        const outcome = acquisitionFailureOutcome(acquired);
+        const terminalOutcome = await finishAttempt({
+          db,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          generation: claim.generation,
+          requestedOutcome: outcome,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          errorClass: acquired.error,
+          finishedAt: now(),
+        });
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: terminalOutcome,
+            acceptedCount: 0,
+            rejectedCount: 0,
+            ...health,
+          },
+        };
+      }
+
+      const publication = await publishAcquisition({
+        db,
+        acquired,
+        attemptId: claim.attemptId,
+        providerTargetId: claim.follow.providerTargetId,
+        generation: claim.generation,
+        publishedAt: now(),
+      });
+      if (
+        publication.outcome === "failed" ||
+        publication.outcome === "skipped"
+      ) {
+        const terminalOutcome = await finishAttempt({
+          db,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          generation: claim.generation,
+          requestedOutcome: publication.outcome,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          errorClass: publication.outcome === "failed" ? "target_drift" : null,
+          finishedAt: now(),
+        });
+        const health = await readTargetHealth({
+          db,
+          providerTargetId: claim.follow.providerTargetId,
+        });
+        return {
+          ok: true,
+          acquisition: {
+            followId: request.followId,
+            outcome: terminalOutcome,
+            acceptedCount: 0,
+            rejectedCount: 0,
+            ...health,
+          },
+        };
+      }
+
+      try {
+        await applyAvailableSnapshots({
+          db,
+          userId,
+          followId: request.followId,
+          appliedAt: now(),
+        });
+      } catch (error) {
+        await finishAttempt({
+          db,
+          attemptId: claim.attemptId,
+          providerTargetId: claim.follow.providerTargetId,
+          generation: claim.generation,
+          requestedOutcome: "failed",
+          acceptedCount: acquired.videos.length,
+          rejectedCount: acquired.rejectedCount,
+          errorClass: "application_failed",
+          finishedAt: now(),
+          coverageStartedAt: acquired.coverageStartedAt,
+        });
+        throw error;
+      }
+      const terminalOutcome = await finishAttempt({
+        db,
+        attemptId: claim.attemptId,
+        providerTargetId: claim.follow.providerTargetId,
+        generation: claim.generation,
+        requestedOutcome: publication.outcome,
+        acceptedCount: acquired.videos.length,
+        rejectedCount: acquired.rejectedCount,
+        errorClass: null,
+        finishedAt: now(),
+        coverageStartedAt: acquired.coverageStartedAt,
+      });
+      const health = await readTargetHealth({
+        db,
+        providerTargetId: claim.follow.providerTargetId,
+      });
+      return {
+        ok: true,
+        acquisition: {
+          followId: request.followId,
+          outcome: terminalOutcome,
+          acceptedCount: acquired.videos.length,
+          rejectedCount: acquired.rejectedCount,
+          ...health,
+        },
+      };
+    },
     readWorkspace: async ({ userId }) => {
       const followRows = await db
         .select({
@@ -633,6 +832,10 @@ export function createDiscoverModule({
           targetUrl: discoverFollows.targetUrl,
           createdAt: discoverFollows.createdAt,
           name: discoverProviderTargetProjections.publisher,
+          providerTargetId: discoverFollows.providerTargetId,
+          verifiedCoverageStartedAt:
+            discoverProviderTargets.verifiedCoverageStartedAt,
+          nextEligibleAt: discoverProviderTargets.nextEligibleAt,
         })
         .from(discoverFollows)
         .leftJoin(
@@ -642,14 +845,525 @@ export function createDiscoverModule({
             discoverFollows.providerTargetId,
           ),
         )
+        .innerJoin(
+          discoverProviderTargets,
+          eq(discoverProviderTargets.id, discoverFollows.providerTargetId),
+        )
         .where(eq(discoverFollows.userId, userId))
         .orderBy(asc(discoverFollows.createdAt));
+      const targetIds = followRows.map((follow) => follow.providerTargetId);
+      const attempts =
+        targetIds.length === 0
+          ? []
+          : await db
+              .select({
+                providerTargetId: discoverAcquisitionAttempts.providerTargetId,
+                outcome: discoverAcquisitionAttempts.outcome,
+                generation: discoverAcquisitionAttempts.generation,
+                startedAt: discoverAcquisitionAttempts.startedAt,
+                finishedAt: discoverAcquisitionAttempts.finishedAt,
+                nextEligibleAt: discoverAcquisitionAttempts.nextEligibleAt,
+              })
+              .from(discoverAcquisitionAttempts)
+              .where(
+                inArray(
+                  discoverAcquisitionAttempts.providerTargetId,
+                  targetIds,
+                ),
+              )
+              .orderBy(
+                desc(discoverAcquisitionAttempts.startedAt),
+                desc(discoverAcquisitionAttempts.generation),
+              );
       return {
-        follows: followRows.map(toFollowSummary),
+        follows: followRows.map((follow) => {
+          const targetAttempts = attempts.filter(
+            (attempt) => attempt.providerTargetId === follow.providerTargetId,
+          );
+          return toFollowSummary({
+            ...follow,
+            health: toFollowAcquisitionHealth({
+              attempts: targetAttempts,
+              verifiedCoverageStartedAt: follow.verifiedCoverageStartedAt,
+              targetNextEligibleAt: follow.nextEligibleAt,
+            }),
+          });
+        }),
         discoveries: await selectDiscoveries({ query: db, userId }),
       };
     },
   };
+}
+
+async function readTargetHealth({
+  db,
+  providerTargetId,
+}: {
+  db: Database;
+  providerTargetId: string;
+}): Promise<FollowSummary["health"]> {
+  const [target] = await db
+    .select({
+      verifiedCoverageStartedAt:
+        discoverProviderTargets.verifiedCoverageStartedAt,
+      nextEligibleAt: discoverProviderTargets.nextEligibleAt,
+    })
+    .from(discoverProviderTargets)
+    .where(eq(discoverProviderTargets.id, providerTargetId));
+  const attempts = await db
+    .select({
+      outcome: discoverAcquisitionAttempts.outcome,
+      generation: discoverAcquisitionAttempts.generation,
+      startedAt: discoverAcquisitionAttempts.startedAt,
+      finishedAt: discoverAcquisitionAttempts.finishedAt,
+      nextEligibleAt: discoverAcquisitionAttempts.nextEligibleAt,
+    })
+    .from(discoverAcquisitionAttempts)
+    .where(eq(discoverAcquisitionAttempts.providerTargetId, providerTargetId))
+    .orderBy(
+      desc(discoverAcquisitionAttempts.startedAt),
+      desc(discoverAcquisitionAttempts.generation),
+    );
+  return toFollowAcquisitionHealth({
+    attempts,
+    verifiedCoverageStartedAt: target?.verifiedCoverageStartedAt ?? null,
+    targetNextEligibleAt: target?.nextEligibleAt ?? null,
+  });
+}
+
+function toFollowAcquisitionHealth({
+  attempts,
+  verifiedCoverageStartedAt,
+  targetNextEligibleAt,
+}: {
+  attempts: Array<{
+    outcome: string;
+    startedAt: Date;
+    finishedAt: Date | null;
+    nextEligibleAt: Date | null;
+  }>;
+  verifiedCoverageStartedAt: Date | null;
+  targetNextEligibleAt: Date | null;
+}): FollowSummary["health"] {
+  const latest = attempts[0];
+  const latestComplete = attempts.find(
+    (attempt) => attempt.outcome === "complete",
+  );
+  return {
+    latestAttemptAt: latest?.startedAt.toISOString() ?? null,
+    latestAttemptOutcome:
+      latest?.outcome === undefined || latest.outcome === "running"
+        ? null
+        : (latest.outcome as FollowSummary["health"]["latestAttemptOutcome"]),
+    latestCompleteAt: latestComplete?.finishedAt?.toISOString() ?? null,
+    verifiedCoverageStartedAt: verifiedCoverageStartedAt?.toISOString() ?? null,
+    nextEligibleAt:
+      latest?.nextEligibleAt?.toISOString() ??
+      targetNextEligibleAt?.toISOString() ??
+      null,
+  };
+}
+
+function acquisitionFailureOutcome(
+  result: Exclude<ProviderPreviewResult, ProviderPreview>,
+): "failed" | "throttled" | "provider_unavailable" {
+  if (result.error === "quota_exceeded") return "throttled";
+  if (result.error === "provider_unavailable") return "provider_unavailable";
+  return "failed";
+}
+
+async function finishAttempt({
+  db,
+  attemptId,
+  providerTargetId,
+  generation,
+  requestedOutcome,
+  acceptedCount,
+  rejectedCount,
+  errorClass,
+  finishedAt,
+  coverageStartedAt,
+}: {
+  db: Database;
+  attemptId: string;
+  providerTargetId: string;
+  generation: number;
+  requestedOutcome:
+    | "complete"
+    | "partial"
+    | "failed"
+    | "skipped"
+    | "throttled"
+    | "provider_unavailable";
+  acceptedCount: number;
+  rejectedCount: number;
+  errorClass: string | null;
+  finishedAt: Date;
+  coverageStartedAt?: string;
+}): Promise<Exclude<FollowSummary["health"]["latestAttemptOutcome"], null>> {
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ generation: discoverProviderTargets.acquisitionGeneration })
+      .from(discoverProviderTargets)
+      .where(eq(discoverProviderTargets.id, providerTargetId))
+      .for("update");
+    const outcome =
+      target?.generation === generation ? requestedOutcome : "skipped";
+    await tx
+      .update(discoverAcquisitionAttempts)
+      .set({
+        outcome,
+        finishedAt,
+        acceptedCount: outcome === "skipped" ? 0 : acceptedCount,
+        rejectedCount: outcome === "skipped" ? 0 : rejectedCount,
+        errorClass,
+        coverageStartedAt:
+          coverageStartedAt === undefined ? null : new Date(coverageStartedAt),
+      })
+      .where(
+        and(
+          eq(discoverAcquisitionAttempts.id, attemptId),
+          eq(discoverAcquisitionAttempts.outcome, "running"),
+        ),
+      );
+    return outcome;
+  });
+}
+
+async function publishAcquisition({
+  db,
+  acquired,
+  attemptId,
+  providerTargetId,
+  generation,
+  publishedAt,
+}: {
+  db: Database;
+  acquired: ProviderPreview;
+  attemptId: string;
+  providerTargetId: string;
+  generation: number;
+  publishedAt: Date;
+}): Promise<
+  | { outcome: "complete" | "partial"; snapshotId: string }
+  | { outcome: "failed" | "skipped" }
+> {
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({
+        generation: discoverProviderTargets.acquisitionGeneration,
+        externalReference: discoverProviderTargets.externalReference,
+      })
+      .from(discoverProviderTargets)
+      .where(eq(discoverProviderTargets.id, providerTargetId))
+      .for("update");
+    const [attempt] = await tx
+      .select({ outcome: discoverAcquisitionAttempts.outcome })
+      .from(discoverAcquisitionAttempts)
+      .where(eq(discoverAcquisitionAttempts.id, attemptId))
+      .for("update");
+    if (target?.generation !== generation || attempt?.outcome !== "running") {
+      return { outcome: "skipped" as const };
+    }
+    if (target.externalReference !== acquired.channelId) {
+      return { outcome: "failed" as const };
+    }
+
+    const providerExpiresAt = new Date(
+      publishedAt.getTime() + providerRetentionMilliseconds,
+    );
+    await tx
+      .update(discoverProviderTargets)
+      .set({
+        targetPayload: {
+          schemaVersion: 1,
+          uploadsPlaylistId: acquired.uploadsPlaylistId,
+        },
+        fetchedAt: publishedAt,
+        expiresAt: providerExpiresAt,
+      })
+      .where(eq(discoverProviderTargets.id, providerTargetId));
+    await tx
+      .insert(discoverProviderTargetProjections)
+      .values({
+        providerTargetId,
+        publisher: acquired.publisher,
+        fetchedAt: publishedAt,
+        expiresAt: providerExpiresAt,
+      })
+      .onConflictDoUpdate({
+        target: discoverProviderTargetProjections.providerTargetId,
+        set: {
+          publisher: acquired.publisher,
+          fetchedAt: publishedAt,
+          expiresAt: providerExpiresAt,
+        },
+      });
+
+    const resultIds = new Map<string, string>();
+    for (const video of acquired.videos) {
+      const [result] = await tx
+        .insert(discoverProviderResults)
+        .values({
+          provider: "youtube",
+          externalReference: video.providerIdentity,
+        })
+        .onConflictDoUpdate({
+          target: [
+            discoverProviderResults.provider,
+            discoverProviderResults.externalReference,
+          ],
+          targetWhere: sql`${discoverProviderResults.externalReference} IS NOT NULL`,
+          set: { externalReference: video.providerIdentity },
+        })
+        .returning({ id: discoverProviderResults.id });
+      resultIds.set(video.providerIdentity, result.id);
+      await tx
+        .insert(discoverProviderResultProjections)
+        .values({
+          providerResultId: result.id,
+          title: video.title,
+          source: video.source,
+          publisher: video.publisher,
+          publishedAt: new Date(video.publishedAt),
+          durationSeconds: video.durationSeconds,
+          type: video.type,
+          thumbnailUrl: video.thumbnailUrl,
+          fetchedAt: publishedAt,
+          expiresAt: providerExpiresAt,
+        })
+        .onConflictDoUpdate({
+          target: discoverProviderResultProjections.providerResultId,
+          set: {
+            title: video.title,
+            source: video.source,
+            publisher: video.publisher,
+            publishedAt: new Date(video.publishedAt),
+            durationSeconds: video.durationSeconds,
+            type: video.type,
+            thumbnailUrl: video.thumbnailUrl,
+            fetchedAt: publishedAt,
+            expiresAt: providerExpiresAt,
+          },
+        });
+    }
+
+    const [latest] = await tx
+      .select({ sequence: max(discoverProviderSnapshots.sequence) })
+      .from(discoverProviderSnapshots)
+      .where(eq(discoverProviderSnapshots.providerTargetId, providerTargetId));
+    const outcome = acquired.outcome === "partial" ? "partial" : "complete";
+    const [snapshot] = await tx
+      .insert(discoverProviderSnapshots)
+      .values({
+        providerTargetId,
+        acquisitionAttemptId: attemptId,
+        sequence: (latest?.sequence ?? 0) + 1,
+        outcome: acquired.outcome,
+        rejectedCount: acquired.rejectedCount,
+        coverageStartedAt: new Date(acquired.coverageStartedAt),
+        publishedAt,
+      })
+      .returning({ id: discoverProviderSnapshots.id });
+    if (acquired.videos.length > 0) {
+      await tx.insert(discoverProviderSnapshotResults).values(
+        acquired.videos.map((video, position) => ({
+          snapshotId: snapshot.id,
+          providerResultId: resultIds.get(video.providerIdentity)!,
+          position,
+        })),
+      );
+    }
+    await tx
+      .update(discoverProviderTargets)
+      .set({
+        currentSnapshotId: snapshot.id,
+        ...(outcome === "complete"
+          ? {
+              checkpointPayload: {
+                schemaVersion: 1,
+                coverageStartedAt: acquired.coverageStartedAt,
+              },
+              verifiedCoverageStartedAt: new Date(acquired.coverageStartedAt),
+            }
+          : {}),
+      })
+      .where(eq(discoverProviderTargets.id, providerTargetId));
+    return { outcome, snapshotId: snapshot.id };
+  });
+}
+
+async function applyAvailableSnapshots({
+  db,
+  userId,
+  followId,
+  appliedAt,
+}: {
+  db: Database;
+  userId: UserId;
+  followId: FollowId;
+  appliedAt: Date;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [follow] = await tx
+      .select({
+        lifecycle: discoverFollows.lifecycle,
+        providerTargetId: discoverFollows.providerTargetId,
+        lastAppliedProviderSnapshotId:
+          discoverFollows.lastAppliedProviderSnapshotId,
+      })
+      .from(discoverFollows)
+      .where(
+        and(
+          eq(discoverFollows.id, followId),
+          eq(discoverFollows.userId, userId),
+        ),
+      )
+      .for("update");
+    if (follow === undefined || follow.lifecycle !== "active") return;
+    const [lastApplied] =
+      follow.lastAppliedProviderSnapshotId === null
+        ? []
+        : await tx
+            .select({ sequence: discoverProviderSnapshots.sequence })
+            .from(discoverProviderSnapshots)
+            .where(
+              eq(
+                discoverProviderSnapshots.id,
+                follow.lastAppliedProviderSnapshotId,
+              ),
+            );
+    const snapshots = await tx
+      .select({
+        id: discoverProviderSnapshots.id,
+        sequence: discoverProviderSnapshots.sequence,
+        outcome: discoverProviderSnapshots.outcome,
+      })
+      .from(discoverProviderSnapshots)
+      .where(
+        and(
+          eq(
+            discoverProviderSnapshots.providerTargetId,
+            follow.providerTargetId,
+          ),
+          gt(discoverProviderSnapshots.sequence, lastApplied?.sequence ?? 0),
+        ),
+      )
+      .orderBy(asc(discoverProviderSnapshots.sequence));
+
+    for (const snapshot of snapshots) {
+      const members = await tx
+        .select({
+          providerResultId: discoverProviderSnapshotResults.providerResultId,
+          position: discoverProviderSnapshotResults.position,
+        })
+        .from(discoverProviderSnapshotResults)
+        .where(eq(discoverProviderSnapshotResults.snapshotId, snapshot.id))
+        .orderBy(asc(discoverProviderSnapshotResults.position));
+      const presentCandidateIds: string[] = [];
+      for (const member of members) {
+        const [candidate] = await tx
+          .insert(discoverCandidates)
+          .values({
+            userId,
+            providerResultId: member.providerResultId,
+            createdAt: appliedAt,
+          })
+          .onConflictDoUpdate({
+            target: [
+              discoverCandidates.userId,
+              discoverCandidates.providerResultId,
+            ],
+            set: { providerResultId: member.providerResultId },
+          })
+          .returning({ id: discoverCandidates.id });
+        presentCandidateIds.push(candidate.id);
+        const [presence] = await tx
+          .select({
+            present: discoverFollowCandidatePresence.present,
+            appearanceSequence:
+              discoverFollowCandidatePresence.appearanceSequence,
+          })
+          .from(discoverFollowCandidatePresence)
+          .where(
+            and(
+              eq(discoverFollowCandidatePresence.followId, followId),
+              eq(discoverFollowCandidatePresence.candidateId, candidate.id),
+            ),
+          )
+          .for("update");
+        const appearanceSequence =
+          presence === undefined
+            ? 1
+            : presence.present
+              ? presence.appearanceSequence
+              : presence.appearanceSequence + 1;
+        const createsDiscovery = presence === undefined || !presence.present;
+        await tx
+          .insert(discoverFollowCandidatePresence)
+          .values({
+            userId,
+            followId,
+            candidateId: candidate.id,
+            appearanceSequence,
+            present: true,
+            firstSurfacedSnapshotId: snapshot.id,
+            lastSurfacedSnapshotId: snapshot.id,
+          })
+          .onConflictDoUpdate({
+            target: [
+              discoverFollowCandidatePresence.followId,
+              discoverFollowCandidatePresence.candidateId,
+            ],
+            set: {
+              appearanceSequence,
+              present: true,
+              lastSurfacedSnapshotId: snapshot.id,
+            },
+          });
+        if (createsDiscovery) {
+          await tx.insert(discoverDiscoveries).values({
+            userId,
+            followId,
+            candidateId: candidate.id,
+            appearanceSequence,
+            position: member.position,
+            state: "new",
+            discoveredAt: appliedAt,
+          });
+        }
+      }
+      if (snapshot.outcome !== "partial") {
+        await tx
+          .update(discoverFollowCandidatePresence)
+          .set({ present: false })
+          .where(
+            and(
+              eq(discoverFollowCandidatePresence.userId, userId),
+              eq(discoverFollowCandidatePresence.followId, followId),
+              presentCandidateIds.length === 0
+                ? undefined
+                : notInArray(
+                    discoverFollowCandidatePresence.candidateId,
+                    presentCandidateIds,
+                  ),
+            ),
+          );
+      }
+      await tx
+        .update(discoverFollows)
+        .set({
+          lastAppliedProviderSnapshotId: snapshot.id,
+          updatedAt: appliedAt,
+        })
+        .where(
+          and(
+            eq(discoverFollows.id, followId),
+            eq(discoverFollows.userId, userId),
+          ),
+        );
+    }
+  });
 }
 
 type DiscoveryQuery = Pick<Database, "select">;
@@ -751,6 +1465,7 @@ function toFollowSummary(row: {
   targetUrl: string;
   createdAt: Date;
   name: string | null;
+  health?: FollowSummary["health"];
 }): FollowSummary {
   return {
     id: row.id as FollowId,
@@ -759,5 +1474,12 @@ function toFollowSummary(row: {
     name: row.name,
     targetUrl: row.targetUrl,
     createdAt: row.createdAt.toISOString(),
+    health: row.health ?? {
+      latestAttemptAt: null,
+      latestAttemptOutcome: null,
+      latestCompleteAt: null,
+      verifiedCoverageStartedAt: null,
+      nextEligibleAt: null,
+    },
   };
 }

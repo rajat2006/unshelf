@@ -1,5 +1,6 @@
 import { Router, type RequestHandler, type Response } from "express";
 import {
+  acquireAndApplyRequestSchema,
   confirmFollowRequestSchema,
   idempotencyKeySchema,
   prepareFollowRequestSchema,
@@ -61,6 +62,24 @@ export function createDiscoverRouter(
   router.get("/", async (req, res) => {
     res.json(await discover.readWorkspace({ userId: req.user!.id }));
   });
+  router.post(
+    "/acquisitions",
+    validateRequest(
+      { body: acquireAndApplyRequestSchema },
+      "invalid_discover_acquisition",
+    ),
+    async (req, res) => {
+      const result = await discover.acquireAndApply({
+        userId: req.user!.id,
+        request: res.locals.validated.body,
+      });
+      if (!result.ok) {
+        res.status(result.error === "follow_missing" ? 404 : 409).json(result);
+        return;
+      }
+      res.json(result);
+    },
+  );
   return router;
 }
 

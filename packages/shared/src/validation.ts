@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   DailyFocusId,
+  FollowId,
   FollowPreviewId,
   IdempotencyKey,
   ItemId,
@@ -31,6 +32,7 @@ export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
 export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
 export const followPreviewIdSchema = identifierSchema<FollowPreviewId>();
+export const followIdSchema = identifierSchema<FollowId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -84,6 +86,12 @@ export const prepareFollowRequestSchema = z.strictObject({
 /** Consume only the opaque preview receipt issued by Unshelf. */
 export const confirmFollowRequestSchema = z.strictObject({
   previewId: followPreviewIdSchema,
+});
+
+/** The first acquisition slice refreshes exactly one owned Follow. */
+export const acquireAndApplyRequestSchema = z.strictObject({
+  trigger: z.literal("manual_follow"),
+  followId: followIdSchema,
 });
 
 /** Mutation replays are scoped by a client-generated UUID. */
@@ -176,6 +184,9 @@ export type SuppressDailyPlanningItemRequest = z.infer<
 >;
 export type PrepareFollowRequest = z.infer<typeof prepareFollowRequestSchema>;
 export type ConfirmFollowRequest = z.infer<typeof confirmFollowRequestSchema>;
+export type AcquireAndApplyRequest = z.infer<
+  typeof acquireAndApplyRequestSchema
+>;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
 export type UpdatePartCompletionRequest = z.infer<

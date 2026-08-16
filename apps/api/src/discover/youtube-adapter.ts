@@ -30,6 +30,7 @@ export type ProviderPreviewResult =
 
 export interface YouTubeAdapter {
   previewChannel(input: { url: string }): Promise<ProviderPreviewResult>;
+  acquireChannel(input: { channelId: string }): Promise<ProviderPreviewResult>;
 }
 
 export function createYouTubeAdapter({
@@ -45,72 +46,100 @@ export function createYouTubeAdapter({
     previewChannel: async ({ url }) => {
       const target = parseChannelUrl(url);
       if (target === null) return { ok: false, error: "unsupported_target" };
-
-      try {
-        const channelResult = await requestJson({
-          apiKey,
-          fetch,
-          resource: "channels",
-          query: { part: "id,snippet,contentDetails", ...target },
-        });
-        if (!channelResult.ok) return channelResult;
-        const parsedChannel = channelResponseSchema.safeParse(
-          channelResult.body,
-        );
-        if (!parsedChannel.success) return { ok: false, error: "unverifiable" };
-        if (parsedChannel.data.items.length === 0) {
-          return { ok: false, error: "invalid_target" };
-        }
-        if (parsedChannel.data.items.length !== 1) {
-          return { ok: false, error: "unverifiable" };
-        }
-        const channel = parsedChannel.data.items[0];
-        const coverageStartedAt = new Date(
-          now().getTime() - lookbackMilliseconds,
-        ).toISOString();
-        const playlist = await readUploadsPlaylist({
-          apiKey,
-          fetch,
-          uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
-          coverageStartedAt,
-        });
-        if (!playlist.ok) return playlist;
-
-        const videos = await readVideos({
-          apiKey,
-          fetch,
-          videoIds: playlist.videoIds,
-          expectedChannelId: channel.id,
-          coverageStartedAt,
-        });
-        if (!videos.ok) return videos;
-        const orderedVideos = videos.videos
-          .sort((left, right) =>
-            right.publishedAt.localeCompare(left.publishedAt),
-          )
-          .slice(0, maxPreviewVideos);
-        const rejectedCount = videos.rejectedCount;
-
-        return {
-          ok: true,
-          outcome:
-            rejectedCount > 0
-              ? "partial"
-              : orderedVideos.length === 0
-                ? "empty"
-                : "preview",
-          channelId: channel.id,
-          uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
-          publisher: channel.snippet.title,
-          videos: orderedVideos,
-          rejectedCount,
-          coverageStartedAt,
-        };
-      } catch {
-        return { ok: false, error: "provider_unavailable" };
-      }
+      return acquireChannelResults({
+        apiKey,
+        fetch,
+        now,
+        target,
+        resultLimit: maxPreviewVideos,
+      });
     },
+    acquireChannel: ({ channelId }) =>
+      acquireChannelResults({
+        apiKey,
+        fetch,
+        now,
+        target: { id: channelId },
+      }),
   };
+}
+
+async function acquireChannelResults({
+  apiKey,
+  fetch,
+  now,
+  target,
+  resultLimit,
+}: {
+  apiKey: string;
+  fetch: ProviderFetch;
+  now: () => Date;
+  target: Partial<Record<"id" | "forHandle" | "forUsername", string>>;
+  resultLimit?: number;
+}): Promise<ProviderPreviewResult> {
+  try {
+    const channelResult = await requestJson({
+      apiKey,
+      fetch,
+      resource: "channels",
+      query: { part: "id,snippet,contentDetails", ...target },
+    });
+    if (!channelResult.ok) return channelResult;
+    const parsedChannel = channelResponseSchema.safeParse(channelResult.body);
+    if (!parsedChannel.success) return { ok: false, error: "unverifiable" };
+    if (parsedChannel.data.items.length === 0) {
+      return { ok: false, error: "invalid_target" };
+    }
+    if (parsedChannel.data.items.length !== 1) {
+      return { ok: false, error: "unverifiable" };
+    }
+    const channel = parsedChannel.data.items[0];
+    const coverageStartedAt = new Date(
+      now().getTime() - lookbackMilliseconds,
+    ).toISOString();
+    const playlist = await readUploadsPlaylist({
+      apiKey,
+      fetch,
+      uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
+      coverageStartedAt,
+    });
+    if (!playlist.ok) return playlist;
+
+    const videos = await readVideos({
+      apiKey,
+      fetch,
+      videoIds: playlist.videoIds,
+      expectedChannelId: channel.id,
+      coverageStartedAt,
+    });
+    if (!videos.ok) return videos;
+    const orderedVideos = videos.videos.sort((left, right) =>
+      right.publishedAt.localeCompare(left.publishedAt),
+    );
+    const retainedVideos =
+      resultLimit === undefined
+        ? orderedVideos
+        : orderedVideos.slice(0, resultLimit);
+    const rejectedCount = videos.rejectedCount;
+
+    return {
+      ok: true,
+      outcome:
+        rejectedCount > 0
+          ? "partial"
+          : retainedVideos.length === 0
+            ? "empty"
+            : "preview",
+      channelId: channel.id,
+      uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
+      publisher: channel.snippet.title,
+      videos: retainedVideos,
+      rejectedCount,
+      coverageStartedAt,
+    };
+  } catch {
+    return { ok: false, error: "provider_unavailable" };
+  }
 }
 
 function parseChannelUrl(

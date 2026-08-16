@@ -123,6 +123,7 @@ export type {
   SuppressDailyPlanningItemRequest,
   PrepareFollowRequest,
   ConfirmFollowRequest,
+  AcquireAndApplyRequest,
 } from "./validation";
 
 export type Provider = "youtube";
@@ -150,6 +151,22 @@ export type DiscoveryId = string & {
 
 export type FollowLifecycle = "active" | "paused" | "removed";
 export type DiscoveryState = "new" | "seen" | "kept" | "dismissed";
+export type AcquisitionOutcome =
+  | "joined"
+  | "skipped"
+  | "complete"
+  | "partial"
+  | "failed"
+  | "throttled"
+  | "provider_unavailable";
+
+export interface FollowAcquisitionHealth {
+  latestAttemptAt: string | null;
+  latestAttemptOutcome: AcquisitionOutcome | null;
+  latestCompleteAt: string | null;
+  verifiedCoverageStartedAt: string | null;
+  nextEligibleAt: string | null;
+}
 
 export interface FollowSummary {
   id: FollowId;
@@ -158,7 +175,21 @@ export interface FollowSummary {
   name: string | null;
   targetUrl: string;
   createdAt: string;
+  health: FollowAcquisitionHealth;
 }
+
+export interface FollowAcquisitionSummary extends FollowAcquisitionHealth {
+  followId: FollowId;
+  outcome: AcquisitionOutcome;
+  acceptedCount: number;
+  rejectedCount: number;
+}
+
+export type AcquireAndApplyFailure = "follow_missing" | "follow_inactive";
+
+export type AcquireAndApplyResponse =
+  | { ok: true; acquisition: FollowAcquisitionSummary }
+  | { ok: false; error: AcquireAndApplyFailure };
 
 export interface DiscoverySummary {
   id: DiscoveryId;

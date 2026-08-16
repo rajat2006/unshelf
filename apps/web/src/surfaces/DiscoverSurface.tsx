@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   ConfirmFollowFailure,
+  AcquisitionOutcome,
   DiscoverWorkspace,
   DiscoverySummary,
   FollowPreview,
+  FollowId,
+  FollowSummary,
   IdempotencyKey,
   PrepareFollowFailure,
 } from "@unshelf/shared";
@@ -12,6 +15,7 @@ import {
   confirmFollow,
   fetchDiscoverWorkspace,
   prepareFollowPreview,
+  refreshFollow,
 } from "../api";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -42,6 +46,18 @@ type WorkspaceState =
   | { kind: "failure" }
   | { kind: "ready"; workspace: DiscoverWorkspace };
 
+type RefreshState =
+  | { kind: "idle" }
+  | { kind: "pending"; followId: FollowId }
+  | {
+      kind: "result";
+      followId: FollowId;
+      outcome: AcquisitionOutcome;
+      rejectedCount: number;
+      rereadFailed: boolean;
+    }
+  | { kind: "failure"; followId: FollowId };
+
 export function DiscoverSurface() {
   const user = useCurrentUser();
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
@@ -50,6 +66,9 @@ export function DiscoverSurface() {
   const [url, setUrl] = useState("");
   const [setupState, setSetupState] = useState<SetupState>({ kind: "idle" });
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [refreshState, setRefreshState] = useState<RefreshState>({
+    kind: "idle",
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const previewExpiresAt =
@@ -138,6 +157,42 @@ export function DiscoverSurface() {
   const reset = () => {
     setSetupState({ kind: "idle" });
     window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const runFollowRefresh = async (follow: FollowSummary) => {
+    setRefreshState({ kind: "pending", followId: follow.id });
+    try {
+      const result = await refreshFollow(user, follow.id);
+      if (!result.ok) {
+        setRefreshState({ kind: "failure", followId: follow.id });
+        return;
+      }
+      setRefreshState({
+        kind: "result",
+        followId: follow.id,
+        outcome: result.acquisition.outcome,
+        rejectedCount: result.acquisition.rejectedCount,
+        rereadFailed: false,
+      });
+      if (
+        result.acquisition.outcome === "complete" ||
+        result.acquisition.outcome === "partial"
+      ) {
+        try {
+          await loadWorkspace();
+        } catch {
+          setRefreshState({
+            kind: "result",
+            followId: follow.id,
+            outcome: result.acquisition.outcome,
+            rejectedCount: result.acquisition.rejectedCount,
+            rereadFailed: true,
+          });
+        }
+      }
+    } catch {
+      setRefreshState({ kind: "failure", followId: follow.id });
+    }
   };
 
   const confirmPreview = async (
@@ -243,7 +298,11 @@ export function DiscoverSurface() {
           onRetry={() => void runPreview()}
         />
       ) : (
-        <Workspace workspace={workspaceState.workspace} />
+        <Workspace
+          workspace={workspaceState.workspace}
+          refreshState={refreshState}
+          onRefresh={(follow) => void runFollowRefresh(follow)}
+        />
       )}
 
       {setupState.kind === "preview" ? (
@@ -399,7 +458,23 @@ function SetupForm({
   );
 }
 
-function Workspace({ workspace }: { workspace: DiscoverWorkspace }) {
+function Workspace({
+  workspace,
+  refreshState,
+  onRefresh,
+}: {
+  workspace: DiscoverWorkspace;
+  refreshState: RefreshState;
+  onRefresh: (follow: FollowSummary) => void;
+}) {
+  const follow = workspace.follows[0];
+  const followName = follow?.name ?? "This Follow";
+  const refreshForFollow =
+    follow !== undefined &&
+    refreshState.kind !== "idle" &&
+    refreshState.followId === follow.id
+      ? refreshState
+      : { kind: "idle" as const };
   return (
     <section className="space-y-4" aria-labelledby="discover-intake-heading">
       <div className="flex items-end justify-between gap-4 border-b pb-3">
@@ -411,7 +486,78 @@ function Workspace({ workspace }: { workspace: DiscoverWorkspace }) {
             {workspace.discoveries.length} new
           </p>
         </div>
+        {follow?.lifecycle === "active" ? (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={refreshForFollow.kind === "pending"}
+            onClick={() => onRefresh(follow)}
+          >
+            {refreshForFollow.kind === "pending"
+              ? `Refreshing ${followName}…`
+              : refreshForFollow.kind === "failure" ||
+                  (refreshForFollow.kind === "result" &&
+                    (refreshForFollow.outcome !== "complete" ||
+                      refreshForFollow.rereadFailed))
+                ? `Retry ${followName}`
+                : `Refresh ${followName}`}
+          </Button>
+        ) : null}
       </div>
+      {refreshForFollow.kind === "pending" ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-sm text-muted-foreground"
+        >
+          Refreshing {followName}. Stored intake remains available.
+        </p>
+      ) : null}
+      {refreshForFollow.kind === "failure" ? (
+        <Alert>
+          Refresh failed for {followName}. Stored intake is unchanged; retry
+          when ready.
+        </Alert>
+      ) : null}
+      {refreshForFollow.kind === "result" && refreshForFollow.rereadFailed ? (
+        <Alert>
+          {followName}
+          {refreshForFollow.outcome === "partial"
+            ? " partially refreshed"
+            : " refreshed"}
+          , but the intake could not reload. Stored cards remain available;
+          retry when ready.
+        </Alert>
+      ) : null}
+      {refreshForFollow.kind === "result" &&
+      !refreshForFollow.rereadFailed &&
+      refreshForFollow.outcome === "partial" ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-sm text-muted-foreground"
+        >
+          Partial refresh for {followName}: {refreshForFollow.rejectedCount}{" "}
+          invalid or unavailable records were excluded. Stored intake was
+          preserved.
+        </p>
+      ) : null}
+      {refreshForFollow.kind === "result" &&
+      !refreshForFollow.rereadFailed &&
+      refreshForFollow.outcome === "complete" ? (
+        <p role="status" aria-live="polite" className="text-sm text-primary">
+          {followName} refreshed.
+        </p>
+      ) : null}
+      {refreshForFollow.kind === "result" &&
+      !refreshForFollow.rereadFailed &&
+      refreshForFollow.outcome !== "complete" &&
+      refreshForFollow.outcome !== "partial" ? (
+        <Alert>
+          {refreshOutcomeMessage(refreshForFollow.outcome, followName)} Stored
+          intake is unchanged.
+        </Alert>
+      ) : null}
       {workspace.discoveries.length === 0 ? (
         <p className="rounded-[var(--radius-card)] border border-dashed p-8 text-center text-muted-foreground">
           You’re caught up. New Discoveries will appear here.
@@ -425,6 +571,21 @@ function Workspace({ workspace }: { workspace: DiscoverWorkspace }) {
       )}
     </section>
   );
+}
+
+function refreshOutcomeMessage(
+  outcome: AcquisitionOutcome,
+  followName: string,
+): string {
+  return {
+    joined: `${followName} joined an acquisition already in progress.`,
+    skipped: `${followName} already has a newer acquisition.`,
+    complete: `${followName} refreshed.`,
+    partial: `${followName} refreshed partially.`,
+    failed: `Refresh failed for ${followName}.`,
+    throttled: `${followName} cannot refresh yet.`,
+    provider_unavailable: `YouTube is unavailable for ${followName}.`,
+  }[outcome];
 }
 
 function DiscoveryCard({ discovery }: { discovery: DiscoverySummary }) {

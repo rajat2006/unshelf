@@ -1,5 +1,6 @@
 import type {
   AddStageItemRequest,
+  AcquireAndApplyResponse,
   AddDailyFocusItemRequest,
   ConnectLearningPlanNodesRequest,
   CreateItemRequest,
@@ -10,6 +11,7 @@ import type {
   ConfirmFollowResponse,
   DiscoverWorkspace,
   FollowPreviewId,
+  FollowId,
   DailyFocus,
   DailyPlanning,
   DailyPlanningQuery,
@@ -131,6 +133,22 @@ export async function fetchDiscoverWorkspace(
   user: CurrentUser,
 ): Promise<DiscoverWorkspace> {
   return requestJson<DiscoverWorkspace>(user, "/api/discover");
+}
+
+/** Acquire current Provider results for one active Follow and apply them privately. */
+export async function refreshFollow(
+  user: CurrentUser,
+  followId: FollowId,
+): Promise<AcquireAndApplyResponse> {
+  return requestJson<AcquireAndApplyResponse>(
+    user,
+    "/api/discover/acquisitions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trigger: "manual_follow", followId }),
+    },
+  );
 }
 
 /** Fetch All — every Item belonging to the current User. */
