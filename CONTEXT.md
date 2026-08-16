@@ -40,16 +40,38 @@ on an Item)
 
 **Follow health**:
 The current ability of a Follow to acquire Provider results. It is distinct from
-the Follow's lifecycle: partial or failed refresh, throttling, and authorization
+the Follow's lifecycle: partial or failed acquisition, throttling, and authorization
 requiring reconnection do not pause or remove it.
 _Avoid_: Follow status (ambiguous with the Follow's lifecycle)
 
+**Provider acquisition**:
+One attempt by Unshelf to retrieve current results for a Provider target. When
+the Provider and authorization scope return the same data, the acquisition and
+its quota cost are shared across Users; applying its result to each User's Follow
+remains separate. It may be triggered when the application opens or by a manual
+request, but it is not itself a User viewing or personalising a feed.
+_Avoid_: Follow refresh, User refresh, View
+
+**Provider snapshot**:
+One atomically published, validated set of Provider results from a Provider
+acquisition. Multiple Users may apply the same shared snapshot to their own
+Follows, Candidates, and Discoveries without sharing those User-owned records.
+_Avoid_: Candidate list, User feed
+
+**Provider projection**:
+The current, purgeable Provider-origin metadata used to present a Provider target
+or result, kept separately from durable User-approved Item fields and User
+history. Refreshing a projection requires a real Provider acquisition rather than
+extending its retention timestamp.
+_Avoid_: Item, Candidate, Provider snapshot
+
 **Candidate**:
 A provider-identified piece of potential learning material surfaced before an
-Item exists or is linked for it. For one User, one Provider identity denotes one
-durable Candidate, which retains every Follow and Discovery that surfaced it and
-may link to one Item. If that Item is removed, the Candidate retains the prior
-Keep in its history and a future Discovery may link it to a new Item.
+Item exists or is linked for it. For one User, one retained Provider identity
+denotes one Candidate, which may link to one Item and durably retains every Follow
+and Discovery that surfaced it even after Provider retention removes its identity
+or display metadata. A later sighting may create a new Candidate when the removed
+identity can no longer prove that they are the same.
 _Avoid_: Item, Inbox Item, Recommendation
 
 **Discovery**:
@@ -64,7 +86,8 @@ _Avoid_: Candidate, Capture, Import
 **Provider identity**:
 A Provider and that Provider's stable reference to one piece of learning material,
 treated together as an exact, provider-namespaced identity. Matching titles or raw
-Source strings are not Provider identity.
+Source strings are not Provider identity, and an internal Candidate id remains
+distinct and durable when Provider rules require deleting the Provider reference.
 _Avoid_: Source, title, URL
 
 **Seen**:
@@ -74,10 +97,10 @@ _Avoid_: Read, Viewed, Completed
 
 **Keep**:
 A User's decision to resolve one Discovery by linking its Candidate to an Item in
-the Library. Keep creates that Item from the Candidate's current title, Type,
-Source, and Provider identity, or reuses the User's Item with that exact Provider
-identity. It does not resolve other Discoveries or silently apply later Provider
-metadata changes to the Item.
+the Library. Keep creates or reuses an Item with the Candidate's current title,
+Type, and Source after the User approves them; those Item fields remain durable
+without later Provider metadata changes rewriting them. It does not resolve other
+Discoveries.
 _Avoid_: Capture, Save, Import
 
 **Dismiss**:
@@ -95,14 +118,14 @@ a title. Referenced, not copied: one Item can be placed in many Learning Plans,
 but at most once in any one Learning Plan, and every placement points at the
 single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capturing the same link twice creates
-two Items unless the capture establishes the same exact Provider identity, in
-which case the User's existing Item is reused.
+two Items unless an exact retained Provider identity proves that the User's
+existing Item should be reused.
 _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:
 The kind of material an Item is — one of _article_, _video_, _playlist_,
-_course_, _book_, or _other_. Chosen by the User at capture; a label on the Item,
-not a separate kind of record.
+_course_, _book_, or _other_. Chosen by the User at Capture or approved when
+Keeping a Discovery; a label on the Item, not a separate kind of record.
 _Avoid_: Kind, Category, Format
 
 **Structured Item**:
@@ -148,9 +171,9 @@ seeds future revision.
 _Avoid_: Finished on, Done date
 
 **Source**:
-The optional link to where an Item lives, stored as the User captured it. Absent
-for offline Items such as books, which are added by title alone — the title, not
-the Source, is what identifies an Item.
+The optional link to where an Item lives, stored as the User captured or approved
+it. Absent for offline Items such as books, which are added by title alone — the
+title, not the Source, is what identifies an Item.
 _Avoid_: Link, URL, Bookmark
 
 **Capture**:
