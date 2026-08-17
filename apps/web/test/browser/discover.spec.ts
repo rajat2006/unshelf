@@ -221,10 +221,23 @@ test("a User can manage several Follows and decide the combined Discover intake"
   await expect(page.getByRole("alert")).toContainText(
     "Systems Studio could not refresh completely",
   );
-  await page.getByRole("button", { name: "Retry Systems Studio" }).click();
+  const followRail = page.getByRole("complementary", { name: "Follows" });
+  await expect(
+    followRail.getByRole("button", {
+      name: /^(Refresh|Retry|Pause|Resume|Remove) /,
+    }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Manage Follow health" }).click();
+  let healthDialog = page.getByRole("dialog", {
+    name: "Manage Follow health",
+  });
+  await healthDialog
+    .getByRole("button", { name: "Retry Systems Studio" })
+    .click();
   await expect(page.getByRole("alert")).toContainText(
     "Systems Studio could not refresh completely",
   );
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: /Systems Studio.*2/ }).click();
   const queuesCard = page
@@ -235,15 +248,24 @@ test("a User can manage several Follows and decide the combined Discover intake"
   await page.getByRole("button", { name: "Dismiss 2" }).click();
   await expect(page.getByText("Systems Studio is clear.")).toBeVisible();
 
-  await page.getByRole("button", { name: "Pause Systems Studio" }).click();
+  await page.getByRole("button", { name: "Manage Follow health" }).click();
+  healthDialog = page.getByRole("dialog", { name: "Manage Follow health" });
+  await healthDialog
+    .getByRole("button", { name: "Pause Systems Studio" })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Resume Systems Studio" }),
+    healthDialog.getByRole("button", { name: "Resume Systems Studio" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Resume Systems Studio" }).click();
+  await healthDialog
+    .getByRole("button", { name: "Resume Systems Studio" })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Remove Systems Studio" }),
+    healthDialog.getByRole("button", { name: "Remove Systems Studio" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Remove Systems Studio" }).click();
+  await healthDialog
+    .getByRole("button", { name: "Remove Systems Studio" })
+    .click();
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: /^All Follows/ }).click();
   const keepCard = page
@@ -273,6 +295,14 @@ test("a User can manage several Follows and decide the combined Discover intake"
 test("Discover keeps its chrome stationary while only the Candidate feed scrolls", async ({
   page,
 }, testInfo) => {
+  const longFollows = [
+    ...workspace.follows,
+    ...Array.from({ length: 20 }, (_, index) => ({
+      ...workspace.follows[index % workspace.follows.length],
+      id: `00000000-0000-0000-0001-${String(index + 1).padStart(12, "0")}`,
+      name: `Learning channel ${index + 1}`,
+    })),
+  ];
   const discoveries = Array.from({ length: 12 }, (_, index) => ({
     ...workspace.discoveries[0],
     id: `00000000-0000-0000-0000-${String(index + 20).padStart(12, "0")}`,
@@ -280,7 +310,9 @@ test("Discover keeps its chrome stationary while only the Candidate feed scrolls
     title: `A deep module ${index + 1}`,
   }));
   await page.route("**/api/discover", (route) =>
-    route.fulfill({ json: { ...workspace, discoveries } }),
+    route.fulfill({
+      json: { ...workspace, follows: longFollows, discoveries },
+    }),
   );
   await page.route("**/api/discover/acquisitions", (route) =>
     route.fulfill({ json: { ok: true, acquisitions: [] } }),
@@ -291,8 +323,17 @@ test("Discover keeps its chrome stationary while only the Candidate feed scrolls
 
   const follows = page.getByRole("complementary", { name: "Follows" });
   const intake = page.getByRole("heading", { name: "Intake" });
+  const discoverHeading = page.getByRole("heading", {
+    name: "Discover",
+    level: 1,
+  });
+  const intakeControls = page.getByLabel("Filtered intake actions");
+  const productTopBar = page
+    .getByRole("banner")
+    .filter({ has: page.getByRole("navigation", { name: "Primary rooms" }) });
   await expect(follows).toBeVisible();
   await expect(intake).toBeVisible();
+  await expect(productTopBar).toBeVisible();
   const followBox = await follows.boundingBox();
   const intakeBox = await intake.boundingBox();
   expect(followBox).not.toBeNull();
@@ -313,12 +354,20 @@ test("Discover keeps its chrome stationary while only the Candidate feed scrolls
     ),
   ).toBe(true);
 
-  const topBefore = await intake.boundingBox();
+  const stationaryBefore = await Promise.all(
+    [productTopBar, discoverHeading, intakeControls, follows].map((locator) =>
+      locator.boundingBox(),
+    ),
+  );
   await feed.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  const topAfter = await intake.boundingBox();
-  expect(topAfter?.y).toBe(topBefore?.y);
+  const stationaryAfter = await Promise.all(
+    [productTopBar, discoverHeading, intakeControls, follows].map((locator) =>
+      locator.boundingBox(),
+    ),
+  );
+  expect(stationaryAfter).toEqual(stationaryBefore);
 
   if (testInfo.project.name === "phone") {
     expect(followBox!.y).toBeLessThan(intakeBox!.y);
@@ -329,5 +378,33 @@ test("Discover keeps its chrome stationary while only the Candidate feed scrolls
     ).toBe(true);
   } else {
     expect(followBox!.x).toBeLessThan(intakeBox!.x);
+    expect(feedBox!.height).toBeGreaterThan(400);
+    const visibleCandidates = await feed.evaluate((feedElement) => {
+      const feedBounds = feedElement.getBoundingClientRect();
+      return Array.from(feedElement.querySelectorAll("li")).filter((card) => {
+        const bounds = card.getBoundingClientRect();
+        return bounds.top < feedBounds.bottom && bounds.bottom > feedBounds.top;
+      }).length;
+    });
+    expect(visibleCandidates).toBeGreaterThanOrEqual(6);
+    expect(
+      await page
+        .getByTestId("follow-filter-list")
+        .evaluate((element) => element.scrollHeight > element.clientHeight),
+    ).toBe(true);
+    const followList = page.getByTestId("follow-filter-list");
+    const pageHeightBefore = await page.evaluate(
+      () => document.documentElement.scrollHeight,
+    );
+    await followList.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    expect(
+      await followList.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0);
+    expect(await follows.boundingBox()).toEqual(followBox);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+    ).toBe(pageHeightBefore);
   }
 });
