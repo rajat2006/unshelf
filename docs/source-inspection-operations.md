@@ -4,6 +4,9 @@ Source inspection is an authenticated, best-effort Capture aid. It may suggest
 ordinary editable Title and Type values, but it never writes an Item, changes the
 exact captured Source, or makes Capture depend on a remote origin. Every refusal
 returns the same public `unavailable` response so manual Capture remains intact.
+Release qualification, the private manifest contract, and staged enablement are
+maintained in the
+[Source inspection release runbook](source-inspection-release.md).
 
 ## Sensitive-request handling
 

@@ -1,5 +1,11 @@
 # Ingestion is one uniform manual capture; no fetch, no import
 
+> **The no-fetch decision is superseded by the pinned
+> [Source inspection product contract](https://github.com/rajat2006/unshelf/blob/7d465ef83d5cb88fc7ec6ad08e3a1dd6fb632e2f/docs/adr/0020-source-inspection-assists-one-uniform-capture.md).**
+> Capture remains one uniform, explicitly confirmed path with reliable manual
+> and offline use; Source inspection assists that path without becoming Import
+> or a durable metadata projection. The no-bulk-Import decision remains in force.
+>
 > **Exact-Provider-identity dedupe and provenance superseded by [the recurring
 > discovery decision](https://github.com/rajat2006/unshelf/issues/266)
 > (2026-08-08).** Manual Capture remains immediate and Source-only matches still
@@ -21,11 +27,11 @@ the same reasoning that deferred chapter auto-fetch (#9, ADR-0002).
 
 ## What this collapses
 
-- **"Paste-a-URL" and "add-by-title" are not two flows.** With nothing fetched,
-  both are the same insert: title (required — the Item's identity, ADR-0003),
-  type (chosen, no default), Source (optional). A URL fills Source; an offline
-  book leaves it blank. v1 stores no provenance — an Item is just an Item, never
-  "a pasted one" vs "a typed one."
+- **"Paste-a-URL" and "add-by-title" are not two flows.** Both reach the same
+  explicit insert: title (required — the Item's identity, ADR-0003), Type
+  (confirmed, no default), Source (optional). An eligible URL may produce
+  editable suggestions; an offline book leaves Source blank. The Item stores no
+  inspection provenance — it is never "a pasted one" vs "a typed one."
 - **No dedupe.** Capture is a pure insert; capturing the same link or title twice
   yields two independent Items. "One Item" is a model-identity statement (one
   row, referenced by many Stops), not a source-uniqueness guarantee. A matching

@@ -51,7 +51,9 @@ channels.
 Source inspection has stricter sensitive-request, admission, and incident rules
 than ordinary API traffic. Follow the maintained
 [Source inspection operations runbook](source-inspection-operations.md) when
-configuring or responding to that boundary.
+configuring or responding to that boundary, and the
+[release qualification runbook](source-inspection-release.md) for default-off
+rollout and private-corpus evaluation.
 
 ## Installed-version gate
 

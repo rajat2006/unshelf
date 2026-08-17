@@ -35,7 +35,9 @@ exactly two named doors, **`Trails · Library`**, with Trails the default and he
 *Focus Home* and a *Library-as-a-drawer*; it is **not tabs** and **not** a sidebar
 (a top bar wins for ≤5 destinations). **Capture is a global chrome action** (top-bar
 button + `⌘K` / `c`), a **non-navigating overlay** that files into the Library and
-never a Trail, and stays **pure intake** (label-at-capture deferred, #75).
+never a Trail, and stays **pure intake**: advisory Source inspection may fill
+ordinary editable fields, but only Add to Library persists the confirmed Item
+(label-at-capture deferred, #75).
 
 The through-line: the two axes kept reading as if one filtered the other whenever
 co-located on one surface, and a capture box above the Trails misread as

@@ -21,6 +21,7 @@
     "lint": "turbo run lint --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared --filter=@unshelf/repository-policy --filter=@unshelf/deployment-control-plane",
     "lint:fix": "turbo run lint:fix --filter=@unshelf/web --filter=@unshelf/api --filter=@unshelf/shared --filter=@unshelf/repository-policy --filter=@unshelf/deployment-control-plane",
     "prepare": "node .husky/install.mjs",
+    "source-inspection:evaluate": "pnpm --filter @unshelf/api source-inspection:evaluate",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },

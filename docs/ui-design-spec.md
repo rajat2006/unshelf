@@ -148,9 +148,13 @@ revised by [#59](https://github.com/rajat2006/unshelf/issues/59) ·
 - **Capture is a global chrome action** — a top-bar button plus `⌘K` / `c` — whose
   composer states it **lands in the Library, never a Trail**. It is a
   **non-navigating overlay**: it opens on any surface, files the Item into the
-  store, and leaves you where you were. Capture is deliberately **pure intake**
-  (required title + chosen Type + optional Source); labelling at capture time is
-  deferred ([#75](https://github.com/rajat2006/unshelf/issues/75)).
+  store, and leaves you where you were. Capture remains deliberately **pure
+  intake**: Source appears first and eligible public Sources may suggest ordinary
+  editable Title and Type values, but required Title + chosen Type + optional
+  exact Source are still confirmed through Add to Library. Inspection is
+  advisory, leaves no durable metadata, and never prevents manual or offline
+  Capture. Labelling at capture time is deferred
+  ([#75](https://github.com/rajat2006/unshelf/issues/75)).
 
 Why this shape: the two axes kept reading as if one filtered the other whenever
 co-located, and a capture box above the Trails misread as "capture *into this

@@ -37,6 +37,8 @@ identity.
   {article, video, playlist, course, book, other} with no default, `status` from
   {not started, in progress, done} defaulting to *not started*. The enum values
   are cheap to revise later; the spine/detail split is the load-bearing decision.
-- **No fetching in v1.** Title is typed by hand; no page-metadata, thumbnail, or
-  table-of-contents fetch. When sub-item check-off and auto-fetch are picked up
-  (#9), they attach to the spine via detail/sub-item tables without reshaping it.
+- **No durable fetched-detail projection in v1.** Source inspection may suggest
+  ordinary editable title and Type values before explicit Capture, but stores no
+  evidence or fetched metadata. Thumbnail, table-of-contents, and richer
+  auto-fetch remain deferred; when picked up (#9), they attach to the spine via
+  detail/sub-item tables without reshaping it.
