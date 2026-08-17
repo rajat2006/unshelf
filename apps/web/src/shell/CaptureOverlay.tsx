@@ -48,6 +48,18 @@ interface CaptureErrors {
   type?: string;
 }
 
+function requiredTitleError(title: string): string | undefined {
+  return title.trim().length === 0 ? "Enter a title." : undefined;
+}
+
+function requiredTypeError(type: Type | ""): string | undefined {
+  return type === "" ? "Choose a type." : undefined;
+}
+
+function isRequiredTypeSelected(type: Type | ""): type is Type {
+  return requiredTypeError(type) === undefined;
+}
+
 type InspectionState =
   | { status: "idle" }
   | { status: "inspecting" }
@@ -263,12 +275,13 @@ function CaptureComposer({
     supersedeInspection();
     setInspection({ status: "idle" });
 
-    const nextErrors: CaptureErrors = {};
-    if (title.trim().length === 0) nextErrors.title = "Enter a title.";
-    if (type === "") nextErrors.type = "Choose a type.";
+    const nextErrors: CaptureErrors = {
+      title: requiredTitleError(title),
+      type: requiredTypeError(type),
+    };
     setErrors(nextErrors);
 
-    if (nextErrors.title || type === "") {
+    if (nextErrors.title || !isRequiredTypeSelected(type)) {
       if (nextErrors.title) titleRef.current?.focus();
       else document.getElementById("capture-type")?.focus();
       return;
@@ -382,10 +395,11 @@ function CaptureComposer({
               setErrors((current) => ({ ...current, title: undefined }));
             }}
             onBlur={(event) => {
-              if (event.target.value.trim().length === 0) {
+              const titleError = requiredTitleError(event.target.value);
+              if (titleError !== undefined) {
                 setErrors((current) => ({
                   ...current,
-                  title: "Enter a title.",
+                  title: titleError,
                 }));
               }
             }}
@@ -425,10 +439,11 @@ function CaptureComposer({
               aria-invalid={Boolean(errors.type)}
               aria-describedby={errors.type ? "capture-type-error" : undefined}
               onBlur={() => {
-                if (type === "") {
+                const typeError = requiredTypeError(type);
+                if (typeError !== undefined) {
                   setErrors((current) => ({
                     ...current,
-                    type: "Choose a type.",
+                    type: typeError,
                   }));
                 }
               }}
@@ -460,7 +475,10 @@ function CaptureComposer({
           size="touch"
           loading={saving}
           loadingLabel="Adding to Library…"
-          disabled={title.trim().length === 0 || type === ""}
+          disabled={
+            requiredTitleError(title) !== undefined ||
+            requiredTypeError(type) !== undefined
+          }
           className="min-w-40 justify-self-start sm:h-10"
         >
           Add to Library
