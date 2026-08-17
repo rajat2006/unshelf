@@ -15,6 +15,7 @@ describe("Daily Project Digest preview", () => {
   it("previews production releases alongside completed and active work", async () => {
     const trace: string[] = [];
     let summarizedPayload: DiscordPayload | undefined;
+    let aiInput: unknown;
     const adapters: PreviewAdapters = {
       clock: {
         now: () => {
@@ -297,9 +298,7 @@ describe("Daily Project Digest preview", () => {
               number: 98,
               title: "Choose the Daily Project Digest direction",
               labels: ["wayfinder:map"],
-              children: [
-                { state: "CLOSED", labels: [], blockedBy: [] },
-              ],
+              children: [{ state: "CLOSED", labels: [], blockedBy: [] }],
             },
             {
               state: "OPEN",
@@ -491,7 +490,114 @@ describe("Daily Project Digest preview", () => {
           return Promise.resolve();
         },
       },
-      openai: { availability: "unavailable" },
+      openai: {
+        generatePresentation: (input) => {
+          trace.push("openai");
+          aiInput = input;
+          return Promise.resolve({
+            schemaVersion: "1",
+            items: [
+              {
+                subjectId: "wayfinder-map:98",
+                sentence:
+                  "Sets the direction for dependable daily project updates.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "wayfinder-map:99",
+                sentence:
+                  "Maps the remaining decisions for reliable project updates.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "wayfinder-map:100",
+                sentence:
+                  "Shapes the next Unshelf experience around learner needs.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:101",
+                sentence:
+                  "Keeps draft delivery work visible in the project update.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:102",
+                sentence:
+                  "Provisions the access needed by the digest automation.",
+                audienceGroup: "internal_maintenance",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:103",
+                sentence:
+                  "Makes the preview wording clearer for Discord readers.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:104",
+                sentence:
+                  "Prevents unrelated issue mentions from stopping delivery work.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:105",
+                sentence: "Restores production sign-in for Unshelf users.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              ...["A", "B", "C", "D", "E", "F", "G", "H"].map(
+                (title, index) => ({
+                  subjectId: `pull-request:${108 + index}`,
+                  sentence: `Moves delivery effort ${title} toward its intended outcome.`,
+                  audienceGroup: "standard" as const,
+                  citations: ["title"],
+                }),
+              ),
+              {
+                subjectId: "pull-request:116",
+                sentence:
+                  "Makes finished delivery work visible in each digest.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:117",
+                sentence:
+                  "Includes changes that land exactly at the window start.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:121",
+                sentence: "Restores production sign-in for Unshelf users.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:123",
+                sentence:
+                  "Establishes the dependable foundation for digest automation.",
+                audienceGroup: "internal_maintenance",
+                citations: ["title"],
+              },
+              {
+                subjectId: "pull-request:130",
+                sentence:
+                  "Keeps contributor planning work visible as delivery work.",
+                audienceGroup: "standard",
+                citations: ["title"],
+              },
+            ],
+          });
+        },
+      },
       discord: { availability: "unavailable" },
     };
 
@@ -501,8 +607,71 @@ describe("Daily Project Digest preview", () => {
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "deployments:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
+      "openai",
       "summary",
     ]);
+    expect(aiInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "wayfinder-map:98",
+          kind: "wayfinder-map",
+          facts: [
+            {
+              id: "title",
+              value: "Choose the Daily Project Digest direction",
+              source: "github_untrusted",
+            },
+          ],
+        },
+        {
+          subjectId: "wayfinder-map:99",
+          kind: "wayfinder-map",
+          facts: [
+            {
+              id: "title",
+              value: "Plan reliable project updates",
+              source: "github_untrusted",
+            },
+          ],
+        },
+        {
+          subjectId: "wayfinder-map:100",
+          kind: "wayfinder-map",
+          facts: [
+            {
+              id: "title",
+              value: "Shape the next Unshelf experience",
+              source: "github_untrusted",
+            },
+          ],
+        },
+        ...[
+          [101, "Keep draft delivery work visible"],
+          [102, "Provision digest access"],
+          [103, "Shape the preview wording"],
+          [104, "Ignore an arbitrary blocked issue mention"],
+          [105, "Repair production sign-in"],
+          [108, "A"],
+          [109, "B"],
+          [110, "C"],
+          [111, "D"],
+          [112, "E"],
+          [113, "F"],
+          [114, "G"],
+          [115, "H"],
+          [116, "Finish completed delivery reporting"],
+          [117, "Include the window start"],
+          [121, "Repair production sign-in"],
+          [123, "Ship the digest foundation"],
+          [130, "Keep a fork with a copied artifact branch visible"],
+        ].map(([number, title]) => ({
+          subjectId: `pull-request:${number}`,
+          kind: "pull-request",
+          facts: [{ id: "title", value: title, source: "github_untrusted" }],
+        })),
+      ],
+    });
     expect(result).toEqual({
       mode: "preview",
       windowEnd: "2026-08-17T17:30:00.000Z",
@@ -518,22 +687,27 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "Released — Live in production",
                 value:
-                  "[Finish completed delivery reporting is released.](https://github.com/rajat2006/unshelf/pull/116)\n[Repair production sign-in is released.](https://github.com/rajat2006/unshelf/pull/121)\n[Ship the digest foundation is released.](https://github.com/rajat2006/unshelf/pull/123)",
+                  "[Makes finished delivery work visible in each digest.](https://github.com/rajat2006/unshelf/pull/116)\n[Restores production sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/121)",
               },
               {
                 name: "Completed — Merged and ready for a release",
                 value:
-                  "[Choose the Daily Project Digest direction is completed.](https://github.com/rajat2006/unshelf/issues/98)\n[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
+                  "[Sets the direction for dependable daily project updates.](https://github.com/rajat2006/unshelf/issues/98)\n[Includes changes that land exactly at the window start.](https://github.com/rajat2006/unshelf/pull/117)",
               },
               {
                 name: "Blocked — Needs attention before work can continue",
                 value:
-                  "[Plan reliable project updates is blocked.](https://github.com/rajat2006/unshelf/issues/99)\n[Provision digest access is blocked.](https://github.com/rajat2006/unshelf/pull/102)\n[Shape the preview wording is blocked.](https://github.com/rajat2006/unshelf/pull/103)",
+                  "[Maps the remaining decisions for reliable project updates.](https://github.com/rajat2006/unshelf/issues/99)\n[Makes the preview wording clearer for Discord readers.](https://github.com/rajat2006/unshelf/pull/103)",
               },
               {
                 name: "In progress — Actively moving forward",
                 value:
-                  "[Shape the next Unshelf experience is in progress.](https://github.com/rajat2006/unshelf/issues/100)\n[Keep draft delivery work visible is in progress.](https://github.com/rajat2006/unshelf/pull/101)\n[Ignore an arbitrary blocked issue mention is in progress.](https://github.com/rajat2006/unshelf/pull/104)\n[Repair production sign-in is in progress.](https://github.com/rajat2006/unshelf/pull/105)\n[A is in progress.](https://github.com/rajat2006/unshelf/pull/108)\n[B is in progress.](https://github.com/rajat2006/unshelf/pull/109)\n[C is in progress.](https://github.com/rajat2006/unshelf/pull/110)\n[D is in progress.](https://github.com/rajat2006/unshelf/pull/111)\n[E is in progress.](https://github.com/rajat2006/unshelf/pull/112)\n[F is in progress.](https://github.com/rajat2006/unshelf/pull/113)\n[+ 3 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
+                  "[Shapes the next Unshelf experience around learner needs.](https://github.com/rajat2006/unshelf/issues/100)\n[Keeps draft delivery work visible in the project update.](https://github.com/rajat2006/unshelf/pull/101)\n[Prevents unrelated issue mentions from stopping delivery work.](https://github.com/rajat2006/unshelf/pull/104)\n[Restores production sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/105)\n[Moves delivery effort A toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/108)\n[Moves delivery effort B toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/109)\n[Moves delivery effort C toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/110)\n[Moves delivery effort D toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/111)\n[+ 5 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
+              },
+              {
+                name: "Internal maintenance — Keeps the project healthy",
+                value:
+                  "[Provisions the access needed by the digest automation.](https://github.com/rajat2006/unshelf/pull/102) — Blocked\n[Establishes the dependable foundation for digest automation.](https://github.com/rajat2006/unshelf/pull/123) — Released",
               },
             ],
             footer: {
@@ -545,6 +719,85 @@ describe("Daily Project Digest preview", () => {
       },
     });
     expect(summarizedPayload).toBe(result.payload);
+  });
+
+  it("falls back for the whole digest when any AI item is invalid", async () => {
+    const openai = vi.fn(() =>
+      Promise.resolve({
+        schemaVersion: "1",
+        items: [
+          {
+            subjectId: "pull-request:201",
+            sentence: "Improves dependency upkeep for the project.",
+            audienceGroup: "internal_maintenance",
+            citations: ["title"],
+          },
+          {
+            subjectId: "pull-request:202",
+            sentence: "The learning plan overview is live for everyone.",
+            audienceGroup: "standard",
+            citations: ["title"],
+          },
+        ],
+      }),
+    );
+    const adapters: PreviewAdapters = {
+      clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
+      github: {
+        listPullRequests: () =>
+          Promise.resolve([
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-17T12:00:00.000Z",
+              number: 201,
+              title: "Refresh workspace dependencies",
+              baseRefName: "dev",
+              headRefName: "agent/dependency-refresh",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "OPEN",
+              mergedAt: null,
+              number: 202,
+              title: "Improve the learning plan overview",
+              baseRefName: "dev",
+              headRefName: "agent/learning-plan-overview",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+          ]),
+        listDeployments: () => Promise.resolve([]),
+        listWayfinderMaps: () => Promise.resolve([]),
+      },
+      summary: { writePreview: () => Promise.resolve() },
+      openai: { generatePresentation: openai },
+      discord: { availability: "unavailable" },
+    };
+
+    const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
+
+    expect(openai).toHaveBeenCalledOnce();
+    expect(result.payload.embeds?.[0]?.fields).toEqual([
+      {
+        name: "Completed — Merged and ready for a release",
+        value:
+          "[Completed: Refresh workspace dependencies.](https://github.com/rajat2006/unshelf/pull/201)",
+      },
+      {
+        name: "In progress — Actively moving forward",
+        value:
+          "[In progress: Improve the learning plan overview.](https://github.com/rajat2006/unshelf/pull/202)",
+      },
+    ]);
   });
 
   it("gathers complete Wayfinder map routes and their explicit blockers", async () => {

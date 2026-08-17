@@ -87,7 +87,24 @@ export type SummaryAdapter = {
   writePreview(payload: DiscordPayload): Promise<void>;
 };
 
-export type OpenAIAdapterBoundary = { availability: "unavailable" };
+export type OpenAIPresentationInput = {
+  schemaVersion: "1";
+  subjects: Array<{
+    subjectId: string;
+    kind: "pull-request" | "wayfinder-map";
+    facts: Array<{
+      id: string;
+      value: string;
+      source: "github_untrusted";
+    }>;
+  }>;
+};
+
+export type OpenAIAdapterBoundary =
+  | { availability: "unavailable" }
+  | {
+      generatePresentation(input: OpenAIPresentationInput): Promise<unknown>;
+    };
 
 export type DiscordAdapterBoundary = { availability: "unavailable" };
 
@@ -100,6 +117,7 @@ export type PreviewAdapters = {
 };
 
 export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
+export { createOpenAIResponsesAdapter } from "./openai.js";
 
 type DigestLifecycle = "released" | "completed" | "blocked" | "in-progress";
 
@@ -108,6 +126,11 @@ type DigestSubject = {
   number: number;
   title: string;
   lifecycle: DigestLifecycle;
+};
+
+type PresentedSubject = DigestSubject & {
+  audienceGroup: "standard" | "internal_maintenance";
+  sentence?: string;
 };
 
 const discordLimits = {
@@ -166,6 +189,8 @@ const releaseLabels = new Set([
   "release:minor",
   "release:major",
 ]);
+const aiSchemaVersion = "1" as const;
+const maintenanceOverflowUrl = `${digestRepository.webUrl}/issues?q=sort%3Aupdated-desc`;
 
 export async function runDailyProjectDigest(
   input: { mode: "preview" },
@@ -205,7 +230,11 @@ export async function runDailyProjectDigest(
       ),
     ].filter((subject) => subject !== undefined),
   ).sort((left, right) => left.number - right.number);
-  const payload = renderPayload({ subjects, windowEnd });
+  const presentedSubjects = await presentSubjects({
+    subjects,
+    openai: adapters.openai,
+  });
+  const payload = renderPayload({ subjects: presentedSubjects, windowEnd });
   preflightDiscordPayload(payload);
 
   await adapters.summary.writePreview(payload);
@@ -214,6 +243,166 @@ export async function runDailyProjectDigest(
     windowEnd: windowEnd.toISOString(),
     payload,
   };
+}
+
+async function presentSubjects({
+  subjects,
+  openai,
+}: {
+  subjects: DigestSubject[];
+  openai: OpenAIAdapterBoundary;
+}): Promise<PresentedSubject[]> {
+  const fallback = subjects.map((subject) => ({
+    ...subject,
+    audienceGroup: "standard" as const,
+  }));
+  if (subjects.length === 0 || !("generatePresentation" in openai)) {
+    return fallback;
+  }
+  const input = toOpenAIInput(subjects);
+  try {
+    const response = await openai.generatePresentation(input);
+    return applyOpenAIPresentation({ subjects, input, response });
+  } catch {
+    return fallback;
+  }
+}
+
+function toOpenAIInput(subjects: DigestSubject[]): OpenAIPresentationInput {
+  return {
+    schemaVersion: aiSchemaVersion,
+    subjects: subjects.map((subject) => ({
+      subjectId: subjectId(subject),
+      kind: subject.kind,
+      facts: [
+        {
+          id: "title",
+          value: subject.title,
+          source: "github_untrusted",
+        },
+      ],
+    })),
+  };
+}
+
+function subjectId(subject: DigestSubject): string {
+  return `${subject.kind}:${subject.number}`;
+}
+
+function applyOpenAIPresentation({
+  subjects,
+  input,
+  response,
+}: {
+  subjects: DigestSubject[];
+  input: OpenAIPresentationInput;
+  response: unknown;
+}): PresentedSubject[] {
+  const output = exactRecord(response, ["schemaVersion", "items"]);
+  if (
+    output === undefined ||
+    output.schemaVersion !== aiSchemaVersion ||
+    !Array.isArray(output.items)
+  ) {
+    throw new Error("OpenAI returned an invalid digest presentation.");
+  }
+  const factsBySubject = new Map(
+    input.subjects.map((subject) => [
+      subject.subjectId,
+      new Set(subject.facts.map((fact) => fact.id)),
+    ]),
+  );
+  const presentationBySubject = new Map<
+    string,
+    { sentence: string; audienceGroup: "standard" | "internal_maintenance" }
+  >();
+  for (const value of output.items) {
+    const item = exactRecord(value, [
+      "subjectId",
+      "sentence",
+      "audienceGroup",
+      "citations",
+    ]);
+    if (
+      item === undefined ||
+      typeof item.subjectId !== "string" ||
+      typeof item.sentence !== "string" ||
+      (item.audienceGroup !== "standard" &&
+        item.audienceGroup !== "internal_maintenance") ||
+      !Array.isArray(item.citations) ||
+      item.citations.length === 0 ||
+      !isSafeAISentence(item.sentence) ||
+      presentationBySubject.has(item.subjectId)
+    ) {
+      throw new Error("OpenAI returned an invalid digest presentation.");
+    }
+    const knownFacts = factsBySubject.get(item.subjectId);
+    const citations = new Set<string>();
+    if (
+      knownFacts === undefined ||
+      item.citations.some((citation) => {
+        if (
+          typeof citation !== "string" ||
+          !knownFacts.has(citation) ||
+          citations.has(citation)
+        ) {
+          return true;
+        }
+        citations.add(citation);
+        return false;
+      }) ||
+      citations.size !== item.citations.length
+    ) {
+      throw new Error("OpenAI returned an invalid digest presentation.");
+    }
+    presentationBySubject.set(item.subjectId, {
+      sentence: item.sentence,
+      audienceGroup: item.audienceGroup,
+    });
+  }
+  if (presentationBySubject.size !== subjects.length) {
+    throw new Error("OpenAI returned an invalid digest presentation.");
+  }
+  return subjects.map((subject) => {
+    const presentation = presentationBySubject.get(subjectId(subject));
+    if (presentation === undefined) {
+      throw new Error("OpenAI returned an invalid digest presentation.");
+    }
+    return { ...subject, ...presentation };
+  });
+}
+
+function exactRecord(
+  value: unknown,
+  fields: string[],
+): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  return keys.length === fields.length &&
+    fields.every((field) => field in record)
+    ? record
+    : undefined;
+}
+
+function isSafeAISentence(sentence: string): boolean {
+  return (
+    sentence === sentence.trim() &&
+    sentence.length >= 12 &&
+    sentence.length <= 180 &&
+    /^[^.!?\r\n]+[.!?]$/.test(sentence) &&
+    !/(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) &&
+    !/(?:\[|\]|[*_`~#>|])/.test(sentence) &&
+    !/@/.test(sentence) &&
+    !/\b(?:released|completed|blocked|in progress|merged|deployed|shipped|landed|is live|went live|reached production|ready for (?:a )?release|needs attention|still moving|is underway)\b/i.test(
+      sentence,
+    ) &&
+    !/\b(?:ignore (?:all |any )?(?:previous |prior )?instructions?|disregard (?:all |any )?(?:previous |prior )?instructions?|system prompt|developer message|prompt injection|follow these instructions|act as (?:a |an |the )?|you are now)\b/i.test(
+      sentence,
+    )
+  );
 }
 
 function copyWindow(window: DigestWindow): DigestWindow {
@@ -459,18 +648,39 @@ function renderPayload({
   subjects,
   windowEnd,
 }: {
-  subjects: DigestSubject[];
+  subjects: PresentedSubject[];
   windowEnd: Date;
 }): DiscordPayload {
+  const lifecycleCounts = {
+    released: subjects.filter((subject) => subject.lifecycle === "released")
+      .length,
+    completed: subjects.filter((subject) => subject.lifecycle === "completed")
+      .length,
+    blocked: subjects.filter((subject) => subject.lifecycle === "blocked")
+      .length,
+    inProgress: subjects.filter(
+      (subject) => subject.lifecycle === "in-progress",
+    ).length,
+  };
   const released = subjects.filter(
-    (subject) => subject.lifecycle === "released",
+    (subject) =>
+      subject.lifecycle === "released" && subject.audienceGroup === "standard",
   );
   const completed = subjects.filter(
-    (subject) => subject.lifecycle === "completed",
+    (subject) =>
+      subject.lifecycle === "completed" && subject.audienceGroup === "standard",
   );
-  const blocked = subjects.filter((subject) => subject.lifecycle === "blocked");
+  const blocked = subjects.filter(
+    (subject) =>
+      subject.lifecycle === "blocked" && subject.audienceGroup === "standard",
+  );
   const inProgress = subjects.filter(
-    (subject) => subject.lifecycle === "in-progress",
+    (subject) =>
+      subject.lifecycle === "in-progress" &&
+      subject.audienceGroup === "standard",
+  );
+  const maintenance = subjects.filter(
+    (subject) => subject.audienceGroup === "internal_maintenance",
   );
   if (subjects.length === 0) {
     return {
@@ -501,6 +711,11 @@ function renderPayload({
       lifecycle: "in-progress",
       subjects: inProgress,
     }),
+    renderSection({
+      name: "Internal maintenance — Keeps the project healthy",
+      subjects: maintenance,
+      maintenance: true,
+    }),
   ].filter((field) => field !== undefined);
 
   return {
@@ -508,12 +723,7 @@ function renderPayload({
     embeds: [
       {
         title: "Daily Project Digest",
-        description: headline({
-          released: released.length,
-          completed: completed.length,
-          blocked: blocked.length,
-          inProgress: inProgress.length,
-        }),
+        description: headline(lifecycleCounts),
         color: 0x5865f2,
         fields,
         footer: {
@@ -529,19 +739,31 @@ function renderSection({
   name,
   lifecycle,
   subjects,
+  maintenance,
 }: {
   name: string;
-  lifecycle: DigestSubject["lifecycle"];
-  subjects: DigestSubject[];
+  lifecycle?: DigestSubject["lifecycle"];
+  subjects: PresentedSubject[];
+  maintenance?: boolean;
 }): { name: string; value: string } | undefined {
   if (subjects.length === 0) {
     return undefined;
   }
   let visibleCount = Math.min(10, subjects.length);
-  let value = renderSectionValue({ subjects, lifecycle, visibleCount });
+  let value = renderSectionValue({
+    subjects,
+    lifecycle,
+    visibleCount,
+    maintenance,
+  });
   while (value.length > discordLimits.fieldValue && visibleCount > 0) {
     visibleCount -= 1;
-    value = renderSectionValue({ subjects, lifecycle, visibleCount });
+    value = renderSectionValue({
+      subjects,
+      lifecycle,
+      visibleCount,
+      maintenance,
+    });
   }
   if (value.length > discordLimits.fieldValue) {
     throw new Error("Daily Project Digest cannot fit a Discord section.");
@@ -556,18 +778,24 @@ function renderSectionValue({
   subjects,
   lifecycle,
   visibleCount,
+  maintenance,
 }: {
-  subjects: DigestSubject[];
-  lifecycle: DigestSubject["lifecycle"];
+  subjects: PresentedSubject[];
+  lifecycle?: DigestSubject["lifecycle"];
   visibleCount: number;
+  maintenance?: boolean;
 }): string {
   const lines = subjects
     .slice(0, visibleCount)
-    .map((subject) => renderSubject({ subject, lifecycle }));
+    .map((subject) => renderSubject({ subject, maintenance }));
   const remainder = subjects.length - visibleCount;
   if (remainder > 0) {
     lines.push(
-      `[+ ${remainder} more on GitHub](${lifecyclePresentation[lifecycle].overflowUrl})`,
+      `[+ ${remainder} more on GitHub](${
+        maintenance
+          ? maintenanceOverflowUrl
+          : lifecyclePresentation[requiredLifecycle(lifecycle)].overflowUrl
+      })`,
     );
   }
   return lines.join("\n");
@@ -575,15 +803,26 @@ function renderSectionValue({
 
 function renderSubject({
   subject,
-  lifecycle,
+  maintenance,
 }: {
-  subject: DigestSubject;
-  lifecycle: DigestSubject["lifecycle"];
+  subject: PresentedSubject;
+  maintenance?: boolean;
 }): string {
-  const state = lifecyclePresentation[lifecycle].state;
-  const collection =
-    subject.kind === "wayfinder-map" ? "issues" : "pull";
-  return `[${subject.title} is ${state}.](${digestRepository.webUrl}/${collection}/${subject.number})`;
+  const state = lifecyclePresentation[subject.lifecycle].state;
+  const collection = subject.kind === "wayfinder-map" ? "issues" : "pull";
+  const displayState = `${state.charAt(0).toUpperCase()}${state.slice(1)}`;
+  const sentence = subject.sentence ?? `${displayState}: ${subject.title}.`;
+  const metadata = maintenance ? ` — ${displayState}` : "";
+  return `[${sentence}](${digestRepository.webUrl}/${collection}/${subject.number})${metadata}`;
+}
+
+function requiredLifecycle(
+  lifecycle: DigestSubject["lifecycle"] | undefined,
+): DigestSubject["lifecycle"] {
+  if (lifecycle === undefined) {
+    throw new Error("Daily Project Digest received an invalid section.");
+  }
+  return lifecycle;
 }
 
 function normalizeTitle({
