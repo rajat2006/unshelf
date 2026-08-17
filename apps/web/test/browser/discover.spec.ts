@@ -55,7 +55,7 @@ const workspace = {
   ],
 } as DiscoverWorkspace;
 
-test("the signed-in shell starts app-open acquisition once after stored Discover state renders", async ({
+test("the production entry in normal Vite development exposes the Discover route and starts app-open acquisition once after stored state renders", async ({
   page,
 }, testInfo) => {
   const requests: string[] = [];

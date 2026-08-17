@@ -69,6 +69,27 @@ test("the top bar carries the four production workspace rooms with Today as home
   ).toBeVisible();
 });
 
+test("deployed runtime configuration disables Discover navigation and its route", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    (
+      globalThis as typeof globalThis & {
+        __UNSHELF_RUNTIME_CONFIG__?: { readonly discoverEnabled: boolean };
+      }
+    ).__UNSHELF_RUNTIME_CONFIG__ = { discoverEnabled: false };
+  });
+
+  await page.goto(appUrl(testInfo, "/discover"));
+
+  await expect(
+    page.getByRole("button", { name: "Discover — Coming later" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "This page doesn't exist" }),
+  ).toBeVisible();
+});
+
 test("the route table recognizes the Learning Plan, Stage, and canonical Item routes", async ({
   page,
 }, testInfo) => {

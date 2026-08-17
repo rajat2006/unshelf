@@ -10,7 +10,13 @@ pnpm dev
 ```
 
 For local development, keep `PUBLIC_ORIGIN=http://localhost:5173` in
-`apps/api/.env`. Non-local deployments require an exact HTTPS origin.
+`apps/api/.env`. Discover is enabled by default in the normal Vite development
+mode. Set `DISCOVER_ENABLED=true` in the API environment (as in the example) and
+replace `YOUTUBE_API_KEY=...` with a YouTube Data API v3 key so the API and web
+activate together when `pnpm dev` starts them. `VITE_DISCOVER_ENABLED` is a
+non-secret browser flag; never put the YouTube key in `apps/web/.env` or another
+`VITE_` variable. Non-local deployments require an exact HTTPS origin and remain
+controlled by the shared, fail-closed `DISCOVER_ENABLED` runtime flag.
 
 The api expects Postgres at `DATABASE_URL`. Tests need no `.env` at all —
 `pnpm test` spins up a throwaway Postgres via testcontainers (Docker required).

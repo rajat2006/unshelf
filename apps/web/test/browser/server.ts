@@ -3,6 +3,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { readFile } from "node:fs/promises";
 import {
   Type,
   type ClerkUserId,
@@ -216,15 +217,13 @@ const vite = await createViteServer({
   },
 });
 
-// The app is a client-routed SPA (react-router), so a deep link or a refresh on
-// a nested route (e.g. /test/browser/library) must serve the harness entry
-// document, not 404. Vite's own SPA fallback targets the root index.html; the
-// harness is mounted under /test/browser, so rewrite navigation requests there
-// before Vite's middleware chain resolves them.
-function rewriteDeepLinksToHarnessEntry(
-  req: { method?: string; url?: string; headers: { accept?: string } },
-  _res: unknown,
-  next: () => void,
+// Serve the production entry document for browser-harness navigation, replacing
+// only its auth-owning module with the injected test-auth module. This keeps the
+// real runtime-config ordering and Vite transformation seam under browser test.
+async function serveBrowserHarnessEntry(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (error?: unknown) => void,
 ) {
   if (
     req.method === "GET" &&
@@ -233,15 +232,31 @@ function rewriteDeepLinksToHarnessEntry(
   ) {
     const url = new URL(req.url, BROWSER_HARNESS_WEB_ORIGIN);
     if (url.pathname.startsWith("/test/browser")) {
-      url.pathname = "/test/browser/";
-      req.url = `${url.pathname}${url.search}`;
+      const productionEntry = await readFile(
+        new URL("../../index.html", import.meta.url),
+        "utf8",
+      );
+      const harnessEntry = productionEntry.replace(
+        'src="/src/main.tsx"',
+        'src="/test/browser/main.tsx"',
+      );
+      const transformed = await vite.transformIndexHtml(req.url, harnessEntry);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(transformed);
+      return;
     }
   }
   next();
 }
 vite.middlewares.stack.unshift({
   route: "",
-  handle: rewriteDeepLinksToHarnessEntry as never,
+  handle: ((
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: (error?: unknown) => void,
+  ) => {
+    void serveBrowserHarnessEntry(req, res, next).catch(next);
+  }) as never,
 });
 
 await vite.listen();
