@@ -4,10 +4,12 @@ import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { SourceInspectionResponse } from "@unshelf/shared";
 import { Parser } from "htmlparser2";
 import type { GuardedPublicTransport } from "./guarded-transport";
+import { resolveGenericMetadata } from "./generic-metadata";
 
 const DECOMPRESSED_BYTE_LIMIT = 256 * 1024;
 const ENCODING_PRESCAN_BYTE_LIMIT = 1024;
-const TITLE_CODE_POINT_LIMIT = 512;
+const JSON_LD_BLOCK_LIMIT = 16;
+const JSON_LD_BYTE_LIMIT = 64 * 1024;
 
 const requestHeaders = {
   accept: "text/html, application/xhtml+xml;q=0.9",
@@ -45,7 +47,7 @@ export function createGenericSourceInspector({
         return { status: "unavailable" };
       }
 
-      const title = await readDocumentTitle({
+      const suggestion = await readMetadataSuggestions({
         body: decodeBody(
           response.body,
           normalizedEncoding(response.headers["content-encoding"]),
@@ -55,13 +57,7 @@ export function createGenericSourceInspector({
         ),
         signal,
       });
-      return title === null
-        ? { status: "unavailable" }
-        : {
-            status: "suggested",
-            title,
-            titleEvidence: "document_title",
-          };
+      return suggestion ?? { status: "unavailable" };
     } catch {
       return { status: "unavailable" };
     } finally {
@@ -125,7 +121,7 @@ async function* decodeBody(
   yield* decoded;
 }
 
-async function readDocumentTitle({
+async function readMetadataSuggestions({
   body,
   characterEncoding,
   signal,
@@ -133,7 +129,7 @@ async function readDocumentTitle({
   readonly body: AsyncIterable<Uint8Array>;
   readonly characterEncoding: string | null;
   readonly signal: AbortSignal;
-}): Promise<string | null> {
+}): Promise<SourceInspectionResponse | null> {
   let decoder: TextDecoder | undefined;
   let encodingPrelude: Uint8Array = new Uint8Array();
   let decompressedBytes = 0;
@@ -141,9 +137,19 @@ async function readDocumentTitle({
   let titleStarted = false;
   let headClosed = false;
   let title = "";
+  const schemaOrgBlocks: string[] = [];
+  let schemaOrg = "";
+  let schemaOrgBytes = 0;
+  let schemaOrgBlockBytes = 0;
+  let schemaOrgBlocksSeen = 0;
+  let schemaOrgBudgetExhausted = false;
+  let schemaOrgOverflow = false;
+  let inSchemaOrg = false;
+  const openGraphTitles: string[] = [];
+  const openGraphTypes: string[] = [];
   const parser = new Parser(
     {
-      onopentag: (name) => {
+      onopentag: (name, attributes) => {
         if (name === "title" && !headClosed && !titleStarted) {
           inTitle = true;
           titleStarted = true;
@@ -152,12 +158,56 @@ async function readDocumentTitle({
           headClosed = true;
           parser.pause();
         }
+        if (
+          name === "script" &&
+          attributes.type?.split(";", 1)[0]?.trim().toLowerCase() ===
+            "application/ld+json"
+        ) {
+          inSchemaOrg = true;
+          schemaOrg = "";
+          schemaOrgBlockBytes = 0;
+          schemaOrgBlocksSeen += 1;
+          schemaOrgOverflow =
+            schemaOrgBudgetExhausted ||
+            schemaOrgBlocksSeen > JSON_LD_BLOCK_LIMIT;
+        }
+        if (name === "meta") {
+          const property = attributes.property?.trim().toLowerCase();
+          if (property === "og:title" && attributes.content !== undefined) {
+            openGraphTitles.push(attributes.content);
+          }
+          if (property === "og:type" && attributes.content !== undefined) {
+            openGraphTypes.push(attributes.content);
+          }
+        }
       },
       ontext: (text) => {
         if (inTitle) title += text;
+        if (inSchemaOrg && !schemaOrgOverflow) {
+          const textBytes = new TextEncoder().encode(text).byteLength;
+          if (
+            schemaOrgBytes + schemaOrgBlockBytes + textBytes <=
+            JSON_LD_BYTE_LIMIT
+          ) {
+            schemaOrg += text;
+            schemaOrgBlockBytes += textBytes;
+          } else {
+            schemaOrg = "";
+            schemaOrgBudgetExhausted = true;
+            schemaOrgOverflow = true;
+          }
+        }
       },
       onclosetag: (name) => {
         if (name === "title") inTitle = false;
+        if (name === "script" && inSchemaOrg) {
+          if (!schemaOrgOverflow) {
+            schemaOrgBlocks.push(schemaOrg);
+            schemaOrgBytes += schemaOrgBlockBytes;
+          }
+          schemaOrg = "";
+          inSchemaOrg = false;
+        }
         if (name === "head") {
           headClosed = true;
           parser.pause();
@@ -201,9 +251,12 @@ async function readDocumentTitle({
   }
   parser.end(decoder.decode());
 
-  const normalized = title.replace(/\s+/gu, " ").trim();
-  if (normalized.length === 0) return null;
-  return [...normalized].slice(0, TITLE_CODE_POINT_LIMIT).join("");
+  return resolveGenericMetadata({
+    documentTitle: title,
+    jsonLdBlocks: schemaOrgBlocks,
+    openGraphTitles,
+    openGraphTypes,
+  });
 }
 
 function selectCharacterEncoding({
