@@ -292,7 +292,8 @@ function scanJsonLd({
       const context: JsonLdContext =
         property === "@graph"
           ? "graph"
-          : property === "mainEntity"
+          : property === "mainEntity" &&
+              (current.context === "root" || current.context === "graph")
             ? "main_entity"
             : "other";
       pending.push({ value: child, depth: current.depth + 1, context });
@@ -330,7 +331,7 @@ function schemaTypes(value: unknown): readonly Type[] {
   const types = new Set<Type>();
   for (const name of names) {
     if (typeof name !== "string") continue;
-    const normalized = name.split(/[/#:]/u).at(-1)?.toLowerCase();
+    const normalized = schemaTypeName(name);
     if (normalized === undefined) continue;
     if (schemaArticleTypes.has(normalized)) types.add(Type.Article);
     if (normalized === "videoobject") types.add(Type.Video);
@@ -338,6 +339,16 @@ function schemaTypes(value: unknown): readonly Type[] {
     if (normalized === "book") types.add(Type.Book);
   }
   return [...types];
+}
+
+function schemaTypeName(value: string): string | undefined {
+  const normalized = value.trim();
+  if (/^[a-z][a-z0-9]*$/iu.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+  return /^https?:\/\/(?:www\.)?schema\.org\/([a-z][a-z0-9]*)\/?$/iu
+    .exec(normalized)?.[1]
+    ?.toLowerCase();
 }
 
 function resolveTypes(types: ReadonlySet<Type>): TypeResolution {

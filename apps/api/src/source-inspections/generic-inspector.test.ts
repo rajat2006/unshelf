@@ -349,6 +349,65 @@ describe("Generic Source inspector", () => {
     });
   });
 
+  it("does not promote mainEntity metadata owned by nested page furniture", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            `<head><script type="application/ld+json">{
+              "@type":"WebPage",
+              "publisher":{"@type":"Organization","mainEntity":{"@type":"Book","name":"Publisher catalog"}}
+            }</script><title>Page title</title></head>`,
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/nested-furniture",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      status: "suggested",
+      title: "Page title",
+      titleEvidence: "document_title",
+    });
+  });
+
+  it("does not treat a non-Schema type URI as Schema.org evidence", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            `<head><script type="application/ld+json">{
+              "@type":"https://evil.example/Book","name":"Misleading metadata"
+            }</script><title>Safe title</title></head>`,
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/non-schema-type",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      status: "suggested",
+      title: "Safe title",
+      titleEvidence: "document_title",
+    });
+  });
+
   it("keeps Type when equivalent Schema.org and Open Graph signals agree", async () => {
     const get = vi.fn<GuardedPublicTransport["get"]>(() =>
       Promise.resolve({
