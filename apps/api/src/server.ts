@@ -4,6 +4,12 @@ import { createClerkAuth } from "./middleware/auth";
 import { createDatabase } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
+import { createGenericSourceInspector } from "./source-inspections/generic-inspector";
+import { createGuardedPublicTransport } from "./source-inspections/guarded-transport";
+import {
+  createNodeConnectionTransport,
+  createNodeHostResolver,
+} from "./source-inspections/node-network";
 import { createSourceInspectionService } from "./source-inspections/service";
 
 let logger: Logger;
@@ -65,6 +71,10 @@ await superviseApiProcess({
 
     const port = Number(process.env.PORT ?? 3001);
     const db = createDatabase(connectionString);
+    const publicTransport = createGuardedPublicTransport({
+      resolver: createNodeHostResolver(),
+      connection: createNodeConnectionTransport(),
+    });
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.
@@ -73,6 +83,9 @@ await superviseApiProcess({
       diagnosticSecrets,
       sourceInspectionService: createSourceInspectionService({
         disabled: process.env.SOURCE_INSPECTION_DISABLED === "true",
+        inspectGeneric: createGenericSourceInspector({
+          transport: publicTransport,
+        }),
       }),
     });
 

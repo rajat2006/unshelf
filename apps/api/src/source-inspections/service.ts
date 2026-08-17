@@ -18,6 +18,10 @@ export interface SourceInspectionService {
 interface SourceInspectionServiceOptions {
   readonly disabled?: boolean;
   readonly classify?: (source: string) => SourceClassification;
+  readonly inspectGeneric?: (input: {
+    readonly source: string;
+    readonly signal: AbortSignal;
+  }) => Promise<SourceInspectionResponse>;
 }
 
 const SOURCE_BYTE_LIMIT = 8 * 1024;
@@ -30,35 +34,45 @@ const unavailable: SourceInspectionServiceResult = {
 export function createSourceInspectionService({
   disabled = false,
   classify = classifySource,
+  inspectGeneric = () => Promise.resolve({ status: "unavailable" }),
 }: SourceInspectionServiceOptions = {}): SourceInspectionService {
   return {
-    inspect: (input) => {
+    inspect: async (input) => {
       if (
         disabled ||
         input.signal.aborted ||
         new TextEncoder().encode(input.source).byteLength > SOURCE_BYTE_LIMIT
       ) {
-        return Promise.resolve(unavailable);
+        return unavailable;
       }
 
       try {
         const classification = classify(input.source);
-        if (classification.classification !== "youtube") {
-          return Promise.resolve(unavailable);
+        if (classification.classification === "generic") {
+          return {
+            ok: true,
+            response: await inspectGeneric({
+              source: input.source,
+              signal: input.signal,
+            }),
+          };
         }
-        return Promise.resolve({
+        if (classification.classification === "unsupported_youtube") {
+          return unavailable;
+        }
+        return {
           ok: true,
           response: {
             status: "suggested",
             type: classification.type,
             typeEvidence: "youtube_route",
           },
-        });
+        };
       } catch {
-        return Promise.resolve({
+        return {
           ok: false,
           error: "source_inspection_failed",
-        });
+        };
       }
     },
   };

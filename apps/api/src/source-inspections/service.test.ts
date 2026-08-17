@@ -43,6 +43,50 @@ describe("Source inspection service", () => {
     });
   });
 
+  it("returns a generic document title suggestion", async () => {
+    const inspectGeneric = vi.fn(() =>
+      Promise.resolve({
+        status: "suggested" as const,
+        title: "A useful public document",
+        titleEvidence: "document_title" as const,
+      }),
+    );
+    const service = createSourceInspectionService({ inspectGeneric });
+    const signal = new AbortController().signal;
+
+    await expect(
+      service.inspect({
+        source: "https://example.com/article?edition=current",
+        userId,
+        signal,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      response: {
+        status: "suggested",
+        title: "A useful public document",
+        titleEvidence: "document_title",
+      },
+    });
+    expect(inspectGeneric).toHaveBeenCalledWith({
+      source: "https://example.com/article?edition=current",
+      signal,
+    });
+  });
+
+  it("never sends a supported YouTube Source to generic inspection", async () => {
+    const inspectGeneric = vi.fn();
+    const service = createSourceInspectionService({ inspectGeneric });
+
+    await service.inspect({
+      source: "https://youtu.be/M7lc1UVf-VE",
+      userId,
+      signal: new AbortController().signal,
+    });
+
+    expect(inspectGeneric).not.toHaveBeenCalled();
+  });
+
   it("keeps the production-default kill switch off", async () => {
     const classify = vi.fn(() => ({
       classification: "youtube" as const,
