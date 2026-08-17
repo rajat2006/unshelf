@@ -867,7 +867,7 @@ describe("Daily Project Digest", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence: "Shows the learning plan overview is ready for release.",
+            sentence: "Improves plans at https://example.com.",
             audienceGroup: "standard",
             citations: ["title"],
           },
@@ -929,7 +929,7 @@ describe("Daily Project Digest", () => {
     if (result.aiPresentation !== "failed") {
       throw new Error("Expected the AI presentation to fail validation.");
     }
-    expect(result.aiFailureReason).toBe("contract-sentence-lifecycle");
+    expect(result.aiFailureReason).toBe("contract-sentence-url");
     expect(result.aiFailureSubjectId).toBe("pull-request:202");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
@@ -985,6 +985,14 @@ describe("Daily Project Digest", () => {
     {
       style: "needs attention used as ordinary prose",
       sentence: "Explains what needs attention in each lesson.",
+    },
+    {
+      style: "prompt terminology used as subject matter",
+      sentence: "Makes the AI prompt easier to understand.",
+    },
+    {
+      style: "lifecycle wording chosen by the presentation model",
+      sentence: "The digest is now live.",
     },
   ])(
     "accepts $style as prompt-guided wording",
@@ -1079,87 +1087,6 @@ describe("Daily Project Digest", () => {
             ...validPresentationItem,
             sentence: "Improves plans for @readers.",
           },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          {
-            ...validPresentationItem,
-            sentence: "Shows the plan is ready for release.",
-          },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: "The app is live." }],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "The digest is released." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "The service is completed." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "The digest is now live." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "The app has been deployed." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "It is ready for release." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-prompt-control",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "Improves prompt handling." },
         ],
       },
       "pull-request:202",
