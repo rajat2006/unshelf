@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -162,6 +163,11 @@ function renderDiscover(initialEntry = "/discover") {
       </MemoryRouter>
     </ApplicationAuthProvider>,
   );
+}
+
+function openFollowHealth() {
+  fireEvent.click(screen.getByRole("button", { name: "Manage Follow health" }));
+  return screen.getByRole("dialog", { name: "Manage Follow health" });
 }
 
 beforeEach(() => {
@@ -567,7 +573,25 @@ describe("Discover channel setup", () => {
       "lg:grid-cols-[16rem_minmax(0,1fr)]",
     );
     const followControls = screen.getByLabelText("Follows");
-    expect(followControls).toHaveClass("min-w-0", "lg:self-start");
+    expect(followControls).toHaveClass("flex", "min-h-0", "lg:h-full");
+    expect(
+      within(followControls).queryByRole("button", {
+        name: "Retry Systems Studio",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(followControls).queryByRole("button", {
+        name: "Pause Quiet Learning",
+      }),
+    ).not.toBeInTheDocument();
+    const followList = screen.getByTestId("follow-filter-list");
+    expect(followList).toHaveClass("min-h-0", "lg:overflow-y-auto");
+    expect(
+      within(openFollowHealth()).getByRole("button", {
+        name: "Retry Systems Studio",
+      }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(
       followControls.compareDocumentPosition(
         screen.getByRole("heading", { name: "Intake" }).closest("section")!,
@@ -726,6 +750,8 @@ describe("Discover channel setup", () => {
       }),
     );
     renderDiscover();
+    await screen.findByRole("button", { name: "Manage Follow health" });
+    openFollowHealth();
     fireEvent.click(
       await screen.findByRole("button", { name: "Pause Quiet Learning" }),
     );
@@ -769,9 +795,10 @@ describe("Discover channel setup", () => {
     );
     renderDiscover();
     await screen.findByText("A deep module");
+    openFollowHealth();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
     );
     expect(screen.getByText("A deep module")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -801,7 +828,9 @@ describe("Discover channel setup", () => {
       "Partial refresh for Quiet Learning",
     );
     expect(
-      screen.getByRole("button", { name: "Retry Quiet Learning" }),
+      within(openFollowHealth()).getByRole("button", {
+        name: "Retry Quiet Learning",
+      }),
     ).toBeVisible();
   });
 
@@ -840,8 +869,9 @@ describe("Discover channel setup", () => {
       });
     renderDiscover();
     await screen.findByText("A deep module");
+    openFollowHealth();
     fireEvent.click(
-      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -849,6 +879,7 @@ describe("Discover channel setup", () => {
     );
     expect(screen.getByText("A deep module")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open on YouTube" })).toBeVisible();
+    openFollowHealth();
     expect(
       screen.getByRole("button", { name: "Retry Quiet Learning" }),
     ).toBeVisible();
@@ -884,14 +915,16 @@ describe("Discover channel setup", () => {
     });
     renderDiscover();
     await screen.findByText("A deep module");
+    openFollowHealth();
     fireEvent.click(
-      screen.getByRole("button", { name: "Refresh Quiet Learning" }),
+      screen.getByRole("button", { name: "Retry Quiet Learning" }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Quiet Learning refreshed, but the intake could not reload",
     );
     expect(screen.getByText("A deep module")).toBeVisible();
+    openFollowHealth();
     expect(
       screen.getByRole("button", { name: "Retry Quiet Learning" }),
     ).toBeVisible();

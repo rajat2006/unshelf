@@ -522,7 +522,7 @@ export function DiscoverSurface({
   const hasFollow = workspaceState.workspace.follows.length > 0;
   return (
     <section
-      className="discover-surface mx-auto flex h-full max-w-6xl flex-col gap-3 sm:gap-6"
+      className="discover-surface mx-auto flex h-full max-w-6xl flex-col gap-3"
       aria-labelledby="discover-heading"
     >
       <div className="flex shrink-0 items-center justify-between gap-3">
@@ -665,17 +665,14 @@ export function DiscoverSurface({
 
 function DiscoverHeader() {
   return (
-    <header className="space-y-1 sm:space-y-2">
-      <p className="hidden text-sm font-medium text-primary sm:block">
-        Discover
-      </p>
+    <header className="space-y-1">
       <h1
         id="discover-heading"
-        className="text-2xl font-semibold tracking-tight sm:text-3xl"
+        className="text-2xl font-semibold tracking-tight"
       >
         Discover
       </h1>
-      <p className="hidden max-w-2xl text-muted-foreground sm:block">
+      <p className="hidden max-w-2xl text-sm text-muted-foreground sm:block">
         A calm intake of current learning material from Providers you Follow.
       </p>
     </header>
@@ -809,6 +806,7 @@ function Workspace({
   onSelectFollow: (followId: FollowId | null) => void;
   itemBackgroundLocation: ItemBackgroundLocation;
 }) {
+  const [healthOpen, setHealthOpen] = useState(false);
   const filteredDiscoveries =
     selectedFollowId === null
       ? workspace.discoveries
@@ -836,35 +834,41 @@ function Workspace({
   return (
     <div
       data-testid="discover-workspace"
-      className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 lg:gap-6"
+      className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 lg:gap-5"
     >
-      <aside aria-label="Follows" className="min-w-0 space-y-2 lg:self-start">
-        <h2 className="sr-only">Follows</h2>
-        <div className="hidden items-center lg:flex">
-          <h2 className="font-semibold">Follows</h2>
-        </div>
-        <div className="flex min-w-0 gap-3 overflow-x-auto pb-1 lg:grid lg:overflow-visible">
+      <aside
+        aria-label="Follows"
+        className="flex min-h-0 min-w-0 flex-col rounded-[var(--radius-card)] border bg-muted/35 p-2 lg:h-full"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-2 px-1 pb-2">
+          <div>
+            <h2 className="text-sm font-semibold">Filter by Follow</h2>
+            <p className="hidden text-xs text-muted-foreground lg:block">
+              One combined intake
+            </p>
+          </div>
           <Button
             type="button"
-            size="touch"
-            variant="secondary"
-            className="shrink-0"
-            disabled={workspaceRefreshState.kind === "pending"}
-            onClick={onRefreshWorkspace}
+            size="compact"
+            variant="quiet"
+            onClick={() => setHealthOpen(true)}
           >
-            {workspaceRefreshState.kind === "pending"
-              ? "Refreshing all…"
-              : "Refresh all"}
+            Manage Follow health
           </Button>
+        </div>
+        <div
+          data-testid="follow-filter-list"
+          className="flex min-h-0 min-w-0 gap-2 overflow-x-auto pb-1 lg:flex-1 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:pr-1"
+        >
           <Button
             type="button"
-            size="touch"
+            size="compact"
             variant="quiet"
             aria-pressed={selectedFollowId === null}
-            className="w-40 shrink-0 justify-between lg:w-full"
+            className="w-40 shrink-0 justify-between aria-pressed:bg-accent lg:w-full"
             onClick={() => onSelectFollow(null)}
           >
-            <span>All Follows</span>
+            <span className="truncate">All Follows</span>
             <span>{workspace.discoveries.length}</span>
           </Button>
           {workspace.follows.map((follow) => {
@@ -872,129 +876,44 @@ function Workspace({
             const unresolvedCount = workspace.discoveries.filter(
               ({ followId }) => followId === follow.id,
             ).length;
-            const refreshForFollow =
-              refreshState.kind !== "idle" &&
-              refreshState.followId === follow.id
-                ? refreshState
-                : { kind: "idle" as const };
-            const lifecycleForFollow =
-              lifecycleState.kind !== "idle" &&
-              lifecycleState.followId === follow.id
-                ? lifecycleState
-                : { kind: "idle" as const };
-            const recoveryNeeded =
-              refreshForFollow.kind === "failure" ||
-              (refreshForFollow.kind === "result" &&
-                (refreshForFollow.outcome !== "complete" ||
-                  refreshForFollow.rereadFailed)) ||
-              (refreshForFollow.kind === "idle" &&
-                follow.health.latestAttemptOutcome !== null &&
-                follow.health.latestAttemptOutcome !== "complete");
             return (
-              <article
+              <Button
                 key={follow.id}
-                className="w-80 shrink-0 space-y-2 rounded-[var(--radius-card)] border bg-card p-3 lg:w-auto"
+                type="button"
+                size="compact"
+                variant="quiet"
+                aria-pressed={selectedFollowId === follow.id}
+                className="h-auto w-56 shrink-0 justify-between gap-3 px-2 py-2 text-left aria-pressed:bg-accent lg:w-full"
+                onClick={() => onSelectFollow(follow.id)}
               >
-                <Button
-                  type="button"
-                  size="touch"
-                  variant="quiet"
-                  aria-pressed={selectedFollowId === follow.id}
-                  className="w-full justify-between px-0"
-                  onClick={() => onSelectFollow(follow.id)}
-                >
-                  <span className="truncate">{followName}</span>
-                  <span>{unresolvedCount}</span>
-                </Button>
-                <p className="text-xs capitalize text-muted-foreground">
-                  {follow.lifecycle} ·{" "}
-                  {follow.health.latestAttemptOutcome ?? "not checked"}
-                </p>
-                <p className="hidden text-xs text-muted-foreground lg:block">
-                  Latest attempt:{" "}
-                  {formatHealthTime(follow.health.latestAttemptAt)}
-                  <br />
-                  Latest complete:{" "}
-                  {formatHealthTime(follow.health.latestCompleteAt)}
-                  <br />
-                  Verified since:{" "}
-                  {formatHealthTime(follow.health.verifiedCoverageStartedAt)}
-                  {follow.health.nextEligibleAt ? (
-                    <>
-                      <br />
-                      Retry after:{" "}
-                      {formatHealthTime(follow.health.nextEligibleAt)}
-                    </>
-                  ) : null}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {follow.lifecycle === "active" ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="touch"
-                        variant="secondary"
-                        disabled={refreshForFollow.kind === "pending"}
-                        onClick={() => onRefresh(follow)}
-                      >
-                        {refreshForFollow.kind === "pending"
-                          ? `Refreshing ${followName}…`
-                          : recoveryNeeded
-                            ? `Retry ${followName}`
-                            : `Refresh ${followName}`}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="touch"
-                        variant="quiet"
-                        disabled={lifecycleForFollow.kind === "pending"}
-                        onClick={() => onLifecycleChange(follow, "paused")}
-                      >
-                        {lifecycleForFollow.kind === "pending" &&
-                        lifecycleForFollow.lifecycle === "paused"
-                          ? `Pausing ${followName}`
-                          : `Pause ${followName}`}
-                      </Button>
-                    </>
-                  ) : follow.lifecycle === "paused" ? (
-                    <Button
-                      type="button"
-                      size="touch"
-                      variant="secondary"
-                      disabled={lifecycleForFollow.kind === "pending"}
-                      onClick={() => onLifecycleChange(follow, "active")}
-                    >
-                      {lifecycleForFollow.kind === "pending" &&
-                      lifecycleForFollow.lifecycle === "active"
-                        ? `Resuming ${followName}`
-                        : `Resume ${followName}`}
-                    </Button>
-                  ) : null}
-                  {follow.lifecycle !== "removed" ? (
-                    <Button
-                      type="button"
-                      size="touch"
-                      variant="quiet"
-                      disabled={lifecycleForFollow.kind === "pending"}
-                      onClick={() => onLifecycleChange(follow, "removed")}
-                    >
-                      {lifecycleForFollow.kind === "pending" &&
-                      lifecycleForFollow.lifecycle === "removed"
-                        ? `Removing ${followName}`
-                        : `Remove ${followName}`}
-                    </Button>
-                  ) : null}
-                </div>
-              </article>
+                <span className="min-w-0">
+                  <span className="block truncate">{followName}</span>
+                  <span className="block truncate text-xs font-normal capitalize text-muted-foreground">
+                    {follow.lifecycle} ·{" "}
+                    {follow.health.latestAttemptOutcome?.replaceAll("_", " ") ??
+                      "not checked"}
+                  </span>
+                </span>
+                <span>{unresolvedCount}</span>
+              </Button>
             );
           })}
         </div>
+        <FollowHealthDialog
+          open={healthOpen}
+          onOpenChange={setHealthOpen}
+          follows={workspace.follows}
+          refreshState={refreshState}
+          lifecycleState={lifecycleState}
+          onRefresh={onRefresh}
+          onLifecycleChange={onLifecycleChange}
+        />
       </aside>
       <section
         className="flex min-h-0 min-w-0 flex-col gap-4"
         aria-labelledby="discover-intake-heading"
       >
-        <div className="flex flex-col gap-2 border-b pb-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex shrink-0 flex-col gap-2 border-b pb-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-3">
           <div>
             <h2 id="discover-intake-heading" className="text-xl font-semibold">
               Intake
@@ -1007,13 +926,24 @@ function Workspace({
             </p>
           </div>
           <div
-            className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap"
+            className="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap"
             aria-label="Filtered intake actions"
           >
+            <Button
+              type="button"
+              size="compact"
+              variant="secondary"
+              disabled={workspaceRefreshState.kind === "pending"}
+              onClick={onRefreshWorkspace}
+            >
+              {workspaceRefreshState.kind === "pending"
+                ? "Refreshing all…"
+                : "Refresh all"}
+            </Button>
             <HistoryDialog />
             <Button
               type="button"
-              size="touch"
+              size="compact"
               variant="secondary"
               disabled={filteredDiscoveryIds.length === 0 || bulkPending}
               onClick={() => onDecision(filteredDiscoveryIds, "seen")}
@@ -1024,7 +954,7 @@ function Workspace({
             </Button>
             <Button
               type="button"
-              size="touch"
+              size="compact"
               variant="quiet"
               disabled={filteredDiscoveryIds.length === 0 || bulkPending}
               onClick={() => onDecision(filteredDiscoveryIds, "dismissed")}
@@ -1161,7 +1091,7 @@ function Workspace({
               ) : null}
             </div>
           ) : (
-            <ul className="grid auto-rows-max gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid auto-rows-max gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {filteredDiscoveries.map((discovery) => (
                 <DiscoveryCard
                   key={discovery.id}
@@ -1185,6 +1115,150 @@ function Workspace({
         </div>
       </section>
     </div>
+  );
+}
+
+function FollowHealthDialog({
+  open,
+  onOpenChange,
+  follows,
+  refreshState,
+  lifecycleState,
+  onRefresh,
+  onLifecycleChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  follows: FollowSummary[];
+  refreshState: RefreshState;
+  lifecycleState: LifecycleState;
+  onRefresh: (follow: FollowSummary) => void;
+  onLifecycleChange: (
+    follow: FollowSummary,
+    lifecycle: FollowLifecycle,
+  ) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Manage Follow health</DialogTitle>
+          <DialogDescription>
+            Retry acquisition or change future discovery without resolving
+            existing Discoveries or deleting history.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {follows.map((follow) => {
+            const followName = follow.name ?? "Follow unavailable";
+            const refreshForFollow =
+              refreshState.kind !== "idle" &&
+              refreshState.followId === follow.id
+                ? refreshState
+                : { kind: "idle" as const };
+            const lifecycleForFollow =
+              lifecycleState.kind !== "idle" &&
+              lifecycleState.followId === follow.id
+                ? lifecycleState
+                : { kind: "idle" as const };
+            return (
+              <article
+                key={follow.id}
+                className="space-y-3 rounded-[var(--radius-card)] border p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-medium">{followName}</h3>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {follow.targetUrl ?? "Provider target unavailable"}
+                    </p>
+                  </div>
+                  <span className="text-xs capitalize text-muted-foreground">
+                    {follow.lifecycle}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Latest attempt:{" "}
+                  {formatHealthTime(follow.health.latestAttemptAt)}
+                  <br />
+                  Latest complete:{" "}
+                  {formatHealthTime(follow.health.latestCompleteAt)}
+                  <br />
+                  Verified since:{" "}
+                  {formatHealthTime(follow.health.verifiedCoverageStartedAt)}
+                  {follow.health.nextEligibleAt ? (
+                    <>
+                      <br />
+                      Retry after:{" "}
+                      {formatHealthTime(follow.health.nextEligibleAt)}
+                    </>
+                  ) : null}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {follow.lifecycle === "active" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        disabled={refreshForFollow.kind === "pending"}
+                        onClick={() => {
+                          onRefresh(follow);
+                          onOpenChange(false);
+                        }}
+                      >
+                        {refreshForFollow.kind === "pending"
+                          ? `Retrying ${followName}…`
+                          : `Retry ${followName}`}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="compact"
+                        variant="quiet"
+                        disabled={lifecycleForFollow.kind === "pending"}
+                        onClick={() => onLifecycleChange(follow, "paused")}
+                      >
+                        {lifecycleForFollow.kind === "pending" &&
+                        lifecycleForFollow.lifecycle === "paused"
+                          ? `Pausing ${followName}`
+                          : `Pause ${followName}`}
+                      </Button>
+                    </>
+                  ) : follow.lifecycle === "paused" ? (
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="secondary"
+                      disabled={lifecycleForFollow.kind === "pending"}
+                      onClick={() => onLifecycleChange(follow, "active")}
+                    >
+                      {lifecycleForFollow.kind === "pending" &&
+                      lifecycleForFollow.lifecycle === "active"
+                        ? `Resuming ${followName}`
+                        : `Resume ${followName}`}
+                    </Button>
+                  ) : null}
+                  {follow.lifecycle !== "removed" ? (
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="quiet"
+                      disabled={lifecycleForFollow.kind === "pending"}
+                      onClick={() => onLifecycleChange(follow, "removed")}
+                    >
+                      {lifecycleForFollow.kind === "pending" &&
+                      lifecycleForFollow.lifecycle === "removed"
+                        ? `Removing ${followName}`
+                        : `Remove ${followName}`}
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1246,7 +1320,7 @@ function HistoryDialog() {
       <Button
         ref={triggerRef}
         type="button"
-        size="touch"
+        size="compact"
         variant="quiet"
         onClick={() => {
           setOpen(true);
@@ -1440,28 +1514,28 @@ function DiscoveryCard({
   };
 
   return (
-    <li className="overflow-hidden rounded-[var(--radius-card)] border bg-card shadow-sm">
+    <li className="flex min-w-0 flex-col overflow-hidden rounded-[var(--radius-card)] border bg-card">
       {discovery.thumbnailUrl && !thumbnailFailed ? (
         <img
           src={discovery.thumbnailUrl}
           alt=""
-          className="aspect-video w-full object-cover"
+          className="aspect-[16/6] w-full object-cover"
           onError={() => setThumbnailFailed(true)}
         />
       ) : (
-        <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
+        <div className="grid aspect-[16/6] place-items-center bg-muted text-xs text-muted-foreground">
           Video preview unavailable
         </div>
       )}
-      <div className="space-y-2 p-4">
+      <div className="flex flex-1 flex-col space-y-1 p-3">
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>{discovery.followName ?? "Follow unavailable"}</span>
           <span className="capitalize">{discovery.state}</span>
         </div>
-        <h3 className="font-medium leading-snug">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-semibold leading-snug">
           {discovery.title ?? "Video details unavailable"}
         </h3>
-        <p className="text-sm text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
           {discovery.publisher ?? "Publisher unavailable"}
         </p>
         <p className="text-xs text-muted-foreground">
@@ -1486,28 +1560,28 @@ function DiscoveryCard({
             href={discovery.source}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline"
           >
             Open on YouTube
           </a>
         ) : (
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             Source unavailable
           </span>
         )}
         {discovery.itemId !== null ? (
-          <p className="text-sm font-medium text-primary">Already in Library</p>
+          <p className="text-xs font-medium text-primary">Already in Library</p>
         ) : !metadataAvailable ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Keep unavailable. Retry this Follow to restore current details.
           </p>
         ) : null}
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="mt-auto flex flex-wrap gap-1 pt-2">
           {discovery.itemId === null && metadataAvailable ? (
             <Button
               ref={keepTriggerRef}
               type="button"
-              size="touch"
+              size="compact"
               disabled={disabled}
               onClick={openKeep}
             >
@@ -1516,7 +1590,7 @@ function DiscoveryCard({
           ) : null}
           <Button
             type="button"
-            size="touch"
+            size="compact"
             variant="secondary"
             disabled={disabled}
             onClick={() => onDecision([discovery.id], "seen")}
@@ -1525,7 +1599,7 @@ function DiscoveryCard({
           </Button>
           <Button
             type="button"
-            size="touch"
+            size="compact"
             variant="quiet"
             disabled={disabled}
             onClick={() => onDecision([discovery.id], "dismissed")}
