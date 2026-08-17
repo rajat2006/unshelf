@@ -21,6 +21,8 @@ import type { YouTubeAdapter } from "../src/discover/youtube-adapter";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 const now = new Date("2026-08-16T12:00:00.000Z");
+const expiredProjectionFetchedAt = new Date("2026-08-14T12:00:00.000Z");
+const expiredProjectionExpiresAt = new Date("2026-08-15T12:00:00.000Z");
 let currentNow = now;
 const videos: FollowPreviewVideo[] = [
   {
@@ -273,8 +275,8 @@ describe("Discover decisions and history", () => {
       .expect(200);
     await harness.pool.query(
       `UPDATE discover_provider_result_projections
-       SET fetched_at = CURRENT_TIMESTAMP - INTERVAL '2 days',
-           expires_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       SET fetched_at = $2,
+           expires_at = $3
        WHERE provider_result_id = (
          SELECT candidate.provider_result_id
          FROM discover_candidates candidate
@@ -283,12 +285,16 @@ describe("Discover decisions and history", () => {
           AND discovery.user_id = candidate.user_id
          WHERE discovery.id = $1
        )`,
-      [ownerDiscoveries[0].id],
+      [
+        ownerDiscoveries[0].id,
+        expiredProjectionFetchedAt,
+        expiredProjectionExpiresAt,
+      ],
     );
     await harness.pool.query(
       `UPDATE discover_provider_target_projections
-       SET fetched_at = CURRENT_TIMESTAMP - INTERVAL '2 days',
-           expires_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       SET fetched_at = $2,
+           expires_at = $3
        WHERE provider_target_id = (
          SELECT follow.provider_target_id
          FROM discover_follows follow
@@ -297,7 +303,11 @@ describe("Discover decisions and history", () => {
           AND discovery.user_id = follow.user_id
          WHERE discovery.id = $1
        )`,
-      [ownerDiscoveries[0].id],
+      [
+        ownerDiscoveries[0].id,
+        expiredProjectionFetchedAt,
+        expiredProjectionExpiresAt,
+      ],
     );
 
     const history = await request(app)
