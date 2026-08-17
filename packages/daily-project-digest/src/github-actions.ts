@@ -10,6 +10,7 @@ import type {
 } from "./index.js";
 import { createDiscordWebhookAdapter } from "./discord.js";
 import { createOpenAIResponsesAdapter } from "./openai.js";
+import { asRecord, sleep } from "./provider-support.js";
 
 type GitHubActionsInput = {
   token: string;
@@ -109,6 +110,8 @@ const releaseCarrierCommitsQuery = `
     }
   }
 `;
+const githubMaximumAttempts = 3;
+const githubFallbackBackoffMilliseconds = [60_000, 120_000] as const;
 
 export function createGitHubActionsPreviewAdapters(
   input: GitHubActionsPreviewInput,
@@ -206,7 +209,7 @@ async function gatherWayfinderMaps({
       throw new Error("GitHub returned invalid Wayfinder map evidence.");
     }
     const pageMaps = response
-      .filter((value) => record(value)?.pull_request === undefined)
+      .filter((value) => asRecord(value)?.pull_request === undefined)
       .map(parseWayfinderMap);
     maps.push(
       ...(await Promise.all(
@@ -228,7 +231,7 @@ async function gatherWayfinderMaps({
 function parseWayfinderMap(
   value: unknown,
 ): Omit<WayfinderMapEvidence, "children"> {
-  const issue = record(value);
+  const issue = asRecord(value);
   const number = issue?.number;
   const title = issue?.title;
   const stateValue = issue?.state;
@@ -296,7 +299,7 @@ async function gatherWayfinderRoutes({
     routes.push(
       ...(await Promise.all(
         response.map(async (value) => {
-          const issue = record(value);
+          const issue = asRecord(value);
           const number = issue?.number;
           const stateValue = issue?.state;
           if (
@@ -477,7 +480,7 @@ async function fetchMainOid({
     token: github.token,
     path: `/repos/${github.owner}/${github.name}/git/ref/heads/main`,
   });
-  const oid = nestedString(record(response), ["object", "sha"]);
+  const oid = nestedString(asRecord(response), ["object", "sha"]);
   if (oid === undefined) {
     throw new Error("GitHub returned invalid main revision evidence.");
   }
@@ -506,7 +509,7 @@ async function fetchDeploymentRecords({
 }
 
 function parseDeploymentRecord(value: unknown): DeploymentRecord {
-  const deployment = record(value);
+  const deployment = asRecord(value);
   const id = deployment?.id;
   const environment = deployment?.environment;
   const sha = deployment?.sha;
@@ -538,7 +541,7 @@ async function fetchDeploymentWithLatestStatus({
   if (response.length === 0) {
     return undefined;
   }
-  const status = record(response[0]);
+  const status = asRecord(response[0]);
   const state = status?.state;
   const statusAt = status?.created_at;
   if (!isDeploymentStatus(state) || typeof statusAt !== "string") {
@@ -576,7 +579,7 @@ async function isReachableFromMain({
     token: github.token,
     path: `/repos/${github.owner}/${github.name}/compare/${deployedOid}...${mainOid}`,
   });
-  const status = record(response)?.status;
+  const status = asRecord(response)?.status;
   if (typeof status !== "string") {
     throw new Error("GitHub returned invalid deployment ancestry evidence.");
   }
@@ -636,7 +639,7 @@ async function gatherComparisonCommitOids({
   const commitOids = new Set<string>();
   let totalCommits: number | undefined;
   for (let page = 1; ; page += 1) {
-    const response = record(
+    const response = asRecord(
       await githubJson({
         token: github.token,
         path: `/repos/${github.owner}/${github.name}/compare/${precedingOid}...${deployedOid}?per_page=100&page=${page}`,
@@ -692,7 +695,7 @@ async function gatherPullRequestCommitOids({
         },
       },
     });
-    const root = record(response);
+    const root = asRecord(response);
     if (root === undefined || root.errors !== undefined) {
       throw new Error("GitHub rejected release-carrier evidence gathering.");
     }
@@ -714,7 +717,7 @@ async function gatherPullRequestCommitOids({
       throw new Error("GitHub returned invalid release-carrier evidence.");
     }
     for (const value of nodes) {
-      const oid = nestedString(record(value), ["commit", "oid"]);
+      const oid = nestedString(asRecord(value), ["commit", "oid"]);
       if (oid === undefined) {
         throw new Error("GitHub returned invalid release-carrier evidence.");
       }
@@ -739,7 +742,7 @@ function addCommitOids({
   errorMessage: string;
 }): void {
   for (const value of values) {
-    const oid = record(value)?.sha;
+    const oid = asRecord(value)?.sha;
     if (typeof oid !== "string") {
       throw new Error(errorMessage);
     }
@@ -769,7 +772,7 @@ async function gatherMergedPullRequests({
         },
       },
     });
-    const root = record(response);
+    const root = asRecord(response);
     if (root === undefined || root.errors !== undefined) {
       throw new Error(
         "GitHub rejected merged pull-request evidence gathering.",
@@ -804,7 +807,7 @@ async function gatherMergedPullRequests({
 }
 
 function parseMergedPullRequest(value: unknown): MergedPullRequest {
-  const pullRequest = record(value);
+  const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
   const mergedAt = pullRequest?.mergedAt;
@@ -952,7 +955,7 @@ function parseRecentlyClosedPullRequest(value: unknown): {
   updatedAt: Date;
   pullRequest: PullRequestEvidence | undefined;
 } {
-  const pullRequest = record(value);
+  const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
   const updatedAtValue = pullRequest?.updated_at;
@@ -1021,7 +1024,7 @@ function parsePullRequestPage(value: unknown): {
   hasNextPage: boolean;
   endCursor: string | null;
 } {
-  const root = record(value);
+  const root = asRecord(value);
   if (root === undefined || root.errors !== undefined) {
     throw new Error("GitHub rejected digest evidence gathering.");
   }
@@ -1049,7 +1052,7 @@ function parsePullRequestPage(value: unknown): {
 }
 
 function parsePullRequest(value: unknown): ParsedPullRequest {
-  const pullRequest = record(value);
+  const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
   const baseRefName = pullRequest?.baseRefName;
@@ -1060,7 +1063,7 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   const headRepository =
     headRepositoryValue === null
       ? null
-      : record(headRepositoryValue)?.nameWithOwner;
+      : asRecord(headRepositoryValue)?.nameWithOwner;
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
@@ -1086,13 +1089,13 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
 }
 
 function parseLabels(value: unknown): string[] {
-  const connection = record(value);
-  const pageInfo = record(connection?.pageInfo);
+  const connection = asRecord(value);
+  const pageInfo = asRecord(connection?.pageInfo);
   if (pageInfo?.hasNextPage !== false || !Array.isArray(connection?.nodes)) {
     throw new Error("GitHub returned incomplete label evidence.");
   }
   return connection.nodes.map((node) => {
-    const name = record(node)?.name;
+    const name = asRecord(node)?.name;
     if (typeof name !== "string") {
       throw new Error("GitHub returned invalid label evidence.");
     }
@@ -1105,7 +1108,7 @@ function parseRestLabels(value: unknown): string[] {
     throw new Error("GitHub returned invalid label evidence.");
   }
   return value.map((label) => {
-    const name = record(label)?.name;
+    const name = asRecord(label)?.name;
     if (typeof name !== "string") {
       throw new Error("GitHub returned invalid label evidence.");
     }
@@ -1116,13 +1119,13 @@ function parseRestLabels(value: unknown): string[] {
 function parseClosingIssues(
   value: unknown,
 ): ParsedPullRequest["closingIssues"] {
-  const connection = record(value);
-  const pageInfo = record(connection?.pageInfo);
+  const connection = asRecord(value);
+  const pageInfo = asRecord(connection?.pageInfo);
   if (pageInfo?.hasNextPage !== false || !Array.isArray(connection?.nodes)) {
     throw new Error("GitHub returned incomplete closing-issue evidence.");
   }
   return connection.nodes.map((node) => {
-    const issue = record(node);
+    const issue = asRecord(node);
     const number = issue?.number;
     const state = issue?.state;
     if (
@@ -1153,7 +1156,7 @@ async function fetchDependencies({
       throw new Error("GitHub returned invalid dependency evidence.");
     }
     for (const value of response) {
-      const state = record(value)?.state;
+      const state = asRecord(value)?.state;
       if (state !== "open" && state !== "closed") {
         throw new Error("GitHub returned invalid dependency evidence.");
       }
@@ -1186,7 +1189,7 @@ async function checkHeadContainsMain({
     token: github.token,
     path: `/repos/${github.owner}/${github.name}/compare/${mainOid}...${pullRequest.headRefOid}`,
   });
-  const status = record(response)?.status;
+  const status = asRecord(response)?.status;
   if (typeof status !== "string") {
     throw new Error("GitHub returned invalid ancestry evidence.");
   }
@@ -1194,24 +1197,78 @@ async function checkHeadContainsMain({
 }
 
 async function githubJson(input: GitHubRequest): Promise<unknown> {
-  const response = await fetch(`https://api.github.com${input.path}`, {
-    method: input.method ?? "GET",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${input.token}`,
-      "User-Agent": "unshelf-daily-project-digest",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...(input.body === undefined
-        ? {}
-        : { "Content-Type": "application/json" }),
-    },
-    body: input.body === undefined ? undefined : JSON.stringify(input.body),
-  });
-  if (!response.ok) {
-    throw new Error("GitHub rejected digest evidence gathering.");
+  for (let attempt = 1; attempt <= githubMaximumAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`https://api.github.com${input.path}`, {
+        method: input.method ?? "GET",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${input.token}`,
+          "User-Agent": "unshelf-daily-project-digest",
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(input.body === undefined
+            ? {}
+            : { "Content-Type": "application/json" }),
+        },
+        body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      });
+    } catch {
+      throw new Error("GitHub rejected digest evidence gathering.");
+    }
+    if (response.ok) {
+      try {
+        return await response.json();
+      } catch {
+        throw new Error("GitHub returned invalid digest evidence.");
+      }
+    }
+    const retryDelay = githubRateLimitDelay({ response, attempt });
+    if (retryDelay === undefined || attempt === githubMaximumAttempts) {
+      throw new Error("GitHub rejected digest evidence gathering.");
+    }
+    await sleep(retryDelay);
   }
-  const value: unknown = await response.json();
-  return value;
+  throw new Error("GitHub rejected digest evidence gathering.");
+}
+
+function githubRateLimitDelay({
+  response,
+  attempt,
+}: {
+  response: Response;
+  attempt: number;
+}): number | undefined {
+  if (response.status !== 403 && response.status !== 429) {
+    return undefined;
+  }
+  const retryAfter = retryAfterMilliseconds(
+    response.headers.get("retry-after"),
+  );
+  if (retryAfter !== undefined) {
+    return retryAfter;
+  }
+  if (response.headers.get("x-ratelimit-remaining") === "0") {
+    const resetAt = Number(response.headers.get("x-ratelimit-reset"));
+    if (Number.isFinite(resetAt) && resetAt >= 0) {
+      return Math.max(1_000, Math.ceil(resetAt * 1_000 - Date.now()));
+    }
+  }
+  return githubFallbackBackoffMilliseconds[attempt - 1] ?? 120_000;
+}
+
+function retryAfterMilliseconds(value: string | null): number | undefined {
+  if (value === null || value.trim() === "") {
+    return undefined;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1_000);
+  }
+  const retryAt = Date.parse(value);
+  return Number.isNaN(retryAt)
+    ? undefined
+    : Math.max(1_000, Math.ceil(retryAt - Date.now()));
 }
 
 async function writePreview({
@@ -1221,17 +1278,15 @@ async function writePreview({
   summaryPath: string;
   payload: DiscordPayload;
 }): Promise<void> {
-  await appendFile(
-    summaryPath,
-    `## Daily Project Digest preview\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n`,
-    "utf8",
-  );
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : undefined;
+  try {
+    await appendFile(
+      summaryPath,
+      `## Daily Project Digest preview\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n`,
+      "utf8",
+    );
+  } catch {
+    throw new Error("Daily Project Digest Actions summary failed.");
+  }
 }
 
 function isInteger(value: unknown): value is number {
@@ -1244,7 +1299,7 @@ function nestedRecord(
 ): Record<string, unknown> | undefined {
   let current = value;
   for (const key of path) {
-    current = record(current?.[key]);
+    current = asRecord(current?.[key]);
   }
   return current;
 }
@@ -1255,7 +1310,7 @@ function nestedString(
 ): string | undefined {
   let current: unknown = value;
   for (const key of path) {
-    current = record(current)?.[key];
+    current = asRecord(current)?.[key];
   }
   return typeof current === "string" ? current : undefined;
 }

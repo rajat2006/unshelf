@@ -217,6 +217,7 @@ type DigestRunResult<Mode extends "preview" | "deliver"> = {
   mode: Mode;
   windowEnd: string;
   payload: DiscordPayload;
+  aiPresentation: "applied" | "failed" | "skipped";
 };
 
 export function runDailyProjectDigest(
@@ -260,12 +261,15 @@ export async function runDailyProjectDigest(
         toWayfinderSubject({ wayfinderMap, window }),
       ),
     ].filter((subject) => subject !== undefined),
-  ).sort((left, right) => left.number - right.number);
-  const presentedSubjects = await presentSubjects({
+  ).sort((...subjects) => compareSubjects(subjects));
+  const presentation = await presentSubjects({
     subjects,
     openai: adapters.openai,
   });
-  const payload = renderPayload({ subjects: presentedSubjects, windowEnd });
+  const payload = renderPayload({
+    subjects: presentation.subjects,
+    windowEnd,
+  });
   preflightDiscordPayload(payload);
 
   if (input.mode === "preview") {
@@ -287,6 +291,7 @@ export async function runDailyProjectDigest(
     mode: input.mode,
     windowEnd: windowEnd.toISOString(),
     payload,
+    aiPresentation: presentation.aiPresentation,
   };
 }
 
@@ -296,20 +301,26 @@ async function presentSubjects({
 }: {
   subjects: DigestSubject[];
   openai: OpenAIAdapterBoundary;
-}): Promise<PresentedSubject[]> {
+}): Promise<{
+  subjects: PresentedSubject[];
+  aiPresentation: "applied" | "failed" | "skipped";
+}> {
   const fallback = subjects.map((subject) => ({
     ...subject,
     audienceGroup: "standard" as const,
   }));
   if (subjects.length === 0 || !("generatePresentation" in openai)) {
-    return fallback;
+    return { subjects: fallback, aiPresentation: "skipped" };
   }
   const input = toOpenAIInput(subjects);
   try {
     const response = await openai.generatePresentation(input);
-    return applyOpenAIPresentation({ subjects, input, response });
+    return {
+      subjects: applyOpenAIPresentation({ subjects, input, response }),
+      aiPresentation: "applied",
+    };
   } catch {
-    return fallback;
+    return { subjects: fallback, aiPresentation: "failed" };
   }
 }
 
@@ -447,7 +458,7 @@ function isSafeAISentence(sentence: string): boolean {
     !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
     !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
     !/@/.test(sentence) &&
-    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
+    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e|ed)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
       sentence,
     ) &&
     !/\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
@@ -470,6 +481,23 @@ function copyWindow(window: DigestWindow): DigestWindow {
   };
 }
 
+function compareSubjects([left, right]: [
+  DigestSubject,
+  DigestSubject,
+]): number {
+  return left.number - right.number;
+}
+
+function isDirectHotfixPullRequest(pullRequest: PullRequestEvidence): boolean {
+  return (
+    pullRequest.baseRefName === "main" &&
+    pullRequest.headRefName !== "dev" &&
+    pullRequest.headRefName !== "main" &&
+    pullRequest.headRepository === digestRepository.nameWithOwner &&
+    !pullRequest.labels.some((label) => releaseLabels.has(label))
+  );
+}
+
 function isEligibleDeliveryPullRequest(
   pullRequest: PullRequestEvidence,
 ): boolean {
@@ -478,12 +506,8 @@ function isEligibleDeliveryPullRequest(
   }
   return (
     pullRequest.state === "OPEN" &&
-    pullRequest.baseRefName === "main" &&
-    pullRequest.headRefName !== "dev" &&
-    pullRequest.headRefName !== "main" &&
-    pullRequest.headRepository === digestRepository.nameWithOwner &&
-    pullRequest.headContainsMain &&
-    !pullRequest.labels.some((label) => releaseLabels.has(label))
+    isDirectHotfixPullRequest(pullRequest) &&
+    pullRequest.headContainsMain
   );
 }
 
@@ -670,13 +694,7 @@ function isReleasedDeliveryPullRequest(
   if (pullRequest.baseRefName === "dev") {
     return true;
   }
-  return (
-    pullRequest.baseRefName === "main" &&
-    pullRequest.headRefName !== "dev" &&
-    pullRequest.headRefName !== "main" &&
-    pullRequest.headRepository === digestRepository.nameWithOwner &&
-    !pullRequest.labels.some((label) => releaseLabels.has(label))
-  );
+  return isDirectHotfixPullRequest(pullRequest);
 }
 
 function deduplicateSubjects(subjects: DigestSubject[]): DigestSubject[] {

@@ -46,6 +46,7 @@ async function main(): Promise<void> {
       ok: true,
       mode: result.mode,
       windowEnd: result.windowEnd,
+      aiPresentation: result.aiPresentation,
     })}\n`,
   );
 }
@@ -58,9 +59,31 @@ function requiredEnvironmentValue(name: string): string {
   return value;
 }
 
+function failureCategory(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("configuration")) {
+    return "configuration";
+  }
+  if (message.startsWith("GitHub ")) {
+    return "github-evidence";
+  }
+  if (message.includes("Discord preflight")) {
+    return "discord-preflight";
+  }
+  if (message.includes("delivery")) {
+    return "discord-delivery";
+  }
+  if (message.includes("summary") || message.includes("preview capability")) {
+    return "actions-summary";
+  }
+  return "orchestration";
+}
+
 try {
   await main();
-} catch {
-  process.stderr.write("Daily Project Digest failed safely.\n");
+} catch (error) {
+  process.stderr.write(
+    `Daily Project Digest failed safely (${failureCategory(error)}).\n`,
+  );
   process.exitCode = 1;
 }

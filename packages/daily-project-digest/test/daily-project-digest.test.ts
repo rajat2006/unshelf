@@ -664,6 +664,7 @@ describe("Daily Project Digest", () => {
     await vi.runAllTimersAsync();
     const result = await run;
 
+    expect(result.aiPresentation).toBe("applied");
     expect(trace).toEqual([
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
@@ -736,6 +737,7 @@ describe("Daily Project Digest", () => {
     expect(result).toEqual({
       mode: "deliver",
       windowEnd: "2026-08-17T17:30:00.000Z",
+      aiPresentation: "applied",
       payload: {
         allowed_mentions: { parse: [] },
         embeds: [
@@ -807,7 +809,7 @@ describe("Daily Project Digest", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence: "Ensures work remains pending.",
+            sentence: "Updates what ships, lands, and deploys.",
             audienceGroup: "standard",
             citations: ["title"],
           },
@@ -865,6 +867,7 @@ describe("Daily Project Digest", () => {
     const result = await runDailyProjectDigest({ mode: "deliver" }, adapters);
 
     expect(openai).toHaveBeenCalledOnce();
+    expect(result.aiPresentation).toBe("failed");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
         name: "Completed — Merged and ready for a release",
@@ -912,6 +915,7 @@ describe("Daily Project Digest", () => {
         "🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.\nDigest 20260817T173000000Z",
     });
     expect(summarizedPayload).toBe(result.payload);
+    expect(result.aiPresentation).toBe("skipped");
     expect(deliver).not.toHaveBeenCalled();
   });
 });

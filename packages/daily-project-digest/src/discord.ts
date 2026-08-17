@@ -1,4 +1,5 @@
 import type { DiscordPayload } from "./index.js";
+import { asRecord, sleep } from "./provider-support.js";
 
 type DiscordWebhookInput = {
   webhookUrl: string;
@@ -125,7 +126,7 @@ async function readJson(
 }
 
 function retryAfterMilliseconds(value: unknown): number | undefined {
-  const retryAfter = record(value)?.retry_after;
+  const retryAfter = asRecord(value)?.retry_after;
   return typeof retryAfter === "number" &&
     Number.isFinite(retryAfter) &&
     retryAfter >= 0
@@ -134,8 +135,8 @@ function retryAfterMilliseconds(value: unknown): number | undefined {
 }
 
 function isDiscordMessage(value: unknown): boolean {
-  const message = record(value);
-  const author = record(message?.author);
+  const message = asRecord(value);
+  const author = asRecord(message?.author);
   return (
     isSnowflake(message?.id) &&
     isSnowflake(message?.channel_id) &&
@@ -151,16 +152,6 @@ function isDiscordMessage(value: unknown): boolean {
 
 function isSnowflake(value: unknown): value is string {
   return typeof value === "string" && /^\d{17,20}$/.test(value);
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function deliveryFailure(): Error {

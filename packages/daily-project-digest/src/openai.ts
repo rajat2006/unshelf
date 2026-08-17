@@ -2,6 +2,7 @@ import type {
   OpenAIAdapterBoundary,
   OpenAIPresentationInput,
 } from "./index.js";
+import { asRecord } from "./provider-support.js";
 
 const model = "gpt-5-nano-2025-08-07";
 const responsesUrl = "https://api.openai.com/v1/responses";
@@ -93,17 +94,17 @@ const presentationSchema = {
 } as const;
 
 function parseResponse(value: unknown): unknown {
-  const response = record(value);
+  const response = asRecord(value);
   if (response?.status !== "completed" || !Array.isArray(response.output)) {
     throw new Error("OpenAI presentation response was incomplete.");
   }
   const messages = response.output
-    .map(record)
+    .map(asRecord)
     .filter((item) => item?.type === "message");
   if (messages.length !== 1 || !Array.isArray(messages[0]?.content)) {
     throw new Error("OpenAI presentation response was invalid.");
   }
-  const content = messages[0].content.map(record);
+  const content = messages[0].content.map(asRecord);
   if (
     content.some((item) => item?.type === "refusal") ||
     content.length !== 1 ||
@@ -117,10 +118,4 @@ function parseResponse(value: unknown): unknown {
   } catch {
     throw new Error("OpenAI presentation response was invalid.");
   }
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
