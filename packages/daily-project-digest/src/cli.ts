@@ -18,7 +18,12 @@ async function main(): Promise<void> {
   }
   const result = await runDailyProjectDigest(
     { mode: "preview" },
-    createGitHubActionsPreviewAdapters({ token, repository, summaryPath }),
+    createGitHubActionsPreviewAdapters({
+      token,
+      repository,
+      summaryPath,
+      openaiApiKey: process.env.DAILY_DIGEST_OPENAI_API_KEY,
+    }),
   );
   process.stdout.write(
     `${JSON.stringify({

@@ -7,11 +7,13 @@ import type {
   PullRequestEvidence,
   WayfinderMapEvidence,
 } from "./index.js";
+import { createOpenAIResponsesAdapter } from "./openai.js";
 
 type GitHubActionsPreviewInput = {
   token: string;
   repository: string;
   summaryPath: string;
+  openaiApiKey?: string;
 };
 
 type GitHubRequest = {
@@ -138,7 +140,10 @@ export function createGitHubActionsPreviewAdapters(
           payload,
         }),
     },
-    openai: { availability: "unavailable" },
+    openai:
+      input.openaiApiKey === undefined || input.openaiApiKey === ""
+        ? { availability: "unavailable" }
+        : createOpenAIResponsesAdapter({ apiKey: input.openaiApiKey }),
     discord: { availability: "unavailable" },
   };
 }

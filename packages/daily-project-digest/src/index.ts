@@ -133,6 +133,9 @@ type PresentedSubject = DigestSubject & {
   sentence?: string;
 };
 
+type DigestSection =
+  { kind: "lifecycle"; lifecycle: DigestLifecycle } | { kind: "maintenance" };
+
 const discordLimits = {
   content: 2_000,
   embeds: 1,
@@ -393,16 +396,26 @@ function isSafeAISentence(sentence: string): boolean {
     sentence.length >= 12 &&
     sentence.length <= 180 &&
     /^[^.!?\r\n]+[.!?]$/.test(sentence) &&
+    !hasControlCharacter(sentence) &&
+    !/^\s*(?:[-+>]|\d+[.)])\s/.test(sentence) &&
     !/(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) &&
-    !/(?:\[|\]|[*_`~#>|])/.test(sentence) &&
+    !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
+    !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
     !/@/.test(sentence) &&
-    !/\b(?:released|completed|blocked|in progress|merged|deployed|shipped|landed|is live|went live|reached production|ready for (?:a )?release|needs attention|still moving|is underway)\b/i.test(
+    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
       sentence,
     ) &&
-    !/\b(?:ignore (?:all |any )?(?:previous |prior )?instructions?|disregard (?:all |any )?(?:previous |prior )?instructions?|system prompt|developer message|prompt injection|follow these instructions|act as (?:a |an |the )?|you are now)\b/i.test(
+    !/\b(?:instructions?|prompts?|ignore|disregard|obey|follow|act as|you are now|developer message)\b/i.test(
       sentence,
     )
   );
+}
+
+function hasControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint <= 31 || codePoint === 127);
+  });
 }
 
 function copyWindow(window: DigestWindow): DigestWindow {
@@ -693,28 +706,28 @@ function renderPayload({
   const fields = [
     renderSection({
       name: lifecyclePresentation.released.sectionName,
-      lifecycle: "released",
+      section: { kind: "lifecycle", lifecycle: "released" },
       subjects: released,
     }),
     renderSection({
       name: lifecyclePresentation.completed.sectionName,
-      lifecycle: "completed",
+      section: { kind: "lifecycle", lifecycle: "completed" },
       subjects: completed,
     }),
     renderSection({
       name: lifecyclePresentation.blocked.sectionName,
-      lifecycle: "blocked",
+      section: { kind: "lifecycle", lifecycle: "blocked" },
       subjects: blocked,
     }),
     renderSection({
       name: lifecyclePresentation["in-progress"].sectionName,
-      lifecycle: "in-progress",
+      section: { kind: "lifecycle", lifecycle: "in-progress" },
       subjects: inProgress,
     }),
     renderSection({
       name: "Internal maintenance — Keeps the project healthy",
       subjects: maintenance,
-      maintenance: true,
+      section: { kind: "maintenance" },
     }),
   ].filter((field) => field !== undefined);
 
@@ -737,14 +750,12 @@ function renderPayload({
 
 function renderSection({
   name,
-  lifecycle,
   subjects,
-  maintenance,
+  section,
 }: {
   name: string;
-  lifecycle?: DigestSubject["lifecycle"];
   subjects: PresentedSubject[];
-  maintenance?: boolean;
+  section: DigestSection;
 }): { name: string; value: string } | undefined {
   if (subjects.length === 0) {
     return undefined;
@@ -752,17 +763,15 @@ function renderSection({
   let visibleCount = Math.min(10, subjects.length);
   let value = renderSectionValue({
     subjects,
-    lifecycle,
     visibleCount,
-    maintenance,
+    section,
   });
   while (value.length > discordLimits.fieldValue && visibleCount > 0) {
     visibleCount -= 1;
     value = renderSectionValue({
       subjects,
-      lifecycle,
       visibleCount,
-      maintenance,
+      section,
     });
   }
   if (value.length > discordLimits.fieldValue) {
@@ -776,25 +785,23 @@ function renderSection({
 
 function renderSectionValue({
   subjects,
-  lifecycle,
   visibleCount,
-  maintenance,
+  section,
 }: {
   subjects: PresentedSubject[];
-  lifecycle?: DigestSubject["lifecycle"];
   visibleCount: number;
-  maintenance?: boolean;
+  section: DigestSection;
 }): string {
   const lines = subjects
     .slice(0, visibleCount)
-    .map((subject) => renderSubject({ subject, maintenance }));
+    .map((subject) => renderSubject({ subject, section }));
   const remainder = subjects.length - visibleCount;
   if (remainder > 0) {
     lines.push(
       `[+ ${remainder} more on GitHub](${
-        maintenance
+        section.kind === "maintenance"
           ? maintenanceOverflowUrl
-          : lifecyclePresentation[requiredLifecycle(lifecycle)].overflowUrl
+          : lifecyclePresentation[section.lifecycle].overflowUrl
       })`,
     );
   }
@@ -803,26 +810,17 @@ function renderSectionValue({
 
 function renderSubject({
   subject,
-  maintenance,
+  section,
 }: {
   subject: PresentedSubject;
-  maintenance?: boolean;
+  section: DigestSection;
 }): string {
   const state = lifecyclePresentation[subject.lifecycle].state;
   const collection = subject.kind === "wayfinder-map" ? "issues" : "pull";
   const displayState = `${state.charAt(0).toUpperCase()}${state.slice(1)}`;
   const sentence = subject.sentence ?? `${displayState}: ${subject.title}.`;
-  const metadata = maintenance ? ` — ${displayState}` : "";
+  const metadata = section.kind === "maintenance" ? ` — ${displayState}` : "";
   return `[${sentence}](${digestRepository.webUrl}/${collection}/${subject.number})${metadata}`;
-}
-
-function requiredLifecycle(
-  lifecycle: DigestSubject["lifecycle"] | undefined,
-): DigestSubject["lifecycle"] {
-  if (lifecycle === undefined) {
-    throw new Error("Daily Project Digest received an invalid section.");
-  }
-  return lifecycle;
 }
 
 function normalizeTitle({

@@ -9,8 +9,8 @@ on:
         type: choice
         options: [preview]
 
-# Preview is a trusted, read-only job. It receives no deployment environment,
-# OpenAI credential, Discord webhook, or delivery adapter capability.
+# Preview is a trusted, read-only job. AI wording is optional, and it receives no
+# Discord webhook or delivery adapter capability.
 permissions:
   contents: read
   deployments: read
@@ -50,4 +50,5 @@ jobs:
       - name: Preview exact Discord payload
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          DAILY_DIGEST_OPENAI_API_KEY: ${{ secrets.DAILY_DIGEST_OPENAI_API_KEY }}
         run: node packages/daily-project-digest/dist/cli.js preview

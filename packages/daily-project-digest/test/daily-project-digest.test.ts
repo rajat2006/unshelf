@@ -548,7 +548,7 @@ describe("Daily Project Digest preview", () => {
               },
               {
                 subjectId: "pull-request:105",
-                sentence: "Restores production sign-in for Unshelf users.",
+                sentence: "Restores sign-in for Unshelf users.",
                 audienceGroup: "standard",
                 citations: ["title"],
               },
@@ -570,13 +570,13 @@ describe("Daily Project Digest preview", () => {
               {
                 subjectId: "pull-request:117",
                 sentence:
-                  "Includes changes that land exactly at the window start.",
+                  "Includes changes arriving exactly at the window start.",
                 audienceGroup: "standard",
                 citations: ["title"],
               },
               {
                 subjectId: "pull-request:121",
-                sentence: "Restores production sign-in for Unshelf users.",
+                sentence: "Restores sign-in for Unshelf users.",
                 audienceGroup: "standard",
                 citations: ["title"],
               },
@@ -687,12 +687,12 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "Released — Live in production",
                 value:
-                  "[Makes finished delivery work visible in each digest.](https://github.com/rajat2006/unshelf/pull/116)\n[Restores production sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/121)",
+                  "[Makes finished delivery work visible in each digest.](https://github.com/rajat2006/unshelf/pull/116)\n[Restores sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/121)",
               },
               {
                 name: "Completed — Merged and ready for a release",
                 value:
-                  "[Sets the direction for dependable daily project updates.](https://github.com/rajat2006/unshelf/issues/98)\n[Includes changes that land exactly at the window start.](https://github.com/rajat2006/unshelf/pull/117)",
+                  "[Sets the direction for dependable daily project updates.](https://github.com/rajat2006/unshelf/issues/98)\n[Includes changes arriving exactly at the window start.](https://github.com/rajat2006/unshelf/pull/117)",
               },
               {
                 name: "Blocked — Needs attention before work can continue",
@@ -702,7 +702,7 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "In progress — Actively moving forward",
                 value:
-                  "[Shapes the next Unshelf experience around learner needs.](https://github.com/rajat2006/unshelf/issues/100)\n[Keeps draft delivery work visible in the project update.](https://github.com/rajat2006/unshelf/pull/101)\n[Prevents unrelated issue mentions from stopping delivery work.](https://github.com/rajat2006/unshelf/pull/104)\n[Restores production sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/105)\n[Moves delivery effort A toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/108)\n[Moves delivery effort B toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/109)\n[Moves delivery effort C toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/110)\n[Moves delivery effort D toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/111)\n[+ 5 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
+                  "[Shapes the next Unshelf experience around learner needs.](https://github.com/rajat2006/unshelf/issues/100)\n[Keeps draft delivery work visible in the project update.](https://github.com/rajat2006/unshelf/pull/101)\n[Prevents unrelated issue mentions from stopping delivery work.](https://github.com/rajat2006/unshelf/pull/104)\n[Restores sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/105)\n[Moves delivery effort A toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/108)\n[Moves delivery effort B toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/109)\n[Moves delivery effort C toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/110)\n[Moves delivery effort D toward its intended outcome.](https://github.com/rajat2006/unshelf/pull/111)\n[+ 5 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
               },
               {
                 name: "Internal maintenance — Keeps the project healthy",
