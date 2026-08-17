@@ -32,6 +32,7 @@ The required resource environment is:
 | `API_IMAGE` | migrate, api | Full `ghcr.io/rajat2006/unshelf-api@sha256:…` reference. |
 | `WEB_IMAGE` | web | Full `ghcr.io/rajat2006/unshelf-web@sha256:…` reference. |
 | `DATABASE_URL` | migrate, api | Opaque internal connection URL; never assemble or print it in Compose or automation. |
+| `DATABASE_TIME_ZONE` | migrate, api | PostgreSQL timezone name (for example `UTC` or `America/Los_Angeles`) defining Unshelf's server calendar day. |
 | `DATABASE_NETWORK` | migrate, api | Private attachable overlay used by non-production PostgreSQL. |
 | `APP_NAME` | routed services | Written by Dokploy; selects the isolated ingress network. |
 | `APPLICATION_NAME` | migrate, api | Non-secret stable deployment identifier. |

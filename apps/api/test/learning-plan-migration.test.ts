@@ -12,7 +12,10 @@ describe("Learning Plan migration", () => {
     const container = await new PostgreSqlContainer(
       "postgres:16-alpine",
     ).start();
-    const db = createDatabase(container.getConnectionUri());
+    const db = createDatabase({
+      connectionString: container.getConnectionUri(),
+      timeZone: "UTC",
+    });
 
     try {
       const migrations = readMigrationFiles({

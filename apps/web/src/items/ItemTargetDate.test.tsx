@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Status,
   StatusMode,
@@ -18,12 +18,25 @@ import {
   type UserId,
 } from "@unshelf/shared";
 import type { CurrentUser } from "../application-auth/types";
-import { updateItemTargetDate } from "../api";
+import { fetchServerCalendar, updateItemTargetDate } from "../api";
 import { ItemTargetDate } from "./ItemTargetDate";
+import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
+import type { ApplicationAuth } from "../application-auth/types";
+import { ServerCalendarProvider } from "../server-calendar/ServerCalendarProvider";
+import { stubMatchMedia } from "../test-support/stub-match-media";
 
-vi.mock("../api", () => ({ updateItemTargetDate: vi.fn() }));
+vi.mock("../api", () => ({
+  fetchServerCalendar: vi.fn(),
+  updateItemTargetDate: vi.fn(),
+}));
 
 const user: CurrentUser = { getToken: async () => null };
+const auth: ApplicationAuth = {
+  status: "signed-in",
+  user,
+  SignInButton: ({ children }) => children,
+  UserButton: () => null,
+};
 const item: Item = {
   id: "00000000-0000-0000-0000-000000000001" as ItemId,
   userId: "00000000-0000-0000-0000-000000000002" as UserId,
@@ -42,8 +55,29 @@ const item: Item = {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.mocked(fetchServerCalendar).mockReset();
   vi.mocked(updateItemTargetDate).mockReset();
 });
+
+beforeEach(() => {
+  stubMatchMedia(true);
+  vi.mocked(fetchServerCalendar).mockResolvedValue({
+    today: "2026-08-16",
+    validUntil: "2099-08-17T00:00:00.000Z",
+  });
+});
+
+function renderTargetDate(onChanged = vi.fn(), targetItem = item) {
+  render(
+    <ApplicationAuthProvider auth={auth}>
+      <ServerCalendarProvider>
+        <ItemTargetDate item={targetItem} user={user} onChanged={onChanged} />
+      </ServerCalendarProvider>
+    </ApplicationAuthProvider>,
+  );
+  return onChanged;
+}
 
 describe("Item Target date editor", () => {
   it("keeps a failed soft date local and offers an explicit retry", async () => {
@@ -52,13 +86,17 @@ describe("Item Target date editor", () => {
     vi.mocked(updateItemTargetDate)
       .mockRejectedValueOnce(new Error("api responded 500"))
       .mockResolvedValueOnce(changed);
-    render(<ItemTargetDate item={item} user={user} onChanged={onChanged} />);
+    renderTargetDate(onChanged);
 
     fireEvent.change(
       screen.getByLabelText("Target date for Practical indexing"),
       {
-        target: { value: "2026-09-01" },
+        target: { value: "01/09/2026" },
       },
+    );
+    fireEvent.keyDown(
+      screen.getByLabelText("Target date for Practical indexing"),
+      { key: "Enter" },
     );
 
     expect(
@@ -78,6 +116,132 @@ describe("Item Target date editor", () => {
       user,
       item.id,
       "2026-09-01",
+    );
+  });
+
+  it("immediately saves a localized typed date and presents the attempt while pending", async () => {
+    const changed = {
+      ...item,
+      targetDate: "2026-09-01",
+      pastTarget: true,
+    };
+    let resolveSave!: (saved: Item) => void;
+    vi.mocked(updateItemTargetDate).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const onChanged = renderTargetDate();
+    const input = screen.getByLabelText("Target date for Practical indexing");
+
+    fireEvent.change(input, { target: { value: "01/09/2026" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(updateItemTargetDate).toHaveBeenCalledWith(
+        user,
+        item.id,
+        "2026-09-01",
+      ),
+    );
+    expect(input).toHaveValue("01/09/2026");
+    expect(input).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Saving Target date…");
+
+    resolveSave(changed);
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(changed));
+  });
+
+  it("immediately saves a date chosen from the desktop calendar", async () => {
+    const changed = { ...item, targetDate: "2026-08-24" };
+    let resolveSave!: (saved: Item) => void;
+    vi.mocked(updateItemTargetDate).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const onChanged = renderTargetDate();
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitFor(() => expect(input).toBeEnabled());
+
+    input.focus();
+    fireEvent.click(input);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Monday, 24 August 2026" }),
+    );
+
+    await waitFor(() =>
+      expect(updateItemTargetDate).toHaveBeenCalledWith(
+        user,
+        item.id,
+        "2026-08-24",
+      ),
+    );
+    expect(input).toBeDisabled();
+
+    resolveSave(changed);
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalledWith(changed);
+      expect(input).toBeEnabled();
+      expect(input).toHaveFocus();
+    });
+  });
+
+  it("immediately saves the authoritative Today", async () => {
+    const changed = { ...item, targetDate: "2026-08-16" };
+    vi.mocked(updateItemTargetDate).mockResolvedValue(changed);
+    const onChanged = renderTargetDate();
+
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitFor(() => expect(input).toBeEnabled());
+    input.focus();
+    fireEvent.click(input);
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+
+    await waitFor(() =>
+      expect(updateItemTargetDate).toHaveBeenCalledWith(
+        user,
+        item.id,
+        "2026-08-16",
+      ),
+    );
+    expect(onChanged).toHaveBeenCalledWith(changed);
+  });
+
+  it("keeps manual entry and Clear usable while Today is unavailable", async () => {
+    vi.mocked(fetchServerCalendar).mockRejectedValueOnce(
+      new Error("api responded 503"),
+    );
+    const cleared = { ...item, targetDate: null };
+    vi.mocked(updateItemTargetDate).mockResolvedValue(cleared);
+    const onChanged = renderTargetDate(vi.fn(), {
+      ...item,
+      targetDate: "2026-09-01",
+    });
+
+    expect(
+      await screen.findByText("Authoritative Today is unavailable."),
+    ).toBeVisible();
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    input.focus();
+    fireEvent.click(input);
+    expect(
+      screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Target date for Practical indexing"),
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() =>
+      expect(updateItemTargetDate).toHaveBeenCalledWith(user, item.id, null),
+    );
+    expect(onChanged).toHaveBeenCalledWith(cleared);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry Today" }));
+    fireEvent.click(input);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Today" })).toBeEnabled(),
     );
   });
 });

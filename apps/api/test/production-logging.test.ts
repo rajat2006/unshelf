@@ -40,6 +40,7 @@ function resolveProductionCompose(logLevel = ""): ResolvedCompose {
         API_IMAGE: `ghcr.io/rajat2006/unshelf-api@sha256:${"a".repeat(64)}`,
         WEB_IMAGE: `ghcr.io/rajat2006/unshelf-web@sha256:${"b".repeat(64)}`,
         DATABASE_URL: "postgresql://opaque-runtime-value",
+        DATABASE_TIME_ZONE: "UTC",
         DATABASE_NETWORK: "unshelf-nonproduction-database",
         APP_NAME: "unshelf-development",
         PUBLIC_ORIGIN: "https://generated.example.com",
