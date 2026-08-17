@@ -132,7 +132,7 @@ test("a cold Stage deep link restores its LearningPlan and shared Item facts at 
     status.getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "2099-06-15",
+    testInfo.project.name === "phone" ? "2099-06-15" : "15/06/2099",
   );
   if (testInfo.project.name === "phone") {
     await expect(sidebar.getByLabel("Rename Stage")).toHaveCount(0);

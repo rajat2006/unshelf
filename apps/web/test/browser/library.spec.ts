@@ -54,9 +54,13 @@ test("the Library triages one shared Item across Status and Target date", async 
     status.getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  await page
-    .getByLabel("Target date for Shared TypeScript handbook")
-    .fill("2000-01-01");
+  const targetDate = page.getByLabel(
+    "Target date for Shared TypeScript handbook",
+  );
+  const typedTargetDate =
+    testInfo.project.name === "phone" ? "2000-01-01" : "01/01/2000";
+  await targetDate.fill(typedTargetDate);
+  if (testInfo.project.name !== "phone") await targetDate.press("Enter");
   const pastTarget = page.getByText("Past target", { exact: true });
   await expect(pastTarget).toBeVisible();
   await expect(pastTarget).toHaveCSS("color", "rgb(110, 116, 109)");
@@ -65,7 +69,7 @@ test("the Library triages one shared Item across Status and Target date", async 
   await expect(pastTarget).toHaveCount(0);
   await expect(
     page.getByLabel("Target date for Shared TypeScript handbook"),
-  ).toHaveValue("2000-01-01");
+  ).toHaveValue(typedTargetDate);
 
   const stored = (await (
     await testApi(page, user, "/api/items")

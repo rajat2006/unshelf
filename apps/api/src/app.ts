@@ -8,6 +8,7 @@ import { createLabelsRouter } from "./labels/router";
 import { createStagesRouter } from "./stages/router";
 import { createLearningPlansRouter } from "./learning-plans/router";
 import { createDailyFocusRouter } from "./daily-focus/router";
+import { createServerCalendarRouter } from "./server-calendar/router";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -88,6 +89,11 @@ export function createApp(
     "/api/daily-focus",
     captureRouteMount,
     createDailyFocusRouter(db, auth),
+  );
+  app.use(
+    "/api/server-calendar",
+    captureRouteMount,
+    createServerCalendarRouter(db, auth),
   );
   app.use(markRoutingResolved);
   app.use(
