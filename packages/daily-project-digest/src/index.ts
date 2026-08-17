@@ -112,12 +112,13 @@ export async function runDailyProjectDigest(
     windowStart: new Date(windowStart),
     windowEnd: new Date(windowEnd),
   });
-  const subjects = pullRequests
-    .map((pullRequest) =>
-      toDigestSubject({ pullRequest, windowStart, windowEnd }),
-    )
-    .filter((subject) => subject !== undefined)
-    .sort((left, right) => left.number - right.number);
+  const subjects = deduplicateSubjects(
+    pullRequests
+      .map((pullRequest) =>
+        toDigestSubject({ pullRequest, windowStart, windowEnd }),
+      )
+      .filter((subject) => subject !== undefined),
+  ).sort((left, right) => left.number - right.number);
   const payload = renderPayload({ subjects, windowEnd });
   preflightDiscordPayload(payload);
 
@@ -194,6 +195,17 @@ function toDigestSubject({
     }),
     lifecycle: isBlocked ? "blocked" : "in-progress",
   };
+}
+
+function deduplicateSubjects(subjects: DigestSubject[]): DigestSubject[] {
+  const subjectsByNumber = new Map<number, DigestSubject>();
+  for (const subject of subjects) {
+    const existing = subjectsByNumber.get(subject.number);
+    if (existing === undefined || subject.lifecycle === "completed") {
+      subjectsByNumber.set(subject.number, subject);
+    }
+  }
+  return [...subjectsByNumber.values()];
 }
 
 function hasBlockingLabel(labels: string[]): boolean {
