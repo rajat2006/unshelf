@@ -40,11 +40,13 @@ export type ClockAdapter = {
   now(): Date;
 };
 
+type DigestWindow = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
 export type GitHubAdapter = {
-  listPullRequests(input: {
-    windowStart: Date;
-    windowEnd: Date;
-  }): Promise<PullRequestEvidence[]>;
+  listPullRequests(window: DigestWindow): Promise<PullRequestEvidence[]>;
 };
 
 export type SummaryAdapter = {
@@ -106,17 +108,18 @@ export async function runDailyProjectDigest(
   if (Number.isNaN(windowEnd.getTime())) {
     throw new Error("Daily Project Digest received an invalid window end.");
   }
-  const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1_000);
+  const window = {
+    windowStart: new Date(windowEnd.getTime() - 24 * 60 * 60 * 1_000),
+    windowEnd,
+  };
 
   const pullRequests = await adapters.github.listPullRequests({
-    windowStart: new Date(windowStart),
-    windowEnd: new Date(windowEnd),
+    windowStart: new Date(window.windowStart),
+    windowEnd: new Date(window.windowEnd),
   });
   const subjects = deduplicateSubjects(
     pullRequests
-      .map((pullRequest) =>
-        toDigestSubject({ pullRequest, windowStart, windowEnd }),
-      )
+      .map((pullRequest) => toDigestSubject({ pullRequest, window }))
       .filter((subject) => subject !== undefined),
   ).sort((left, right) => left.number - right.number);
   const payload = renderPayload({ subjects, windowEnd });
@@ -149,12 +152,10 @@ function isEligibleDeliveryPullRequest(
 
 function toDigestSubject({
   pullRequest,
-  windowStart,
-  windowEnd,
+  window,
 }: {
   pullRequest: PullRequestEvidence;
-  windowStart: Date;
-  windowEnd: Date;
+  window: DigestWindow;
 }): DigestSubject | undefined {
   if (pullRequest.state === "MERGED") {
     if (pullRequest.mergedAt === null) {
@@ -165,8 +166,8 @@ function toDigestSubject({
       throw new Error("GitHub returned invalid merged pull-request evidence.");
     }
     return pullRequest.baseRefName === "dev" &&
-      mergedAt >= windowStart &&
-      mergedAt < windowEnd
+      mergedAt >= window.windowStart &&
+      mergedAt < window.windowEnd
       ? {
           number: pullRequest.number,
           title: normalizeTitle({

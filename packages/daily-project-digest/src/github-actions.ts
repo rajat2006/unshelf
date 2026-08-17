@@ -34,8 +34,6 @@ const openPullRequestsQuery = `
         nodes {
           number
           title
-          state
-          mergedAt
           baseRefName
           headRefName
           headRefOid
@@ -136,34 +134,28 @@ async function gatherOpenPullRequests({
     });
     const page = parsePullRequestPage(response);
     for (const pullRequest of page.pullRequests) {
-      const blockedBy =
-        pullRequest.state === "OPEN"
-          ? await fetchDependencies({
-              github,
-              issueNumber: pullRequest.number,
-            })
-          : [];
-      const closingIssues =
-        pullRequest.state === "OPEN"
-          ? await Promise.all(
-              pullRequest.closingIssues.map(async (issue) => ({
-                state: issue.state,
-                labels: issue.labels,
-                blockedBy: await fetchDependencies({
-                  github,
-                  issueNumber: issue.number,
-                }),
-              })),
-            )
-          : [];
+      const blockedBy = await fetchDependencies({
+        github,
+        issueNumber: pullRequest.number,
+      });
+      const closingIssues = await Promise.all(
+        pullRequest.closingIssues.map(async (issue) => ({
+          state: issue.state,
+          labels: issue.labels,
+          blockedBy: await fetchDependencies({
+            github,
+            issueNumber: issue.number,
+          }),
+        })),
+      );
       const containsMain = await checkHeadContainsMain({
         github,
         mainOid: page.mainOid,
         pullRequest,
       });
       pullRequests.push({
-        state: pullRequest.state,
-        mergedAt: pullRequest.mergedAt,
+        state: "OPEN",
+        mergedAt: null,
         number: pullRequest.number,
         title: pullRequest.title,
         baseRefName: pullRequest.baseRefName,
@@ -274,7 +266,7 @@ function parseRecentlyClosedPullRequest(value: unknown): {
 
 type ParsedPullRequest = Omit<
   PullRequestEvidence,
-  "blockedBy" | "closingIssues" | "headContainsMain"
+  "state" | "mergedAt" | "blockedBy" | "closingIssues" | "headContainsMain"
 > & {
   headRefOid: string;
   closingIssues: Array<{
@@ -321,8 +313,6 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   const pullRequest = record(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
-  const state = pullRequest?.state;
-  const mergedAt = pullRequest?.mergedAt;
   const baseRefName = pullRequest?.baseRefName;
   const headRefName = pullRequest?.headRefName;
   const headRefOid = pullRequest?.headRefOid;
@@ -335,10 +325,6 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
-    (state !== "OPEN" && state !== "MERGED") ||
-    (mergedAt !== null && typeof mergedAt !== "string") ||
-    (state === "OPEN" && mergedAt !== null) ||
-    (state === "MERGED" && typeof mergedAt !== "string") ||
     typeof baseRefName !== "string" ||
     typeof headRefName !== "string" ||
     typeof headRefOid !== "string" ||
@@ -348,8 +334,6 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
     throw new Error("GitHub returned invalid pull-request evidence.");
   }
   return {
-    state,
-    mergedAt,
     number,
     title,
     baseRefName,
@@ -439,7 +423,6 @@ async function checkHeadContainsMain({
   pullRequest: ParsedPullRequest;
 }): Promise<boolean> {
   if (
-    pullRequest.state !== "OPEN" ||
     pullRequest.baseRefName !== "main" ||
     pullRequest.headRepository !== `${github.owner}/${github.name}` ||
     pullRequest.headRefName === "dev" ||
