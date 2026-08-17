@@ -1,5 +1,118 @@
-import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { testApi, testAppUrl } from "./test-helpers";
+
+async function expectPopoverAccessible(page: Page) {
+  const accessibility = await new AxeBuilder({ page })
+    .include('[data-slot="popover-content"]')
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+}
+
+async function expectCalendarDayStatesDistinct(
+  calendar: Locator,
+  { selectedIsFocused = true } = {},
+) {
+  const selected = calendar.locator('button[data-selected="true"]');
+  const outside = calendar.locator('button[data-outside="true"]').first();
+  const ordinary = calendar
+    .locator(
+      "td:not([data-outside]) > button:not([data-selected]):not([data-today]):not(:disabled)",
+    )
+    .first();
+  await expect(selected).toBeVisible();
+  await expect(outside).toBeVisible();
+  await expect(ordinary).toBeVisible();
+
+  const [selectedStyle, outsideStyle, ordinaryStyle] = await Promise.all(
+    [selected, outside, ordinary].map((day) =>
+      day.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          boxShadow: style.boxShadow,
+          color: style.color,
+        };
+      }),
+    ),
+  );
+  expect(selectedStyle.backgroundColor).not.toBe(ordinaryStyle.backgroundColor);
+  expect(outsideStyle.color).not.toBe(ordinaryStyle.color);
+  expect(outsideStyle.borderColor).not.toBe(ordinaryStyle.borderColor);
+  if (selectedIsFocused) {
+    await expect(selected).toBeFocused();
+    expect(selectedStyle.boxShadow).not.toBe(ordinaryStyle.boxShadow);
+  }
+
+  const disabledStyle = await ordinary.evaluate((element) => {
+    const disabledDay = element.cloneNode(true) as HTMLButtonElement;
+    disabledDay.disabled = true;
+    disabledDay.dataset.disabled = "true";
+    disabledDay.style.transition = "none";
+    element.after(disabledDay);
+    const style = getComputedStyle(disabledDay);
+    const result = { borderColor: style.borderColor, color: style.color };
+    disabledDay.remove();
+    return result;
+  });
+  expect(disabledStyle.color).not.toBe(ordinaryStyle.color);
+  expect(disabledStyle.borderColor).not.toBe(ordinaryStyle.borderColor);
+
+  const selectedBounds = await selected.boundingBox();
+  expect(selectedBounds?.width).toBeGreaterThanOrEqual(28);
+  expect(selectedBounds?.height).toBeGreaterThanOrEqual(28);
+}
+
+async function showCalendarMonth({
+  page,
+  calendar,
+  year,
+  month,
+}: {
+  page: Page;
+  calendar: Locator;
+  year: string;
+  month: string;
+}) {
+  const yearPicker = calendar.getByRole("combobox", {
+    name: "Choose the Year",
+  });
+  await yearPicker.focus();
+  await yearPicker.press("Enter");
+  await page.getByRole("option", { name: String(Number(year)) }).press("Enter");
+  const monthPicker = calendar.getByRole("combobox", {
+    name: "Choose the Month",
+  });
+  await monthPicker.focus();
+  await monthPicker.press("Enter");
+  await page
+    .getByRole("option", {
+      name: new Intl.DateTimeFormat("en-US", { month: "long" }).format(
+        new Date(2000, Number(month) - 1, 1),
+      ),
+    })
+    .press("Enter");
+}
+
+async function expectTodayMarkerVisible(calendar: Locator) {
+  const todayTile = calendar.locator('button[data-today="true"]');
+  await expect(todayTile).toBeVisible();
+  const marker = await todayTile.evaluate((element) => {
+    const style = getComputedStyle(element, "::after");
+    return {
+      backgroundColor: style.backgroundColor,
+      height: style.height,
+      width: style.width,
+    };
+  });
+  const tileBackground = await todayTile.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(marker.width).toBe("4px");
+  expect(marker.height).toBe("4px");
+  expect(marker.backgroundColor).not.toBe(tileBackground);
+}
 
 async function seedPlacedItem(page: Page, user: string) {
   const learningPlan = (await (
@@ -91,7 +204,7 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   await doneOption.click();
   await expect(status).toContainText("Done");
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "2099-06-15",
+    testInfo.project.name === "phone" ? "2099-06-15" : "15/06/2099",
   );
   await expect(
     sidebar.getByRole("link", { name: "https://example.com/course" }),
@@ -110,6 +223,161 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
     page: document.documentElement.scrollWidth,
   }));
   expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+});
+
+test("the themed date picker chooses and saves a Target date across responsive inputs", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-themed-target-date`;
+  const { item } = await seedPlacedItem(page, user);
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
+  await testApi(page, user, `/api/items/${item.id}/target-date`, "PATCH", {
+    targetDate: "2099-06-15",
+  });
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const input = sidebar.getByLabel(`Target date for ${item.title}`);
+  await expect(input).toHaveCount(1);
+
+  if (testInfo.project.name === "phone") {
+    await expect(input).toHaveAttribute("type", "date");
+    await expect(
+      sidebar.getByRole("button", { name: "Choose date" }),
+    ).toHaveCount(0);
+    await input.fill("2098-09-08");
+    await expect(input).toHaveValue("2098-09-08");
+    const widths = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      page: document.documentElement.scrollWidth,
+    }));
+    expect(widths.page).toBeLessThanOrEqual(widths.viewport);
+    return;
+  }
+
+  await expect(input).toHaveAttribute("type", "text");
+  await expect(
+    sidebar.getByRole("button", { name: "Choose date" }),
+  ).toHaveCount(0);
+  await input.focus();
+  await input.press("Alt+ArrowDown");
+  const calendar = page.getByRole("dialog", { name: "Choose date" });
+  await expect(calendar).toBeVisible();
+  const [previousMonthBounds, nextMonthBounds] = await Promise.all([
+    calendar.getByRole("button", { name: /previous month/i }).boundingBox(),
+    calendar.getByRole("button", { name: /next month/i }).boundingBox(),
+  ]);
+  expect(previousMonthBounds).not.toBeNull();
+  expect(nextMonthBounds).not.toBeNull();
+  expect(previousMonthBounds?.y).toBeCloseTo(nextMonthBounds?.y ?? 0, 0);
+  const calendarBounds = await calendar.boundingBox();
+  expect(calendarBounds).not.toBeNull();
+  expect(calendarBounds!.height / calendarBounds!.width).toBeLessThan(1.5);
+
+  const monthPicker = calendar.getByRole("combobox", {
+    name: "Choose the Month",
+  });
+  await monthPicker.focus();
+  await monthPicker.press("Enter");
+  await page.getByRole("option", { name: "September" }).press("Enter");
+  await expect(calendar).toBeVisible();
+  const yearPicker = calendar.getByRole("combobox", {
+    name: "Choose the Year",
+  });
+  await yearPicker.focus();
+  await yearPicker.press("Enter");
+  await page.getByRole("option", { name: "2098" }).press("Enter");
+  await expect(calendar).toBeVisible();
+  await expect(calendar.getByRole("status")).toHaveText("September 2098");
+  await expect(yearPicker).toBeFocused();
+
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  const septemberFirst = calendar.getByRole("button", {
+    name: "Monday, 1 September 2098",
+  });
+  await expect(septemberFirst).toBeFocused();
+  for (let day = 1; day < 8; day += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+  const septemberEighth = calendar.getByRole("button", {
+    name: "Monday, 8 September 2098",
+  });
+  await expect(septemberEighth).toBeFocused();
+  await septemberEighth.press("Enter");
+
+  await expect(input).toHaveValue("08/09/2098");
+  await expect(input).toBeEnabled();
+  await expect(input).toBeFocused();
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await input.click();
+  await expect(input).toBeFocused();
+  await expectCalendarDayStatesDistinct(calendar, { selectedIsFocused: false });
+  await expect
+    .poll(() =>
+      calendar.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).animationDuration),
+      ),
+    )
+    .toBeLessThan(0.001);
+  await expectPopoverAccessible(page);
+
+  const [todayYear, todayMonth] = authoritativeCalendar.today.split("-");
+  await showCalendarMonth({
+    page,
+    calendar,
+    year: todayYear,
+    month: todayMonth,
+  });
+  await expectTodayMarkerVisible(calendar);
+  await page.keyboard.press("Escape");
+  await expect(input).toBeFocused();
+
+  if (testInfo.project.name === "desktop") {
+    await page.getByLabel("Theme", { exact: true }).click();
+    await page.getByRole("option", { name: "Dark" }).click();
+    const browserSession = await page.context().newCDPSession(page);
+    await browserSession.send("Emulation.setPageScaleFactor", {
+      pageScaleFactor: 2,
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.visualViewport?.scale))
+      .toBe(2);
+    await input.focus();
+    await input.press("Alt+ArrowDown");
+    const layout = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }));
+    expect(layout.page).toBeLessThanOrEqual(layout.viewport);
+    await expect(calendar).toBeVisible();
+    await expect
+      .poll(async () => {
+        const bounds = await calendar.boundingBox();
+        return bounds ? bounds.x : Number.NEGATIVE_INFINITY;
+      })
+      .toBeGreaterThanOrEqual(0);
+    await expect
+      .poll(async () => {
+        const bounds = await calendar.boundingBox();
+        return bounds ? bounds.x + bounds.width : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThanOrEqual(layout.viewport);
+    await expectCalendarDayStatesDistinct(calendar);
+    await showCalendarMonth({
+      page,
+      calendar,
+      year: todayYear,
+      month: todayMonth,
+    });
+    await expectTodayMarkerVisible(calendar);
+    await expectPopoverAccessible(page);
+  }
 });
 
 test("an Item can be structured and maintain its ordered Part checklist", async ({
@@ -307,9 +575,11 @@ test("Item detail edits synchronize with the same Item in the underlying Library
       .getByRole("button", { name: "Done" }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  await sidebar.getByLabel(`Target date for ${item.title}`).fill("2099-08-20");
+  const targetDate = sidebar.getByLabel(`Target date for ${item.title}`);
+  await targetDate.fill("20/08/2099");
+  await targetDate.press("Enter");
   await expect(library.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "2099-08-20",
+    "20/08/2099",
   );
 
   await library
@@ -329,6 +599,102 @@ test("Item detail edits synchronize with the same Item in the underlying Library
       .getByRole("group", { name: `Status for ${item.title}` })
       .getByRole("button", { name: "In progress" }),
   ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Target date recovers authoritative Today without using the browser clock", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-authoritative-today`;
+  const { item } = await seedPlacedItem(page, user);
+  let calendarRequests = 0;
+  await page.route("**/api/server-calendar", async (route) => {
+    calendarRequests += 1;
+    if (calendarRequests === 1) {
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const input = sidebar.getByLabel(`Target date for ${item.title}`);
+  const today =
+    testInfo.project.name === "phone"
+      ? sidebar.getByRole("button", { name: "Today", exact: true })
+      : page
+          .getByRole("dialog", { name: "Choose date" })
+          .getByRole("button", { name: "Today", exact: true });
+
+  await expect(
+    sidebar.getByText("Authoritative Today is unavailable."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Today", exact: true }),
+  ).toHaveCount(0);
+  const typedDate =
+    testInfo.project.name === "phone" ? "2099-08-20" : "20/08/2099";
+  await input.fill(typedDate);
+  if (testInfo.project.name !== "phone") await input.press("Enter");
+  await expect(input).toHaveValue(typedDate);
+
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
+  await sidebar.getByRole("button", { name: "Retry Today" }).click();
+  if (testInfo.project.name !== "phone") {
+    await input.click();
+  }
+  await expect(today).toBeEnabled();
+  await today.click();
+  const [year, month, day] = authoritativeCalendar.today.split("-");
+  await expect(input).toHaveValue(
+    testInfo.project.name === "phone"
+      ? authoritativeCalendar.today
+      : `${month}/${day}/${year}`,
+  );
+
+  if (testInfo.project.name === "phone") {
+    const touchTarget = await today.boundingBox();
+    expect(touchTarget?.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("Target date refreshes when the authoritative calendar expires", async ({
+  page,
+}, testInfo) => {
+  const user = `${testInfo.project.name}-item-today-expiry`;
+  const { item } = await seedPlacedItem(page, user);
+  const authoritativeCalendar = (await (
+    await testApi(page, user, "/api/server-calendar")
+  ).json()) as { today: string };
+  let calendarRequests = 0;
+  await page.route("**/api/server-calendar", async (route) => {
+    calendarRequests += 1;
+    if (calendarRequests === 1) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          today: authoritativeCalendar.today,
+          validUntil: new Date(Date.now() + 2_000).toISOString(),
+        },
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(testAppUrl(`/items/${item.id}`, user));
+  const sidebar = page.getByRole("complementary", {
+    name: `${item.title} details`,
+  });
+  const today = sidebar.getByRole("button", { name: "Today", exact: true });
+  await expect(today).toBeEnabled();
+
+  await expect.poll(() => calendarRequests).toBe(2);
+  await expect(today).toBeEnabled();
 });
 
 test("navigating between Item sidebars keeps every shared Item synchronized", async ({
