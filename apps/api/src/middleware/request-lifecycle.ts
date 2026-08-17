@@ -95,8 +95,9 @@ export const captureRouteMount: RequestHandler = (req, _res, next) => {
   next();
 };
 
-export const markSensitiveRequest: RequestHandler = (req, _res, next) => {
+export const prepareSensitiveRequest: RequestHandler = (req, res, next) => {
   req.sensitiveRequest = true;
+  res.setHeader("Cache-Control", "no-store");
   next();
 };
 
@@ -144,7 +145,7 @@ export function failureRequestSnapshot(
   secrets?: readonly string[],
 ): Readonly<Record<string, unknown>> {
   const route = registeredRoute(req);
-  const common = {
+  const payloadFreeRequestMetadata = {
     method: req.method,
     path: rawRequestPath(req.originalUrl),
     headers: req.headers,
@@ -156,9 +157,9 @@ export function failureRequestSnapshot(
   };
   return serializeDiagnosticValue(
     req.sensitiveRequest
-      ? common
+      ? payloadFreeRequestMetadata
       : {
-          ...common,
+          ...payloadFreeRequestMetadata,
           query: serializeDiagnosticQuery(req.query, { secrets }),
           body: req.body as unknown,
         },

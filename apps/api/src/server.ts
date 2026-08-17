@@ -72,7 +72,7 @@ await superviseApiProcess({
       logger,
       diagnosticSecrets,
       sourceInspectionService: createSourceInspectionService({
-        enabled: process.env.SOURCE_INSPECTION_ENABLED === "true",
+        disabled: process.env.SOURCE_INSPECTION_DISABLED === "true",
       }),
     });
 

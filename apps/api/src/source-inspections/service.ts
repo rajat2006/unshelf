@@ -16,7 +16,7 @@ export interface SourceInspectionService {
 }
 
 interface SourceInspectionServiceOptions {
-  readonly enabled?: boolean;
+  readonly disabled?: boolean;
   readonly classify?: (source: string) => SourceClassification;
 }
 
@@ -28,13 +28,13 @@ const unavailable: SourceInspectionServiceResult = {
 
 /** Stateless orchestration boundary for ephemeral Capture suggestions. */
 export function createSourceInspectionService({
-  enabled = false,
+  disabled = false,
   classify = classifySource,
 }: SourceInspectionServiceOptions = {}): SourceInspectionService {
   return {
     inspect: (input) => {
       if (
-        !enabled ||
+        disabled ||
         input.signal.aborted ||
         new TextEncoder().encode(input.source).byteLength > SOURCE_BYTE_LIMIT
       ) {

@@ -18,7 +18,7 @@ import { serializeFailure } from "./diagnostics";
 import {
   captureRouteMount,
   createRequestLifecycle,
-  markSensitiveRequest,
+  prepareSensitiveRequest,
   markRoutingResolved,
   type RequestLifecycleOptions,
 } from "./middleware/request-lifecycle";
@@ -42,7 +42,7 @@ export function createApp(
 ): Express {
   const app = express();
   app.use(createRequestLifecycle(options));
-  app.use("/api/source-inspections", markSensitiveRequest);
+  app.use("/api/source-inspections", prepareSensitiveRequest);
   app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (req, res) => {

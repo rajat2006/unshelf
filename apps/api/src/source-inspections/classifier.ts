@@ -94,7 +94,11 @@ function classifyYoutubeUrl(url: URL): Type | null {
   }
 
   if (url.pathname === "/embed" || url.pathname === "/embed/") {
-    return isSingleExactParameter(url, "listType", "playlist") &&
+    return isSingleExactParameter({
+      url,
+      name: "listType",
+      expected: "playlist",
+    }) &&
       isSingleValidParameter(url, "list", PLAYLIST_ID) &&
       !hasQueryParameter(url, "v")
       ? Type.Playlist
@@ -117,11 +121,15 @@ function hasQueryParameter(url: URL, name: string): boolean {
   return url.searchParams.has(name);
 }
 
-function isSingleExactParameter(
-  url: URL,
-  name: string,
-  expected: string,
-): boolean {
+function isSingleExactParameter({
+  url,
+  name,
+  expected,
+}: {
+  url: URL;
+  name: string;
+  expected: string;
+}): boolean {
   const values = url.searchParams.getAll(name);
   return values.length === 1 && values[0] === expected;
 }

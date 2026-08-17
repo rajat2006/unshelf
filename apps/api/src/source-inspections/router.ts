@@ -8,10 +8,6 @@ export function createSourceInspectionsRouter(
   service: SourceInspectionService,
 ): Router {
   const router = Router();
-  router.use((_req, res, next) => {
-    res.setHeader("Cache-Control", "no-store");
-    next();
-  });
   router.post(
     "/",
     ...auth,

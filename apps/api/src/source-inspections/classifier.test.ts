@@ -4,12 +4,24 @@ import { classifySource } from "./classifier";
 
 describe("Source classifier", () => {
   it.each([
-    ["watch", "https://youtube.com/watch?v=M7lc1UVf-VE"],
-    ["www watch", "https://www.youtube.com/watch?v=M7lc1UVf-VE&t=30"],
-    ["mobile shorts", "https://m.youtube.com/shorts/M7lc1UVf-VE"],
-    ["video embed", "https://youtube.com/embed/M7lc1UVf-VE"],
-    ["short host", "https://youtu.be/M7lc1UVf-VE?si=share-value"],
-  ])("classifies an unambiguous %s Source as video", (_shape, source) => {
+    { shape: "watch", source: "https://youtube.com/watch?v=M7lc1UVf-VE" },
+    {
+      shape: "www watch",
+      source: "https://www.youtube.com/watch?v=M7lc1UVf-VE&t=30",
+    },
+    {
+      shape: "mobile shorts",
+      source: "https://m.youtube.com/shorts/M7lc1UVf-VE",
+    },
+    {
+      shape: "video embed",
+      source: "https://youtube.com/embed/M7lc1UVf-VE",
+    },
+    {
+      shape: "short host",
+      source: "https://youtu.be/M7lc1UVf-VE?si=share-value",
+    },
+  ])("classifies an unambiguous $shape Source as video", ({ source }) => {
     expect(classifySource(source)).toEqual({
       classification: "youtube",
       type: Type.Video,
@@ -17,15 +29,17 @@ describe("Source classifier", () => {
   });
 
   it.each([
-    [
-      "page",
-      "https://youtube.com/playlist?list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
-    ],
-    [
-      "embed",
-      "https://www.youtube.com/embed?listType=playlist&list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
-    ],
-  ])("classifies an unambiguous playlist %s", (_shape, source) => {
+    {
+      shape: "page",
+      source:
+        "https://youtube.com/playlist?list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
+    },
+    {
+      shape: "embed",
+      source:
+        "https://www.youtube.com/embed?listType=playlist&list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
+    },
+  ])("classifies an unambiguous playlist $shape", ({ source }) => {
     expect(classifySource(source)).toEqual({
       classification: "youtube",
       type: Type.Playlist,
@@ -41,22 +55,47 @@ describe("Source classifier", () => {
   });
 
   it.each([
-    [
-      "mixed watch and playlist",
-      "https://youtube.com/watch?v=M7lc1UVf-VE&list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
-    ],
-    ["missing video id", "https://youtube.com/watch"],
-    ["malformed video id", "https://youtube.com/watch?v=too-short"],
-    ["malformed playlist id", "https://youtube.com/playlist?list=bad/value"],
-    ["channel", "https://youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw"],
-    ["handle", "https://youtube.com/@GoogleDevelopers"],
-    ["search", "https://youtube.com/results?search_query=queues"],
-    ["Posts tab", "https://youtube.com/@GoogleDevelopers/posts"],
-    ["home", "https://youtube.com/"],
-    ["unsupported property", "https://music.youtube.com/watch?v=M7lc1UVf-VE"],
-    ["credentials", "https://user:secret@youtube.com/watch?v=M7lc1UVf-VE"],
-    ["non-default port", "https://youtube.com:444/watch?v=M7lc1UVf-VE"],
-  ])("keeps %s on manual fallback", (_case, source) => {
+    {
+      caseName: "mixed watch and playlist",
+      source:
+        "https://youtube.com/watch?v=M7lc1UVf-VE&list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
+    },
+    { caseName: "missing video id", source: "https://youtube.com/watch" },
+    {
+      caseName: "malformed video id",
+      source: "https://youtube.com/watch?v=too-short",
+    },
+    {
+      caseName: "malformed playlist id",
+      source: "https://youtube.com/playlist?list=bad/value",
+    },
+    {
+      caseName: "channel",
+      source: "https://youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw",
+    },
+    { caseName: "handle", source: "https://youtube.com/@GoogleDevelopers" },
+    {
+      caseName: "search",
+      source: "https://youtube.com/results?search_query=queues",
+    },
+    {
+      caseName: "Posts tab",
+      source: "https://youtube.com/@GoogleDevelopers/posts",
+    },
+    { caseName: "home", source: "https://youtube.com/" },
+    {
+      caseName: "unsupported property",
+      source: "https://music.youtube.com/watch?v=M7lc1UVf-VE",
+    },
+    {
+      caseName: "credentials",
+      source: "https://user:secret@youtube.com/watch?v=M7lc1UVf-VE",
+    },
+    {
+      caseName: "non-default port",
+      source: "https://youtube.com:444/watch?v=M7lc1UVf-VE",
+    },
+  ])("keeps $caseName on manual fallback", ({ source }) => {
     expect(classifySource(source)).toEqual({
       classification: "unsupported_youtube",
     });

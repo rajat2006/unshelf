@@ -13,7 +13,7 @@ describe("Source inspection service", () => {
     ],
     ["https://youtube.com/post/UgkxQ_xDEe4m2V7vYB6i3e0qfZ8pT5uJ", Type.Other],
   ])("suggests a locally classified YouTube Type", async (source, type) => {
-    const service = createSourceInspectionService({ enabled: true });
+    const service = createSourceInspectionService();
 
     await expect(
       service.inspect({ source, userId, signal: new AbortController().signal }),
@@ -33,7 +33,7 @@ describe("Source inspection service", () => {
     "https://example.com/article",
     "not a URL",
   ])("returns manual fallback for an unresolved Source", async (source) => {
-    const service = createSourceInspectionService({ enabled: true });
+    const service = createSourceInspectionService();
 
     await expect(
       service.inspect({ source, userId, signal: new AbortController().signal }),
@@ -58,6 +58,33 @@ describe("Source inspection service", () => {
       }),
     ).resolves.toEqual({
       ok: true,
+      response: {
+        status: "suggested",
+        type: Type.Video,
+        typeEvidence: "youtube_route",
+      },
+    });
+    expect(classify).toHaveBeenCalledOnce();
+  });
+
+  it("returns manual fallback when the global kill switch is on", async () => {
+    const classify = vi.fn(() => ({
+      classification: "youtube" as const,
+      type: Type.Video,
+    }));
+    const service = createSourceInspectionService({
+      disabled: true,
+      classify,
+    });
+
+    await expect(
+      service.inspect({
+        source: "https://youtu.be/M7lc1UVf-VE",
+        userId,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      ok: true,
       response: { status: "unavailable" },
     });
     expect(classify).not.toHaveBeenCalled();
@@ -66,7 +93,6 @@ describe("Source inspection service", () => {
   it("refuses an over-limit working Source before classification", async () => {
     const classify = vi.fn();
     const service = createSourceInspectionService({
-      enabled: true,
       classify,
     });
 

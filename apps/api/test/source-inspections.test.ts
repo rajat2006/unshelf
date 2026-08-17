@@ -61,6 +61,25 @@ describe("POST /api/source-inspections", () => {
     expect(inspect).not.toHaveBeenCalled();
   });
 
+  it("keeps malformed request failures no-store and payload-free", async () => {
+    const response = await request(harness.app)
+      .post("/api/source-inspections?attempt=malformed-query-sentinel")
+      .set("Content-Type", "application/json")
+      .send('{"source":"malformed-body-sentinel"')
+      .expect(400, {
+        error: "invalid_json",
+        message: "Request body must be valid JSON",
+      });
+
+    expect(response.get("Cache-Control")).toBe("no-store");
+    expect(JSON.stringify(harness.logger.records)).not.toContain(
+      "malformed-body-sentinel",
+    );
+    expect(JSON.stringify(harness.logger.records)).not.toContain(
+      "malformed-query-sentinel",
+    );
+  });
+
   it.each([
     {
       status: "suggested" as const,
