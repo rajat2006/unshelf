@@ -507,7 +507,7 @@ describe("Daily Project Digest preview", () => {
               {
                 subjectId: "wayfinder-map:99",
                 sentence:
-                  "Maps the remaining decisions for reliable project updates.",
+                  "Maps the key decisions for reliable project updates.",
                 audienceGroup: "standard",
                 citations: ["title"],
               },
@@ -562,8 +562,7 @@ describe("Daily Project Digest preview", () => {
               ),
               {
                 subjectId: "pull-request:116",
-                sentence:
-                  "Makes finished delivery work visible in each digest.",
+                sentence: "Makes delivery outcomes visible in each digest.",
                 audienceGroup: "standard",
                 citations: ["title"],
               },
@@ -687,7 +686,7 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "Released — Live in production",
                 value:
-                  "[Makes finished delivery work visible in each digest.](https://github.com/rajat2006/unshelf/pull/116)\n[Restores sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/121)",
+                  "[Makes delivery outcomes visible in each digest.](https://github.com/rajat2006/unshelf/pull/116)\n[Restores sign-in for Unshelf users.](https://github.com/rajat2006/unshelf/pull/121)",
               },
               {
                 name: "Completed — Merged and ready for a release",
@@ -697,7 +696,7 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "Blocked — Needs attention before work can continue",
                 value:
-                  "[Maps the remaining decisions for reliable project updates.](https://github.com/rajat2006/unshelf/issues/99)\n[Makes the preview wording clearer for Discord readers.](https://github.com/rajat2006/unshelf/pull/103)",
+                  "[Maps the key decisions for reliable project updates.](https://github.com/rajat2006/unshelf/issues/99)\n[Makes the preview wording clearer for Discord readers.](https://github.com/rajat2006/unshelf/pull/103)",
               },
               {
                 name: "In progress — Actively moving forward",
@@ -728,13 +727,13 @@ describe("Daily Project Digest preview", () => {
         items: [
           {
             subjectId: "pull-request:201",
-            sentence: "Improves dependency upkeep for the project.",
+            sentence: "Improves workspace upkeep for the project.",
             audienceGroup: "internal_maintenance",
             citations: ["title"],
           },
           {
             subjectId: "pull-request:202",
-            sentence: "Waiting on a dependency before work continues.",
+            sentence: "Ensures work remains pending.",
             audienceGroup: "standard",
             citations: ["title"],
           },

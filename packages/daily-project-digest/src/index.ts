@@ -405,10 +405,10 @@ function isSafeAISentence(sentence: string): boolean {
     !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
     !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
     !/@/.test(sentence) &&
-    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|dependency|paused|stalled|ready|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
+    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
       sentence,
     ) &&
-    !/\b(?:instructions?|prompts?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
+    !/\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
       sentence,
     )
   );
