@@ -65,16 +65,32 @@ async function requestPresentation({
       }),
     });
   } catch (error) {
-    throw new AIPresentationFailure(
-      error instanceof DOMException && error.name === "TimeoutError"
-        ? "timeout"
-        : "request-failure",
-    );
+    throw new AIPresentationFailure({
+      reason:
+        error instanceof DOMException && error.name === "TimeoutError"
+          ? "request-timeout"
+          : "request-network",
+    });
   }
   if (!response.ok) {
-    throw new AIPresentationFailure("request-failure");
+    throw new AIPresentationFailure({
+      reason:
+        response.status === 401 || response.status === 403
+          ? "response-http-authentication"
+          : response.status === 429
+            ? "response-http-rate-limit"
+            : response.status >= 400 && response.status < 500
+              ? "response-http-client"
+              : "response-http-provider",
+    });
   }
-  return parseResponse(await response.json());
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new AIPresentationFailure({ reason: "response-body-json" });
+  }
+  return parseResponse(body);
 }
 
 const presentationSchema = {
@@ -109,27 +125,35 @@ const presentationSchema = {
 
 function parseResponse(value: unknown): unknown {
   const response = asRecord(value);
-  if (response?.status !== "completed" || !Array.isArray(response.output)) {
-    throw new Error("OpenAI presentation response was incomplete.");
+  if (response === undefined) {
+    throw new AIPresentationFailure({ reason: "response-envelope" });
+  }
+  if (response.status !== "completed") {
+    throw new AIPresentationFailure({ reason: "response-incomplete" });
+  }
+  if (!Array.isArray(response.output)) {
+    throw new AIPresentationFailure({ reason: "response-envelope" });
   }
   const messages = response.output
     .map(asRecord)
     .filter((item) => item?.type === "message");
   if (messages.length !== 1 || !Array.isArray(messages[0]?.content)) {
-    throw new Error("OpenAI presentation response was invalid.");
+    throw new AIPresentationFailure({ reason: "response-envelope" });
   }
   const content = messages[0].content.map(asRecord);
+  if (content.some((item) => item?.type === "refusal")) {
+    throw new AIPresentationFailure({ reason: "response-refusal" });
+  }
   if (
-    content.some((item) => item?.type === "refusal") ||
     content.length !== 1 ||
     content[0]?.type !== "output_text" ||
     typeof content[0].text !== "string"
   ) {
-    throw new Error("OpenAI presentation response was invalid.");
+    throw new AIPresentationFailure({ reason: "response-output-text" });
   }
   try {
     return JSON.parse(content[0].text) as unknown;
   } catch {
-    throw new Error("OpenAI presentation response was invalid.");
+    throw new AIPresentationFailure({ reason: "response-output-json" });
   }
 }
