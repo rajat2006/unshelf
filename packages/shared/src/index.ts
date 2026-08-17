@@ -93,6 +93,14 @@ export type DailyFocusId = string & {
   readonly [identifierBrand]: "DailyFocusId";
 };
 
+/** The authenticated database calendar document used for Today-dependent UI. */
+export interface ServerCalendar {
+  /** Canonical calendar date in the explicitly configured database timezone. */
+  today: string;
+  /** ISO instant at which `today` ceases to be authoritative. */
+  validUntil: string;
+}
+
 /**
  * API request types are inferred from the canonical runtime schemas. This
  * type-only facade keeps existing `@unshelf/shared` consumers runtime-free.

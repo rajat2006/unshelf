@@ -1,4 +1,8 @@
-import { createDatabase, type DatabaseWithClient } from "./db";
+import {
+  createDatabase,
+  readDatabaseConfig,
+  type DatabaseWithClient,
+} from "./db";
 import { serializeFailure } from "./diagnostics";
 import {
   parseDiscoverMaintenanceCommand,
@@ -19,9 +23,8 @@ let db: DatabaseWithClient | undefined;
 
 try {
   const command = parseDiscoverMaintenanceCommand(process.argv.slice(2));
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is required");
-  db = createDatabase(connectionString);
+  const databaseConfig = readDatabaseConfig(process.env);
+  db = createDatabase(databaseConfig);
   const discover = createDiscoverMaintenanceModule({
     db,
     now: () => new Date(),

@@ -25,9 +25,9 @@ describe("Discover maintenance CLI", () => {
         ["--import", "tsx", "src/discover-maintenance.ts"],
         {
           cwd: API_ROOT,
-          env: {
-            ...process.env,
-            DATABASE_URL: "postgresql://unshelf:db-secret@127.0.0.1:1/unshelf",
+        env: {
+          ...process.env,
+          DATABASE_URL: "postgresql://unshelf:db-secret@127.0.0.1:1/unshelf",
             YOUTUBE_API_KEY: "unused-youtube-secret",
           },
         },
@@ -188,6 +188,7 @@ async function runCli(arguments_: readonly string[]) {
       env: {
         ...process.env,
         DATABASE_URL: harness.databaseUrl,
+        DATABASE_TIME_ZONE: "UTC",
         YOUTUBE_API_KEY: undefined,
       },
     },
@@ -210,6 +211,7 @@ function apiEnvironment(
   return {
     ...process.env,
     DATABASE_URL: harness.databaseUrl,
+    DATABASE_TIME_ZONE: "UTC",
     PORT: "0",
     PUBLIC_ORIGIN: "https://startup.example.com",
     CLERK_SECRET_KEY: "sk_test_startup",

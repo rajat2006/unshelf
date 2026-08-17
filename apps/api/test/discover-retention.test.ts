@@ -71,7 +71,7 @@ const providerPreview: ProviderPreview = {
 
 beforeAll(async () => {
   previewChannel.mockResolvedValue(providerPreview);
-  harness = await startTestApp(undefined, {
+  harness = await startTestApp({
     discover: { enabled: true, adapter, now: () => currentNow },
   });
 });

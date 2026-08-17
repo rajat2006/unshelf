@@ -68,7 +68,7 @@ let harness: TestApp;
 let app: Express;
 
 beforeAll(async () => {
-  harness = await startTestApp(undefined, {
+  harness = await startTestApp({
     discover: { enabled: true, adapter, now: () => currentNow },
   });
   app = harness.app;

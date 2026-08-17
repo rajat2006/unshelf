@@ -46,6 +46,7 @@ import type {
   RemoveStageRequest,
   ReorderStageItemsRequest,
   ReorderPartsRequest,
+  ServerCalendar,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
   UpdatePartCompletionRequest,
@@ -429,6 +430,13 @@ export async function updateItemTargetDate(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/** Read the authenticated PostgreSQL calendar used by Today-dependent UI. */
+export async function fetchServerCalendar(
+  user: CurrentUser,
+): Promise<ServerCalendar> {
+  return requestJson<ServerCalendar>(user, "/api/server-calendar");
 }
 
 /** Read the authenticated User's editable focus for the database's current date. */
