@@ -60,7 +60,7 @@ type WayfinderRouteEvidence = {
 
 export type WayfinderMapEvidence = {
   state: "OPEN" | "CLOSED";
-  stateReason: "COMPLETED" | "NOT_PLANNED" | null;
+  stateReason: "COMPLETED" | "NOT_PLANNED" | "REOPENED" | null;
   closedAt: string | null;
   number: number;
   title: string;
@@ -407,7 +407,11 @@ function isWayfinderArtifactPullRequest({
     /^wayfinder\/map-(\d+)-(?:decision-documents|research-and-prototypes)$/.exec(
       pullRequest.headRefName,
     );
-  return match !== null && wayfinderMapNumbers.has(Number(match[1]));
+  return (
+    pullRequest.headRepository === digestRepository.nameWithOwner &&
+    match !== null &&
+    wayfinderMapNumbers.has(Number(match[1]))
+  );
 }
 
 function isReleasedDeliveryPullRequest(

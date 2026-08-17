@@ -258,6 +258,20 @@ describe("Daily Project Digest preview", () => {
               blockedBy: [],
               closingIssues: [],
             },
+            {
+              state: "OPEN",
+              mergedAt: null,
+              number: 130,
+              title: "Keep a fork with a copied artifact branch visible",
+              baseRefName: "dev",
+              headRefName: "wayfinder/map-100-decision-documents",
+              headRepository: "contributor/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
             ...["A", "B", "C", "D", "E", "F", "G", "H"].map((title, index) => ({
               state: "OPEN" as const,
               mergedAt: null,
@@ -275,7 +289,6 @@ describe("Daily Project Digest preview", () => {
           ]);
         },
         listWayfinderMaps: () => {
-          trace.push("wayfinder");
           return Promise.resolve([
             {
               state: "CLOSED",
@@ -413,6 +426,20 @@ describe("Daily Project Digest preview", () => {
                   blockedBy: [],
                   closingIssues: [],
                 },
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-17T14:30:00.000Z",
+                  number: 127,
+                  title: "Preserve the digest planning prototype",
+                  baseRefName: "dev",
+                  headRefName: "wayfinder/map-98-research-and-prototypes",
+                  headRepository: "rajat2006/unshelf",
+                  labels: [],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
               ],
             },
             {
@@ -474,7 +501,6 @@ describe("Daily Project Digest preview", () => {
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "deployments:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
-      "wayfinder",
       "summary",
     ]);
     expect(result).toEqual({
@@ -486,7 +512,7 @@ describe("Daily Project Digest preview", () => {
           {
             title: "Daily Project Digest",
             description:
-              "3 changes reached production; 2 meaningful changes landed; 3 items need attention; 12 efforts are still moving.",
+              "3 changes reached production; 2 meaningful changes landed; 3 items need attention; 13 efforts are still moving.",
             color: 5793266,
             fields: [
               {
@@ -507,7 +533,7 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "In progress — Actively moving forward",
                 value:
-                  "[Shape the next Unshelf experience is in progress.](https://github.com/rajat2006/unshelf/issues/100)\n[Keep draft delivery work visible is in progress.](https://github.com/rajat2006/unshelf/pull/101)\n[Ignore an arbitrary blocked issue mention is in progress.](https://github.com/rajat2006/unshelf/pull/104)\n[Repair production sign-in is in progress.](https://github.com/rajat2006/unshelf/pull/105)\n[A is in progress.](https://github.com/rajat2006/unshelf/pull/108)\n[B is in progress.](https://github.com/rajat2006/unshelf/pull/109)\n[C is in progress.](https://github.com/rajat2006/unshelf/pull/110)\n[D is in progress.](https://github.com/rajat2006/unshelf/pull/111)\n[E is in progress.](https://github.com/rajat2006/unshelf/pull/112)\n[F is in progress.](https://github.com/rajat2006/unshelf/pull/113)\n[+ 2 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
+                  "[Shape the next Unshelf experience is in progress.](https://github.com/rajat2006/unshelf/issues/100)\n[Keep draft delivery work visible is in progress.](https://github.com/rajat2006/unshelf/pull/101)\n[Ignore an arbitrary blocked issue mention is in progress.](https://github.com/rajat2006/unshelf/pull/104)\n[Repair production sign-in is in progress.](https://github.com/rajat2006/unshelf/pull/105)\n[A is in progress.](https://github.com/rajat2006/unshelf/pull/108)\n[B is in progress.](https://github.com/rajat2006/unshelf/pull/109)\n[C is in progress.](https://github.com/rajat2006/unshelf/pull/110)\n[D is in progress.](https://github.com/rajat2006/unshelf/pull/111)\n[E is in progress.](https://github.com/rajat2006/unshelf/pull/112)\n[F is in progress.](https://github.com/rajat2006/unshelf/pull/113)\n[+ 3 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
               },
             ],
             footer: {
@@ -544,7 +570,7 @@ describe("Daily Project Digest preview", () => {
               number: 424,
               title: "Wayfinder: publish a Daily Project Digest to Discord",
               state: "open",
-              state_reason: null,
+              state_reason: "reopened",
               closed_at: null,
               labels: [{ name: "wayfinder:map" }],
             },
@@ -589,7 +615,7 @@ describe("Daily Project Digest preview", () => {
     expect(maps).toEqual([
       {
         state: "OPEN",
-        stateReason: null,
+        stateReason: "REOPENED",
         closedAt: null,
         number: 424,
         title: "Wayfinder: publish a Daily Project Digest to Discord",

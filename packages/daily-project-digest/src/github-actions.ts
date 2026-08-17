@@ -206,7 +206,8 @@ function parseWayfinderMap(
     (stateValue !== "open" && stateValue !== "closed") ||
     (stateReasonValue !== null &&
       stateReasonValue !== "completed" &&
-      stateReasonValue !== "not_planned") ||
+      stateReasonValue !== "not_planned" &&
+      stateReasonValue !== "reopened") ||
     (closedAtValue !== null && typeof closedAtValue !== "string")
   ) {
     throw new Error("GitHub returned invalid Wayfinder map evidence.");
@@ -217,10 +218,18 @@ function parseWayfinderMap(
       ? null
       : stateReasonValue === "completed"
         ? "COMPLETED"
-        : "NOT_PLANNED";
+        : stateReasonValue === "not_planned"
+          ? "NOT_PLANNED"
+          : "REOPENED";
   if (
-    (state === "OPEN" && (stateReason !== null || closedAtValue !== null)) ||
-    (state === "CLOSED" && (stateReason === null || closedAtValue === null))
+    (state === "OPEN" &&
+      (stateReason === "COMPLETED" ||
+        stateReason === "NOT_PLANNED" ||
+        closedAtValue !== null)) ||
+    (state === "CLOSED" &&
+      (stateReason === null ||
+        stateReason === "REOPENED" ||
+        closedAtValue === null))
   ) {
     throw new Error("GitHub returned invalid Wayfinder map evidence.");
   }
