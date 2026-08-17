@@ -1,6 +1,11 @@
 name: Daily Project Digest
 
 on:
+  # GitHub schedules are best effort and may run late or be dropped. The digest
+  # freezes its actual start time, so delay does not change rolling-window rules.
+  schedule:
+    - cron: "0 23 * * *"
+      timezone: "Asia/Kolkata"
   workflow_dispatch:
     inputs:
       mode:
@@ -10,7 +15,7 @@ on:
         options: [preview, deliver]
 
 # This is one trusted, read-only generation job. AI wording is optional. The
-# Discord webhook is mapped only on the explicit manual-delivery step.
+# Discord webhook is mapped only on scheduled or explicit manual delivery.
 permissions:
   contents: read
   deployments: read
@@ -19,9 +24,11 @@ permissions:
 
 jobs:
   digest:
-    name: ${{ inputs.mode == 'deliver' && 'Deliver' || 'Preview' }}
+    name: ${{ github.event_name == 'schedule' && 'Deliver nightly' || inputs.mode == 'deliver' && 'Deliver manually' || 'Preview' }}
+    if: github.event_name == 'workflow_dispatch' || vars.DAILY_DIGEST_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: daily-project-digest
 
     steps:
       - name: Check out trusted digest code
@@ -47,16 +54,35 @@ jobs:
         run: pnpm --filter @unshelf/daily-project-digest build
 
       - name: Preview exact Discord payload
-        if: inputs.mode == 'preview'
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DAILY_DIGEST_OPENAI_API_KEY: ${{ secrets.DAILY_DIGEST_OPENAI_API_KEY }}
         run: node packages/daily-project-digest/dist/cli.js preview
 
       - name: Deliver exact Discord payload
-        if: inputs.mode == 'deliver'
+        if: github.event_name == 'schedule' || inputs.mode == 'deliver'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DAILY_DIGEST_OPENAI_API_KEY: ${{ secrets.DAILY_DIGEST_OPENAI_API_KEY }}
           DAILY_DIGEST_DISCORD_WEBHOOK_URL: ${{ secrets.DAILY_DIGEST_DISCORD_WEBHOOK_URL }}
         run: node packages/daily-project-digest/dist/cli.js deliver
+
+      - name: Record sanitized delivery success
+        if: success() && (github.event_name == 'schedule' || inputs.mode == 'deliver')
+        run: |
+          {
+            echo "## Daily Project Digest delivery"
+            echo
+            echo "Discord accepted the digest."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record sanitized failure
+        if: failure()
+        run: |
+          {
+            echo "## Daily Project Digest failure"
+            echo
+            echo "The digest failed safely. Review the failed step for its sanitized error."
+            echo "No credentials or provider responses were recorded."
+          } >> "$GITHUB_STEP_SUMMARY"
