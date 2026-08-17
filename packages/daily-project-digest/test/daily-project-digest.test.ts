@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("Daily Project Digest preview", () => {
-  it("previews completed delivery work alongside the active snapshot", async () => {
+  it("previews production releases alongside completed and active work", async () => {
     const trace: string[] = [];
     let summarizedPayload: DiscordPayload | undefined;
     const adapters: PreviewAdapters = {
@@ -241,6 +241,117 @@ describe("Daily Project Digest preview", () => {
             })),
           ]);
         },
+        listDeployments: ({ windowStart, windowEnd }) => {
+          trace.push(
+            `deployments:${windowStart.toISOString()}:${windowEnd.toISOString()}`,
+          );
+          return Promise.resolve([
+            {
+              environment: "production",
+              status: "success",
+              statusAt: "2026-08-17T15:00:00.000Z",
+              sha: "production-release",
+              reachableFromMain: true,
+              newlyContainedPullRequests: [
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-17T12:00:00.000Z",
+                  number: 116,
+                  title: "Finish completed delivery reporting",
+                  baseRefName: "dev",
+                  headRefName: "agent/completed-delivery",
+                  headRepository: "rajat2006/unshelf",
+                  labels: [],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-17T13:00:00.000Z",
+                  number: 121,
+                  title: "Repair production sign-in",
+                  baseRefName: "main",
+                  headRefName: "hotfix/production-sign-in",
+                  headRepository: "rajat2006/unshelf",
+                  labels: [],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-17T14:00:00.000Z",
+                  number: 122,
+                  title: "Release dev to main",
+                  baseRefName: "main",
+                  headRefName: "dev",
+                  headRepository: "rajat2006/unshelf",
+                  labels: ["release:minor"],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-16T16:00:00.000Z",
+                  number: 123,
+                  title: "Ship the digest foundation",
+                  baseRefName: "dev",
+                  headRefName: "agent/digest-foundation",
+                  headRepository: "rajat2006/unshelf",
+                  labels: [],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
+              ],
+            },
+            {
+              environment: "production",
+              status: "failure",
+              statusAt: "2026-08-17T16:00:00.000Z",
+              sha: "failed-production-release",
+              reachableFromMain: true,
+              newlyContainedPullRequests: [
+                {
+                  state: "MERGED",
+                  mergedAt: "2026-08-17T15:30:00.000Z",
+                  number: 124,
+                  title: "Do not report failed deployments",
+                  baseRefName: "dev",
+                  headRefName: "agent/failed-deployment",
+                  headRepository: "rajat2006/unshelf",
+                  labels: [],
+                  isDraft: false,
+                  headContainsMain: false,
+                  blockedBy: [],
+                  closingIssues: [],
+                },
+              ],
+            },
+            {
+              environment: "staging",
+              status: "success",
+              statusAt: "2026-08-17T16:15:00.000Z",
+              sha: "staging-release",
+              reachableFromMain: true,
+              newlyContainedPullRequests: [],
+            },
+            {
+              environment: "production",
+              status: "success",
+              statusAt: "2026-08-17T16:30:00.000Z",
+              sha: "detached-release",
+              reachableFromMain: false,
+              newlyContainedPullRequests: [],
+            },
+          ]);
+        },
       },
       summary: {
         writePreview: (payload) => {
@@ -258,6 +369,7 @@ describe("Daily Project Digest preview", () => {
     expect(trace).toEqual([
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
+      "deployments:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "summary",
     ]);
     expect(result).toEqual({
@@ -268,13 +380,19 @@ describe("Daily Project Digest preview", () => {
         embeds: [
           {
             title: "Daily Project Digest",
-            description: "2 items need attention; 11 efforts are still moving.",
+            description:
+              "3 changes reached production; 1 meaningful change landed; 2 items need attention; 11 efforts are still moving.",
             color: 5793266,
             fields: [
               {
+                name: "Released — Live in production",
+                value:
+                  "[Finish completed delivery reporting is released.](https://github.com/rajat2006/unshelf/pull/116)\n[Repair production sign-in is released.](https://github.com/rajat2006/unshelf/pull/121)\n[Ship the digest foundation is released.](https://github.com/rajat2006/unshelf/pull/123)",
+              },
+              {
                 name: "Completed — Merged and ready for a release",
                 value:
-                  "[Finish completed delivery reporting is completed.](https://github.com/rajat2006/unshelf/pull/116)\n[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
+                  "[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
               },
               {
                 name: "Blocked — Needs attention before work can continue",

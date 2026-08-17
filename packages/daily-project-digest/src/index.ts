@@ -36,6 +36,22 @@ export type PullRequestEvidence = {
   closingIssues: ClosingIssueEvidence[];
 };
 
+export type DeploymentEvidence = {
+  environment: string;
+  status:
+    | "error"
+    | "failure"
+    | "inactive"
+    | "in_progress"
+    | "pending"
+    | "queued"
+    | "success";
+  statusAt: string;
+  sha: string;
+  reachableFromMain: boolean;
+  newlyContainedPullRequests: PullRequestEvidence[];
+};
+
 export type ClockAdapter = {
   now(): Date;
 };
@@ -47,6 +63,7 @@ type DigestWindow = {
 
 export type GitHubAdapter = {
   listPullRequests(window: DigestWindow): Promise<PullRequestEvidence[]>;
+  listDeployments(window: DigestWindow): Promise<DeploymentEvidence[]>;
 };
 
 export type SummaryAdapter = {
@@ -70,7 +87,7 @@ export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
 type DigestSubject = {
   number: number;
   title: string;
-  lifecycle: "completed" | "blocked" | "in-progress";
+  lifecycle: "released" | "completed" | "blocked" | "in-progress";
 };
 
 const discordLimits = {
@@ -113,14 +130,19 @@ export async function runDailyProjectDigest(
     windowEnd,
   };
 
-  const pullRequests = await adapters.github.listPullRequests({
-    windowStart: new Date(window.windowStart),
-    windowEnd: new Date(window.windowEnd),
-  });
+  const [pullRequests, deployments] = await Promise.all([
+    adapters.github.listPullRequests(copyWindow(window)),
+    adapters.github.listDeployments(copyWindow(window)),
+  ]);
   const subjects = deduplicateSubjects(
-    pullRequests
-      .map((pullRequest) => toDigestSubject({ pullRequest, window }))
-      .filter((subject) => subject !== undefined),
+    [
+      ...pullRequests.map((pullRequest) =>
+        toDigestSubject({ pullRequest, window }),
+      ),
+      ...deployments.flatMap((deployment) =>
+        toReleasedSubjects({ deployment, window }),
+      ),
+    ].filter((subject) => subject !== undefined),
   ).sort((left, right) => left.number - right.number);
   const payload = renderPayload({ subjects, windowEnd });
   preflightDiscordPayload(payload);
@@ -130,6 +152,13 @@ export async function runDailyProjectDigest(
     mode: input.mode,
     windowEnd: windowEnd.toISOString(),
     payload,
+  };
+}
+
+function copyWindow(window: DigestWindow): DigestWindow {
+  return {
+    windowStart: new Date(window.windowStart),
+    windowEnd: new Date(window.windowEnd),
   };
 }
 
@@ -198,11 +227,71 @@ function toDigestSubject({
   };
 }
 
+function toReleasedSubjects({
+  deployment,
+  window,
+}: {
+  deployment: DeploymentEvidence;
+  window: DigestWindow;
+}): DigestSubject[] {
+  if (
+    deployment.environment !== "production" ||
+    deployment.status !== "success" ||
+    !deployment.reachableFromMain
+  ) {
+    return [];
+  }
+  const statusAt = new Date(deployment.statusAt);
+  if (Number.isNaN(statusAt.getTime())) {
+    throw new Error("GitHub returned invalid production deployment evidence.");
+  }
+  if (statusAt < window.windowStart || statusAt >= window.windowEnd) {
+    return [];
+  }
+  return deployment.newlyContainedPullRequests
+    .filter(isReleasedDeliveryPullRequest)
+    .map((pullRequest) => ({
+      number: pullRequest.number,
+      title: normalizeTitle({
+        title: pullRequest.title,
+        number: pullRequest.number,
+      }),
+      lifecycle: "released",
+    }));
+}
+
+function isReleasedDeliveryPullRequest(
+  pullRequest: PullRequestEvidence,
+): boolean {
+  if (pullRequest.state !== "MERGED") {
+    return false;
+  }
+  if (pullRequest.baseRefName === "dev") {
+    return true;
+  }
+  return (
+    pullRequest.baseRefName === "main" &&
+    pullRequest.headRefName !== "dev" &&
+    pullRequest.headRefName !== "main" &&
+    pullRequest.headRepository === digestRepository.nameWithOwner &&
+    !pullRequest.labels.some((label) => releaseLabels.has(label))
+  );
+}
+
 function deduplicateSubjects(subjects: DigestSubject[]): DigestSubject[] {
   const subjectsByNumber = new Map<number, DigestSubject>();
+  const precedence: Record<DigestSubject["lifecycle"], number> = {
+    released: 4,
+    completed: 3,
+    blocked: 2,
+    "in-progress": 1,
+  };
   for (const subject of subjects) {
     const existing = subjectsByNumber.get(subject.number);
-    if (existing === undefined || subject.lifecycle === "completed") {
+    if (
+      existing === undefined ||
+      precedence[subject.lifecycle] > precedence[existing.lifecycle]
+    ) {
       subjectsByNumber.set(subject.number, subject);
     }
   }
@@ -224,6 +313,9 @@ function renderPayload({
   subjects: DigestSubject[];
   windowEnd: Date;
 }): DiscordPayload {
+  const released = subjects.filter(
+    (subject) => subject.lifecycle === "released",
+  );
   const completed = subjects.filter(
     (subject) => subject.lifecycle === "completed",
   );
@@ -240,6 +332,11 @@ function renderPayload({
   }
 
   const fields = [
+    renderSection({
+      name: "Released — Live in production",
+      lifecycle: "released",
+      subjects: released,
+    }),
     renderSection({
       name: "Completed — Merged and ready for a release",
       lifecycle: "completed",
@@ -263,6 +360,7 @@ function renderPayload({
       {
         title: "Daily Project Digest",
         description: headline({
+          released: released.length,
           completed: completed.length,
           blocked: blocked.length,
           inProgress: inProgress.length,
@@ -325,6 +423,9 @@ function renderSectionValue({
 }
 
 function overflowUrl(lifecycle: DigestSubject["lifecycle"]): string {
+  if (lifecycle === "released") {
+    return `${digestRepository.webUrl}/deployments/production`;
+  }
   if (lifecycle === "completed") {
     return `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Amerged+base%3Adev`;
   }
@@ -341,7 +442,9 @@ function renderSubject({
   lifecycle: DigestSubject["lifecycle"];
 }): string {
   const state =
-    lifecycle === "completed"
+    lifecycle === "released"
+      ? "released"
+      : lifecycle === "completed"
       ? "completed"
       : lifecycle === "blocked"
         ? "blocked"
@@ -370,14 +473,31 @@ function normalizeTitle({
 }
 
 function headline({
+  released,
   completed,
   blocked,
   inProgress,
 }: {
+  released: number;
   completed: number;
   blocked: number;
   inProgress: number;
 }): string {
+  if (released > 0) {
+    const outcomes = [
+      `${released} change${released === 1 ? "" : "s"} reached production`,
+      completed > 0
+        ? `${completed} meaningful change${completed === 1 ? "" : "s"} landed`
+        : undefined,
+      blocked > 0
+        ? `${blocked} item${blocked === 1 ? " needs" : "s need"} attention`
+        : undefined,
+      inProgress > 0
+        ? `${inProgress} ${inProgress === 1 ? "effort is" : "efforts are"} still moving`
+        : undefined,
+    ].filter((outcome) => outcome !== undefined);
+    return `${outcomes.join("; ")}.`;
+  }
   if (blocked > 0) {
     return `${blocked} item${blocked === 1 ? " needs" : "s need"} attention; ${inProgress} ${inProgress === 1 ? "effort is" : "efforts are"} still moving.`;
   }

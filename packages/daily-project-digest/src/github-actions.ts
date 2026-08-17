@@ -1,6 +1,7 @@
 import { appendFile } from "node:fs/promises";
 
 import type {
+  DeploymentEvidence,
   DiscordPayload,
   PreviewAdapters,
   PullRequestEvidence,
@@ -60,6 +61,30 @@ const openPullRequestsQuery = `
   }
 `;
 
+const mergedPullRequestsQuery = `
+  query MergedPullRequests($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(states: MERGED, first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: ASC }) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          number
+          title
+          mergedAt
+          baseRefName
+          headRefName
+          headRepository { nameWithOwner }
+          isDraft
+          mergeCommit { oid }
+          labels(first: 100) {
+            pageInfo { hasNextPage }
+            nodes { name }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export function createGitHubActionsPreviewAdapters(
   input: GitHubActionsPreviewInput,
 ): PreviewAdapters {
@@ -81,6 +106,11 @@ export function createGitHubActionsPreviewAdapters(
         gatherPullRequests({
           github: { token: input.token, owner, name },
           windowStart,
+        }),
+      listDeployments: (window) =>
+        gatherDeployments({
+          github: { token: input.token, owner, name },
+          window,
         }),
     },
     summary: {
@@ -107,6 +137,425 @@ async function gatherPullRequests({
     gatherRecentlyMergedPullRequests({ github, windowStart }),
   ]);
   return [...open, ...merged];
+}
+
+type DeploymentRecord = {
+  id: number;
+  environment: string;
+  sha: string;
+};
+
+type DeploymentStatus = DeploymentEvidence["status"];
+
+type DeploymentWithStatus = DeploymentRecord & {
+  status: DeploymentStatus;
+  statusAt: string;
+};
+
+type MergedPullRequest = {
+  mergeCommitOid: string;
+  pullRequest: PullRequestEvidence;
+};
+
+async function gatherDeployments({
+  github,
+  window,
+}: {
+  github: GitHubRepositoryContext;
+  window: { windowStart: Date; windowEnd: Date };
+}): Promise<DeploymentEvidence[]> {
+  const [mainOid, deploymentRecords] = await Promise.all([
+    fetchMainOid({ github }),
+    fetchDeploymentRecords({ github }),
+  ]);
+  const deployments: DeploymentWithStatus[] = [];
+  for (const deployment of deploymentRecords) {
+    const withStatus = await fetchDeploymentWithLatestStatus({
+      github,
+      deployment,
+    });
+    if (withStatus !== undefined) {
+      deployments.push(withStatus);
+    }
+  }
+  const reachability = new Map<string, boolean>();
+  for (const deployment of deployments) {
+    if (
+      deployment.environment === "production" &&
+      deployment.status === "success" &&
+      !reachability.has(deployment.sha)
+    ) {
+      reachability.set(
+        deployment.sha,
+        await isReachableFromMain({
+          github,
+          mainOid,
+          deployedOid: deployment.sha,
+        }),
+      );
+    }
+  }
+  const successfulProductionDeployments = deployments
+    .filter(
+      (deployment) =>
+        deployment.environment === "production" &&
+        deployment.status === "success" &&
+        reachability.get(deployment.sha) === true,
+    )
+    .sort(compareDeployments);
+  const releasesInWindow = successfulProductionDeployments.filter(
+    (deployment) => {
+      const statusAt = new Date(deployment.statusAt);
+      return statusAt >= window.windowStart && statusAt < window.windowEnd;
+    },
+  );
+  const mergedPullRequests =
+    releasesInWindow.length === 0
+      ? []
+      : await gatherMergedPullRequests({ github });
+  const newlyContainedByDeployment = new Map<number, PullRequestEvidence[]>();
+  for (const deployment of releasesInWindow) {
+    const deploymentIndex = successfulProductionDeployments.indexOf(deployment);
+    const precedingDeployment =
+      deploymentIndex === 0
+        ? undefined
+        : successfulProductionDeployments[deploymentIndex - 1];
+    const newlyContainedCommitOids = await gatherNewlyContainedCommitOids({
+      github,
+      precedingOid: precedingDeployment?.sha,
+      deployedOid: deployment.sha,
+    });
+    const releasedPullRequests = new Map<number, MergedPullRequest>();
+    for (const pullRequest of mergedPullRequests) {
+      if (newlyContainedCommitOids.has(pullRequest.mergeCommitOid)) {
+        releasedPullRequests.set(
+          pullRequest.pullRequest.number,
+          pullRequest,
+        );
+      }
+    }
+    newlyContainedByDeployment.set(
+      deployment.id,
+      [...releasedPullRequests.values()].map(
+        (pullRequest) => pullRequest.pullRequest,
+      ),
+    );
+  }
+  return deployments.map((deployment) => ({
+    environment: deployment.environment,
+    status: deployment.status,
+    statusAt: deployment.statusAt,
+    sha: deployment.sha,
+    reachableFromMain: reachability.get(deployment.sha) === true,
+    newlyContainedPullRequests:
+      newlyContainedByDeployment.get(deployment.id) ?? [],
+  }));
+}
+
+function compareDeployments(
+  left: DeploymentWithStatus,
+  right: DeploymentWithStatus,
+): number {
+  const byStatusTime = left.statusAt.localeCompare(right.statusAt);
+  return byStatusTime === 0 ? left.id - right.id : byStatusTime;
+}
+
+async function fetchMainOid({
+  github,
+}: {
+  github: GitHubRepositoryContext;
+}): Promise<string> {
+  const response = await githubJson({
+    token: github.token,
+    path: `/repos/${github.owner}/${github.name}/git/ref/heads/main`,
+  });
+  const oid = nestedString(record(response), ["object", "sha"]);
+  if (oid === undefined) {
+    throw new Error("GitHub returned invalid main revision evidence.");
+  }
+  return oid;
+}
+
+async function fetchDeploymentRecords({
+  github,
+}: {
+  github: GitHubRepositoryContext;
+}): Promise<DeploymentRecord[]> {
+  const deployments: DeploymentRecord[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/deployments?environment=production&per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid deployment evidence.");
+    }
+    deployments.push(...response.map(parseDeploymentRecord));
+    if (response.length < 100) {
+      return deployments;
+    }
+  }
+}
+
+function parseDeploymentRecord(value: unknown): DeploymentRecord {
+  const deployment = record(value);
+  const id = deployment?.id;
+  const environment = deployment?.environment;
+  const sha = deployment?.sha;
+  if (
+    !isInteger(id) ||
+    typeof environment !== "string" ||
+    typeof sha !== "string" ||
+    sha === ""
+  ) {
+    throw new Error("GitHub returned invalid deployment evidence.");
+  }
+  return { id, environment, sha };
+}
+
+async function fetchDeploymentWithLatestStatus({
+  github,
+  deployment,
+}: {
+  github: GitHubRepositoryContext;
+  deployment: DeploymentRecord;
+}): Promise<DeploymentWithStatus | undefined> {
+  const response = await githubJson({
+    token: github.token,
+    path: `/repos/${github.owner}/${github.name}/deployments/${deployment.id}/statuses?per_page=1`,
+  });
+  if (!Array.isArray(response)) {
+    throw new Error("GitHub returned invalid deployment-status evidence.");
+  }
+  if (response.length === 0) {
+    return undefined;
+  }
+  const status = record(response[0]);
+  const state = status?.state;
+  const statusAt = status?.created_at;
+  if (!isDeploymentStatus(state) || typeof statusAt !== "string") {
+    throw new Error("GitHub returned invalid deployment-status evidence.");
+  }
+  const parsedStatusAt = new Date(statusAt);
+  if (Number.isNaN(parsedStatusAt.getTime())) {
+    throw new Error("GitHub returned invalid deployment-status evidence.");
+  }
+  return { ...deployment, status: state, statusAt };
+}
+
+function isDeploymentStatus(value: unknown): value is DeploymentStatus {
+  return (
+    value === "error" ||
+    value === "failure" ||
+    value === "inactive" ||
+    value === "in_progress" ||
+    value === "pending" ||
+    value === "queued" ||
+    value === "success"
+  );
+}
+
+async function isReachableFromMain({
+  github,
+  mainOid,
+  deployedOid,
+}: {
+  github: GitHubRepositoryContext;
+  mainOid: string;
+  deployedOid: string;
+}): Promise<boolean> {
+  const response = await githubJson({
+    token: github.token,
+    path: `/repos/${github.owner}/${github.name}/compare/${deployedOid}...${mainOid}`,
+  });
+  const status = record(response)?.status;
+  if (typeof status !== "string") {
+    throw new Error("GitHub returned invalid deployment ancestry evidence.");
+  }
+  return status === "ahead" || status === "identical";
+}
+
+async function gatherNewlyContainedCommitOids({
+  github,
+  precedingOid,
+  deployedOid,
+}: {
+  github: GitHubRepositoryContext;
+  precedingOid: string | undefined;
+  deployedOid: string;
+}): Promise<Set<string>> {
+  return precedingOid === undefined
+    ? gatherCommitHistoryOids({ github, deployedOid })
+    : gatherComparisonCommitOids({ github, precedingOid, deployedOid });
+}
+
+async function gatherCommitHistoryOids({
+  github,
+  deployedOid,
+}: {
+  github: GitHubRepositoryContext;
+  deployedOid: string;
+}): Promise<Set<string>> {
+  const commitOids = new Set<string>();
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/commits?sha=${deployedOid}&per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid deployed revision evidence.");
+    }
+    for (const value of response) {
+      const oid = record(value)?.sha;
+      if (typeof oid !== "string") {
+        throw new Error("GitHub returned invalid deployed revision evidence.");
+      }
+      commitOids.add(oid);
+    }
+    if (response.length < 100) {
+      return commitOids;
+    }
+  }
+}
+
+async function gatherComparisonCommitOids({
+  github,
+  precedingOid,
+  deployedOid,
+}: {
+  github: GitHubRepositoryContext;
+  precedingOid: string;
+  deployedOid: string;
+}): Promise<Set<string>> {
+  const commitOids = new Set<string>();
+  let totalCommits: number | undefined;
+  for (let page = 1; ; page += 1) {
+    const response = record(
+      await githubJson({
+        token: github.token,
+        path: `/repos/${github.owner}/${github.name}/compare/${precedingOid}...${deployedOid}?per_page=100&page=${page}`,
+      }),
+    );
+    const pageTotal = response?.total_commits;
+    const commits = response?.commits;
+    if (!isInteger(pageTotal) || !Array.isArray(commits)) {
+      throw new Error("GitHub returned invalid deployment comparison evidence.");
+    }
+    totalCommits ??= pageTotal;
+    if (totalCommits !== pageTotal) {
+      throw new Error("GitHub returned inconsistent deployment evidence.");
+    }
+    for (const value of commits) {
+      const oid = record(value)?.sha;
+      if (typeof oid !== "string") {
+        throw new Error("GitHub returned invalid deployment comparison evidence.");
+      }
+      commitOids.add(oid);
+    }
+    if (commitOids.size >= totalCommits) {
+      return commitOids;
+    }
+    if (commits.length === 0) {
+      throw new Error("GitHub returned incomplete deployment evidence.");
+    }
+  }
+}
+
+async function gatherMergedPullRequests({
+  github,
+}: {
+  github: GitHubRepositoryContext;
+}): Promise<MergedPullRequest[]> {
+  const pullRequests: MergedPullRequest[] = [];
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  while (hasNextPage) {
+    const response = await githubJson({
+      token: github.token,
+      path: "/graphql",
+      method: "POST",
+      body: {
+        query: mergedPullRequestsQuery,
+        variables: {
+          owner: github.owner,
+          name: github.name,
+          after: cursor,
+        },
+      },
+    });
+    const root = record(response);
+    if (root === undefined || root.errors !== undefined) {
+      throw new Error("GitHub rejected merged pull-request evidence gathering.");
+    }
+    const connection = nestedRecord(root, [
+      "data",
+      "repository",
+      "pullRequests",
+    ]);
+    const nodes = connection?.nodes;
+    const pageInfo = nestedRecord(connection, ["pageInfo"]);
+    const pageHasNext = pageInfo?.hasNextPage;
+    const endCursor = pageInfo?.endCursor;
+    if (
+      !Array.isArray(nodes) ||
+      typeof pageHasNext !== "boolean" ||
+      (endCursor !== null && typeof endCursor !== "string")
+    ) {
+      throw new Error("GitHub returned invalid merged pull-request evidence.");
+    }
+    pullRequests.push(...nodes.map(parseMergedPullRequest));
+    hasNextPage = pageHasNext;
+    cursor = endCursor;
+    if (hasNextPage && cursor === null) {
+      throw new Error("GitHub returned incomplete merged pull-request evidence.");
+    }
+  }
+  return pullRequests;
+}
+
+function parseMergedPullRequest(value: unknown): MergedPullRequest {
+  const pullRequest = record(value);
+  const number = pullRequest?.number;
+  const title = pullRequest?.title;
+  const mergedAt = pullRequest?.mergedAt;
+  const baseRefName = pullRequest?.baseRefName;
+  const headRefName = pullRequest?.headRefName;
+  const isDraft = pullRequest?.isDraft;
+  const mergeCommitOid = nestedString(pullRequest, ["mergeCommit", "oid"]);
+  const headRepositoryValue = pullRequest?.headRepository;
+  const headRepository =
+    headRepositoryValue === null
+      ? null
+      : nestedString(pullRequest, ["headRepository", "nameWithOwner"]);
+  if (
+    !isInteger(number) ||
+    typeof title !== "string" ||
+    typeof mergedAt !== "string" ||
+    typeof baseRefName !== "string" ||
+    typeof headRefName !== "string" ||
+    typeof isDraft !== "boolean" ||
+    mergeCommitOid === undefined ||
+    (headRepository !== null && headRepository === undefined)
+  ) {
+    throw new Error("GitHub returned invalid merged pull-request evidence.");
+  }
+  return {
+    mergeCommitOid,
+    pullRequest: {
+      state: "MERGED",
+      mergedAt,
+      number,
+      title,
+      baseRefName,
+      headRefName,
+      headRepository,
+      labels: parseLabels(pullRequest?.labels),
+      isDraft,
+      headContainsMain: false,
+      blockedBy: [],
+      closingIssues: [],
+    },
+  };
 }
 
 async function gatherOpenPullRequests({
