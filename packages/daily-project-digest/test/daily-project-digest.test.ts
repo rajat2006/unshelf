@@ -337,6 +337,20 @@ describe("Daily Project Digest", () => {
               blockedBy: [],
               closingIssues: [],
             },
+            {
+              state: "OPEN",
+              mergedAt: null,
+              number: 131,
+              title: "Document a child decision for the deployment map",
+              baseRefName: "dev",
+              headRefName: "docs/legacy-wayfinder-child-decision",
+              headRepository: "rajat2006/unshelf",
+              labels: ["wayfinder:artifact"],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
             ...["A", "B", "C", "D", "E", "F", "G", "H"].map((title, index) => ({
               state: "OPEN" as const,
               mergedAt: null,
@@ -873,6 +887,10 @@ describe("Daily Project Digest", () => {
 
     expect(openai).toHaveBeenCalledOnce();
     expect(result.aiPresentation).toBe("failed");
+    if (result.aiPresentation !== "failed") {
+      throw new Error("Expected the AI presentation to fail validation.");
+    }
+    expect(result.aiFailureReason).toBe("contract-validation");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
         name: "Completed — Merged and ready for a release",
@@ -935,7 +953,25 @@ describe("Daily Project Digest", () => {
                   ref: { target: { oid: "a".repeat(40) } },
                   pullRequests: {
                     pageInfo: { hasNextPage: false, endCursor: null },
-                    nodes: [],
+                    nodes: [
+                      {
+                        number: 202,
+                        title: "Improve the learning plan overview",
+                        baseRefName: "dev",
+                        headRefName: "agent/learning-plan-overview",
+                        headRefOid: "b".repeat(40),
+                        headRepository: { nameWithOwner: "rajat2006/unshelf" },
+                        isDraft: false,
+                        labels: {
+                          pageInfo: { hasNextPage: false },
+                          nodes: [],
+                        },
+                        closingIssuesReferences: {
+                          pageInfo: { hasNextPage: false },
+                          nodes: [],
+                        },
+                      },
+                    ],
                   },
                 },
               },
@@ -956,6 +992,14 @@ describe("Daily Project Digest", () => {
         if (url.includes("/issues?labels=wayfinder%3Amap")) {
           return Promise.resolve(Response.json([]));
         }
+        if (url.includes("/issues/202/dependencies/blocked_by")) {
+          return Promise.resolve(Response.json([]));
+        }
+        if (url === "https://api.openai.com/v1/responses") {
+          return Promise.reject(
+            new DOMException("The operation timed out.", "TimeoutError"),
+          );
+        }
         throw new Error(`Unexpected GitHub request: ${url}`);
       }),
     );
@@ -963,6 +1007,7 @@ describe("Daily Project Digest", () => {
       token: "github-token",
       repository: "rajat2006/unshelf",
       summaryPath,
+      openaiApiKey: "openai-key",
     });
 
     try {
@@ -970,13 +1015,33 @@ describe("Daily Project Digest", () => {
 
       expect(result.payload).toEqual({
         allowed_mentions: { parse: [] },
-        content:
-          "🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.\nDigest 20260817T173000000Z",
+        embeds: [
+          {
+            title: "Daily Project Digest",
+            description: "1 effort is moving forward.",
+            color: 5793266,
+            fields: [
+              {
+                name: "In progress — Actively moving forward",
+                value:
+                  "[In progress: Improve the learning plan overview.](https://github.com/rajat2006/unshelf/pull/202)",
+              },
+            ],
+            footer: {
+              text: "Updates are based on authoritative GitHub activity. · Digest 20260817T173000000Z",
+            },
+            timestamp: "2026-08-17T17:30:00.000Z",
+          },
+        ],
       });
       expect(await readFile(summaryPath, "utf8")).toContain(
         JSON.stringify(result.payload, null, 2),
       );
-      expect(result.aiPresentation).toBe("skipped");
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to time out.");
+      }
+      expect(result.aiFailureReason).toBe("timeout");
       expect(adapters.discord).toEqual({ availability: "unavailable" });
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
