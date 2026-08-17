@@ -25,6 +25,9 @@ type ResolvedCompose = {
 };
 
 function resolveDeploymentCompose(): ResolvedCompose {
+  const environment = { ...process.env };
+  delete environment.SOURCE_INSPECTION_DISABLED;
+  delete environment.SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED;
   const output = execFileSync(
     "docker",
     [
@@ -40,7 +43,7 @@ function resolveDeploymentCompose(): ResolvedCompose {
     {
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...environment,
         API_IMAGE: `ghcr.io/rajat2006/unshelf-api@${digest}`,
         WEB_IMAGE: `ghcr.io/rajat2006/unshelf-web@${digest}`,
         DATABASE_URL: "postgresql://opaque-runtime-value",
@@ -51,8 +54,6 @@ function resolveDeploymentCompose(): ResolvedCompose {
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
         MIGRATION_MODE: "apply",
-        SOURCE_INSPECTION_DISABLED: "true",
-        SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED: "true",
         SOURCE_INSPECTION_DENIED_HOSTNAMES: "blocked.example,youtu.be",
       },
     },
@@ -61,6 +62,15 @@ function resolveDeploymentCompose(): ResolvedCompose {
 }
 
 describe("deployment Compose contract", () => {
+  it("defaults both Source inspection rollout switches to disabled", () => {
+    const { services } = resolveDeploymentCompose();
+
+    expect(services.api?.environment).toMatchObject({
+      SOURCE_INSPECTION_DISABLED: "true",
+      SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED: "true",
+    });
+  });
+
   it("contains only the digest-pinned migrate, api, and web graph", () => {
     const { services, volumes } = resolveDeploymentCompose();
 

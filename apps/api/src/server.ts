@@ -12,6 +12,7 @@ import {
 } from "./source-inspections/node-network";
 import {
   createSourceInspectionService,
+  parseSourceInspectionDisabled,
   parseSourceInspectionDeniedHostnames,
 } from "./source-inspections/service";
 import { createYouTubeTitleInspector } from "./source-inspections/youtube-title-inspector";
@@ -86,9 +87,12 @@ await superviseApiProcess({
       logger,
       diagnosticSecrets,
       sourceInspectionService: createSourceInspectionService({
-        disabled: process.env.SOURCE_INSPECTION_DISABLED === "true",
-        youtubeTitlesDisabled:
-          process.env.SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED === "true",
+        disabled: parseSourceInspectionDisabled(
+          process.env.SOURCE_INSPECTION_DISABLED,
+        ),
+        youtubeTitlesDisabled: parseSourceInspectionDisabled(
+          process.env.SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED,
+        ),
         deniedHostnames: parseSourceInspectionDeniedHostnames(
           process.env.SOURCE_INSPECTION_DENIED_HOSTNAMES,
         ),

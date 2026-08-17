@@ -3,6 +3,7 @@ import { Type, type UserId } from "@unshelf/shared";
 import type { CanonicalYouTubeSource } from "./classifier";
 import {
   createSourceInspectionService,
+  parseSourceInspectionDisabled,
   parseSourceInspectionDeniedHostnames,
   type SourceInspectionCompletion,
 } from "./service";
@@ -597,6 +598,13 @@ describe("Source inspection service", () => {
 
     expect([...deniedHostnames]).toEqual(["blocked.example", "youtu.be"]);
     expect(deniedHostnames.has("sub.blocked.example")).toBe(false);
+  });
+
+  it("keeps rollout switches disabled unless explicitly enabled", () => {
+    expect(parseSourceInspectionDisabled(undefined)).toBe(true);
+    expect(parseSourceInspectionDisabled("true")).toBe(true);
+    expect(parseSourceInspectionDisabled("invalid")).toBe(true);
+    expect(parseSourceInspectionDisabled("false")).toBe(false);
   });
 
   it.each([

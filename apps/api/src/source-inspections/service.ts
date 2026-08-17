@@ -1,4 +1,8 @@
-import type { SourceInspectionResponse, UserId } from "@unshelf/shared";
+import {
+  SOURCE_INSPECTION_SOURCE_BYTE_LIMIT,
+  type SourceInspectionResponse,
+  type UserId,
+} from "@unshelf/shared";
 import { performance } from "node:perf_hooks";
 import {
   classifySource,
@@ -78,7 +82,6 @@ interface SourceInspectionServiceOptions {
   readonly inspectYouTubeTitle?: YouTubeTitleInspector;
 }
 
-const SOURCE_BYTE_LIMIT = 8 * 1024;
 const unavailable: SourceInspectionServiceResult = {
   ok: true,
   response: { status: "unavailable" },
@@ -146,7 +149,8 @@ export function createSourceInspectionService({
       }
       if (input.signal.aborted) return complete(unavailable, "cancelled");
       if (
-        new TextEncoder().encode(input.source).byteLength > SOURCE_BYTE_LIMIT
+        new TextEncoder().encode(input.source).byteLength >
+        SOURCE_INSPECTION_SOURCE_BYTE_LIMIT
       ) {
         return complete(unavailable, "limit");
       }
@@ -315,4 +319,10 @@ export function parseSourceInspectionDeniedHostnames(
       .map((hostname) => normalizeSourceHostname(hostname.trim()))
       .filter((hostname) => hostname.length > 0),
   );
+}
+
+export function parseSourceInspectionDisabled(
+  value: string | undefined,
+): boolean {
+  return value !== "false";
 }

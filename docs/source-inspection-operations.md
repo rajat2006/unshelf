@@ -46,8 +46,8 @@ The API reads these controls when the process starts:
 
 | Variable | Safe behavior |
 | --- | --- |
-| `SOURCE_INSPECTION_DISABLED=true` | Globally returns manual fallback without calling an inspection adapter. Any other or absent value leaves the kill switch off. |
-| `SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED=true` | Keeps local YouTube Type classification but skips fixed-origin title acquisition. Generic inspection is unchanged. |
+| `SOURCE_INSPECTION_DISABLED=true` | Globally returns manual fallback without calling an inspection adapter. Deployment Compose supplies `true` by default; rollout requires explicit `false`. |
+| `SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED=true` | Keeps local YouTube Type classification but skips fixed-origin title acquisition. Deployment Compose supplies `true` until the separate oEmbed gate and risk acceptance pass. |
 | `SOURCE_INSPECTION_DENIED_HOSTNAMES` | Comma-separated exact hostnames. Matching is case-insensitive and ignores one terminal DNS dot. There are no wildcard or suffix rules. A match returns manual fallback before any adapter call. |
 
 Apply a control by changing the API environment and restarting/redeploying the

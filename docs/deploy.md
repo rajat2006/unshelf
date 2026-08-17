@@ -40,8 +40,8 @@ The required resource environment is:
 | `CLERK_PUBLISHABLE_KEY` | api | Matching Clerk publishable key. |
 | `MIGRATION_MODE` | migrate | `apply` for development/production/schema previews; `verify` for ordinary previews. |
 | `LOG_LEVEL` | migrate, api | Optional; defaults to `info`. |
-| `SOURCE_INSPECTION_DISABLED` | api | Optional global kill switch; only exact `true` disables inspection. |
-| `SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED` | api | Optional title-acquisition kill switch; only exact `true` disables oEmbed. |
+| `SOURCE_INSPECTION_DISABLED` | api | Optional global kill switch; Compose defaults it to `true` until qualification, and only explicit `false` enables rollout. |
+| `SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED` | api | Optional title-acquisition kill switch; Compose defaults it to `true` until its separate qualification and risk acceptance. |
 | `SOURCE_INSPECTION_DENIED_HOSTNAMES` | api | Optional comma-separated exact-host deny list; never put full Sources here. |
 
 The web publishable key is compiled into each environment-specific web image.
