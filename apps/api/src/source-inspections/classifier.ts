@@ -1,7 +1,17 @@
 import { Type } from "@unshelf/shared";
 
+declare const canonicalYouTubeSourceBrand: unique symbol;
+export type CanonicalYouTubeSource = string & {
+  readonly [canonicalYouTubeSourceBrand]: true;
+};
+
 export type SourceClassification =
-  | { classification: "youtube"; type: Type }
+  | {
+      classification: "youtube";
+      type: Type.Video | Type.Playlist;
+      canonicalSource: CanonicalYouTubeSource;
+    }
+  | { classification: "youtube"; type: Type.Other }
   | { classification: "unsupported_youtube" }
   | { classification: "generic" };
 
@@ -30,13 +40,13 @@ export function classifySource(source: string): SourceClassification {
     return { classification: "unsupported_youtube" };
   }
 
-  const type =
+  const youtube =
     url.hostname === "youtu.be"
       ? classifyShortUrl(url)
       : classifyYoutubeUrl(url);
-  return type === null
+  return youtube === null
     ? { classification: "unsupported_youtube" }
-    : { classification: "youtube", type };
+    : { classification: "youtube", ...youtube };
 }
 
 function parseEligibleUrl(source: string): URL | null {
@@ -59,7 +69,14 @@ function isYoutubeProperty(hostname: string): boolean {
   );
 }
 
-function classifyShortUrl(url: URL): Type | null {
+type YouTubeResource =
+  | {
+      readonly type: Type.Video | Type.Playlist;
+      readonly canonicalSource: CanonicalYouTubeSource;
+    }
+  | { readonly type: Type.Other };
+
+function classifyShortUrl(url: URL): YouTubeResource | null {
   const match = /^\/([A-Za-z0-9_-]{11})\/?$/.exec(url.pathname);
   if (
     match === null ||
@@ -68,40 +85,42 @@ function classifyShortUrl(url: URL): Type | null {
   ) {
     return null;
   }
-  return Type.Video;
+  return youtubeVideoResource(match[1] ?? "");
 }
 
-function classifyYoutubeUrl(url: URL): Type | null {
+function classifyYoutubeUrl(url: URL): YouTubeResource | null {
   if (url.pathname === "/watch") {
-    return isSingleValidParameter(url, "v", VIDEO_ID) &&
-      !hasQueryParameter(url, "list")
-      ? Type.Video
+    const videoId = singleValidParameter(url, "v", VIDEO_ID);
+    return videoId !== null && !hasQueryParameter(url, "list")
+      ? youtubeVideoResource(videoId)
       : null;
   }
 
   if (url.pathname === "/playlist") {
-    return isSingleValidParameter(url, "list", PLAYLIST_ID) &&
-      !hasQueryParameter(url, "v")
-      ? Type.Playlist
+    const playlistId = singleValidParameter(url, "list", PLAYLIST_ID);
+    return playlistId !== null && !hasQueryParameter(url, "v")
+      ? youtubePlaylistResource(playlistId)
       : null;
   }
 
   const videoPath = /^\/(?:shorts|embed)\/([^/]+)\/?$/.exec(url.pathname);
   if (videoPath !== null) {
-    return VIDEO_ID.test(videoPath[1] ?? "") && !hasQueryParameter(url, "list")
-      ? Type.Video
+    const videoId = videoPath[1] ?? "";
+    return VIDEO_ID.test(videoId) && !hasQueryParameter(url, "list")
+      ? youtubeVideoResource(videoId)
       : null;
   }
 
   if (url.pathname === "/embed" || url.pathname === "/embed/") {
+    const playlistId = singleValidParameter(url, "list", PLAYLIST_ID);
     return isSingleExactParameter({
       url,
       name: "listType",
       expected: "playlist",
     }) &&
-      isSingleValidParameter(url, "list", PLAYLIST_ID) &&
+      playlistId !== null &&
       !hasQueryParameter(url, "v")
-      ? Type.Playlist
+      ? youtubePlaylistResource(playlistId)
       : null;
   }
 
@@ -110,7 +129,7 @@ function classifyYoutubeUrl(url: URL): Type | null {
     return COMMUNITY_POST_ID.test(postPath[1] ?? "") &&
       !hasQueryParameter(url, "list") &&
       !hasQueryParameter(url, "v")
-      ? Type.Other
+      ? { type: Type.Other }
       : null;
   }
 
@@ -134,12 +153,50 @@ function isSingleExactParameter({
   return values.length === 1 && values[0] === expected;
 }
 
-function isSingleValidParameter(
+function singleValidParameter(
   url: URL,
   name: string,
   pattern: RegExp,
-): boolean {
+): string | null {
   const values = url.searchParams.getAll(name);
   const value = values[0];
-  return values.length === 1 && value !== undefined && pattern.test(value);
+  return values.length === 1 && value !== undefined && pattern.test(value)
+    ? value
+    : null;
+}
+
+function youtubeVideoResource(videoId: string): YouTubeResource {
+  return {
+    type: Type.Video,
+    canonicalSource: canonicalSource({
+      pathname: "/watch",
+      parameter: "v",
+      identifier: videoId,
+    }),
+  };
+}
+
+function youtubePlaylistResource(playlistId: string): YouTubeResource {
+  return {
+    type: Type.Playlist,
+    canonicalSource: canonicalSource({
+      pathname: "/playlist",
+      parameter: "list",
+      identifier: playlistId,
+    }),
+  };
+}
+
+function canonicalSource({
+  pathname,
+  parameter,
+  identifier,
+}: {
+  readonly pathname: string;
+  readonly parameter: string;
+  readonly identifier: string;
+}): CanonicalYouTubeSource {
+  const canonical = new URL(pathname, "https://www.youtube.com");
+  canonical.searchParams.set(parameter, identifier);
+  return canonical.href as CanonicalYouTubeSource;
 }

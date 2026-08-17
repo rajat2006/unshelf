@@ -1,5 +1,6 @@
 import type { SourceInspectionResponse, UserId } from "@unshelf/shared";
 import { classifySource, type SourceClassification } from "./classifier";
+import type { YouTubeTitleInspector } from "./youtube-title-inspector";
 
 export interface InspectSourceInput {
   readonly source: string;
@@ -17,11 +18,13 @@ export interface SourceInspectionService {
 
 interface SourceInspectionServiceOptions {
   readonly disabled?: boolean;
+  readonly youtubeTitlesDisabled?: boolean;
   readonly classify?: (source: string) => SourceClassification;
   readonly inspectGeneric?: (input: {
     readonly source: string;
     readonly signal: AbortSignal;
   }) => Promise<SourceInspectionResponse>;
+  readonly inspectYouTubeTitle?: YouTubeTitleInspector;
 }
 
 const SOURCE_BYTE_LIMIT = 8 * 1024;
@@ -33,8 +36,10 @@ const unavailable: SourceInspectionServiceResult = {
 /** Stateless orchestration boundary for ephemeral Capture suggestions. */
 export function createSourceInspectionService({
   disabled = false,
+  youtubeTitlesDisabled = false,
   classify = classifySource,
   inspectGeneric = () => Promise.resolve({ status: "unavailable" }),
+  inspectYouTubeTitle = () => Promise.resolve(null),
 }: SourceInspectionServiceOptions = {}): SourceInspectionService {
   return {
     inspect: async (input) => {
@@ -60,14 +65,31 @@ export function createSourceInspectionService({
         if (classification.classification === "unsupported_youtube") {
           return unavailable;
         }
-        return {
-          ok: true,
-          response: {
-            status: "suggested",
-            type: classification.type,
-            typeEvidence: "youtube_route",
-          },
+        let title: string | null = null;
+        if (!youtubeTitlesDisabled && "canonicalSource" in classification) {
+          try {
+            title = await inspectYouTubeTitle({
+              canonicalSource: classification.canonicalSource,
+              signal: input.signal,
+            });
+          } catch {
+            // Title acquisition is optional; local route Type remains useful.
+          }
+        }
+        const typeSuggestion = {
+          status: "suggested" as const,
+          type: classification.type,
+          typeEvidence: "youtube_route" as const,
         };
+        const response: SourceInspectionResponse =
+          title === null
+            ? typeSuggestion
+            : {
+                ...typeSuggestion,
+                title,
+                titleEvidence: "youtube_oembed",
+              };
+        return { ok: true, response };
       } catch {
         return {
           ok: false,

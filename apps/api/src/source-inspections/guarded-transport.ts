@@ -15,6 +15,7 @@ export interface GuardedPublicTransport {
   get(input: {
     readonly source: string;
     readonly headers: Readonly<Record<string, string>>;
+    readonly redirectPolicy?: "follow" | "refuse";
     readonly signal: AbortSignal;
   }): Promise<GuardedTransportResult>;
 }
@@ -73,7 +74,7 @@ export function createGuardedPublicTransport({
   readonly clock?: InspectionClock;
 }): GuardedPublicTransport {
   return {
-    get: async ({ source, headers, signal }) => {
+    get: async ({ source, headers, redirectPolicy = "follow", signal }) => {
       const deadline = createDeadline({ parentSignal: signal, clock });
       const unavailable = (): GuardedTransportResult => {
         deadline.dispose();
@@ -107,6 +108,7 @@ export function createGuardedPublicTransport({
             };
           }
           response.cancel();
+          if (redirectPolicy === "refuse") return unavailable();
           if (redirectCount === 5) return unavailable();
 
           const redirected = parseEligibleUrl(new URL(location, url).href);

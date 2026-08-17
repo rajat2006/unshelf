@@ -11,6 +11,7 @@ import {
   createNodeHostResolver,
 } from "./source-inspections/node-network";
 import { createSourceInspectionService } from "./source-inspections/service";
+import { createYouTubeTitleInspector } from "./source-inspections/youtube-title-inspector";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;
@@ -83,7 +84,12 @@ await superviseApiProcess({
       diagnosticSecrets,
       sourceInspectionService: createSourceInspectionService({
         disabled: process.env.SOURCE_INSPECTION_DISABLED === "true",
+        youtubeTitlesDisabled:
+          process.env.SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED === "true",
         inspectGeneric: createGenericSourceInspector({
+          transport: publicTransport,
+        }),
+        inspectYouTubeTitle: createYouTubeTitleInspector({
           transport: publicTransport,
         }),
       }),

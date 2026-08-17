@@ -83,6 +83,13 @@ describe("POST /api/source-inspections", () => {
   it.each([
     {
       status: "suggested" as const,
+      title: "A canonical YouTube title",
+      titleEvidence: "youtube_oembed" as const,
+      type: Type.Video,
+      typeEvidence: "youtube_route" as const,
+    },
+    {
+      status: "suggested" as const,
       type: Type.Video,
       typeEvidence: "youtube_route" as const,
     },

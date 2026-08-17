@@ -170,6 +170,37 @@ describe("Guarded public transport", () => {
     expect(redirectCancel).toHaveBeenCalledOnce();
   });
 
+  it("refuses a redirect when the caller requires a fixed origin", async () => {
+    const resolve: HostResolver["resolve"] = () =>
+      Promise.resolve({
+        aliases: [],
+        addresses: [{ address: "142.250.72.14", family: 4 }],
+      });
+    const cancel = vi.fn();
+    const request = vi.fn<ConnectionTransport["request"]>(() =>
+      Promise.resolve({
+        status: 302,
+        headers: { location: "https://example.com/not-youtube" },
+        body: emptyBody(),
+        cancel,
+      }),
+    );
+
+    await expect(
+      createGuardedPublicTransport({
+        resolver: { resolve },
+        connection: { request },
+      }).get({
+        source: "https://www.youtube.com/oembed?format=json",
+        headers: { accept: "application/json" },
+        redirectPolicy: "refuse",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({ ok: false });
+    expect(request).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it.each([
     {
       caseName: "HTTPS downgrade",

@@ -25,6 +25,7 @@ describe("Source classifier", () => {
     expect(classifySource(source)).toEqual({
       classification: "youtube",
       type: Type.Video,
+      canonicalSource: "https://www.youtube.com/watch?v=M7lc1UVf-VE",
     });
   });
 
@@ -43,6 +44,8 @@ describe("Source classifier", () => {
     expect(classifySource(source)).toEqual({
       classification: "youtube",
       type: Type.Playlist,
+      canonicalSource:
+        "https://www.youtube.com/playlist?list=PL590L5WQmH8fJ54F369BLDSqIwcs-TCfs",
     });
   });
 
