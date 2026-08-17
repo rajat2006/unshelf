@@ -1,4 +1,8 @@
-import { DigestFailure } from "./failures.js";
+import {
+  AIPresentationFailure,
+  DigestFailure,
+  type AIPresentationFailureReason,
+} from "./failures.js";
 
 export type DiscordPayload = {
   allowed_mentions: { parse: [] };
@@ -215,12 +219,19 @@ const releaseLabels = new Set([
 const aiSchemaVersion = "1" as const;
 const maintenanceOverflowUrl = `${digestRepository.webUrl}/issues?q=sort%3Aupdated-desc`;
 
+type AIPresentationOutcome =
+  | { aiPresentation: "applied" }
+  | {
+      aiPresentation: "failed";
+      aiFailureReason: AIPresentationFailureReason;
+    }
+  | { aiPresentation: "skipped" };
+
 type DigestRunResult<Mode extends "preview" | "deliver"> = {
   mode: Mode;
   windowEnd: string;
   payload: DiscordPayload;
-  aiPresentation: "applied" | "failed" | "skipped";
-};
+} & AIPresentationOutcome;
 
 export function runDailyProjectDigest(
   input: { mode: "preview" },
@@ -267,12 +278,13 @@ export async function runDailyProjectDigest(
       ),
     ].filter((subject) => subject !== undefined),
   ).sort((...subjects) => compareSubjects(subjects));
-  const presentation = await presentSubjects({
-    subjects,
-    openai: adapters.openai,
-  });
+  const { subjects: presentedSubjects, ...aiPresentationOutcome } =
+    await presentSubjects({
+      subjects,
+      openai: adapters.openai,
+    });
   const payload = renderPayload({
-    subjects: presentation.subjects,
+    subjects: presentedSubjects,
     windowEnd,
   });
   preflightDiscordPayload(payload);
@@ -298,7 +310,7 @@ export async function runDailyProjectDigest(
     mode: input.mode,
     windowEnd: windowEnd.toISOString(),
     payload,
-    aiPresentation: presentation.aiPresentation,
+    ...aiPresentationOutcome,
   };
 }
 
@@ -308,10 +320,7 @@ async function presentSubjects({
 }: {
   subjects: DigestSubject[];
   openai: OpenAIAdapterBoundary;
-}): Promise<{
-  subjects: PresentedSubject[];
-  aiPresentation: "applied" | "failed" | "skipped";
-}> {
+}): Promise<{ subjects: PresentedSubject[] } & AIPresentationOutcome> {
   const fallback = subjects.map((subject) => ({
     ...subject,
     audienceGroup: "standard" as const,
@@ -320,14 +329,30 @@ async function presentSubjects({
     return { subjects: fallback, aiPresentation: "skipped" };
   }
   const input = toOpenAIInput(subjects);
+  let response: unknown;
   try {
-    const response = await openai.generatePresentation(input);
+    response = await openai.generatePresentation(input);
+  } catch (error) {
+    return {
+      subjects: fallback,
+      aiPresentation: "failed",
+      aiFailureReason:
+        error instanceof AIPresentationFailure
+          ? error.reason
+          : "request-failure",
+    };
+  }
+  try {
     return {
       subjects: applyOpenAIPresentation({ subjects, input, response }),
       aiPresentation: "applied",
     };
   } catch {
-    return { subjects: fallback, aiPresentation: "failed" };
+    return {
+      subjects: fallback,
+      aiPresentation: "failed",
+      aiFailureReason: "contract-validation",
+    };
   }
 }
 
@@ -681,6 +706,9 @@ function isWayfinderArtifactPullRequest({
   pullRequest: PullRequestEvidence;
   wayfinderMapNumbers: Set<number>;
 }): boolean {
+  if (pullRequest.labels.includes("wayfinder:artifact")) {
+    return true;
+  }
   const match =
     /^wayfinder\/map-(\d+)-(?:decision-documents|research-and-prototypes)$/.exec(
       pullRequest.headRefName,

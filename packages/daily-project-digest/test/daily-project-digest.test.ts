@@ -1,11 +1,15 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createDiscordWebhookAdapter,
+  createGitHubActionsPreviewAdapters,
   runDailyProjectDigest,
   type DeliveryAdapters,
   type DiscordPayload,
-  type PreviewAdapters,
 } from "../src/index.js";
 
 afterEach(() => {
@@ -328,6 +332,20 @@ describe("Daily Project Digest", () => {
               headRefName: "wayfinder/map-100-decision-documents",
               headRepository: "contributor/unshelf",
               labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "OPEN",
+              mergedAt: null,
+              number: 131,
+              title: "Document a child decision for the deployment map",
+              baseRefName: "dev",
+              headRefName: "docs/legacy-wayfinder-child-decision",
+              headRepository: "rajat2006/unshelf",
+              labels: ["wayfinder:artifact"],
               isDraft: false,
               headContainsMain: false,
               blockedBy: [],
@@ -869,6 +887,10 @@ describe("Daily Project Digest", () => {
 
     expect(openai).toHaveBeenCalledOnce();
     expect(result.aiPresentation).toBe("failed");
+    if (result.aiPresentation !== "failed") {
+      throw new Error("Expected the AI presentation to fail validation.");
+    }
+    expect(result.aiFailureReason).toBe("contract-validation");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
         name: "Completed — Merged and ready for a release",
@@ -885,38 +907,144 @@ describe("Daily Project Digest", () => {
   });
 
   it("previews the exact payload without invoking Discord", async () => {
-    const deliver = vi.fn(() => Promise.reject(new Error("must not deliver")));
-    const discord = {
-      availability: "unavailable" as const,
-      deliver,
-    };
-    let summarizedPayload: DiscordPayload | undefined;
-    const adapters: PreviewAdapters = {
-      clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
-      github: {
-        listPullRequests: () => Promise.resolve([]),
-        listDeployments: () => Promise.resolve([]),
-        listWayfinderMaps: () => Promise.resolve([]),
-      },
-      summary: {
-        writePreview: (payload) => {
-          summarizedPayload = payload;
-          return Promise.resolve();
-        },
-      },
-      openai: { availability: "unavailable" },
-      discord,
-    };
-
-    const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
-
-    expect(result.payload).toEqual({
-      allowed_mentions: { parse: [] },
-      content:
-        "🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.\nDigest 20260817T173000000Z",
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-17T17:30:00.000Z"));
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), "daily-project-digest-preview-"),
+    );
+    const summaryPath = join(temporaryDirectory, "summary.md");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (url.endsWith("/graphql")) {
+          if (typeof init?.body !== "string") {
+            throw new Error("Expected a serialized GitHub GraphQL request.");
+          }
+          const request = JSON.parse(init.body) as {
+            query?: unknown;
+          };
+          const query = String(request.query);
+          const pageSize = Number(
+            query.match(/pullRequests\(states: OPEN, first: (\d+)/)?.[1],
+          );
+          const possibleNodesPerPullRequest = 10_201;
+          if (pageSize * possibleNodesPerPullRequest > 500_000) {
+            return Promise.resolve(
+              Response.json({
+                errors: [
+                  {
+                    type: "MAX_NODE_LIMIT_EXCEEDED",
+                    message: "Query exceeds GitHub's maximum node limit.",
+                  },
+                ],
+              }),
+            );
+          }
+          return Promise.resolve(
+            Response.json({
+              data: {
+                repository: {
+                  ref: { target: { oid: "a".repeat(40) } },
+                  pullRequests: {
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                    nodes: [
+                      {
+                        number: 202,
+                        title: "Improve the learning plan overview",
+                        baseRefName: "dev",
+                        headRefName: "agent/learning-plan-overview",
+                        headRefOid: "b".repeat(40),
+                        headRepository: { nameWithOwner: "rajat2006/unshelf" },
+                        isDraft: false,
+                        labels: {
+                          pageInfo: { hasNextPage: false },
+                          nodes: [],
+                        },
+                        closingIssuesReferences: {
+                          pageInfo: { hasNextPage: false },
+                          nodes: [],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+          );
+        }
+        if (url.includes("/pulls?state=closed")) {
+          return Promise.resolve(Response.json([]));
+        }
+        if (url.endsWith("/git/ref/heads/main")) {
+          return Promise.resolve(
+            Response.json({ object: { sha: "a".repeat(40) } }),
+          );
+        }
+        if (url.includes("/deployments?environment=production")) {
+          return Promise.resolve(Response.json([]));
+        }
+        if (url.includes("/issues?labels=wayfinder%3Amap")) {
+          return Promise.resolve(Response.json([]));
+        }
+        if (url.includes("/issues/202/dependencies/blocked_by")) {
+          return Promise.resolve(Response.json([]));
+        }
+        if (url === "https://api.openai.com/v1/responses") {
+          return Promise.reject(
+            new DOMException("The operation timed out.", "TimeoutError"),
+          );
+        }
+        throw new Error(`Unexpected GitHub request: ${url}`);
+      }),
+    );
+    const adapters = createGitHubActionsPreviewAdapters({
+      token: "github-token",
+      repository: "rajat2006/unshelf",
+      summaryPath,
+      openaiApiKey: "openai-key",
     });
-    expect(summarizedPayload).toBe(result.payload);
-    expect(result.aiPresentation).toBe("skipped");
-    expect(deliver).not.toHaveBeenCalled();
+
+    try {
+      const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
+
+      expect(result.payload).toEqual({
+        allowed_mentions: { parse: [] },
+        embeds: [
+          {
+            title: "Daily Project Digest",
+            description: "1 effort is moving forward.",
+            color: 5793266,
+            fields: [
+              {
+                name: "In progress — Actively moving forward",
+                value:
+                  "[In progress: Improve the learning plan overview.](https://github.com/rajat2006/unshelf/pull/202)",
+              },
+            ],
+            footer: {
+              text: "Updates are based on authoritative GitHub activity. · Digest 20260817T173000000Z",
+            },
+            timestamp: "2026-08-17T17:30:00.000Z",
+          },
+        ],
+      });
+      expect(await readFile(summaryPath, "utf8")).toContain(
+        JSON.stringify(result.payload, null, 2),
+      );
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to time out.");
+      }
+      expect(result.aiFailureReason).toBe("timeout");
+      expect(adapters.discord).toEqual({ availability: "unavailable" });
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 });

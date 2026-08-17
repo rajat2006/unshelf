@@ -6,6 +6,18 @@ export type DigestFailureCategory =
   | "actions-summary"
   | "orchestration";
 
+export type AIPresentationFailureReason =
+  "timeout" | "request-failure" | "contract-validation";
+
+export class AIPresentationFailure extends Error {
+  readonly reason: AIPresentationFailureReason;
+
+  constructor(reason: AIPresentationFailureReason) {
+    super("Daily Project Digest AI presentation failed safely.");
+    this.reason = reason;
+  }
+}
+
 export class DigestFailure extends Error {
   readonly category: DigestFailureCategory;
 

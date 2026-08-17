@@ -51,6 +51,9 @@ async function main(): Promise<void> {
       mode: result.mode,
       windowEnd: result.windowEnd,
       aiPresentation: result.aiPresentation,
+      ...(result.aiPresentation === "failed"
+        ? { aiFailureReason: result.aiFailureReason }
+        : {}),
     })}\n`,
   );
 }
