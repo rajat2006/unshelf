@@ -629,6 +629,14 @@ const playlistResponseSchema = z.object({
   nextPageToken: z.string().min(1).optional(),
 });
 
+const youtubeDimensionSchema = z.union([
+  z.number().positive(),
+  z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .transform(Number),
+]);
+
 const videoResourceSchema = z.object({
   id: z.string().min(1),
   snippet: z.object({
@@ -647,8 +655,8 @@ const videoResourceSchema = z.object({
   }),
   player: z
     .object({
-      embedWidth: z.number().positive().optional(),
-      embedHeight: z.number().positive().optional(),
+      embedWidth: youtubeDimensionSchema.optional(),
+      embedHeight: youtubeDimensionSchema.optional(),
     })
     .optional(),
   liveStreamingDetails: z.object({}).passthrough().optional(),

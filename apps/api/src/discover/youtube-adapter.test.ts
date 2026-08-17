@@ -211,13 +211,11 @@ describe("YouTube Provider adapter", () => {
   });
 
   it("carries Provider quota timing without retrying or exposing credentials", async () => {
-    const fetch = vi
-      .fn<ProviderFetch>()
-      .mockResolvedValue(
-        response({ error: { errors: [{ reason: "quotaExceeded" }] } }, 403, {
-          "retry-after": "60",
-        }),
-      );
+    const fetch = vi.fn<ProviderFetch>().mockResolvedValue(
+      response({ error: { errors: [{ reason: "quotaExceeded" }] } }, 403, {
+        "retry-after": "60",
+      }),
+    );
 
     const result = await createYouTubeAdapter({
       apiKey: "server-secret",
@@ -490,6 +488,48 @@ describe("YouTube Provider adapter", () => {
       rejectedCount: 0,
     });
     if (!result.ok) throw new Error("expected partial preview");
+    expect(result.videos.map((entry) => entry.providerIdentity)).toEqual([
+      "landscape",
+    ]);
+  });
+
+  it("accepts YouTube string dimensions when classifying a short landscape video", async () => {
+    const publishedAt = "2026-08-15T12:00:00.000Z";
+    const fetch = vi
+      .fn<ProviderFetch>()
+      .mockResolvedValueOnce(response(channel()))
+      .mockResolvedValueOnce(
+        response({
+          items: [playlistItem({ videoId: "landscape", publishedAt })],
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            video({
+              id: "landscape",
+              publishedAt,
+              overrides: {
+                contentDetails: { duration: "PT3M" },
+                player: { embedWidth: "1280", embedHeight: "720" },
+              },
+            }),
+          ],
+        }),
+      );
+
+    const result = await createYouTubeAdapter({
+      apiKey: "server-secret",
+      fetch,
+      now: () => now,
+    }).previewChannel({ url: "https://youtube.com/@quietlearning" });
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: "preview",
+      rejectedCount: 0,
+    });
+    if (!result.ok) throw new Error("expected preview");
     expect(result.videos.map((entry) => entry.providerIdentity)).toEqual([
       "landscape",
     ]);
