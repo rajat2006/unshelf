@@ -17,6 +17,7 @@ const schemaArticleTypes = new Set([
   "medicalscholarlyarticle",
   "newsarticle",
   "opinionnewsarticle",
+  "report",
   "reportagenewsarticle",
   "reviewnewsarticle",
   "satiricalarticle",
@@ -39,10 +40,23 @@ interface MetadataCandidates {
   readonly openGraphTypes: readonly string[];
 }
 
-interface ResolvedTypeEvidence {
-  readonly type: Type | null;
-  readonly conflictingTypes: boolean;
+interface SchemaEntity {
+  readonly types: readonly Type[];
+  readonly title: string | null;
 }
+
+type TypeResolution =
+  | { readonly status: "none" }
+  | { readonly status: "resolved"; readonly type: Type }
+  | { readonly status: "conflicting" };
+
+type SuggestedType =
+  | { readonly status: "none" }
+  | {
+      readonly status: "suggested";
+      readonly type: Type;
+      readonly evidence: "schema_org" | "open_graph";
+    };
 
 export function resolveGenericMetadata({
   documentTitle,
@@ -51,90 +65,126 @@ export function resolveGenericMetadata({
   openGraphTypes,
 }: MetadataCandidates): SourceInspectionResponse | null {
   const schema = resolveSchemaOrg(jsonLdBlocks);
-  const openGraph = resolveOpenGraphType(openGraphTypes);
-  const type =
-    schema.conflictingTypes ||
-    openGraph.conflictingTypes ||
-    (schema.type !== null &&
-      openGraph.type !== null &&
-      schema.type !== openGraph.type)
-      ? null
-      : (schema.type ?? openGraph.type);
+  const openGraphType = resolveOpenGraphType(openGraphTypes);
+  const suggestedType = mergeTypeEvidence({
+    schema: schema.type,
+    openGraph: openGraphType,
+  });
 
   const openGraphTitle = firstNormalized(openGraphTitles);
-  const normalizedDocumentTitle = normalizeSuggestion(documentTitle);
-  const title = schema.title ?? openGraphTitle ?? normalizedDocumentTitle;
+  const title =
+    schema.title ??
+    openGraphTitle ??
+    normalizeSuggestion(documentTitle);
   const titleEvidence =
     schema.title !== null
       ? "schema_org"
       : openGraphTitle !== null
         ? "open_graph"
         : "document_title";
-  const typeEvidence = schema.type === null ? "open_graph" : "schema_org";
 
-  return buildSuggestion({ title, titleEvidence, type, typeEvidence });
+  return buildSuggestion({ title, titleEvidence, suggestedType });
 }
 
-function resolveOpenGraphType(values: readonly string[]): ResolvedTypeEvidence {
-  const types = new Set<Type>();
-  for (const value of values) {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === "article") types.add(Type.Article);
-    if (normalized === "book") types.add(Type.Book);
-    if (openGraphVideoTypes.has(normalized)) types.add(Type.Video);
+function resolveOpenGraphType(values: readonly string[]): TypeResolution {
+  const normalized = values[0]?.trim().toLowerCase();
+  if (normalized === "article") {
+    return { status: "resolved", type: Type.Article };
   }
-  return resolvedTypeEvidence(types);
+  if (normalized === "book") return { status: "resolved", type: Type.Book };
+  if (normalized !== undefined && openGraphVideoTypes.has(normalized)) {
+    return { status: "resolved", type: Type.Video };
+  }
+  return { status: "none" };
+}
+
+function mergeTypeEvidence({
+  schema,
+  openGraph,
+}: {
+  readonly schema: TypeResolution;
+  readonly openGraph: TypeResolution;
+}): SuggestedType {
+  if (schema.status === "conflicting" || openGraph.status === "conflicting") {
+    return { status: "none" };
+  }
+  if (
+    schema.status === "resolved" &&
+    openGraph.status === "resolved" &&
+    schema.type !== openGraph.type
+  ) {
+    return { status: "none" };
+  }
+  if (schema.status === "resolved") {
+    return { status: "suggested", type: schema.type, evidence: "schema_org" };
+  }
+  if (openGraph.status === "resolved") {
+    return {
+      status: "suggested",
+      type: openGraph.type,
+      evidence: "open_graph",
+    };
+  }
+  return { status: "none" };
 }
 
 function buildSuggestion({
   title,
   titleEvidence,
-  type,
-  typeEvidence,
+  suggestedType,
 }: {
   readonly title: string | null;
   readonly titleEvidence: "schema_org" | "open_graph" | "document_title";
-  readonly type: Type | null;
-  readonly typeEvidence: "schema_org" | "open_graph";
+  readonly suggestedType: SuggestedType;
 }): SourceInspectionResponse | null {
   if (title === null) {
-    return type === null ? null : { status: "suggested", type, typeEvidence };
+    return suggestedType.status === "none"
+      ? null
+      : {
+          status: "suggested",
+          type: suggestedType.type,
+          typeEvidence: suggestedType.evidence,
+        };
   }
-  if (type === null) return { status: "suggested", title, titleEvidence };
-  return { status: "suggested", title, titleEvidence, type, typeEvidence };
+  if (suggestedType.status === "none") {
+    return { status: "suggested", title, titleEvidence };
+  }
+  return {
+    status: "suggested",
+    title,
+    titleEvidence,
+    type: suggestedType.type,
+    typeEvidence: suggestedType.evidence,
+  };
 }
 
 function resolveSchemaOrg(sources: readonly string[]): {
   readonly title: string | null;
-  readonly type: Type | null;
-  readonly conflictingTypes: boolean;
+  readonly type: TypeResolution;
 } {
-  const entities: Array<{
-    readonly types: readonly Type[];
-    readonly title: string | null;
-  }> = [];
+  const entities: SchemaEntity[] = [];
   let visitedNodes = 0;
 
   for (const source of sources) {
     const parsed = parseJson(source);
     if (!parsed.ok) continue;
-    const { value } = parsed;
-    const validation = validateJsonLd({
-      value,
+    const scan = scanJsonLd({
+      value: parsed.value,
       remainingNodes: JSON_LD_NODE_LIMIT - visitedNodes,
     });
-    visitedNodes += validation.visitedNodes;
-    if (!validation.valid) {
+    visitedNodes += scan.visitedNodes;
+    if (!scan.valid) {
       if (visitedNodes >= JSON_LD_NODE_LIMIT) break;
       continue;
     }
-    entities.push(...findPrimaryEntities(value));
+    entities.push(...scan.primaryEntities);
   }
 
-  const types = new Set(entities.flatMap((entity) => entity.types));
   return {
     title: entities.length === 1 ? (entities[0]?.title ?? null) : null,
-    ...resolvedTypeEvidence(types),
+    type: resolveTypes(
+      new Set(entities.flatMap((entity) => entity.types)),
+    ),
   };
 }
 
@@ -149,78 +199,130 @@ function parseJson(
   }
 }
 
-function validateJsonLd({
+type JsonLdContext = "root" | "graph" | "main_entity" | "other";
+
+function scanJsonLd({
   value,
   remainingNodes,
 }: {
   readonly value: unknown;
   readonly remainingNodes: number;
-}): { readonly valid: boolean; readonly visitedNodes: number } {
-  const pending: Array<{ readonly value: unknown; readonly depth: number }> = [
-    { value, depth: 1 },
-  ];
+}): {
+  readonly valid: boolean;
+  readonly visitedNodes: number;
+  readonly primaryEntities: readonly SchemaEntity[];
+} {
+  const pending: Array<{
+    readonly value: unknown;
+    readonly depth: number;
+    readonly context: JsonLdContext;
+  }> = [{ value, depth: 1, context: "root" }];
+  const recognized = new Map<Record<string, unknown>, SchemaEntity>();
+  const recognizedIds = new Map<string, Record<string, unknown>>();
+  const primaryObjects = new Set<Record<string, unknown>>();
+  const mainEntityReferences = new Set<string>();
   let visitedNodes = 0;
-  let valid = true;
 
   while (pending.length > 0) {
     const current = pending.pop();
     if (current === undefined) break;
     if (visitedNodes >= remainingNodes) {
-      return { valid: false, visitedNodes };
+      return { valid: false, visitedNodes, primaryEntities: [] };
     }
     visitedNodes += 1;
-    if (current.depth > JSON_LD_DEPTH_LIMIT) valid = false;
-    for (const child of jsonChildren(current.value)) {
-      pending.push({ value: child, depth: current.depth + 1 });
+    if (current.depth > JSON_LD_DEPTH_LIMIT) {
+      return { valid: false, visitedNodes, primaryEntities: [] };
     }
-  }
-  return { valid, visitedNodes };
-}
 
-function findPrimaryEntities(value: unknown): Array<{
-  readonly types: readonly Type[];
-  readonly title: string | null;
-}> {
-  const entities: Array<{
-    readonly types: readonly Type[];
-    readonly title: string | null;
-  }> = [];
-  const pending: unknown[] = [value];
-
-  while (pending.length > 0) {
-    const current = pending.shift();
-    if (isJsonArray(current)) {
-      pending.push(...current);
+    if (typeof current.value === "string") {
+      if (current.context === "main_entity") {
+        mainEntityReferences.add(current.value);
+      }
       continue;
     }
-    if (!isJsonObject(current)) continue;
-    const types = schemaTypes(current["@type"]);
-    if (types.length > 0) {
-      entities.push({
-        types,
-        title:
-          normalizeSuggestion(
-            typeof current.headline === "string" ? current.headline : "",
-          ) ??
-          normalizeSuggestion(
-            typeof current.name === "string" ? current.name : "",
-          ),
-      });
+    if (isJsonArray(current.value)) {
+      if (
+        pending.length + current.value.length >
+        remainingNodes - visitedNodes
+      ) {
+        return {
+          valid: false,
+          visitedNodes: remainingNodes,
+          primaryEntities: [],
+        };
+      }
+      for (const child of current.value) {
+        pending.push({ ...current, value: child, depth: current.depth + 1 });
+      }
       continue;
     }
-    const graph = current["@graph"];
-    if (isJsonObject(graph) || isJsonArray(graph)) pending.push(graph);
-    const mainEntity = current.mainEntity;
-    if (isJsonObject(mainEntity) || isJsonArray(mainEntity)) {
-      pending.push(mainEntity);
+    if (!isJsonObject(current.value)) continue;
+
+    const entity = schemaEntity(current.value);
+    if (entity !== null) {
+      recognized.set(current.value, entity);
+      const id = current.value["@id"];
+      if (typeof id === "string") recognizedIds.set(id, current.value);
+      if (
+        current.context === "root" ||
+        current.context === "main_entity" ||
+        (current.context === "graph" &&
+          current.value.mainEntityOfPage !== undefined)
+      ) {
+        primaryObjects.add(current.value);
+      }
+    }
+    if (current.context === "main_entity") {
+      const id = current.value["@id"];
+      if (typeof id === "string") mainEntityReferences.add(id);
+    }
+
+    const properties = Object.entries(current.value);
+    if (
+      pending.length + properties.length >
+      remainingNodes - visitedNodes
+    ) {
+      return {
+        valid: false,
+        visitedNodes: remainingNodes,
+        primaryEntities: [],
+      };
+    }
+    for (const [property, child] of properties) {
+      const context: JsonLdContext =
+        property === "@graph"
+          ? "graph"
+          : property === "mainEntity"
+            ? "main_entity"
+            : "other";
+      pending.push({ value: child, depth: current.depth + 1, context });
     }
   }
-  return entities;
+
+  for (const reference of mainEntityReferences) {
+    const referenced = recognizedIds.get(reference);
+    if (referenced !== undefined) primaryObjects.add(referenced);
+  }
+  return {
+    valid: true,
+    visitedNodes,
+    primaryEntities: [...primaryObjects]
+      .map((object) => recognized.get(object))
+      .filter((entity): entity is SchemaEntity => entity !== undefined),
+  };
 }
 
-function jsonChildren(value: unknown): readonly unknown[] {
-  if (isJsonArray(value)) return value;
-  return isJsonObject(value) ? Object.values(value) : [];
+function schemaEntity(value: Record<string, unknown>): SchemaEntity | null {
+  const types = schemaTypes(value["@type"]);
+  if (types.length === 0) return null;
+  return {
+    types,
+    title:
+      normalizeSuggestion(
+        typeof value.headline === "string" ? value.headline : "",
+      ) ??
+      normalizeSuggestion(typeof value.name === "string" ? value.name : ""),
+  };
 }
 
 function schemaTypes(value: unknown): readonly Type[] {
@@ -238,11 +340,13 @@ function schemaTypes(value: unknown): readonly Type[] {
   return [...types];
 }
 
-function resolvedTypeEvidence(types: ReadonlySet<Type>): ResolvedTypeEvidence {
-  return {
-    type: types.size === 1 ? ([...types][0] ?? null) : null,
-    conflictingTypes: types.size > 1,
-  };
+function resolveTypes(types: ReadonlySet<Type>): TypeResolution {
+  if (types.size === 0) return { status: "none" };
+  if (types.size > 1) return { status: "conflicting" };
+  const type = [...types][0];
+  return type === undefined
+    ? { status: "none" }
+    : { status: "resolved", type };
 }
 
 function firstNormalized(values: readonly string[]): string | null {

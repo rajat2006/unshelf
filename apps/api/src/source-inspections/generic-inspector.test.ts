@@ -131,7 +131,7 @@ describe("Generic Source inspector", () => {
             `<head><script TYPE="Application/LD+JSON; charset=utf-8">
               [{"@type":"WebSite","name":"Publisher chrome"},{"@graph":[
                 {"@type":"BreadcrumbList","name":"Breadcrumbs"},
-                {"@type":["LearningResource","Course"],"name":" Practical TypeScript "}
+                {"@type":["LearningResource","Course"],"name":" Practical TypeScript ","mainEntityOfPage":{"@id":"page"}}
               ]}]
             </script></head>`,
           ]),
@@ -196,8 +196,8 @@ describe("Generic Source inspector", () => {
           body: chunks([
             `<head>
               <script type="application/ld+json">{"@graph":[
-                {"@type":"NewsArticle","headline":"Article candidate"},
-                {"@type":"Book","name":"Book candidate"}
+                {"@type":"NewsArticle","headline":"Article candidate","mainEntityOfPage":{"@id":"#page"}},
+                {"@type":"Book","name":"Book candidate","mainEntityOfPage":{"@id":"#page"}}
               ]}</script>
               <meta property="og:title" content="Publisher fallback">
               <meta property="og:type" content="article">
@@ -283,6 +283,69 @@ describe("Generic Source inspector", () => {
       titleEvidence: "schema_org",
       type: "article",
       typeEvidence: "schema_org",
+    });
+  });
+
+  it("resolves a local mainEntity reference without promoting other graph nodes", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            `<head><script type="application/ld+json">{"@graph":[
+              {"@id":"#page","@type":"WebPage","mainEntity":{"@id":"#article"}},
+              {"@id":"#article","@type":"Report","headline":"Primary report","mainEntityOfPage":{"@id":"#page"}},
+              {"@id":"#trailer","@type":"VideoObject","name":"Embedded trailer"}
+            ]}</script></head>`,
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/local-reference",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      status: "suggested",
+      title: "Primary report",
+      titleEvidence: "schema_org",
+      type: "article",
+      typeEvidence: "schema_org",
+    });
+  });
+
+  it("does not promote an arbitrary recognized graph node to primary evidence", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            `<head><script type="application/ld+json">{"@graph":[
+              {"@type":"WebPage"},
+              {"@type":"VideoObject","name":"Unrelated trailer"}
+            ]}</script><title>Page title</title></head>`,
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/arbitrary-graph-node",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      status: "suggested",
+      title: "Page title",
+      titleEvidence: "document_title",
     });
   });
 
@@ -439,6 +502,39 @@ describe("Generic Source inspector", () => {
       status: "suggested",
       title: "Title only",
       titleEvidence: "document_title",
+    });
+  });
+
+  it("uses the first Open Graph Type in document order", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            `<head>
+              <meta property="og:type" content="article">
+              <meta property="og:type" content="book">
+              <title>First type wins</title>
+            </head>`,
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/open-graph-order",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      status: "suggested",
+      title: "First type wins",
+      titleEvidence: "document_title",
+      type: "article",
+      typeEvidence: "open_graph",
     });
   });
 

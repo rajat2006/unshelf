@@ -137,14 +137,7 @@ async function readMetadataSuggestions({
   let titleStarted = false;
   let headClosed = false;
   let title = "";
-  const schemaOrgBlocks: string[] = [];
-  let schemaOrg = "";
-  let schemaOrgBytes = 0;
-  let schemaOrgBlockBytes = 0;
-  let schemaOrgBlocksSeen = 0;
-  let schemaOrgBudgetExhausted = false;
-  let schemaOrgOverflow = false;
-  let inSchemaOrg = false;
+  const jsonLd = createBoundedJsonLdCollector();
   const openGraphTitles: string[] = [];
   const openGraphTypes: string[] = [];
   const parser = new Parser(
@@ -163,13 +156,7 @@ async function readMetadataSuggestions({
           attributes.type?.split(";", 1)[0]?.trim().toLowerCase() ===
             "application/ld+json"
         ) {
-          inSchemaOrg = true;
-          schemaOrg = "";
-          schemaOrgBlockBytes = 0;
-          schemaOrgBlocksSeen += 1;
-          schemaOrgOverflow =
-            schemaOrgBudgetExhausted ||
-            schemaOrgBlocksSeen > JSON_LD_BLOCK_LIMIT;
+          jsonLd.startBlock();
         }
         if (name === "meta") {
           const property = attributes.property?.trim().toLowerCase();
@@ -183,31 +170,11 @@ async function readMetadataSuggestions({
       },
       ontext: (text) => {
         if (inTitle) title += text;
-        if (inSchemaOrg && !schemaOrgOverflow) {
-          const textBytes = new TextEncoder().encode(text).byteLength;
-          if (
-            schemaOrgBytes + schemaOrgBlockBytes + textBytes <=
-            JSON_LD_BYTE_LIMIT
-          ) {
-            schemaOrg += text;
-            schemaOrgBlockBytes += textBytes;
-          } else {
-            schemaOrg = "";
-            schemaOrgBudgetExhausted = true;
-            schemaOrgOverflow = true;
-          }
-        }
+        jsonLd.append(text);
       },
       onclosetag: (name) => {
         if (name === "title") inTitle = false;
-        if (name === "script" && inSchemaOrg) {
-          if (!schemaOrgOverflow) {
-            schemaOrgBlocks.push(schemaOrg);
-            schemaOrgBytes += schemaOrgBlockBytes;
-          }
-          schemaOrg = "";
-          inSchemaOrg = false;
-        }
+        if (name === "script") jsonLd.finishBlock();
         if (name === "head") {
           headClosed = true;
           parser.pause();
@@ -253,10 +220,56 @@ async function readMetadataSuggestions({
 
   return resolveGenericMetadata({
     documentTitle: title,
-    jsonLdBlocks: schemaOrgBlocks,
+    jsonLdBlocks: jsonLd.values(),
     openGraphTitles,
     openGraphTypes,
   });
+}
+
+function createBoundedJsonLdCollector(): {
+  readonly startBlock: () => void;
+  readonly append: (text: string) => void;
+  readonly finishBlock: () => void;
+  readonly values: () => readonly string[];
+} {
+  const blocks: string[] = [];
+  const encoder = new TextEncoder();
+  let block = "";
+  let blockBytes = 0;
+  let blocksSeen = 0;
+  let collectedBytes = 0;
+  let collecting = false;
+  let budgetExhausted = false;
+
+  return {
+    startBlock: () => {
+      block = "";
+      blockBytes = 0;
+      blocksSeen += 1;
+      collecting =
+        !budgetExhausted && blocksSeen <= JSON_LD_BLOCK_LIMIT;
+    },
+    append: (text) => {
+      if (!collecting) return;
+      const textBytes = encoder.encode(text).byteLength;
+      if (collectedBytes + blockBytes + textBytes > JSON_LD_BYTE_LIMIT) {
+        block = "";
+        collecting = false;
+        budgetExhausted = true;
+        return;
+      }
+      block += text;
+      blockBytes += textBytes;
+    },
+    finishBlock: () => {
+      if (!collecting) return;
+      blocks.push(block);
+      collectedBytes += blockBytes;
+      block = "";
+      collecting = false;
+    },
+    values: () => blocks,
+  };
 }
 
 function selectCharacterEncoding({
