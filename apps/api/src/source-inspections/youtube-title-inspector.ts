@@ -1,18 +1,20 @@
-import { Readable } from "node:stream";
 import { TextDecoder } from "node:util";
-import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { CanonicalYouTubeSource } from "./classifier";
+import {
+  decodeSourceInspectionContent,
+  normalizeSourceInspectionContentEncoding,
+} from "./content-decoding";
 import type {
   AdmitInspectionDestination,
   GuardedPublicTransport,
   SourceInspectionTransportDiagnostics,
 } from "./guarded-transport";
 import { createInspectionDiagnosticReporter } from "./guarded-transport";
+import { normalizeSuggestionTitle } from "./suggestion-title";
 
 const OEMBED_ENDPOINT = "https://www.youtube.com/oembed";
 export const YOUTUBE_OEMBED_HOSTNAME = "www.youtube.com";
 const JSON_BYTE_LIMIT = 64 * 1024;
-const TITLE_CODE_POINT_LIMIT = 512;
 
 const requestHeaders = {
   accept: "application/json",
@@ -63,7 +65,9 @@ export function createYouTubeTitleInspector({
 
     const { response } = result;
     try {
-      const encoding = normalizedEncoding(response.headers["content-encoding"]);
+      const encoding = normalizeSourceInspectionContentEncoding(
+        response.headers["content-encoding"],
+      );
       if (
         response.status !== 200 ||
         !isJson(response.headers["content-type"]) ||
@@ -74,7 +78,7 @@ export function createYouTubeTitleInspector({
       }
 
       const document = await readBoundedJson({
-        body: decodeBody(response.body, encoding),
+        body: decodeSourceInspectionContent({ body: response.body, encoding }),
         signal,
       });
       if (
@@ -87,13 +91,13 @@ export function createYouTubeTitleInspector({
         return null;
       }
 
-      const normalized = document.title.replace(/\s+/gu, " ").trim();
-      if (normalized.length === 0) {
+      const normalized = normalizeSuggestionTitle(document.title);
+      if (normalized === null) {
         report({ terminalCode: "no_metadata" });
         return null;
       }
       report({ terminalCode: "suggested" });
-      return [...normalized].slice(0, TITLE_CODE_POINT_LIMIT).join("");
+      return normalized;
     } catch (error) {
       if (!diagnostics.hasTerminalCode()) {
         report({
@@ -115,39 +119,6 @@ function isJson(contentType: string | undefined): boolean {
   return (
     contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
   );
-}
-
-type AcceptedEncoding = "identity" | "gzip" | "deflate" | "br";
-
-function normalizedEncoding(
-  contentEncoding: string | undefined,
-): AcceptedEncoding | null {
-  const encoding = contentEncoding?.trim().toLowerCase() || "identity";
-  return encoding === "identity" ||
-    encoding === "gzip" ||
-    encoding === "deflate" ||
-    encoding === "br"
-    ? encoding
-    : null;
-}
-
-async function* decodeBody(
-  body: AsyncIterable<Uint8Array>,
-  encoding: AcceptedEncoding,
-): AsyncIterable<Uint8Array> {
-  if (encoding === "identity") {
-    yield* body;
-    return;
-  }
-
-  const compressed = Readable.from(body);
-  const decompressor =
-    encoding === "gzip"
-      ? createGunzip()
-      : encoding === "deflate"
-        ? createInflate()
-        : createBrotliDecompress();
-  yield* compressed.pipe(decompressor) as AsyncIterable<Uint8Array>;
 }
 
 async function readBoundedJson({

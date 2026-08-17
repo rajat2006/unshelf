@@ -1,4 +1,4 @@
-import { Type } from "@unshelf/shared";
+import { SOURCE_INSPECTION_SOURCE_BYTE_LIMIT, Type } from "@unshelf/shared";
 import { isIP } from "node:net";
 import { classifySource } from "./classifier";
 import type { SourceInspectionTerminalCode } from "./service";
@@ -847,7 +847,8 @@ function isNonSecretPublicSource(source: string): boolean {
     isIP(url.hostname) !== 0 ||
     url.hostname.toLowerCase() === "localhost" ||
     !url.hostname.includes(".") ||
-    new TextEncoder().encode(source).byteLength > 8 * 1024 ||
+    new TextEncoder().encode(source).byteLength >
+      SOURCE_INSPECTION_SOURCE_BYTE_LIMIT ||
     privateHostnameSuffixes.some((suffix) =>
       url.hostname.toLowerCase().endsWith(suffix),
     )

@@ -1,8 +1,10 @@
-import { Readable } from "node:stream";
 import { TextDecoder } from "node:util";
-import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { SourceInspectionResponse } from "@unshelf/shared";
 import { Parser } from "htmlparser2";
+import {
+  decodeSourceInspectionContent,
+  normalizeSourceInspectionContentEncoding,
+} from "./content-decoding";
 import type {
   AdmitInspectionDestination,
   GuardedPublicTransport,
@@ -55,20 +57,23 @@ export function createGenericSourceInspector({
 
     const { response } = result;
     try {
+      const contentEncoding = normalizeSourceInspectionContentEncoding(
+        response.headers["content-encoding"],
+      );
       if (
         response.status !== 200 ||
         !isHtml(response.headers["content-type"]) ||
-        !isAcceptedEncoding(response.headers["content-encoding"])
+        contentEncoding === null
       ) {
         report({ terminalCode: "refused" });
         return { status: "unavailable" };
       }
 
       const suggestion = await readMetadataSuggestions({
-        body: decodeBody(
-          response.body,
-          normalizedEncoding(response.headers["content-encoding"]),
-        ),
+        body: decodeSourceInspectionContent({
+          body: response.body,
+          encoding: contentEncoding,
+        }),
         characterEncoding: declaredCharacterEncoding(
           response.headers["content-type"],
         ),
@@ -109,45 +114,6 @@ function declaredCharacterEncoding(
     );
   const label = match?.[1] ?? match?.[2] ?? match?.[3];
   return label === undefined ? null : normalizeCharacterEncoding(label);
-}
-
-type AcceptedEncoding = "identity" | "gzip" | "deflate" | "br";
-
-function normalizedEncoding(
-  contentEncoding: string | undefined,
-): AcceptedEncoding | null {
-  const encoding = contentEncoding?.trim().toLowerCase() || "identity";
-  return encoding === "identity" ||
-    encoding === "gzip" ||
-    encoding === "deflate" ||
-    encoding === "br"
-    ? encoding
-    : null;
-}
-
-function isAcceptedEncoding(contentEncoding: string | undefined): boolean {
-  return normalizedEncoding(contentEncoding) !== null;
-}
-
-async function* decodeBody(
-  body: AsyncIterable<Uint8Array>,
-  encoding: AcceptedEncoding | null,
-): AsyncIterable<Uint8Array> {
-  if (encoding === null) return;
-  if (encoding === "identity") {
-    yield* body;
-    return;
-  }
-
-  const compressed = Readable.from(body);
-  const decompressor =
-    encoding === "gzip"
-      ? createGunzip()
-      : encoding === "deflate"
-        ? createInflate()
-        : createBrotliDecompress();
-  const decoded = compressed.pipe(decompressor) as AsyncIterable<Uint8Array>;
-  yield* decoded;
 }
 
 async function readMetadataSuggestions({

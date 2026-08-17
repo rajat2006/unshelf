@@ -1,7 +1,10 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
-import { createNodeConnectionTransport } from "./node-network";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createNodeConnectionTransport,
+  createNodeHostResolver,
+} from "./node-network";
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -46,5 +49,33 @@ describe("Node connection transport", () => {
     response.cancel();
 
     expect(receivedHost).toBe(`unresolvable.invalid:${port}`);
+  });
+});
+
+describe("Node host resolver", () => {
+  it("cancels active DNS queries when the inspection is aborted", async () => {
+    const controller = new AbortController();
+    let rejectResolution!: (failure: Error) => void;
+    const resolution = new Promise<string[]>((_resolve, reject) => {
+      rejectResolution = reject;
+    });
+    const cancel = vi.fn(() => rejectResolution(new Error("DNS cancelled")));
+    const resolver = createNodeHostResolver({
+      createResolver: () => ({
+        resolveCname: () => resolution,
+        resolve4: () => resolution,
+        resolve6: () => resolution,
+        cancel,
+      }),
+    });
+
+    const pending = resolver.resolve({
+      hostname: "example.com",
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toThrow("DNS cancelled");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

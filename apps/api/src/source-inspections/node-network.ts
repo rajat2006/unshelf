@@ -12,42 +12,61 @@ import { SourceInspectionTimeoutError } from "./guarded-transport";
 
 const CNAME_LIMIT = 16;
 
-export function createNodeHostResolver(): HostResolver {
+interface NodeDnsResolver {
+  resolveCname(hostname: string): Promise<string[]>;
+  resolve4(hostname: string): Promise<string[]>;
+  resolve6(hostname: string): Promise<string[]>;
+  cancel(): void;
+}
+
+export function createNodeHostResolver({
+  createResolver = () => new dns.Resolver(),
+}: {
+  readonly createResolver?: () => NodeDnsResolver;
+} = {}): HostResolver {
   return {
     resolve: async ({ hostname, signal }) => {
+      signal.throwIfAborted();
+      const resolver = createResolver();
+      const cancelResolution = () => resolver.cancel();
+      signal.addEventListener("abort", cancelResolution, { once: true });
       const pending = [hostname];
       const visited = new Set<string>();
       const aliases: string[] = [];
       const addresses: ResolvedAddress[] = [];
 
-      while (pending.length > 0) {
-        signal.throwIfAborted();
-        const current = pending.shift();
-        if (current === undefined || visited.has(current)) continue;
-        visited.add(current);
-        if (visited.size > CNAME_LIMIT)
-          throw new Error("DNS alias limit exceeded");
+      try {
+        while (pending.length > 0) {
+          signal.throwIfAborted();
+          const current = pending.shift();
+          if (current === undefined || visited.has(current)) continue;
+          visited.add(current);
+          if (visited.size > CNAME_LIMIT)
+            throw new Error("DNS alias limit exceeded");
 
-        const [cnames, ipv4, ipv6] = await Promise.all([
-          resolveRecords(() => dns.resolveCname(current)),
-          resolveRecords(() => dns.resolve4(current)),
-          resolveRecords(() => dns.resolve6(current)),
-        ]);
-        signal.throwIfAborted();
-        for (const alias of cnames) {
-          aliases.push(alias);
-          pending.push(alias);
+          const [cnames, ipv4, ipv6] = await Promise.all([
+            resolveRecords(() => resolver.resolveCname(current)),
+            resolveRecords(() => resolver.resolve4(current)),
+            resolveRecords(() => resolver.resolve6(current)),
+          ]);
+          signal.throwIfAborted();
+          for (const alias of cnames) {
+            aliases.push(alias);
+            pending.push(alias);
+          }
+          addresses.push(
+            ...ipv4.map((address) => ({ address, family: 4 as const })),
+            ...ipv6.map((address) => ({ address, family: 6 as const })),
+          );
         }
-        addresses.push(
-          ...ipv4.map((address) => ({ address, family: 4 as const })),
-          ...ipv6.map((address) => ({ address, family: 6 as const })),
-        );
-      }
 
-      return {
-        aliases: [...new Set(aliases)],
-        addresses: uniqueAddresses(addresses),
-      };
+        return {
+          aliases: [...new Set(aliases)],
+          addresses: uniqueAddresses(addresses),
+        };
+      } finally {
+        signal.removeEventListener("abort", cancelResolution);
+      }
     },
   };
 }

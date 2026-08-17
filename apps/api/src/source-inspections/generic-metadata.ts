@@ -1,6 +1,6 @@
 import { Type, type SourceInspectionResponse } from "@unshelf/shared";
+import { normalizeSuggestionTitle } from "./suggestion-title";
 
-const TITLE_CODE_POINT_LIMIT = 512;
 const JSON_LD_DEPTH_LIMIT = 16;
 const JSON_LD_NODE_LIMIT = 2_000;
 
@@ -73,9 +73,7 @@ export function resolveGenericMetadata({
 
   const openGraphTitle = firstNormalized(openGraphTitles);
   const title =
-    schema.title ??
-    openGraphTitle ??
-    normalizeSuggestion(documentTitle);
+    schema.title ?? openGraphTitle ?? normalizeSuggestionTitle(documentTitle);
   const titleEvidence =
     schema.title !== null
       ? "schema_org"
@@ -182,9 +180,7 @@ function resolveSchemaOrg(sources: readonly string[]): {
 
   return {
     title: entities.length === 1 ? (entities[0]?.title ?? null) : null,
-    type: resolveTypes(
-      new Set(entities.flatMap((entity) => entity.types)),
-    ),
+    type: resolveTypes(new Set(entities.flatMap((entity) => entity.types))),
   };
 }
 
@@ -278,10 +274,7 @@ function scanJsonLd({
     }
 
     const properties = Object.entries(current.value);
-    if (
-      pending.length + properties.length >
-      remainingNodes - visitedNodes
-    ) {
+    if (pending.length + properties.length > remainingNodes - visitedNodes) {
       return {
         valid: false,
         visitedNodes: remainingNodes,
@@ -319,10 +312,12 @@ function schemaEntity(value: Record<string, unknown>): SchemaEntity | null {
   return {
     types,
     title:
-      normalizeSuggestion(
+      normalizeSuggestionTitle(
         typeof value.headline === "string" ? value.headline : "",
       ) ??
-      normalizeSuggestion(typeof value.name === "string" ? value.name : ""),
+      normalizeSuggestionTitle(
+        typeof value.name === "string" ? value.name : "",
+      ),
   };
 }
 
@@ -355,23 +350,15 @@ function resolveTypes(types: ReadonlySet<Type>): TypeResolution {
   if (types.size === 0) return { status: "none" };
   if (types.size > 1) return { status: "conflicting" };
   const type = [...types][0];
-  return type === undefined
-    ? { status: "none" }
-    : { status: "resolved", type };
+  return type === undefined ? { status: "none" } : { status: "resolved", type };
 }
 
 function firstNormalized(values: readonly string[]): string | null {
   for (const value of values) {
-    const normalized = normalizeSuggestion(value);
+    const normalized = normalizeSuggestionTitle(value);
     if (normalized !== null) return normalized;
   }
   return null;
-}
-
-function normalizeSuggestion(value: string): string | null {
-  const normalized = value.replace(/\s+/gu, " ").trim();
-  if (normalized.length === 0) return null;
-  return [...normalized].slice(0, TITLE_CODE_POINT_LIMIT).join("");
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
