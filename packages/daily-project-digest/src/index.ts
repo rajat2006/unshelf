@@ -1,3 +1,5 @@
+import { DigestFailure } from "./failures.js";
+
 export type DiscordPayload = {
   allowed_mentions: { parse: [] };
   content?: string;
@@ -234,7 +236,10 @@ export async function runDailyProjectDigest(
 ): Promise<DigestRunResult<"preview" | "deliver">> {
   const windowEnd = adapters.clock.now();
   if (Number.isNaN(windowEnd.getTime())) {
-    throw new Error("Daily Project Digest received an invalid window end.");
+    throw new DigestFailure({
+      category: "orchestration",
+      message: "Daily Project Digest received an invalid window end.",
+    });
   }
   const window = {
     windowStart: new Date(windowEnd.getTime() - 24 * 60 * 60 * 1_000),
@@ -274,16 +279,18 @@ export async function runDailyProjectDigest(
 
   if (input.mode === "preview") {
     if (!("writePreview" in adapters.summary)) {
-      throw new Error(
-        "Daily Project Digest preview capability is unavailable.",
-      );
+      throw new DigestFailure({
+        category: "actions-summary",
+        message: "Daily Project Digest preview capability is unavailable.",
+      });
     }
     await adapters.summary.writePreview(payload);
   } else {
     if (!("deliver" in adapters.discord)) {
-      throw new Error(
-        "Daily Project Digest delivery capability is unavailable.",
-      );
+      throw new DigestFailure({
+        category: "discord-delivery",
+        message: "Daily Project Digest delivery capability is unavailable.",
+      });
     }
     await adapters.discord.deliver(payload);
   }
@@ -458,7 +465,7 @@ function isSafeAISentence(sentence: string): boolean {
     !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
     !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
     !/@/.test(sentence) &&
-    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e|ed)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
+    !/\b(?:production|live|releas(?:e[ds]?|ing)|complet(?:e[ds]?|ing)|block(?:s|ed|ing)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e[ds]?|ing)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
       sentence,
     ) &&
     !/\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
@@ -840,7 +847,10 @@ function renderSection({
     });
   }
   if (value.length > discordLimits.fieldValue) {
-    throw new Error("Daily Project Digest cannot fit a Discord section.");
+    throw new DigestFailure({
+      category: "discord-preflight",
+      message: "Daily Project Digest cannot fit a Discord section.",
+    });
   }
   return {
     name,
@@ -949,7 +959,10 @@ function preflightDiscordPayload(payload: DiscordPayload): void {
     (payload.content?.length ?? 0) > discordLimits.content ||
     (payload.embeds?.length ?? 0) > discordLimits.embeds
   ) {
-    throw new Error("Daily Project Digest failed Discord preflight.");
+    throw new DigestFailure({
+      category: "discord-preflight",
+      message: "Daily Project Digest failed Discord preflight.",
+    });
   }
   for (const embed of payload.embeds ?? []) {
     const aggregateText =
@@ -972,7 +985,10 @@ function preflightDiscordPayload(payload: DiscordPayload): void {
           field.value.length > discordLimits.fieldValue,
       )
     ) {
-      throw new Error("Daily Project Digest failed Discord preflight.");
+      throw new DigestFailure({
+        category: "discord-preflight",
+        message: "Daily Project Digest failed Discord preflight.",
+      });
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   createGitHubActionsDeliveryAdapters,
   createGitHubActionsPreviewAdapters,
 } from "./github-actions.js";
+import { DigestFailure, digestFailureCategory } from "./failures.js";
 import { runDailyProjectDigest } from "./index.js";
 
 async function main(): Promise<void> {
@@ -16,7 +17,10 @@ async function main(): Promise<void> {
     token === undefined ||
     repository === undefined
   ) {
-    throw new Error("Daily Project Digest configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest configuration is invalid.",
+    });
   }
   const commonInput = {
     token,
@@ -54,36 +58,19 @@ async function main(): Promise<void> {
 function requiredEnvironmentValue(name: string): string {
   const value = process.env[name];
   if (value === undefined || value === "") {
-    throw new Error("Daily Project Digest configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest configuration is invalid.",
+    });
   }
   return value;
-}
-
-function failureCategory(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  if (message.includes("configuration")) {
-    return "configuration";
-  }
-  if (message.startsWith("GitHub ")) {
-    return "github-evidence";
-  }
-  if (message.includes("Discord preflight")) {
-    return "discord-preflight";
-  }
-  if (message.includes("delivery")) {
-    return "discord-delivery";
-  }
-  if (message.includes("summary") || message.includes("preview capability")) {
-    return "actions-summary";
-  }
-  return "orchestration";
 }
 
 try {
   await main();
 } catch (error) {
   process.stderr.write(
-    `Daily Project Digest failed safely (${failureCategory(error)}).\n`,
+    `Daily Project Digest failed safely (${digestFailureCategory(error)}).\n`,
   );
   process.exitCode = 1;
 }

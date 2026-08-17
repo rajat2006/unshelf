@@ -9,6 +9,7 @@ import type {
   WayfinderMapEvidence,
 } from "./index.js";
 import { createDiscordWebhookAdapter } from "./discord.js";
+import { DigestFailure } from "./failures.js";
 import { createOpenAIResponsesAdapter } from "./openai.js";
 import { asRecord, sleep } from "./provider-support.js";
 
@@ -117,7 +118,10 @@ export function createGitHubActionsPreviewAdapters(
   input: GitHubActionsPreviewInput,
 ): PreviewAdapters {
   if (input.summaryPath === "") {
-    throw new Error("Daily Project Digest preview configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest preview configuration is invalid.",
+    });
   }
   return {
     ...createGitHubActionsAdapters(input),
@@ -152,25 +156,37 @@ function createGitHubActionsAdapters(
     extra !== undefined ||
     input.token === ""
   ) {
-    throw new Error("Daily Project Digest configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest configuration is invalid.",
+    });
   }
 
   return {
     clock: { now: () => new Date() },
     github: {
       listPullRequests: ({ windowStart }) =>
-        gatherPullRequests({
-          github: { token: input.token, owner, name },
-          windowStart,
+        gatherGitHubEvidence({
+          gather: () =>
+            gatherPullRequests({
+              github: { token: input.token, owner, name },
+              windowStart,
+            }),
         }),
       listDeployments: (window) =>
-        gatherDeployments({
-          github: { token: input.token, owner, name },
-          window,
+        gatherGitHubEvidence({
+          gather: () =>
+            gatherDeployments({
+              github: { token: input.token, owner, name },
+              window,
+            }),
         }),
       listWayfinderMaps: () =>
-        gatherWayfinderMaps({
-          github: { token: input.token, owner, name },
+        gatherGitHubEvidence({
+          gather: () =>
+            gatherWayfinderMaps({
+              github: { token: input.token, owner, name },
+            }),
         }),
     },
     openai:
@@ -178,6 +194,21 @@ function createGitHubActionsAdapters(
         ? { availability: "unavailable" }
         : createOpenAIResponsesAdapter({ apiKey: input.openaiApiKey }),
   };
+}
+
+async function gatherGitHubEvidence<Value>({
+  gather,
+}: {
+  gather: () => Promise<Value>;
+}): Promise<Value> {
+  try {
+    return await gather();
+  } catch {
+    throw new DigestFailure({
+      category: "github-evidence",
+      message: "GitHub rejected digest evidence gathering.",
+    });
+  }
 }
 
 async function gatherPullRequests({
@@ -360,7 +391,7 @@ async function gatherDeployments({
   ]);
   const deployments: DeploymentWithStatus[] = [];
   for (const deployment of deploymentRecords) {
-    const withStatus = await fetchDeploymentWithLatestStatus({
+    const withStatus = await fetchDeploymentWithAuthoritativeStatus({
       github,
       deployment,
     });
@@ -524,24 +555,44 @@ function parseDeploymentRecord(value: unknown): DeploymentRecord {
   return { id, environment, sha };
 }
 
-async function fetchDeploymentWithLatestStatus({
+async function fetchDeploymentWithAuthoritativeStatus({
   github,
   deployment,
 }: {
   github: GitHubRepositoryContext;
   deployment: DeploymentRecord;
 }): Promise<DeploymentWithStatus | undefined> {
-  const response = await githubJson({
-    token: github.token,
-    path: `/repos/${github.owner}/${github.name}/deployments/${deployment.id}/statuses?per_page=1`,
-  });
-  if (!Array.isArray(response)) {
-    throw new Error("GitHub returned invalid deployment-status evidence.");
+  let latestStatus: DeploymentWithStatus | undefined;
+  let latestSuccess: DeploymentWithStatus | undefined;
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/deployments/${deployment.id}/statuses?per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid deployment-status evidence.");
+    }
+    for (const value of response) {
+      const status = parseDeploymentStatus({ deployment, value });
+      latestStatus ??= status;
+      if (status.status === "success") {
+        latestSuccess ??= status;
+      }
+    }
+    if (response.length < 100) {
+      return latestSuccess ?? latestStatus;
+    }
   }
-  if (response.length === 0) {
-    return undefined;
-  }
-  const status = asRecord(response[0]);
+}
+
+function parseDeploymentStatus({
+  deployment,
+  value,
+}: {
+  deployment: DeploymentRecord;
+  value: unknown;
+}): DeploymentWithStatus {
+  const status = asRecord(value);
   const state = status?.state;
   const statusAt = status?.created_at;
   if (!isDeploymentStatus(state) || typeof statusAt !== "string") {
@@ -1285,7 +1336,10 @@ async function writePreview({
       "utf8",
     );
   } catch {
-    throw new Error("Daily Project Digest Actions summary failed.");
+    throw new DigestFailure({
+      category: "actions-summary",
+      message: "Daily Project Digest Actions summary failed.",
+    });
   }
 }
 

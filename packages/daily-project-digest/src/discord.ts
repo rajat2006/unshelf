@@ -1,3 +1,4 @@
+import { DigestFailure } from "./failures.js";
 import type { DiscordPayload } from "./index.js";
 import { asRecord, sleep } from "./provider-support.js";
 
@@ -102,7 +103,10 @@ function parseWebhookUrl(value: string): URL {
     url.hash = "";
     return url;
   } catch {
-    throw new Error("Daily Project Digest delivery configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest delivery configuration is invalid.",
+    });
   }
 }
 
@@ -155,5 +159,8 @@ function isSnowflake(value: unknown): value is string {
 }
 
 function deliveryFailure(): Error {
-  return new Error("Daily Project Digest delivery failed safely.");
+  return new DigestFailure({
+    category: "discord-delivery",
+    message: "Daily Project Digest delivery failed safely.",
+  });
 }

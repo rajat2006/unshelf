@@ -809,7 +809,8 @@ describe("Daily Project Digest", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence: "Updates what ships, lands, and deploys.",
+            sentence:
+              "Updates what ships, lands, deploys, releases, completes, blocks, and merges.",
             audienceGroup: "standard",
             citations: ["title"],
           },

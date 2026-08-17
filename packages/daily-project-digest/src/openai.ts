@@ -1,3 +1,4 @@
+import { DigestFailure } from "./failures.js";
 import type {
   OpenAIAdapterBoundary,
   OpenAIPresentationInput,
@@ -16,7 +17,10 @@ export function createOpenAIResponsesAdapter({
   timeoutMs?: number;
 }): OpenAIAdapterBoundary {
   if (apiKey === "" || !Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("Daily Project Digest OpenAI configuration is invalid.");
+    throw new DigestFailure({
+      category: "configuration",
+      message: "Daily Project Digest OpenAI configuration is invalid.",
+    });
   }
   return {
     generatePresentation: (input) =>
