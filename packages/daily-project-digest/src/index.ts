@@ -563,12 +563,6 @@ function aiSentenceFailure(
     return "contract-sentence-url";
   if (!/^[^.!?\r\n]+[.!?]$/.test(sentence))
     return "contract-sentence-punctuation";
-  if (
-    !/^(?:Adds|Allows|Brings|Builds|Clarifies|Creates|Enables|Ensures|Establishes|Exposes|Fixes|Groups|Improves|Includes|Keeps|Makes|Maps|Moves|Prevents|Protects|Provides|Provisions|Reduces|Removes|Repairs|Restores|Sets|Shapes|Shows|Simplifies|Supports|Updates)\b/.test(
-      sentence,
-    )
-  )
-    return "contract-sentence-opening";
   if (/(?:\[|\]|[*_`~#><|])/.test(sentence))
     return "contract-sentence-markdown";
   if (/@/.test(sentence)) return "contract-sentence-mention";

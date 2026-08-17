@@ -947,6 +947,34 @@ describe("Daily Project Digest", () => {
     expect(deliveredPayload).toBe(result.payload);
   });
 
+  it("accepts natural AI wording without a prescribed opening verb", async () => {
+    const result = await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI({
+        generatePresentation: () =>
+          Promise.resolve({
+            schemaVersion: "1",
+            items: [
+              {
+                ...validPresentationItem,
+                sentence:
+                  "Gives learners a clearer view of their learning plans.",
+              },
+            ],
+          }),
+      }),
+    );
+
+    expect(result.aiPresentation).toBe("applied");
+    expect(result.payload.embeds?.[0]?.fields).toEqual([
+      {
+        name: "In progress — Actively moving forward",
+        value:
+          "[Gives learners a clearer view of their learning plans.](https://github.com/rajat2006/unshelf/pull/202)",
+      },
+    ]);
+  });
+
   it.each([
     ["contract-envelope", null, undefined],
     [
@@ -1002,14 +1030,6 @@ describe("Daily Project Digest", () => {
       {
         schemaVersion: "1",
         items: [{ ...validPresentationItem, sentence: "Improves user plans" }],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-opening",
-      {
-        schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: "Enhances user plans." }],
       },
       "pull-request:202",
     ],
