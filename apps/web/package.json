@@ -7,6 +7,7 @@
     "build": "vite build",
     "dev": "vite",
     "prototype:calendar-treatment": "vite --open /prototype-calendar-treatment.html",
+    "prototype:date-picker-polish": "vite --open /prototype-date-picker-polish.html",
     "lint": "eslint src test playwright.config.ts vite.config.ts",
     "lint:fix": "eslint src test playwright.config.ts vite.config.ts --fix",
     "preview": "vite preview",
