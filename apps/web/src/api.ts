@@ -31,6 +31,8 @@ import type {
   RemoveStageRequest,
   ReorderStageItemsRequest,
   ReorderPartsRequest,
+  SourceInspectionRequest,
+  SourceInspectionResponse,
   UpdateItemStatusRequest,
   UpdateItemTargetDateRequest,
   UpdatePartCompletionRequest,
@@ -184,6 +186,24 @@ export async function captureItem(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+}
+
+/** Inspect one exact Source for ephemeral Capture suggestions. */
+export async function inspectSource(
+  user: CurrentUser,
+  input: SourceInspectionRequest,
+  signal: AbortSignal,
+): Promise<SourceInspectionResponse> {
+  return requestJson<SourceInspectionResponse>(
+    user,
+    "/api/source-inspections",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal,
+    },
+  );
 }
 
 /** Change the Item-level Status shared by every place the Item appears. */

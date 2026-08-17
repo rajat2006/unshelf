@@ -12,6 +12,7 @@ import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
 import type { Identify } from "../src/middleware/auth";
+import type { SourceInspectionService } from "../src/source-inspections/service";
 import {
   createDatabase,
   type Database,
@@ -130,16 +131,22 @@ export async function seedLegacyLearningPlanFixture(
   `);
 }
 
-export async function startTestApp(
-  identify: Identify = identifyFromTestHeader,
-): Promise<TestApp> {
+interface TestAppOptions {
+  identify?: Identify;
+  sourceInspectionService?: SourceInspectionService;
+}
+
+export async function startTestApp({
+  identify = identifyFromTestHeader,
+  sourceInspectionService,
+}: TestAppOptions = {}): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
   const db = createDatabase(container.getConnectionUri());
   await migrateTestDatabase(db);
 
-  return runningTestApp({ container, db, identify });
+  return runningTestApp({ container, db, identify, sourceInspectionService });
 }
 
 /**
@@ -192,14 +199,16 @@ function runningTestApp({
   container,
   db,
   identify,
+  sourceInspectionService,
 }: {
   container: StartedPostgreSqlContainer;
   db: DatabaseWithClient;
   identify: Identify;
+  sourceInspectionService?: SourceInspectionService;
 }): TestApp {
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
-  const app = createApp(db, [auth], { logger });
+  const app = createApp(db, [auth], { logger, sourceInspectionService });
 
   return {
     app,

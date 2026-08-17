@@ -13,6 +13,7 @@ import {
   learningPlanIdSchema,
   partIdSchema,
   reorderPartsRequestSchema,
+  sourceInspectionRequestSchema,
   stageIdSchema,
   updateItemStatusRequestSchema,
   updateItemTargetDateRequestSchema,
@@ -108,6 +109,26 @@ describe("Item capture request schema", () => {
         title: "Guide",
         type: "article",
         status: "done",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("Source inspection request schema", () => {
+  it("preserves the exact Source", () => {
+    const source = "  https://www.youtube.com/watch?v=M7lc1UVf-VE  ";
+
+    expect(sourceInspectionRequestSchema.parse({ source })).toEqual({ source });
+  });
+
+  it("rejects non-string and undeclared fields", () => {
+    expect(
+      sourceInspectionRequestSchema.safeParse({ source: 42 }).success,
+    ).toBe(false);
+    expect(
+      sourceInspectionRequestSchema.safeParse({
+        source: "https://youtu.be/M7lc1UVf-VE",
+        title: "YouTube Developers Live: Embedded Web Player Customization",
       }).success,
     ).toBe(false);
   });

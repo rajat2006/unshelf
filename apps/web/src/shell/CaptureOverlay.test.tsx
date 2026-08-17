@@ -10,15 +10,16 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { useCallback, useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Type } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
-import { captureItem } from "../api";
+import { captureItem, inspectSource } from "../api";
 import { CaptureOverlay } from "./CaptureOverlay";
 import { CaptureProvider } from "./CaptureProvider";
 import { useCapture } from "./useCapture";
 import { useCaptureListener } from "./useCaptureListener";
 
-vi.mock("../api", () => ({ captureItem: vi.fn() }));
+vi.mock("../api", () => ({ captureItem: vi.fn(), inspectSource: vi.fn() }));
 
 const auth: ApplicationAuth = {
   status: "signed-in",
@@ -79,6 +80,59 @@ describe("global Capture", () => {
   afterEach(() => {
     cleanup();
     vi.mocked(captureItem).mockReset();
+    vi.mocked(inspectSource).mockReset();
+  });
+
+  it("opens with Source first and focused", async () => {
+    render(<CaptureHarness />);
+
+    const source = await screen.findByLabelText("Source");
+    const title = screen.getByLabelText("Title");
+    expect(source.compareDocumentPosition(title)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    await waitFor(() => expect(source).toHaveFocus());
+  });
+
+  it("suggests an editable Type and captures the exact pasted Source", async () => {
+    const source = "  https://youtu.be/M7lc1UVf-VE?si=share-value  ";
+    vi.mocked(inspectSource).mockResolvedValue({
+      status: "suggested",
+      type: Type.Video,
+      typeEvidence: "youtube_route",
+    });
+    vi.mocked(captureItem).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof captureItem>>,
+    );
+    render(<CaptureHarness />);
+
+    fireEvent.paste(await screen.findByLabelText("Source"), {
+      clipboardData: { getData: () => source },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Type")).toHaveTextContent("Video"),
+    );
+    expect(screen.getByText("Suggested")).toBeVisible();
+    expect(inspectSource).toHaveBeenCalledWith(
+      auth.user,
+      { source },
+      expect.any(AbortSignal),
+    );
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Embedded player customization" },
+    });
+    fireEvent.click(screen.getByLabelText("Type"));
+    fireEvent.click(await screen.findByRole("option", { name: "Playlist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Library" }));
+
+    await waitFor(() => expect(captureItem).toHaveBeenCalledOnce());
+    expect(captureItem).toHaveBeenCalledWith(auth.user, {
+      title: "Embedded player customization",
+      type: "playlist",
+      source,
+    });
   });
 
   it("explains invalid required fields beside the controls", async () => {
@@ -164,7 +218,7 @@ describe("global Capture", () => {
 
     trigger.focus();
     fireEvent.click(trigger);
-    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveFocus());
+    await waitFor(() => expect(screen.getByLabelText("Source")).toHaveFocus());
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Systems thinking" },
     });

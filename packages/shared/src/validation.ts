@@ -35,6 +35,10 @@ export const createItemRequestSchema = z.strictObject({
   source: z.string().nullable().optional(),
 });
 
+export const sourceInspectionRequestSchema = z.strictObject({
+  source: z.string(),
+});
+
 export const updateItemStatusRequestSchema = z.strictObject({
   status: z.enum(Status),
 });
@@ -141,6 +145,9 @@ export const connectLearningPlanNodesRequestSchema = z.strictObject({
 });
 
 export type CreateItemRequest = z.infer<typeof createItemRequestSchema>;
+export type SourceInspectionRequest = z.infer<
+  typeof sourceInspectionRequestSchema
+>;
 export type UpdateItemStatusRequest = z.infer<
   typeof updateItemStatusRequestSchema
 >;

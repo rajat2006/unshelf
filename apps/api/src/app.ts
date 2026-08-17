@@ -8,16 +8,24 @@ import { createLabelsRouter } from "./labels/router";
 import { createStagesRouter } from "./stages/router";
 import { createLearningPlansRouter } from "./learning-plans/router";
 import { createDailyFocusRouter } from "./daily-focus/router";
+import { createSourceInspectionsRouter } from "./source-inspections/router";
+import {
+  createSourceInspectionService,
+  type SourceInspectionService,
+} from "./source-inspections/service";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
   captureRouteMount,
   createRequestLifecycle,
+  markSensitiveRequest,
   markRoutingResolved,
   type RequestLifecycleOptions,
 } from "./middleware/request-lifecycle";
 
-export type AppOptions = RequestLifecycleOptions;
+export interface AppOptions extends RequestLifecycleOptions {
+  readonly sourceInspectionService?: SourceInspectionService;
+}
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -34,6 +42,7 @@ export function createApp(
 ): Express {
   const app = express();
   app.use(createRequestLifecycle(options));
+  app.use("/api/source-inspections", markSensitiveRequest);
   app.use(express.json({ strict: false }));
 
   app.get("/api/health", async (req, res) => {
@@ -88,6 +97,14 @@ export function createApp(
     "/api/daily-focus",
     captureRouteMount,
     createDailyFocusRouter(db, auth),
+  );
+  app.use(
+    "/api/source-inspections",
+    captureRouteMount,
+    createSourceInspectionsRouter(
+      auth,
+      options.sourceInspectionService ?? createSourceInspectionService(),
+    ),
   );
   app.use(markRoutingResolved);
   app.use(

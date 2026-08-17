@@ -4,6 +4,7 @@ import { createClerkAuth } from "./middleware/auth";
 import { createDatabase } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
+import { createSourceInspectionService } from "./source-inspections/service";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;
@@ -70,6 +71,9 @@ await superviseApiProcess({
     const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
+      sourceInspectionService: createSourceInspectionService({
+        enabled: process.env.SOURCE_INSPECTION_ENABLED === "true",
+      }),
     });
 
     return startApiServer(app, port, logger);

@@ -20,6 +20,8 @@ declare global {
       routeMount: string;
       /** Redacted request context attached only to a failed terminal record. */
       failureRequest?: Readonly<Record<string, unknown>>;
+      /** Source-like secrets require body and query omission, not redaction. */
+      sensitiveRequest: boolean;
     }
   }
 }
@@ -45,6 +47,7 @@ export function createRequestLifecycle({
     req.logger = logger.child({ requestId });
     req.routingResolved = false;
     req.routeMount = "";
+    req.sensitiveRequest = false;
     res.setHeader("X-Request-Id", requestId);
 
     let recorded = false;
@@ -92,6 +95,11 @@ export const captureRouteMount: RequestHandler = (req, _res, next) => {
   next();
 };
 
+export const markSensitiveRequest: RequestHandler = (req, _res, next) => {
+  req.sensitiveRequest = true;
+  next();
+};
+
 function requestLevel(
   req: Request,
   termination: "completed" | "aborted",
@@ -136,19 +144,24 @@ export function failureRequestSnapshot(
   secrets?: readonly string[],
 ): Readonly<Record<string, unknown>> {
   const route = registeredRoute(req);
-  return serializeDiagnosticValue(
-    {
-      method: req.method,
+  const common = {
+    method: req.method,
+    path: rawRequestPath(req.originalUrl),
+    headers: req.headers,
+    params: failureRouteParameters({
       path: rawRequestPath(req.originalUrl),
-      headers: req.headers,
-      params: failureRouteParameters({
-        path: rawRequestPath(req.originalUrl),
-        route,
-        current: req.params,
-      }),
-      query: serializeDiagnosticQuery(req.query, { secrets }),
-      body: req.body as unknown,
-    },
+      route,
+      current: req.params,
+    }),
+  };
+  return serializeDiagnosticValue(
+    req.sensitiveRequest
+      ? common
+      : {
+          ...common,
+          query: serializeDiagnosticQuery(req.query, { secrets }),
+          body: req.body as unknown,
+        },
     { secrets },
   ) as Readonly<Record<string, unknown>>;
 }

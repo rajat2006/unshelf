@@ -22,6 +22,56 @@ export enum Type {
 
 export const ITEM_TYPES = Object.values(Type);
 
+export const SOURCE_INSPECTION_TITLE_EVIDENCE = [
+  "schema_org",
+  "open_graph",
+  "document_title",
+  "youtube_oembed",
+] as const;
+
+export type SourceInspectionTitleEvidence =
+  (typeof SOURCE_INSPECTION_TITLE_EVIDENCE)[number];
+
+export const SOURCE_INSPECTION_TYPE_EVIDENCE = [
+  "schema_org",
+  "open_graph",
+  "youtube_route",
+] as const;
+
+export type SourceInspectionTypeEvidence =
+  (typeof SOURCE_INSPECTION_TYPE_EVIDENCE)[number];
+
+interface SourceInspectionTitleSuggestion {
+  title: string;
+  titleEvidence: SourceInspectionTitleEvidence;
+}
+
+interface SourceInspectionTypeSuggestion {
+  type: Type;
+  typeEvidence: SourceInspectionTypeEvidence;
+}
+
+/** At least one independently evidenced, ephemeral Capture suggestion. */
+export type SourceInspectionSuggestedResponse = { status: "suggested" } & (
+  | (SourceInspectionTitleSuggestion & {
+      type?: never;
+      typeEvidence?: never;
+    })
+  | (SourceInspectionTypeSuggestion & {
+      title?: never;
+      titleEvidence?: never;
+    })
+  | (SourceInspectionTitleSuggestion & SourceInspectionTypeSuggestion)
+);
+
+/** The one quiet manual-fallback response for every expected unavailable case. */
+export interface SourceInspectionUnavailableResponse {
+  status: "unavailable";
+}
+
+export type SourceInspectionResponse =
+  SourceInspectionSuggestedResponse | SourceInspectionUnavailableResponse;
+
 /**
  * An Item's item-level progress (ADR-0003, CONTEXT.md *Status*). One Status per
  * Item, shared across every Stage it appears in. A fresh capture lands *not
@@ -102,6 +152,7 @@ export type {
   CreatePartsRequest,
   ConnectLearningPlanNodesRequest,
   CreateItemRequest,
+  SourceInspectionRequest,
   CreateLabelRequest,
   CreateStageRequest,
   CreateStageWithItemRequest,
