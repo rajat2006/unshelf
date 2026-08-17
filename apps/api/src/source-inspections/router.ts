@@ -32,6 +32,13 @@ export function createSourceInspectionsRouter(
         source: res.locals.validated.body.source,
         userId: req.user.id,
         signal: controller.signal,
+        observeCompletion: (completion) => {
+          req.logger.info({
+            event: "unshelf.source_inspection.completed",
+            msg: "Source inspection completed",
+            ...completion,
+          });
+        },
       });
       if (!result.ok) {
         next(new Error(result.error));

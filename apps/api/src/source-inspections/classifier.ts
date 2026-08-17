@@ -49,6 +49,24 @@ export function classifySource(source: string): SourceClassification {
     : { classification: "youtube", ...youtube };
 }
 
+export function sourceInspectionStrategy(
+  source: string,
+): "youtube" | "generic" {
+  const url = parseEligibleUrl(source);
+  return url !== null && isYoutubeProperty(url.hostname)
+    ? "youtube"
+    : "generic";
+}
+
+export function sourceHostname(source: string): string | null {
+  const hostname = parseEligibleUrl(source)?.hostname;
+  return hostname === undefined ? null : normalizeSourceHostname(hostname);
+}
+
+export function normalizeSourceHostname(hostname: string): string {
+  return hostname.toLowerCase().replace(/\.$/u, "");
+}
+
 function parseEligibleUrl(source: string): URL | null {
   try {
     const url = new URL(source);

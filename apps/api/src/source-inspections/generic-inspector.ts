@@ -3,7 +3,12 @@ import { TextDecoder } from "node:util";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { SourceInspectionResponse } from "@unshelf/shared";
 import { Parser } from "htmlparser2";
-import type { GuardedPublicTransport } from "./guarded-transport";
+import type {
+  AdmitInspectionDestination,
+  GuardedPublicTransport,
+  SourceInspectionTransportDiagnostics,
+} from "./guarded-transport";
+import { createInspectionDiagnosticReporter } from "./guarded-transport";
 import { resolveGenericMetadata } from "./generic-metadata";
 
 const DECOMPRESSED_BYTE_LIMIT = 256 * 1024;
@@ -22,20 +27,31 @@ const requestHeaders = {
 export type GenericSourceInspector = (input: {
   readonly source: string;
   readonly signal: AbortSignal;
+  readonly admitDestination?: AdmitInspectionDestination;
+  readonly reportDiagnostics?: (update: GenericInspectionDiagnostics) => void;
 }) => Promise<SourceInspectionResponse>;
+
+export type GenericInspectionDiagnostics = SourceInspectionTransportDiagnostics;
 
 export function createGenericSourceInspector({
   transport,
 }: {
   readonly transport: GuardedPublicTransport;
 }): GenericSourceInspector {
-  return async ({ source, signal }) => {
+  return async ({ source, signal, admitDestination, reportDiagnostics }) => {
+    const diagnostics = createInspectionDiagnosticReporter(reportDiagnostics);
+    const { report } = diagnostics;
     const result = await transport.get({
       source,
       headers: requestHeaders,
       signal,
+      ...(admitDestination === undefined ? {} : { admitDestination }),
+      ...(reportDiagnostics === undefined ? {} : { reportDiagnostics: report }),
     });
-    if (!result.ok) return { status: "unavailable" };
+    if (!result.ok) {
+      if (!diagnostics.hasTerminalCode()) report({ terminalCode: "origin" });
+      return { status: "unavailable" };
+    }
 
     const { response } = result;
     try {
@@ -44,6 +60,7 @@ export function createGenericSourceInspector({
         !isHtml(response.headers["content-type"]) ||
         !isAcceptedEncoding(response.headers["content-encoding"])
       ) {
+        report({ terminalCode: "refused" });
         return { status: "unavailable" };
       }
 
@@ -57,8 +74,20 @@ export function createGenericSourceInspector({
         ),
         signal,
       });
+      report({
+        terminalCode: suggestion === null ? "no_metadata" : "suggested",
+      });
       return suggestion ?? { status: "unavailable" };
-    } catch {
+    } catch (error) {
+      if (!diagnostics.hasTerminalCode()) {
+        report({
+          terminalCode: signal.aborted
+            ? "cancelled"
+            : error instanceof InspectionLimitError
+              ? "limit"
+              : "origin",
+        });
+      }
       return { status: "unavailable" };
     } finally {
       response.cancel();
@@ -187,7 +216,9 @@ async function readMetadataSuggestions({
   for await (const chunk of body) {
     if (signal.aborted) throw signal.reason;
     decompressedBytes += chunk.byteLength;
-    if (decompressedBytes > DECOMPRESSED_BYTE_LIMIT) return null;
+    if (decompressedBytes > DECOMPRESSED_BYTE_LIMIT) {
+      throw new InspectionLimitError();
+    }
     if (decoder === undefined) {
       encodingPrelude = concatenateBytes({
         first: encodingPrelude,
@@ -226,6 +257,8 @@ async function readMetadataSuggestions({
   });
 }
 
+class InspectionLimitError extends Error {}
+
 function createBoundedJsonLdCollector(): {
   readonly startBlock: () => void;
   readonly append: (text: string) => void;
@@ -246,8 +279,7 @@ function createBoundedJsonLdCollector(): {
       block = "";
       blockBytes = 0;
       blocksSeen += 1;
-      collecting =
-        !budgetExhausted && blocksSeen <= JSON_LD_BLOCK_LIMIT;
+      collecting = !budgetExhausted && blocksSeen <= JSON_LD_BLOCK_LIMIT;
     },
     append: (text) => {
       if (!collecting) return;

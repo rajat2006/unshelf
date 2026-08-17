@@ -36,11 +36,19 @@ beforeEach(() => {
 describe("POST /api/source-inspections", () => {
   it("rejects a signed-out request without invoking inspection", async () => {
     await request(harness.app)
-      .post("/api/source-inspections")
+      .post("/api/source-inspections?attempt=signed-out-query-sentinel")
       .send({ source })
       .expect(401, { error: "unauthenticated" });
 
     expect(inspect).not.toHaveBeenCalled();
+    const serialized = JSON.stringify(harness.logger.records);
+    expect(serialized).not.toContain("source-sentinel");
+    expect(serialized).not.toContain("signed-out-query-sentinel");
+    const terminalRecord = [...harness.logger.records]
+      .reverse()
+      .find((record) => record.event === "unshelf.api.request.ended");
+    expect(terminalRecord?.request).not.toHaveProperty("body");
+    expect(terminalRecord?.request).not.toHaveProperty("query");
   });
 
   it.each([
@@ -49,7 +57,7 @@ describe("POST /api/source-inspections", () => {
     [{ source, title: "undeclared" }, "body.$unknown"],
   ])("strictly validates the request document", async (body, issuePath) => {
     const response = await request(harness.app)
-      .post("/api/source-inspections")
+      .post("/api/source-inspections?attempt=validation-query-sentinel")
       .set(TEST_USER_HEADER, clerkUserId)
       .send(body)
       .expect(400);
@@ -59,6 +67,14 @@ describe("POST /api/source-inspections", () => {
       issues: [{ path: issuePath }],
     });
     expect(inspect).not.toHaveBeenCalled();
+    expect(JSON.stringify(harness.logger.records)).not.toContain(
+      "validation-query-sentinel",
+    );
+    const terminalRecord = [...harness.logger.records]
+      .reverse()
+      .find((record) => record.event === "unshelf.api.request.ended");
+    expect(terminalRecord?.request).not.toHaveProperty("body");
+    expect(terminalRecord?.request).not.toHaveProperty("query");
   });
 
   it("keeps malformed request failures no-store and payload-free", async () => {
@@ -109,7 +125,81 @@ describe("POST /api/source-inspections", () => {
       source,
       userId: anyValue(String),
       signal: anyValue(AbortSignal),
+      observeCompletion: anyValue(Function),
     });
+  });
+
+  it("records one bounded privacy-safe completion event", async () => {
+    inspect.mockImplementationOnce(async (input) => {
+      input.observeCompletion?.({
+        strategy: "generic",
+        terminalCode: "suggested",
+        suggestedTitle: true,
+        suggestedType: false,
+        durationMs: 42,
+        phaseTimingsMs: {
+          dns: 3,
+          responseHeaders: 12,
+          body: 8,
+        },
+        redirectCountBucket: "1",
+        byteCountBucket: "1-65536",
+      });
+      return {
+        ok: true,
+        response: {
+          status: "suggested",
+          title: "source-sentinel-title",
+          titleEvidence: "document_title",
+        },
+      };
+    });
+
+    await request(harness.app)
+      .post("/api/source-inspections?attempt=query-sentinel")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({ source })
+      .expect(200);
+
+    const records = harness.logger.records.filter(
+      (record) => record.event === "unshelf.source_inspection.completed",
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      event: "unshelf.source_inspection.completed",
+      requestId: anyValue(String),
+      userId: anyValue(String),
+      strategy: "generic",
+      terminalCode: "suggested",
+      suggestedTitle: true,
+      suggestedType: false,
+      durationMs: 42,
+      phaseTimingsMs: {
+        dns: 3,
+        responseHeaders: 12,
+        body: 8,
+      },
+      redirectCountBucket: "1",
+      byteCountBucket: "1-65536",
+    });
+    expect(Object.keys(records[0] ?? {}).sort()).toEqual([
+      "byteCountBucket",
+      "durationMs",
+      "event",
+      "level",
+      "msg",
+      "phaseTimingsMs",
+      "redirectCountBucket",
+      "requestId",
+      "strategy",
+      "suggestedTitle",
+      "suggestedType",
+      "terminalCode",
+      "userId",
+    ]);
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain("source-sentinel");
+    expect(serialized).not.toContain("query-sentinel");
   });
 
   it("does not create an Item", async () => {
@@ -159,6 +249,75 @@ describe("POST /api/source-inspections", () => {
       route: "/api/source-inspections",
       status: 500,
     });
+    expect(terminalRecord?.request).not.toHaveProperty("body");
+    expect(terminalRecord?.request).not.toHaveProperty("query");
+  });
+
+  it("keeps an aborted inspection snapshot payload-free", async () => {
+    let inspectionStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      inspectionStarted = resolve;
+    });
+    inspect.mockImplementationOnce(
+      (input) =>
+        new Promise((resolve) => {
+          inspectionStarted();
+          input.signal.addEventListener(
+            "abort",
+            () => {
+              input.observeCompletion?.({
+                strategy: "generic",
+                terminalCode: "cancelled",
+                suggestedTitle: false,
+                suggestedType: false,
+                durationMs: 10,
+                phaseTimingsMs: {},
+                redirectCountBucket: "0",
+                byteCountBucket: "0",
+              });
+              resolve({
+                ok: true,
+                response: { status: "unavailable" },
+              });
+            },
+            { once: true },
+          );
+        }),
+    );
+    const pending = request(harness.app)
+      .post("/api/source-inspections?attempt=aborted-query-sentinel")
+      .set(TEST_USER_HEADER, clerkUserId)
+      .send({
+        source: "https://aborted-source-sentinel.example/article",
+      });
+    const settled = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    await started;
+
+    pending.abort();
+    await settled;
+    await vi.waitFor(() => {
+      expect(
+        harness.logger.records.some(
+          (record) =>
+            record.event === "unshelf.api.request.ended" &&
+            record.termination === "aborted",
+        ),
+      ).toBe(true);
+    });
+
+    const serialized = JSON.stringify(harness.logger.records);
+    expect(serialized).not.toContain("aborted-source-sentinel");
+    expect(serialized).not.toContain("aborted-query-sentinel");
+    const terminalRecord = [...harness.logger.records]
+      .reverse()
+      .find(
+        (record) =>
+          record.event === "unshelf.api.request.ended" &&
+          record.termination === "aborted",
+      );
     expect(terminalRecord?.request).not.toHaveProperty("body");
     expect(terminalRecord?.request).not.toHaveProperty("query");
   });

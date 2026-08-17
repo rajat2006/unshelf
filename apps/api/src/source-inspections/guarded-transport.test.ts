@@ -52,6 +52,7 @@ describe("Guarded public transport", () => {
       headersTimeoutMs: 1_500,
       maxResponseHeaderBytes: 32 * 1024,
       signal: anyValue(AbortSignal),
+      onConnected: anyValue(Function),
     });
     expect(request).toHaveBeenCalledOnce();
     expect(cancel).not.toHaveBeenCalled();
@@ -87,6 +88,31 @@ describe("Guarded public transport", () => {
       }),
     ).resolves.toEqual({ ok: false });
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("reports an unsafe terminal without retaining the refused hostname", async () => {
+    const diagnostics: unknown[] = [];
+    const transport = createGuardedPublicTransport({
+      resolver: {
+        resolve: () =>
+          Promise.resolve({
+            aliases: [],
+            addresses: [{ address: "10.0.0.4", family: 4 }],
+          }),
+      },
+      connection: { request: vi.fn() },
+    });
+
+    await transport.get({
+      source: "https://private.example/article?secret=value",
+      headers: {},
+      signal: new AbortController().signal,
+      reportDiagnostics: (update) => diagnostics.push(update),
+    });
+
+    expect(diagnostics).toContainEqual({ terminalCode: "unsafe" });
+    expect(JSON.stringify(diagnostics)).not.toContain("private.example");
+    expect(JSON.stringify(diagnostics)).not.toContain("secret");
   });
 
   it.each([
@@ -168,6 +194,97 @@ describe("Guarded public transport", () => {
       pinnedAddress: { address: "142.250.72.14", family: 4 },
     });
     expect(redirectCancel).toHaveBeenCalledOnce();
+  });
+
+  it("moves destination admission at each redirect and reports its count bucket", async () => {
+    const request = vi
+      .fn<ConnectionTransport["request"]>()
+      .mockResolvedValueOnce({
+        status: 302,
+        headers: { location: "https://busy.example/final" },
+        body: emptyBody(),
+        cancel: vi.fn(),
+      });
+    const destinations: string[] = [];
+    const diagnostics: unknown[] = [];
+    const transport = createGuardedPublicTransport({
+      resolver: {
+        resolve: () =>
+          Promise.resolve({
+            aliases: [],
+            addresses: [{ address: "93.184.216.34", family: 4 }],
+          }),
+      },
+      connection: { request },
+    });
+
+    await expect(
+      transport.get({
+        source: "https://first.example/start",
+        headers: {},
+        signal: new AbortController().signal,
+        admitDestination: ({ hostname }) => {
+          destinations.push(hostname);
+          return hostname === "busy.example" ? "overload" : "allowed";
+        },
+        reportDiagnostics: (update) => diagnostics.push(update),
+      }),
+    ).resolves.toEqual({ ok: false });
+
+    expect(destinations).toEqual(["first.example", "busy.example"]);
+    expect(request).toHaveBeenCalledOnce();
+    expect(diagnostics).toContainEqual({ redirectCountBucket: "1" });
+    expect(diagnostics).toContainEqual({ terminalCode: "overload" });
+  });
+
+  it("reports transferred bytes using bounded buckets", async () => {
+    const diagnostics: unknown[] = [];
+    const times = [0, 5, 5, 8, 12, 12, 20];
+    const transport = createGuardedPublicTransport({
+      resolver: {
+        resolve: () =>
+          Promise.resolve({
+            aliases: [],
+            addresses: [{ address: "93.184.216.34", family: 4 }],
+          }),
+      },
+      connection: {
+        request: (input) => {
+          input.onConnected?.();
+          return Promise.resolve({
+            status: 200,
+            headers: { "content-type": "text/html" },
+            body: byteChunks([new Uint8Array(70_000)]),
+            cancel: vi.fn(),
+          });
+        },
+      },
+      monotonicNow: () => times.shift() ?? 20,
+    });
+    const result = await transport.get({
+      source: "https://first.example/article",
+      headers: {},
+      signal: new AbortController().signal,
+      reportDiagnostics: (update) => diagnostics.push(update),
+    });
+    if (!result.ok) throw new Error("Expected response");
+
+    for await (const chunk of result.response.body) {
+      // Consume the public transport response through its bounded stream.
+      void chunk;
+    }
+
+    expect(diagnostics).toContainEqual({
+      phaseTimingsMs: { body: 8 },
+    });
+    expect(diagnostics).toContainEqual({
+      byteCountBucket: "65537-262144",
+    });
+    expect(diagnostics).toContainEqual({ phaseTimingsMs: { dns: 5 } });
+    expect(diagnostics).toContainEqual({ phaseTimingsMs: { connection: 3 } });
+    expect(diagnostics).toContainEqual({
+      phaseTimingsMs: { responseHeaders: 4 },
+    });
   });
 
   it("refuses a redirect when the caller requires a fixed origin", async () => {

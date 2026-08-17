@@ -8,6 +8,7 @@ import type {
   HostResolver,
   ResolvedAddress,
 } from "./guarded-transport";
+import { SourceInspectionTimeoutError } from "./guarded-transport";
 
 const CNAME_LIMIT = 16;
 
@@ -83,6 +84,13 @@ export function createNodeConnectionTransport(): ConnectionTransport {
   return {
     request: (input) =>
       new Promise((resolve, reject) => {
+        let connected = false;
+        const reportConnected = () => {
+          if (connected) return;
+          connected = true;
+          clearTimeout(connectTimeout);
+          input.onConnected?.();
+        };
         const lookup: LookupFunction = (_hostname, options, callback) => {
           callback(
             null,
@@ -104,7 +112,7 @@ export function createNodeConnectionTransport(): ConnectionTransport {
             signal: input.signal,
           },
           (response) => {
-            clearTimeout(connectTimeout);
+            reportConnected();
             clearTimeout(headersTimeout);
             resolve({
               status: response.statusCode ?? 0,
@@ -115,20 +123,28 @@ export function createNodeConnectionTransport(): ConnectionTransport {
           },
         );
         const connectTimeout = setTimeout(() => {
-          request.destroy(new Error("Source inspection connection deadline"));
+          request.destroy(
+            new SourceInspectionTimeoutError(
+              "Source inspection connection deadline",
+            ),
+          );
         }, input.connectTimeoutMs);
         connectTimeout.unref();
         const headersTimeout = setTimeout(() => {
-          request.destroy(new Error("Source inspection headers deadline"));
+          request.destroy(
+            new SourceInspectionTimeoutError(
+              "Source inspection headers deadline",
+            ),
+          );
         }, input.headersTimeoutMs);
         headersTimeout.unref();
         request.once("socket", (socket) => {
           if (input.url.protocol === "https:") {
-            socket.once("secureConnect", () => clearTimeout(connectTimeout));
+            socket.once("secureConnect", reportConnected);
           } else if (!socket.connecting) {
-            clearTimeout(connectTimeout);
+            reportConnected();
           } else {
-            socket.once("connect", () => clearTimeout(connectTimeout));
+            socket.once("connect", reportConnected);
           }
         });
         request.once("error", (failure) => {

@@ -4,6 +4,37 @@ import { createGenericSourceInspector } from "./generic-inspector";
 import type { GuardedPublicTransport } from "./guarded-transport";
 
 describe("Generic Source inspector", () => {
+  it.each([
+    { status: 404, terminalCode: "refused" },
+    { status: 200, terminalCode: "no_metadata" },
+  ])(
+    "reports $terminalCode without retaining response content",
+    async ({ status, terminalCode }) => {
+      const diagnostics: unknown[] = [];
+      const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+        Promise.resolve({
+          ok: true,
+          response: {
+            status,
+            headers: { "content-type": "text/html" },
+            body: chunks(["<html><head></head></html>"]),
+            cancel: vi.fn(),
+          },
+        }),
+      );
+
+      await createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/sensitive?secret=value",
+        signal: new AbortController().signal,
+        reportDiagnostics: (update) => diagnostics.push(update),
+      });
+
+      expect(diagnostics).toContainEqual({ terminalCode });
+      expect(JSON.stringify(diagnostics)).not.toContain("example.com");
+      expect(JSON.stringify(diagnostics)).not.toContain("secret");
+    },
+  );
+
   it("returns a normalized document title from inert streamed HTML", async () => {
     const cancel = vi.fn();
     const get = vi.fn<GuardedPublicTransport["get"]>(() =>
@@ -608,7 +639,9 @@ describe("Generic Source inspector", () => {
       structuredMetadata: `${Array.from(
         { length: 16 },
         () => '<script type="application/ld+json">{"@type":"WebPage"}</script>',
-      ).join("")}<script type="application/ld+json">{"@type":"Book","name":"Too late"}</script>`,
+      ).join(
+        "",
+      )}<script type="application/ld+json">{"@type":"Book","name":"Too late"}</script>`,
     },
     {
       caseName: "more than 64 KiB of JSON-LD",

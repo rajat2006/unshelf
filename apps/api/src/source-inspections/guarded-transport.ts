@@ -1,4 +1,5 @@
 import { BlockList, isIP } from "node:net";
+import { performance } from "node:perf_hooks";
 
 export interface GuardedTransportResponse {
   readonly status: number;
@@ -11,13 +12,47 @@ export type GuardedTransportResult =
   | { readonly ok: true; readonly response: GuardedTransportResponse }
   | { readonly ok: false };
 
+export type DestinationAdmission = "allowed" | "refused" | "overload";
+export type AdmitInspectionDestination = (input: {
+  readonly hostname: string;
+}) => DestinationAdmission;
+export type RedirectCountBucket = "0" | "1" | "2-5" | "unknown";
+export type ByteCountBucket =
+  "0" | "1-65536" | "65537-262144" | "262145-524288" | "over_limit" | "unknown";
+export interface SourceInspectionPhaseTimings {
+  readonly dns?: number;
+  readonly connection?: number;
+  readonly responseHeaders?: number;
+  readonly body?: number;
+}
+
 export interface GuardedPublicTransport {
   get(input: {
     readonly source: string;
     readonly headers: Readonly<Record<string, string>>;
     readonly redirectPolicy?: "follow" | "refuse";
     readonly signal: AbortSignal;
+    readonly admitDestination?: AdmitInspectionDestination;
+    readonly reportDiagnostics?: (
+      update: SourceInspectionTransportDiagnostics,
+    ) => void;
   }): Promise<GuardedTransportResult>;
+}
+
+export interface SourceInspectionTransportDiagnostics {
+  readonly terminalCode?:
+    | "unsafe"
+    | "refused"
+    | "timeout"
+    | "limit"
+    | "overload"
+    | "origin"
+    | "cancelled"
+    | "suggested"
+    | "no_metadata";
+  readonly redirectCountBucket?: RedirectCountBucket;
+  readonly byteCountBucket?: ByteCountBucket;
+  readonly phaseTimingsMs?: SourceInspectionPhaseTimings;
 }
 
 export interface HostResolution {
@@ -46,7 +81,24 @@ export interface ConnectionTransport {
     readonly headersTimeoutMs: number;
     readonly maxResponseHeaderBytes: number;
     readonly signal: AbortSignal;
+    readonly onConnected?: () => void;
   }): Promise<GuardedTransportResponse>;
+}
+
+export function createInspectionDiagnosticReporter(
+  sink?: (update: SourceInspectionTransportDiagnostics) => void,
+): {
+  readonly report: (update: SourceInspectionTransportDiagnostics) => void;
+  readonly hasTerminalCode: () => boolean;
+} {
+  let terminalReported = false;
+  return {
+    report: (update) => {
+      if (update.terminalCode !== undefined) terminalReported = true;
+      sink?.(update);
+    },
+    hasTerminalCode: () => terminalReported,
+  };
 }
 
 export interface InspectionClock {
@@ -68,33 +120,66 @@ export function createGuardedPublicTransport({
   resolver,
   connection,
   clock = systemClock,
+  monotonicNow = () => performance.now(),
 }: {
   readonly resolver: HostResolver;
   readonly connection: ConnectionTransport;
   readonly clock?: InspectionClock;
+  readonly monotonicNow?: () => number;
 }): GuardedPublicTransport {
   return {
-    get: async ({ source, headers, redirectPolicy = "follow", signal }) => {
+    get: async ({
+      source,
+      headers,
+      redirectPolicy = "follow",
+      signal,
+      admitDestination,
+      reportDiagnostics,
+    }) => {
       const deadline = createDeadline({ parentSignal: signal, clock });
-      const unavailable = (): GuardedTransportResult => {
+      reportDiagnostics?.({
+        redirectCountBucket: "0",
+        byteCountBucket: "0",
+      });
+      const unavailable = (
+        update?: SourceInspectionTransportDiagnostics,
+      ): GuardedTransportResult => {
+        if (update !== undefined) reportDiagnostics?.(update);
         deadline.dispose();
         return { ok: false };
       };
       try {
         let url = parseEligibleUrl(source);
-        if (url === null) return unavailable();
+        if (url === null) return unavailable({ terminalCode: "unsafe" });
         url.hash = "";
 
         for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-          const response = await requestValidatedUrl({
+          reportDiagnostics?.({
+            redirectCountBucket: bucketRedirectCount(redirectCount),
+          });
+          const destinationAdmission = admitDestination?.({
+            hostname: url.hostname,
+          });
+          if (
+            destinationAdmission === "refused" ||
+            destinationAdmission === "overload"
+          ) {
+            return unavailable({ terminalCode: destinationAdmission });
+          }
+          const validated = await requestValidatedUrl({
             url,
             headers,
             signal: deadline.signal,
             clock,
             resolver,
             connection,
+            monotonicNow,
+            reportDiagnostics,
           });
-          if (response === null) return unavailable();
+          if (!validated.ok) {
+            return unavailable({ terminalCode: validated.terminalCode });
+          }
+          const { response } = validated;
 
           const location = redirectLocation(response);
           if (location === null) {
@@ -104,26 +189,42 @@ export function createGuardedPublicTransport({
                 response,
                 signal: deadline.signal,
                 disposeDeadline: deadline.dispose,
+                reportDiagnostics,
+                monotonicNow,
               }),
             };
           }
+          reportDiagnostics?.({
+            redirectCountBucket: bucketRedirectCount(redirectCount + 1),
+          });
           response.cancel();
-          if (redirectPolicy === "refuse") return unavailable();
-          if (redirectCount === 5) return unavailable();
+          if (redirectPolicy === "refuse") {
+            return unavailable({ terminalCode: "refused" });
+          }
+          if (redirectCount === 5) {
+            return unavailable({ terminalCode: "limit" });
+          }
 
           const redirected = parseEligibleUrl(new URL(location, url).href);
           if (
             redirected === null ||
             (url.protocol === "https:" && redirected.protocol === "http:")
           ) {
-            return unavailable();
+            return unavailable({ terminalCode: "unsafe" });
           }
           redirected.hash = "";
           url = redirected;
         }
-        return unavailable();
-      } catch {
-        return unavailable();
+        return unavailable({ terminalCode: "limit" });
+      } catch (error) {
+        return unavailable({
+          terminalCode: signal.aborted
+            ? "cancelled"
+            : deadline.signal.aborted ||
+                error instanceof SourceInspectionTimeoutError
+              ? "timeout"
+              : "origin",
+        });
       }
     },
   };
@@ -175,7 +276,7 @@ function createTimedSignal({
   else parentSignal.addEventListener("abort", abortFromParent, { once: true });
   const cancelTimeout = clock.schedule({
     delayMs,
-    callback: () => controller.abort(new Error(reason)),
+    callback: () => controller.abort(new SourceInspectionTimeoutError(reason)),
   });
   let disposed = false;
   return {
@@ -216,6 +317,8 @@ async function requestValidatedUrl({
   clock,
   resolver,
   connection,
+  monotonicNow,
+  reportDiagnostics,
 }: {
   readonly url: URL;
   readonly headers: Readonly<Record<string, string>>;
@@ -223,7 +326,14 @@ async function requestValidatedUrl({
   readonly clock: InspectionClock;
   readonly resolver: HostResolver;
   readonly connection: ConnectionTransport;
-}): Promise<GuardedTransportResponse | null> {
+  readonly monotonicNow: () => number;
+  readonly reportDiagnostics?: (
+    update: SourceInspectionTransportDiagnostics,
+  ) => void;
+}): Promise<
+  | { readonly ok: true; readonly response: GuardedTransportResponse }
+  | { readonly ok: false; readonly terminalCode: "unsafe" | "limit" }
+> {
   const dnsDeadline = createTimedSignal({
     parentSignal: signal,
     clock,
@@ -231,12 +341,18 @@ async function requestValidatedUrl({
     reason: "Source inspection DNS deadline",
   });
   let resolution: HostResolution;
+  const dnsStartedAt = monotonicNow();
   try {
     resolution = await raceWithAbort(
       resolver.resolve({ hostname: url.hostname, signal: dnsDeadline.signal }),
       dnsDeadline.signal,
     );
   } finally {
+    reportDiagnostics?.({
+      phaseTimingsMs: {
+        dns: Math.max(0, monotonicNow() - dnsStartedAt),
+      },
+    });
     dnsDeadline.dispose();
   }
   if (
@@ -250,32 +366,55 @@ async function requestValidatedUrl({
           : nonPublicAddresses.ipv6.check(address, "ipv6")),
     )
   ) {
-    return null;
+    return { ok: false, terminalCode: "unsafe" };
   }
 
   const pinned = resolution.addresses[0];
-  if (pinned === undefined) return null;
-  const response = await raceWithAbort(
-    connection.request({
-      url,
-      pinnedAddress: pinned,
-      headers: Object.fromEntries(
-        Object.entries(headers).filter(([name]) =>
-          outboundHeaderNames.has(name.toLowerCase()),
+  if (pinned === undefined) return { ok: false, terminalCode: "unsafe" };
+  const connectionStartedAt = monotonicNow();
+  let connectedAt: number | undefined;
+  let response: GuardedTransportResponse;
+  try {
+    response = await raceWithAbort(
+      connection.request({
+        url,
+        pinnedAddress: pinned,
+        headers: Object.fromEntries(
+          Object.entries(headers).filter(([name]) =>
+            outboundHeaderNames.has(name.toLowerCase()),
+          ),
         ),
-      ),
-      connectTimeoutMs: 500,
-      headersTimeoutMs: 1_500,
-      maxResponseHeaderBytes: 32 * 1024,
+        connectTimeoutMs: 500,
+        headersTimeoutMs: 1_500,
+        maxResponseHeaderBytes: 32 * 1024,
+        signal,
+        onConnected: () => {
+          if (connectedAt !== undefined) return;
+          connectedAt = monotonicNow();
+          reportDiagnostics?.({
+            phaseTimingsMs: {
+              connection: Math.max(0, connectedAt - connectionStartedAt),
+            },
+          });
+        },
+      }),
       signal,
-    }),
-    signal,
-  );
+    );
+  } finally {
+    reportDiagnostics?.({
+      phaseTimingsMs: {
+        responseHeaders: Math.max(
+          0,
+          monotonicNow() - (connectedAt ?? connectionStartedAt),
+        ),
+      },
+    });
+  }
   if (responseHeaderBytes(response.headers) > 32 * 1024) {
     response.cancel();
-    return null;
+    return { ok: false, terminalCode: "limit" };
   }
-  return response;
+  return { ok: true, response };
 }
 
 function responseHeaderBytes(
@@ -292,13 +431,27 @@ function withTransferLimit({
   response,
   signal,
   disposeDeadline,
+  reportDiagnostics,
+  monotonicNow,
 }: {
   readonly response: GuardedTransportResponse;
   readonly signal: AbortSignal;
   readonly disposeDeadline: () => void;
+  readonly reportDiagnostics?: (
+    update: SourceInspectionTransportDiagnostics,
+  ) => void;
+  readonly monotonicNow: () => number;
 }): GuardedTransportResponse {
   let cancelled = false;
-  const abort = () => cancel();
+  const abort = () => {
+    reportDiagnostics?.({
+      terminalCode:
+        signal.reason instanceof SourceInspectionTimeoutError
+          ? "timeout"
+          : "cancelled",
+    });
+    cancel();
+  };
   const cancel = () => {
     if (cancelled) return;
     cancelled = true;
@@ -307,7 +460,7 @@ function withTransferLimit({
     disposeDeadline();
   };
   signal.addEventListener("abort", abort, { once: true });
-  if (signal.aborted) cancel();
+  if (signal.aborted) abort();
   return {
     ...response,
     body: boundedBody({
@@ -315,33 +468,74 @@ function withTransferLimit({
       cancel,
       signal,
       disposeDeadline,
+      reportDiagnostics,
+      monotonicNow,
     }),
     cancel,
   };
 }
+
+export class SourceInspectionTimeoutError extends Error {}
 
 async function* boundedBody({
   body,
   cancel,
   signal,
   disposeDeadline,
+  reportDiagnostics,
+  monotonicNow,
 }: {
   readonly body: AsyncIterable<Uint8Array>;
   readonly cancel: () => void;
   readonly signal: AbortSignal;
   readonly disposeDeadline: () => void;
+  readonly reportDiagnostics?: (
+    update: SourceInspectionTransportDiagnostics,
+  ) => void;
+  readonly monotonicNow: () => number;
 }): AsyncIterable<Uint8Array> {
   let transferredBytes = 0;
-  for await (const chunk of body) {
-    if (signal.aborted) throw signal.reason;
-    transferredBytes += chunk.byteLength;
-    if (transferredBytes > 512 * 1024) {
-      cancel();
-      disposeDeadline();
-      throw new Error("Source inspection transfer limit exceeded");
+  const bodyStartedAt = monotonicNow();
+  reportDiagnostics?.({ byteCountBucket: "0" });
+  try {
+    for await (const chunk of body) {
+      if (signal.aborted) throw signal.reason;
+      transferredBytes += chunk.byteLength;
+      if (transferredBytes > 512 * 1024) {
+        reportDiagnostics?.({
+          terminalCode: "limit",
+          byteCountBucket: "over_limit",
+        });
+        cancel();
+        disposeDeadline();
+        throw new Error("Source inspection transfer limit exceeded");
+      }
+      reportDiagnostics?.({
+        byteCountBucket: bucketTransferredBytes(transferredBytes),
+      });
+      yield chunk;
     }
-    yield chunk;
+  } finally {
+    reportDiagnostics?.({
+      phaseTimingsMs: {
+        body: Math.max(0, monotonicNow() - bodyStartedAt),
+      },
+    });
   }
+}
+
+function bucketRedirectCount(count: number): "0" | "1" | "2-5" {
+  if (count === 0) return "0";
+  return count === 1 ? "1" : "2-5";
+}
+
+function bucketTransferredBytes(
+  bytes: number,
+): "0" | "1-65536" | "65537-262144" | "262145-524288" {
+  if (bytes === 0) return "0";
+  if (bytes <= 64 * 1024) return "1-65536";
+  if (bytes <= 256 * 1024) return "65537-262144";
+  return "262145-524288";
 }
 
 function redirectLocation(response: GuardedTransportResponse): string | null {

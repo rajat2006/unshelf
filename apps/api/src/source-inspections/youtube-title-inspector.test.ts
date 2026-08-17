@@ -80,16 +80,30 @@ describe("YouTube title inspector", () => {
   });
 
   it.each([
-    { caseName: "malformed JSON", body: "{" },
-    { caseName: "missing title", body: JSON.stringify({ type: "video" }) },
-    { caseName: "non-string title", body: JSON.stringify({ title: 42 }) },
-    { caseName: "blank title", body: JSON.stringify({ title: "  \n  " }) },
+    { caseName: "malformed JSON", body: "{", terminalCode: "origin" },
+    {
+      caseName: "missing title",
+      body: JSON.stringify({ type: "video" }),
+      terminalCode: "no_metadata",
+    },
+    {
+      caseName: "non-string title",
+      body: JSON.stringify({ title: 42 }),
+      terminalCode: "no_metadata",
+    },
+    {
+      caseName: "blank title",
+      body: JSON.stringify({ title: "  \n  " }),
+      terminalCode: "no_metadata",
+    },
     {
       caseName: "oversized JSON",
       body: JSON.stringify({ title: "a".repeat(64 * 1024) }),
+      terminalCode: "limit",
     },
-  ])("returns no title for $caseName", async ({ body }) => {
+  ])("returns no title for $caseName", async ({ body, terminalCode }) => {
     const cancel = vi.fn();
+    const diagnostics: unknown[] = [];
     const get: GuardedPublicTransport["get"] = () =>
       Promise.resolve({
         ok: true,
@@ -105,9 +119,11 @@ describe("YouTube title inspector", () => {
       createYouTubeTitleInspector({ transport: { get } })({
         canonicalSource: canonicalVideoSource,
         signal: new AbortController().signal,
+        reportDiagnostics: (update) => diagnostics.push(update),
       }),
     ).resolves.toBeNull();
     expect(cancel).toHaveBeenCalledOnce();
+    expect(diagnostics).toContainEqual({ terminalCode });
   });
 
   it("returns no title when the guarded request times out", async () => {

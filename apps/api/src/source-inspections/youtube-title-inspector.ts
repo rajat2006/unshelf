@@ -2,9 +2,15 @@ import { Readable } from "node:stream";
 import { TextDecoder } from "node:util";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { CanonicalYouTubeSource } from "./classifier";
-import type { GuardedPublicTransport } from "./guarded-transport";
+import type {
+  AdmitInspectionDestination,
+  GuardedPublicTransport,
+  SourceInspectionTransportDiagnostics,
+} from "./guarded-transport";
+import { createInspectionDiagnosticReporter } from "./guarded-transport";
 
 const OEMBED_ENDPOINT = "https://www.youtube.com/oembed";
+export const YOUTUBE_OEMBED_HOSTNAME = "www.youtube.com";
 const JSON_BYTE_LIMIT = 64 * 1024;
 const TITLE_CODE_POINT_LIMIT = 512;
 
@@ -19,6 +25,10 @@ const requestHeaders = {
 export type YouTubeTitleInspector = (input: {
   readonly canonicalSource: CanonicalYouTubeSource;
   readonly signal: AbortSignal;
+  readonly admitDestination?: AdmitInspectionDestination;
+  readonly reportDiagnostics?: (
+    update: SourceInspectionTransportDiagnostics,
+  ) => void;
 }) => Promise<string | null>;
 
 export function createYouTubeTitleInspector({
@@ -26,7 +36,14 @@ export function createYouTubeTitleInspector({
 }: {
   readonly transport: GuardedPublicTransport;
 }): YouTubeTitleInspector {
-  return async ({ canonicalSource, signal }) => {
+  return async ({
+    canonicalSource,
+    signal,
+    admitDestination,
+    reportDiagnostics,
+  }) => {
+    const diagnostics = createInspectionDiagnosticReporter(reportDiagnostics);
+    const { report } = diagnostics;
     const endpoint = new URL(OEMBED_ENDPOINT);
     endpoint.searchParams.set("url", canonicalSource);
     endpoint.searchParams.set("format", "json");
@@ -36,8 +53,13 @@ export function createYouTubeTitleInspector({
       headers: requestHeaders,
       redirectPolicy: "refuse",
       signal,
+      ...(admitDestination === undefined ? {} : { admitDestination }),
+      ...(reportDiagnostics === undefined ? {} : { reportDiagnostics: report }),
     });
-    if (!result.ok) return null;
+    if (!result.ok) {
+      if (!diagnostics.hasTerminalCode()) report({ terminalCode: "origin" });
+      return null;
+    }
 
     const { response } = result;
     try {
@@ -47,6 +69,7 @@ export function createYouTubeTitleInspector({
         !isJson(response.headers["content-type"]) ||
         encoding === null
       ) {
+        report({ terminalCode: "refused" });
         return null;
       }
 
@@ -60,13 +83,27 @@ export function createYouTubeTitleInspector({
         !("title" in document) ||
         typeof document.title !== "string"
       ) {
+        report({ terminalCode: "no_metadata" });
         return null;
       }
 
       const normalized = document.title.replace(/\s+/gu, " ").trim();
-      if (normalized.length === 0) return null;
+      if (normalized.length === 0) {
+        report({ terminalCode: "no_metadata" });
+        return null;
+      }
+      report({ terminalCode: "suggested" });
       return [...normalized].slice(0, TITLE_CODE_POINT_LIMIT).join("");
-    } catch {
+    } catch (error) {
+      if (!diagnostics.hasTerminalCode()) {
+        report({
+          terminalCode: signal.aborted
+            ? "cancelled"
+            : error instanceof YouTubeTitleLimitError
+              ? "limit"
+              : "origin",
+        });
+      }
       return null;
     } finally {
       response.cancel();
@@ -127,7 +164,7 @@ async function readBoundedJson({
     signal.throwIfAborted();
     byteLength += chunk.byteLength;
     if (byteLength > JSON_BYTE_LIMIT) {
-      throw new Error("YouTube oEmbed JSON limit exceeded");
+      throw new YouTubeTitleLimitError();
     }
     chunks.push(chunk);
   }
@@ -141,3 +178,5 @@ async function readBoundedJson({
   }
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
+
+class YouTubeTitleLimitError extends Error {}

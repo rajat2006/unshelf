@@ -10,7 +10,10 @@ import {
   createNodeConnectionTransport,
   createNodeHostResolver,
 } from "./source-inspections/node-network";
-import { createSourceInspectionService } from "./source-inspections/service";
+import {
+  createSourceInspectionService,
+  parseSourceInspectionDeniedHostnames,
+} from "./source-inspections/service";
 import { createYouTubeTitleInspector } from "./source-inspections/youtube-title-inspector";
 
 let logger: Logger;
@@ -86,6 +89,9 @@ await superviseApiProcess({
         disabled: process.env.SOURCE_INSPECTION_DISABLED === "true",
         youtubeTitlesDisabled:
           process.env.SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED === "true",
+        deniedHostnames: parseSourceInspectionDeniedHostnames(
+          process.env.SOURCE_INSPECTION_DENIED_HOSTNAMES,
+        ),
         inspectGeneric: createGenericSourceInspector({
           transport: publicTransport,
         }),

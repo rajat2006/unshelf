@@ -51,6 +51,9 @@ function resolveDeploymentCompose(): ResolvedCompose {
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
         MIGRATION_MODE: "apply",
+        SOURCE_INSPECTION_DISABLED: "true",
+        SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED: "true",
+        SOURCE_INSPECTION_DENIED_HOSTNAMES: "blocked.example,youtu.be",
       },
     },
   );
@@ -116,6 +119,9 @@ describe("deployment Compose contract", () => {
       LOG_LEVEL: "info",
       PORT: "3001",
       PUBLIC_ORIGIN: "https://generated.example.com",
+      SOURCE_INSPECTION_DENIED_HOSTNAMES: "blocked.example,youtu.be",
+      SOURCE_INSPECTION_DISABLED: "true",
+      SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED: "true",
     });
     expect(services.web?.environment).toBeUndefined();
   });
