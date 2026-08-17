@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -50,12 +51,18 @@ type InspectionState =
   | { status: "suggested"; title: boolean; type: boolean }
   | { status: "unavailable" };
 
+type FieldOwnership = "unowned" | "suggested" | "user";
+
 const INSPECTION_DEBOUNCE_MS = 300;
 const INSPECTION_DEADLINE_MS = 3_000;
-const MAX_INSPECTION_SOURCE_LENGTH = 8 * 1_024;
+const MAX_INSPECTION_SOURCE_BYTES = 8 * 1_024;
 
 function isInspectionEligible(source: string): boolean {
-  if (source.length > MAX_INSPECTION_SOURCE_LENGTH) return false;
+  if (
+    new TextEncoder().encode(source).byteLength > MAX_INSPECTION_SOURCE_BYTES
+  ) {
+    return false;
+  }
 
   try {
     const workingUrl = new URL(source.trim());
@@ -103,10 +110,10 @@ function CaptureComposer({
   const inspectionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectionDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectionRevision = useRef(0);
-  const titleUserOwned = useRef(false);
-  const typeUserOwned = useRef(false);
-  const titleSuggested = useRef(false);
-  const typeSuggested = useRef(false);
+  const fieldOwnership = useRef<{
+    title: FieldOwnership;
+    type: FieldOwnership;
+  }>({ title: "unowned", type: "unowned" });
   const [title, setTitle] = useState("");
   const [type, setType] = useState<Type | "">("");
   const [source, setSource] = useState("");
@@ -117,7 +124,7 @@ function CaptureComposer({
     status: "idle",
   });
 
-  function clearInspectionTimers(): void {
+  const clearInspectionTimers = useCallback((): void => {
     if (inspectionDebounce.current !== null) {
       clearTimeout(inspectionDebounce.current);
       inspectionDebounce.current = null;
@@ -126,15 +133,15 @@ function CaptureComposer({
       clearTimeout(inspectionDeadline.current);
       inspectionDeadline.current = null;
     }
-  }
+  }, []);
 
-  function supersedeInspection(): number {
+  const supersedeInspection = useCallback((): number => {
     clearInspectionTimers();
     inspectionController.current?.abort();
     inspectionController.current = null;
     inspectionRevision.current += 1;
     return inspectionRevision.current;
-  }
+  }, [clearInspectionTimers]);
 
   function startInspection(exactSource: string, revision: number): void {
     if (revision !== inspectionRevision.current) return;
@@ -168,14 +175,20 @@ function CaptureComposer({
 
         let appliedTitle = false;
         let appliedType = false;
-        if (response.title !== undefined && !titleUserOwned.current) {
-          titleSuggested.current = true;
+        if (
+          response.title !== undefined &&
+          fieldOwnership.current.title !== "user"
+        ) {
+          fieldOwnership.current.title = "suggested";
           appliedTitle = true;
           setTitle(response.title);
           setErrors((current) => ({ ...current, title: undefined }));
         }
-        if (response.type !== undefined && !typeUserOwned.current) {
-          typeSuggested.current = true;
+        if (
+          response.type !== undefined &&
+          fieldOwnership.current.type !== "user"
+        ) {
+          fieldOwnership.current.type = "suggested";
           appliedType = true;
           setType(response.type);
           setErrors((current) => ({ ...current, type: undefined }));
@@ -203,12 +216,12 @@ function CaptureComposer({
     setSource(nextSource);
     const revision = supersedeInspection();
 
-    if (titleSuggested.current && !titleUserOwned.current) {
-      titleSuggested.current = false;
+    if (fieldOwnership.current.title === "suggested") {
+      fieldOwnership.current.title = "unowned";
       setTitle("");
     }
-    if (typeSuggested.current && !typeUserOwned.current) {
-      typeSuggested.current = false;
+    if (fieldOwnership.current.type === "suggested") {
+      fieldOwnership.current.type = "unowned";
       setType("");
     }
     setInspection({ status: "idle" });
@@ -235,16 +248,9 @@ function CaptureComposer({
 
   useEffect(
     () => () => {
-      if (inspectionDebounce.current !== null) {
-        clearTimeout(inspectionDebounce.current);
-      }
-      if (inspectionDeadline.current !== null) {
-        clearTimeout(inspectionDeadline.current);
-      }
-      inspectionController.current?.abort();
-      inspectionRevision.current += 1;
+      supersedeInspection();
     },
-    [],
+    [supersedeInspection],
   );
 
   function inspectPastedSource(event: ClipboardEvent<HTMLInputElement>): void {
@@ -323,11 +329,18 @@ function CaptureComposer({
           </Field>
         </div>
 
+        <p
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {statusMessage ?? ""}
+        </p>
+
         {statusMessage !== null && (
           <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-            <p role="status" aria-live="polite">
-              {statusMessage}
-            </p>
+            <p aria-hidden="true">{statusMessage}</p>
             {inspection.status === "unavailable" && (
               <Button
                 type="button"
@@ -347,7 +360,7 @@ function CaptureComposer({
             <FieldLabel id="capture-title-label" htmlFor="capture-title">
               Title
             </FieldLabel>
-            {titleSuggested.current && (
+            {fieldOwnership.current.title === "suggested" && (
               <span className="text-xs font-normal text-primary">
                 Suggested
               </span>
@@ -358,8 +371,7 @@ function CaptureComposer({
             id="capture-title"
             value={title}
             onChange={(event) => {
-              titleUserOwned.current = true;
-              titleSuggested.current = false;
+              fieldOwnership.current.title = "user";
               setTitle(event.target.value);
               setErrors((current) => ({ ...current, title: undefined }));
             }}
@@ -378,7 +390,7 @@ function CaptureComposer({
             <FieldLabel id="capture-type-label" htmlFor="capture-type">
               Type
             </FieldLabel>
-            {typeSuggested.current && (
+            {fieldOwnership.current.type === "suggested" && (
               <span className="text-xs font-normal text-primary">
                 Suggested
               </span>
@@ -387,8 +399,7 @@ function CaptureComposer({
           <Select
             value={type}
             onValueChange={(value) => {
-              typeUserOwned.current = true;
-              typeSuggested.current = false;
+              fieldOwnership.current.type = "user";
               setType(value as Type);
               setErrors((current) => ({ ...current, type: undefined }));
             }}

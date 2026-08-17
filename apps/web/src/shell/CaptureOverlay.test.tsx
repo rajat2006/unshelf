@@ -271,17 +271,38 @@ describe("global Capture", () => {
       .mockReturnValueOnce(retry.promise);
     render(<CaptureHarness />);
 
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveAttribute("aria-atomic", "true");
     fireEvent.paste(screen.getByLabelText("Source"), {
       clipboardData: { getData: () => "https://example.com/slow" },
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Inspecting Source…");
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent("Inspecting Source…");
     const firstSignal = vi.mocked(inspectSource).mock.calls[0]?.[2];
 
     act(() => {
-      vi.advanceTimersByTime(3_000);
+      vi.advanceTimersByTime(2_999);
+    });
+    expect(status).toHaveTextContent("Inspecting Source…");
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
     expect(firstSignal?.aborted).toBe(true);
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(status).toHaveTextContent(
+      "Source inspection unavailable. Continue manually.",
+    );
+    await act(async () => {
+      first.resolve({
+        status: "suggested",
+        title: "Too late",
+        titleEvidence: "document_title",
+      });
+      await first.promise;
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(status).toHaveTextContent(
       "Source inspection unavailable. Continue manually.",
     );
 
@@ -289,7 +310,8 @@ describe("global Capture", () => {
       screen.getByRole("button", { name: "Retry Source inspection" }),
     );
     expect(inspectSource).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("status")).toHaveTextContent("Inspecting Source…");
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent("Inspecting Source…");
 
     const title = screen.getByLabelText("Title");
     title.focus();
@@ -301,7 +323,7 @@ describe("global Capture", () => {
       });
       await retry.promise;
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Suggested Type.");
+    expect(status).toHaveTextContent("Suggested Type.");
     expect(
       screen.queryByRole("button", { name: "Retry Source inspection" }),
     ).not.toBeInTheDocument();
@@ -353,7 +375,15 @@ describe("global Capture", () => {
     expect(screen.getByLabelText("Source")).toHaveValue(
       "course://private-notes",
     );
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+
+    fireEvent.change(screen.getByLabelText("Source"), {
+      target: { value: `https://example.com/${"é".repeat(4_100)}` },
+    });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(inspectSource).not.toHaveBeenCalled();
   });
 
   it("opens with Source first and focused", async () => {
@@ -375,8 +405,9 @@ describe("global Capture", () => {
       {} as Awaited<ReturnType<typeof captureItem>>,
     );
     render(<CaptureHarness />);
+    vi.useFakeTimers();
 
-    fireEvent.paste(await screen.findByLabelText("Source"), {
+    fireEvent.paste(screen.getByLabelText("Source"), {
       clipboardData: { getData: () => source },
     });
 
@@ -388,6 +419,7 @@ describe("global Capture", () => {
       });
       await inspectionResult.promise;
     });
+    vi.useRealTimers();
     await waitFor(() =>
       expect(screen.getByLabelText("Type")).toHaveTextContent("Video"),
     );
@@ -525,7 +557,7 @@ describe("global Capture", () => {
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
     expect(screen.getByLabelText("Source")).toHaveValue("");
     expect(screen.getByLabelText("Title")).toHaveValue("");
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("contains request failure and preserves values for retry", async () => {
