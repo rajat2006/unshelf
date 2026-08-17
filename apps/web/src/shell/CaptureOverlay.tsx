@@ -3,10 +3,13 @@ import {
   useEffect,
   useRef,
   useState,
-  type ClipboardEvent,
   type FormEvent,
 } from "react";
-import { ITEM_TYPES, Type } from "@unshelf/shared";
+import {
+  ITEM_TYPES,
+  SOURCE_INSPECTION_SOURCE_BYTE_LIMIT,
+  Type,
+} from "@unshelf/shared";
 import { captureItem, inspectSource } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { Alert } from "@/components/ui/alert";
@@ -55,11 +58,10 @@ type FieldOwnership = "unowned" | "suggested" | "user";
 
 const INSPECTION_DEBOUNCE_MS = 300;
 const INSPECTION_DEADLINE_MS = 3_000;
-const MAX_INSPECTION_SOURCE_BYTES = 8 * 1_024;
-
 function isInspectionEligible(source: string): boolean {
   if (
-    new TextEncoder().encode(source).byteLength > MAX_INSPECTION_SOURCE_BYTES
+    new TextEncoder().encode(source).byteLength >
+    SOURCE_INSPECTION_SOURCE_BYTE_LIMIT
   ) {
     return false;
   }
@@ -110,6 +112,7 @@ function CaptureComposer({
   const inspectionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectionDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectionRevision = useRef(0);
+  const sourcePastePending = useRef(false);
   const fieldOwnership = useRef<{
     title: FieldOwnership;
     type: FieldOwnership;
@@ -253,12 +256,6 @@ function CaptureComposer({
     [supersedeInspection],
   );
 
-  function inspectPastedSource(event: ClipboardEvent<HTMLInputElement>): void {
-    event.preventDefault();
-    const pastedSource = event.clipboardData.getData("text");
-    changeSource(pastedSource, true);
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (saving) return;
@@ -318,8 +315,17 @@ function CaptureComposer({
               id="capture-source"
               aria-labelledby="capture-source-label"
               value={source}
-              onChange={(event) => changeSource(event.target.value, false)}
-              onPaste={inspectPastedSource}
+              onChange={(event) => {
+                const inspectImmediately = sourcePastePending.current;
+                sourcePastePending.current = false;
+                changeSource(event.target.value, inspectImmediately);
+              }}
+              onPaste={() => {
+                sourcePastePending.current = true;
+                queueMicrotask(() => {
+                  sourcePastePending.current = false;
+                });
+              }}
               placeholder="Paste a link, or leave blank for an offline Item"
               autoFocus
             />
@@ -438,6 +444,7 @@ function CaptureComposer({
           size="touch"
           loading={saving}
           loadingLabel="Adding to Library…"
+          disabled={title.trim().length === 0 || type === ""}
           className="min-w-40 justify-self-start sm:h-10"
         >
           Add to Library

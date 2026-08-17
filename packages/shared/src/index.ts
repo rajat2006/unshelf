@@ -22,6 +22,9 @@ export enum Type {
 
 export const ITEM_TYPES = Object.values(Type);
 
+/** Maximum UTF-8 size accepted by the ephemeral Source-inspection boundary. */
+export const SOURCE_INSPECTION_SOURCE_BYTE_LIMIT = 8 * 1024;
+
 export const SOURCE_INSPECTION_TITLE_EVIDENCE = [
   "schema_org",
   "open_graph",
