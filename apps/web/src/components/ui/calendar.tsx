@@ -42,19 +42,19 @@ function Calendar({
         classNames={{
           root: cn("w-fit", defaults.root),
           months: cn("relative", defaults.months),
-          month: cn("grid gap-2", defaults.month),
+          month: cn("relative grid gap-2", defaults.month),
           nav: cn(
             "absolute inset-x-0 top-0 flex items-center justify-between",
             defaults.nav,
           ),
           button_previous: cn(
             buttonVariants({ variant: "quiet", size: "icon-compact" }),
-            "z-10",
+            "absolute start-0 top-0 z-10",
             defaults.button_previous,
           ),
           button_next: cn(
             buttonVariants({ variant: "quiet", size: "icon-compact" }),
-            "z-10",
+            "absolute end-0 top-0 z-10",
             defaults.button_next,
           ),
           month_caption: cn(

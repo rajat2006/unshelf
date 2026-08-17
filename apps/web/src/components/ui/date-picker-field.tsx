@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDaysIcon } from "lucide-react";
+import {
+  enGB as dayPickerEnGB,
+  enUS as dayPickerEnUS,
+} from "react-day-picker/locale";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { FieldError } from "@/components/ui/field";
@@ -14,7 +18,6 @@ import {
   formatLocalizedCalendarDate,
   localDateToCalendarDate,
   parseLocalizedCalendarDate,
-  resolveDatePickerLocale,
   validateCanonicalCalendarDate,
   type CalendarDateValidationError,
   type DatePickerLocale,
@@ -45,7 +48,7 @@ export function DatePickerField({
   id,
   value,
   today,
-  locale = browserDatePickerLocale(),
+  locale = "en-GB",
   required = false,
   disabled = false,
   allowToday = false,
@@ -357,6 +360,7 @@ export function DatePickerField({
             selected={selectedDate}
             today={authoritativeToday ?? NO_AUTHORITATIVE_TODAY}
             modifiers={{ authoritativeToday }}
+            locale={locale === "en-US" ? dayPickerEnUS : dayPickerEnGB}
             month={visibleMonth}
             onMonthChange={setVisibleMonth}
             startMonth={calendarBounds.start}
@@ -555,12 +559,6 @@ function validationMessage({
     case "after-max":
       return `Enter a date on or before ${formatLocalizedCalendarDate(max ?? "", locale)}.`;
   }
-}
-
-function browserDatePickerLocale(): DatePickerLocale {
-  return resolveDatePickerLocale(
-    typeof navigator === "undefined" ? [] : navigator.languages,
-  );
 }
 
 function fixedDateOutsideSupportedRange(): Date {

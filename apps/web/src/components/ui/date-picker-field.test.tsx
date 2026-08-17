@@ -104,6 +104,28 @@ describe("DatePickerField", () => {
     expect(onValueChange).toHaveBeenCalledWith("2028-02-29");
   });
 
+  it("defaults the product field and calendar to day-first English", () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-17"
+        today="2026-08-17"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("Target date");
+    expect(input).toHaveValue("17/08/2026");
+    fireEvent.click(input);
+    const calendar = screen.getByRole("dialog", { name: "Choose date" });
+    expect(
+      Array.from(calendar.querySelectorAll("th"), (header) =>
+        header.textContent?.trim(),
+      ),
+    ).toEqual(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]);
+  });
+
   it("opens the desktop calendar from the date input without a separate button", () => {
     render(
       <DatePickerField
@@ -130,7 +152,7 @@ describe("DatePickerField", () => {
     expect(input).toHaveAttribute("aria-expanded", "true");
     expect(input).toHaveFocus();
     const selectedToday = screen.getByRole("button", {
-      name: /Today.*August 16th, 2026.*selected/i,
+      name: /Today.*16 August 2026.*selected/i,
     });
     expect(selectedToday).toHaveAttribute("data-selected", "true");
     expect(selectedToday).toHaveAttribute("data-today", "true");

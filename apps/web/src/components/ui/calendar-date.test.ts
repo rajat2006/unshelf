@@ -4,7 +4,6 @@ import {
   formatLocalizedCalendarDate,
   localDateToCalendarDate,
   parseLocalizedCalendarDate,
-  resolveDatePickerLocale,
   validateCanonicalCalendarDate,
 } from "./calendar-date";
 
@@ -16,12 +15,6 @@ describe("calendar date adapter", () => {
     expect(formatLocalizedCalendarDate("2026-08-16", "en-GB")).toBe(
       "16/08/2026",
     );
-  });
-
-  it("uses the first supported English preference and falls back to en-GB", () => {
-    expect(resolveDatePickerLocale(["fr-FR", "en-US", "en-GB"])).toBe("en-US");
-    expect(resolveDatePickerLocale(["en-AU", "en-US"])).toBe("en-GB");
-    expect(resolveDatePickerLocale(["de-DE", "fr-FR"])).toBe("en-GB");
   });
 
   it("strictly parses localized real calendar dates", () => {

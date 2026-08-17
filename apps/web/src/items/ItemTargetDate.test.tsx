@@ -91,7 +91,7 @@ describe("Item Target date editor", () => {
     fireEvent.change(
       screen.getByLabelText("Target date for Practical indexing"),
       {
-        target: { value: "09/01/2026" },
+        target: { value: "01/09/2026" },
       },
     );
     fireEvent.keyDown(
@@ -134,7 +134,7 @@ describe("Item Target date editor", () => {
     const onChanged = renderTargetDate();
     const input = screen.getByLabelText("Target date for Practical indexing");
 
-    fireEvent.change(input, { target: { value: "09/01/2026" } });
+    fireEvent.change(input, { target: { value: "01/09/2026" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() =>
@@ -144,7 +144,7 @@ describe("Item Target date editor", () => {
         "2026-09-01",
       ),
     );
-    expect(input).toHaveValue("09/01/2026");
+    expect(input).toHaveValue("01/09/2026");
     expect(input).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Saving Target date…");
 
@@ -167,7 +167,7 @@ describe("Item Target date editor", () => {
     input.focus();
     fireEvent.click(input);
     fireEvent.click(
-      screen.getByRole("button", { name: "Monday, August 24th, 2026" }),
+      screen.getByRole("button", { name: "Monday, 24 August 2026" }),
     );
 
     await waitFor(() =>

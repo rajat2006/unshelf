@@ -204,7 +204,7 @@ test("a bookmarked or refreshed Item opens beside its canonical Library at any v
   await doneOption.click();
   await expect(status).toContainText("Done");
   await expect(sidebar.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    testInfo.project.name === "phone" ? "2099-06-15" : "06/15/2099",
+    testInfo.project.name === "phone" ? "2099-06-15" : "15/06/2099",
   );
   await expect(
     sidebar.getByRole("link", { name: "https://example.com/course" }),
@@ -267,6 +267,16 @@ test("the themed date picker chooses and saves a Target date across responsive i
   await input.press("Alt+ArrowDown");
   const calendar = page.getByRole("dialog", { name: "Choose date" });
   await expect(calendar).toBeVisible();
+  const [previousMonthBounds, nextMonthBounds] = await Promise.all([
+    calendar.getByRole("button", { name: /previous month/i }).boundingBox(),
+    calendar.getByRole("button", { name: /next month/i }).boundingBox(),
+  ]);
+  expect(previousMonthBounds).not.toBeNull();
+  expect(nextMonthBounds).not.toBeNull();
+  expect(previousMonthBounds?.y).toBeCloseTo(nextMonthBounds?.y ?? 0, 0);
+  const calendarBounds = await calendar.boundingBox();
+  expect(calendarBounds).not.toBeNull();
+  expect(calendarBounds!.height / calendarBounds!.width).toBeLessThan(1.5);
 
   const monthPicker = calendar.getByRole("combobox", {
     name: "Choose the Month",
@@ -288,19 +298,19 @@ test("the themed date picker chooses and saves a Target date across responsive i
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   const septemberFirst = calendar.getByRole("button", {
-    name: "Monday, September 1st, 2098",
+    name: "Monday, 1 September 2098",
   });
   await expect(septemberFirst).toBeFocused();
   for (let day = 1; day < 8; day += 1) {
     await page.keyboard.press("ArrowRight");
   }
   const septemberEighth = calendar.getByRole("button", {
-    name: "Monday, September 8th, 2098",
+    name: "Monday, 8 September 2098",
   });
   await expect(septemberEighth).toBeFocused();
   await septemberEighth.press("Enter");
 
-  await expect(input).toHaveValue("09/08/2098");
+  await expect(input).toHaveValue("08/09/2098");
   await expect(input).toBeEnabled();
   await expect(input).toBeFocused();
 
@@ -566,10 +576,10 @@ test("Item detail edits synchronize with the same Item in the underlying Library
   ).toHaveAttribute("aria-pressed", "true");
 
   const targetDate = sidebar.getByLabel(`Target date for ${item.title}`);
-  await targetDate.fill("08/20/2099");
+  await targetDate.fill("20/08/2099");
   await targetDate.press("Enter");
   await expect(library.getByLabel(`Target date for ${item.title}`)).toHaveValue(
-    "08/20/2099",
+    "20/08/2099",
   );
 
   await library
@@ -625,7 +635,7 @@ test("Target date recovers authoritative Today without using the browser clock",
     page.getByRole("button", { name: "Today", exact: true }),
   ).toHaveCount(0);
   const typedDate =
-    testInfo.project.name === "phone" ? "2099-08-20" : "08/20/2099";
+    testInfo.project.name === "phone" ? "2099-08-20" : "20/08/2099";
   await input.fill(typedDate);
   if (testInfo.project.name !== "phone") await input.press("Enter");
   await expect(input).toHaveValue(typedDate);

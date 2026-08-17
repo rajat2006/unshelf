@@ -26,15 +26,6 @@ interface ValidateCanonicalCalendarDateOptions {
   max?: string;
 }
 
-export function resolveDatePickerLocale(
-  languages: readonly string[],
-): DatePickerLocale {
-  const englishPreference = languages.find((language) =>
-    language.toLowerCase().startsWith("en"),
-  );
-  return englishPreference?.toLowerCase() === "en-us" ? "en-US" : "en-GB";
-}
-
 export function formatLocalizedCalendarDate(
   value: string,
   locale: DatePickerLocale,

@@ -9,30 +9,18 @@ import {
 
 function localizedDate(canonicalDate: string): string {
   const [year, month, day] = canonicalDate.split("-");
-  return `${month}/${day}/${year}`;
+  return `${day}/${month}/${year}`;
 }
 
 function dayButtonName(canonicalDate: string): string {
   const [year, month, day] = canonicalDate.split("-").map(Number);
   const date = new Date(year, month - 1, day, 12);
-  const weekday = new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
-  }).format(date);
-  const monthName = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
     month: "long",
+    year: "numeric",
   }).format(date);
-  const remainder = day % 100;
-  const suffix =
-    remainder >= 11 && remainder <= 13
-      ? "th"
-      : day % 10 === 1
-        ? "st"
-        : day % 10 === 2
-          ? "nd"
-          : day % 10 === 3
-            ? "rd"
-            : "th";
-  return `${weekday}, ${monthName} ${day}${suffix}, ${year}`;
 }
 
 test("a User explicitly chooses and edits today's shared Library Items", async ({
@@ -219,7 +207,7 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     ).toBe(true);
   } else {
     await expect(dateInput).toHaveAttribute("type", "text");
-    await dateInput.fill("02/03/2001");
+    await dateInput.fill("03/02/2001");
     await dateInput.press("Enter");
     await expect(page).toHaveURL(
       new RegExp(`/today/${historicalDate}(?:\\?|$)`),
@@ -241,7 +229,7 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
 
     await page.goForward();
     await expect(page).toHaveURL(/\/today\/2001-02-03\?/);
-    await expect(dateInput).toHaveValue("02/03/2001");
+    await expect(dateInput).toHaveValue("03/02/2001");
     await page.goBack();
     await expect(page).toHaveURL(
       new RegExp(`/today/${historicalDate}(?:\\?|$)`),
@@ -282,6 +270,11 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
         dateInput.evaluate((element) => getComputedStyle(element).color),
       )
       .not.toBe(lightInputColor);
+    await page.evaluate(() =>
+      Promise.all(
+        document.getAnimations().map((animation) => animation.finished),
+      ),
+    );
     const darkAccessibility = await new AxeBuilder({ page }).analyze();
     expect(darkAccessibility.violations).toEqual([]);
 
@@ -352,7 +345,7 @@ test("Daily Focus history ignores stale loading responses and retries in place",
   const invalidAccessibility = await new AxeBuilder({ page }).analyze();
   expect(invalidAccessibility.violations).toEqual([]);
 
-  await dateInput.fill("02/04/2001");
+  await dateInput.fill("04/02/2001");
   await dateInput.press("Enter");
   await page.getByRole("button", { name: "View date" }).click();
   await expect(page).toHaveURL(/\/today\/2001-02-04\?/);
@@ -379,19 +372,19 @@ test("Daily Focus history ignores stale loading responses and retries in place",
     }
     await route.fulfill({ status: 200, json: emptyHistory("2001-02-05") });
   });
-  await dateInput.fill("02/05/2001");
+  await dateInput.fill("05/02/2001");
   await dateInput.press("Enter");
   await page.getByRole("button", { name: "View date" }).click();
   await expect(page.getByText("Daily Focus unavailable")).toBeVisible();
 
-  await dateInput.fill("02/06/2001");
+  await dateInput.fill("06/02/2001");
   await dateInput.press("Enter");
   await page.getByRole("button", { name: "Retry" }).click();
 
   await expect(
     page.getByRole("region", { name: "Daily Focus for 2001-02-05" }),
   ).toBeVisible();
-  await expect(dateInput).toHaveValue("02/06/2001");
+  await expect(dateInput).toHaveValue("06/02/2001");
   await expect(page).toHaveURL(/\/today\/2001-02-05\?/);
 });
 

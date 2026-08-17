@@ -742,9 +742,9 @@ describe("Daily Focus history", () => {
 
     const dateField = screen.getByLabelText("Daily Focus date");
     expect(dateField).toHaveAttribute("type", "text");
-    expect(dateField).toHaveValue("08/13/2026");
+    expect(dateField).toHaveValue("13/08/2026");
 
-    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    fireEvent.change(dateField, { target: { value: "12/08/2026" } });
     expect(fireEvent.keyDown(dateField, { key: "Enter" })).toBe(false);
 
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
@@ -766,7 +766,7 @@ describe("Daily Focus history", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() =>
       expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
-        "08/13/2026",
+        "13/08/2026",
       ),
     );
   });
@@ -785,11 +785,15 @@ describe("Daily Focus history", () => {
 
     expect(dateField).toHaveValue("08/1");
     expect(dateField).toHaveAccessibleDescription(
-      "Complete the date in MM/DD/YYYY format.",
+      "Complete the date in DD/MM/YYYY format.",
     );
     expect(screen.getByRole("button", { name: "View date" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Clear" }),
+    ).not.toBeInTheDocument();
   });
 
   it("replaces an invalid draft when Back and Forward change the routed date", async () => {
@@ -814,7 +818,7 @@ describe("Daily Focus history", () => {
 
     await waitFor(() =>
       expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
-        "08/12/2026",
+        "12/08/2026",
       ),
     );
     expect(screen.getByRole("button", { name: "View date" })).toBeEnabled();
@@ -826,7 +830,7 @@ describe("Daily Focus history", () => {
 
     await waitFor(() =>
       expect(screen.getByLabelText("Daily Focus date")).toHaveValue(
-        "08/13/2026",
+        "13/08/2026",
       ),
     );
     await screen.findByRole("region", {
@@ -845,7 +849,7 @@ describe("Daily Focus history", () => {
     renderHistory();
 
     const dateField = screen.getByLabelText("Daily Focus date");
-    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    fireEvent.change(dateField, { target: { value: "12/08/2026" } });
     fireEvent.keyDown(dateField, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "View date" }));
 
@@ -854,9 +858,9 @@ describe("Daily Focus history", () => {
     });
     const liveDateField = screen.getByLabelText("Daily Focus date");
     expect(liveDateField).toBeEnabled();
-    fireEvent.change(liveDateField, { target: { value: "08/11/2026" } });
+    fireEvent.change(liveDateField, { target: { value: "11/08/2026" } });
     fireEvent.keyDown(liveDateField, { key: "Enter" });
-    expect(liveDateField).toHaveValue("08/11/2026");
+    expect(liveDateField).toHaveValue("11/08/2026");
 
     newest.resolve({ ...focus, date: "2026-08-12" });
     await screen.findByRole("region", {
@@ -883,7 +887,7 @@ describe("Daily Focus history", () => {
 
     expect(await screen.findByText("Daily Focus unavailable")).toBeVisible();
     const dateField = screen.getByLabelText("Daily Focus date");
-    fireEvent.change(dateField, { target: { value: "08/12/2026" } });
+    fireEvent.change(dateField, { target: { value: "12/08/2026" } });
     fireEvent.keyDown(dateField, { key: "Enter" });
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -891,7 +895,7 @@ describe("Daily Focus history", () => {
     await screen.findByRole("region", {
       name: "Daily Focus for 2026-08-13",
     });
-    expect(dateField).toHaveValue("08/12/2026");
+    expect(dateField).toHaveValue("12/08/2026");
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
       "/today/2026-08-13",
     );
