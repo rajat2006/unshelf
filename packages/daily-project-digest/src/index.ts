@@ -3,6 +3,7 @@ import {
   DigestFailure,
   type AIPresentationFailureReason,
 } from "./failures.js";
+import { asRecord } from "./provider-support.js";
 
 export type DiscordPayload = {
   allowed_mentions: { parse: [] };
@@ -224,6 +225,7 @@ type AIPresentationOutcome =
   | {
       aiPresentation: "failed";
       aiFailureReason: AIPresentationFailureReason;
+      aiFailureSubjectId?: string;
     }
   | { aiPresentation: "skipped" };
 
@@ -335,11 +337,11 @@ async function presentSubjects({
   } catch (error) {
     return {
       subjects: fallback,
-      aiPresentation: "failed",
-      aiFailureReason:
-        error instanceof AIPresentationFailure
-          ? error.reason
-          : "request-failure",
+      ...toFailedAIPresentationOutcome({
+        error,
+        unexpectedReason: "request-unexpected",
+        allowSubjectId: false,
+      }),
     };
   }
   try {
@@ -347,13 +349,37 @@ async function presentSubjects({
       subjects: applyOpenAIPresentation({ subjects, input, response }),
       aiPresentation: "applied",
     };
-  } catch {
+  } catch (error) {
     return {
       subjects: fallback,
-      aiPresentation: "failed",
-      aiFailureReason: "contract-validation",
+      ...toFailedAIPresentationOutcome({
+        error,
+        unexpectedReason: "contract-unexpected",
+        allowSubjectId: true,
+      }),
     };
   }
+}
+
+function toFailedAIPresentationOutcome({
+  error,
+  unexpectedReason,
+  allowSubjectId,
+}: {
+  error: unknown;
+  unexpectedReason: "request-unexpected" | "contract-unexpected";
+  allowSubjectId: boolean;
+}): Extract<AIPresentationOutcome, { aiPresentation: "failed" }> {
+  return {
+    aiPresentation: "failed",
+    aiFailureReason:
+      error instanceof AIPresentationFailure ? error.reason : unexpectedReason,
+    ...(allowSubjectId &&
+    error instanceof AIPresentationFailure &&
+    error.subjectId !== undefined
+      ? { aiFailureSubjectId: error.subjectId }
+      : {}),
+  };
 }
 
 function toOpenAIInput(subjects: DigestSubject[]): OpenAIPresentationInput {
@@ -387,12 +413,14 @@ function applyOpenAIPresentation({
   response: unknown;
 }): PresentedSubject[] {
   const output = exactRecord(response, ["schemaVersion", "items"]);
-  if (
-    output === undefined ||
-    output.schemaVersion !== aiSchemaVersion ||
-    !Array.isArray(output.items)
-  ) {
-    throw new Error("OpenAI returned an invalid digest presentation.");
+  if (output === undefined) {
+    throw new AIPresentationFailure({ reason: "contract-envelope" });
+  }
+  if (output.schemaVersion !== aiSchemaVersion) {
+    throw new AIPresentationFailure({ reason: "contract-schema-version" });
+  }
+  if (!Array.isArray(output.items)) {
+    throw new AIPresentationFailure({ reason: "contract-items" });
   }
   const factsBySubject = new Map(
     input.subjects.map((subject) => [
@@ -405,29 +433,51 @@ function applyOpenAIPresentation({
     { sentence: string; audienceGroup: "standard" | "internal_maintenance" }
   >();
   for (const value of output.items) {
+    const knownItemSubjectId = knownSubjectId(value, factsBySubject);
     const item = exactRecord(value, [
       "subjectId",
       "sentence",
       "audienceGroup",
       "citations",
     ]);
+    if (item === undefined) {
+      throw new AIPresentationFailure({
+        reason: "contract-item-shape",
+        subjectId: knownItemSubjectId,
+      });
+    }
     if (
-      item === undefined ||
       typeof item.subjectId !== "string" ||
       typeof item.sentence !== "string" ||
       (item.audienceGroup !== "standard" &&
         item.audienceGroup !== "internal_maintenance") ||
-      !Array.isArray(item.citations) ||
-      item.citations.length === 0 ||
-      !isSafeAISentence(item.sentence) ||
-      presentationBySubject.has(item.subjectId)
+      !Array.isArray(item.citations)
     ) {
-      throw new Error("OpenAI returned an invalid digest presentation.");
+      throw new AIPresentationFailure({
+        reason: "contract-item-shape",
+        subjectId: knownItemSubjectId,
+      });
     }
     const knownFacts = factsBySubject.get(item.subjectId);
+    if (knownFacts === undefined) {
+      throw new AIPresentationFailure({ reason: "contract-unknown-subject" });
+    }
+    if (presentationBySubject.has(item.subjectId)) {
+      throw new AIPresentationFailure({
+        reason: "contract-duplicate-subject",
+        subjectId: item.subjectId,
+      });
+    }
+    const sentenceFailure = aiSentenceFailure(item.sentence);
+    if (sentenceFailure !== undefined) {
+      throw new AIPresentationFailure({
+        reason: sentenceFailure,
+        subjectId: item.subjectId,
+      });
+    }
     const citations = new Set<string>();
     if (
-      knownFacts === undefined ||
+      item.citations.length === 0 ||
       item.citations.some((citation) => {
         if (
           typeof citation !== "string" ||
@@ -441,7 +491,10 @@ function applyOpenAIPresentation({
       }) ||
       citations.size !== item.citations.length
     ) {
-      throw new Error("OpenAI returned an invalid digest presentation.");
+      throw new AIPresentationFailure({
+        reason: "contract-citation",
+        subjectId: item.subjectId,
+      });
     }
     presentationBySubject.set(item.subjectId, {
       sentence: item.sentence,
@@ -449,15 +502,35 @@ function applyOpenAIPresentation({
     });
   }
   if (presentationBySubject.size !== subjects.length) {
-    throw new Error("OpenAI returned an invalid digest presentation.");
+    const missingSubjectIds = [...factsBySubject.keys()].filter(
+      (knownSubjectId) => !presentationBySubject.has(knownSubjectId),
+    );
+    throw new AIPresentationFailure({
+      reason: "contract-subject-set",
+      subjectId:
+        missingSubjectIds.length === 1 ? missingSubjectIds[0] : undefined,
+    });
   }
   return subjects.map((subject) => {
     const presentation = presentationBySubject.get(subjectId(subject));
     if (presentation === undefined) {
-      throw new Error("OpenAI returned an invalid digest presentation.");
+      throw new AIPresentationFailure({
+        reason: "contract-subject-set",
+        subjectId: subjectId(subject),
+      });
     }
     return { ...subject, ...presentation };
   });
+}
+
+function knownSubjectId(
+  value: unknown,
+  factsBySubject: Map<string, Set<string>>,
+): string | undefined {
+  const candidate = asRecord(value)?.subjectId;
+  return typeof candidate === "string" && factsBySubject.has(candidate)
+    ? candidate
+    : undefined;
 }
 
 function exactRecord(
@@ -475,28 +548,43 @@ function exactRecord(
     : undefined;
 }
 
-function isSafeAISentence(sentence: string): boolean {
-  return (
-    sentence === sentence.trim() &&
-    sentence.length >= 12 &&
-    sentence.length <= 180 &&
-    /^[^.!?\r\n]+[.!?]$/.test(sentence) &&
-    /^(?:Adds|Allows|Brings|Builds|Clarifies|Creates|Enables|Ensures|Establishes|Exposes|Fixes|Groups|Improves|Includes|Keeps|Makes|Maps|Moves|Prevents|Protects|Provides|Provisions|Reduces|Removes|Repairs|Restores|Sets|Shapes|Shows|Simplifies|Supports|Updates)\b/.test(
-      sentence,
-    ) &&
-    !hasControlCharacter(sentence) &&
-    !/^\s*(?:[-+>]|\d+[.)])\s/.test(sentence) &&
-    !/(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) &&
-    !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
-    !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
-    !/@/.test(sentence) &&
-    !/\b(?:production|live|releas(?:e[ds]?|ing)|complet(?:e[ds]?|ing)|block(?:s|ed|ing)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e[ds]?|ing)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
-      sentence,
-    ) &&
-    !/\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
+function aiSentenceFailure(
+  sentence: string,
+): AIPresentationFailureReason | undefined {
+  if (sentence !== sentence.trim()) return "contract-sentence-whitespace";
+  if (sentence.length < 12 || sentence.length > 180)
+    return "contract-sentence-length";
+  if (hasControlCharacter(sentence)) return "contract-sentence-control";
+  if (/^\s*(?:[-+>]|\d+[.)])\s/.test(sentence)) return "contract-sentence-list";
+  if (
+    /(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) ||
+    /\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence)
+  )
+    return "contract-sentence-url";
+  if (!/^[^.!?\r\n]+[.!?]$/.test(sentence))
+    return "contract-sentence-punctuation";
+  if (
+    !/^(?:Adds|Allows|Brings|Builds|Clarifies|Creates|Enables|Ensures|Establishes|Exposes|Fixes|Groups|Improves|Includes|Keeps|Makes|Maps|Moves|Prevents|Protects|Provides|Provisions|Reduces|Removes|Repairs|Restores|Sets|Shapes|Shows|Simplifies|Supports|Updates)\b/.test(
       sentence,
     )
-  );
+  )
+    return "contract-sentence-opening";
+  if (/(?:\[|\]|[*_`~#><|])/.test(sentence))
+    return "contract-sentence-markdown";
+  if (/@/.test(sentence)) return "contract-sentence-mention";
+  if (
+    /\b(?:production|live|releas(?:e[ds]?|ing)|complet(?:e[ds]?|ing)|block(?:s|ed|ing)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e[ds]?|ing)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
+      sentence,
+    )
+  )
+    return "contract-sentence-lifecycle";
+  if (
+    /\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
+      sentence,
+    )
+  )
+    return "contract-sentence-prompt-control";
+  return undefined;
 }
 
 function hasControlCharacter(value: string): boolean {

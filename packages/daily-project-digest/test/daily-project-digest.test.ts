@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDiscordWebhookAdapter,
   createGitHubActionsPreviewAdapters,
+  createOpenAIResponsesAdapter,
   runDailyProjectDigest,
   type DeliveryAdapters,
   type DiscordPayload,
@@ -16,6 +17,45 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+function deliveryAdaptersWithOpenAI(
+  openai: DeliveryAdapters["openai"],
+): DeliveryAdapters {
+  return {
+    clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
+    github: {
+      listPullRequests: () =>
+        Promise.resolve([
+          {
+            state: "OPEN" as const,
+            mergedAt: null,
+            number: 202,
+            title: "Improve the learning plan overview",
+            baseRefName: "dev",
+            headRefName: "agent/learning-plan-overview",
+            headRepository: "rajat2006/unshelf",
+            labels: [],
+            isDraft: false,
+            headContainsMain: false,
+            blockedBy: [],
+            closingIssues: [],
+          },
+        ]),
+      listDeployments: () => Promise.resolve([]),
+      listWayfinderMaps: () => Promise.resolve([]),
+    },
+    summary: { availability: "unavailable" },
+    openai,
+    discord: { deliver: () => Promise.resolve() },
+  };
+}
+
+const validPresentationItem = {
+  subjectId: "pull-request:202",
+  sentence: "Improves the learning plan overview for readers.",
+  audienceGroup: "standard",
+  citations: ["title"],
+} as const;
 
 describe("Daily Project Digest", () => {
   it("delivers production releases alongside completed and active work", async () => {
@@ -890,7 +930,8 @@ describe("Daily Project Digest", () => {
     if (result.aiPresentation !== "failed") {
       throw new Error("Expected the AI presentation to fail validation.");
     }
-    expect(result.aiFailureReason).toBe("contract-validation");
+    expect(result.aiFailureReason).toBe("contract-sentence-lifecycle");
+    expect(result.aiFailureSubjectId).toBe("pull-request:202");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
         name: "Completed — Merged and ready for a release",
@@ -905,6 +946,303 @@ describe("Daily Project Digest", () => {
     ]);
     expect(deliveredPayload).toBe(result.payload);
   });
+
+  it.each([
+    ["contract-envelope", null, undefined],
+    [
+      "contract-envelope",
+      { schemaVersion: "1", items: [], extra: true },
+      undefined,
+    ],
+    ["contract-schema-version", { schemaVersion: "2", items: [] }, undefined],
+    ["contract-items", { schemaVersion: "1", items: null }, undefined],
+    [
+      "contract-item-shape",
+      { schemaVersion: "1", items: [{ subjectId: "pull-request:202" }] },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-whitespace",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: " Improves plans." }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-length",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: "Improves." }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-control",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves user\u0007 plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-list",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "- Improves user plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-punctuation",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: "Improves user plans" }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-opening",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: "Enhances user plans." }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-url",
+      {
+        schemaVersion: "1",
+        items: [
+          {
+            ...validPresentationItem,
+            sentence: "Improves plans at https://example.com.",
+          },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-markdown",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves *user* plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-mention",
+      {
+        schemaVersion: "1",
+        items: [
+          {
+            ...validPresentationItem,
+            sentence: "Improves plans for @readers.",
+          },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-lifecycle",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves completed plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-prompt-control",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves prompt handling." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-duplicate-subject",
+      {
+        schemaVersion: "1",
+        items: [validPresentationItem, validPresentationItem],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-unknown-subject",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, subjectId: "pull-request:999" }],
+      },
+      undefined,
+    ],
+    [
+      "contract-citation",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, citations: [] }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-subject-set",
+      { schemaVersion: "1", items: [] },
+      "pull-request:202",
+    ],
+  ])(
+    "reports %s without exposing AI content",
+    async (expectedReason, response, expectedSubjectId) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI({
+          generatePresentation: () => Promise.resolve(response),
+        }),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(result.aiFailureSubjectId).toBe(expectedSubjectId);
+      expect(JSON.stringify(result)).not.toContain("Enhances user plans");
+    },
+  );
+
+  it.each([
+    ["request-network", () => Promise.reject(new TypeError("offline"))],
+    [
+      "response-http-authentication",
+      () => Promise.resolve(new Response(null, { status: 401 })),
+    ],
+    [
+      "response-http-rate-limit",
+      () => Promise.resolve(new Response(null, { status: 429 })),
+    ],
+    [
+      "response-http-client",
+      () => Promise.resolve(new Response(null, { status: 400 })),
+    ],
+    [
+      "response-http-provider",
+      () => Promise.resolve(new Response(null, { status: 500 })),
+    ],
+    ["response-body-json", () => Promise.resolve(new Response("not json"))],
+    [
+      "response-incomplete",
+      () =>
+        Promise.resolve(Response.json({ status: "in_progress", output: [] })),
+    ],
+    [
+      "response-envelope",
+      () => Promise.resolve(Response.json({ status: "completed" })),
+    ],
+    [
+      "response-refusal",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "refusal", refusal: "no" }],
+              },
+            ],
+          }),
+        ),
+    ],
+    [
+      "response-output-text",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [{ type: "message", content: [] }],
+          }),
+        ),
+    ],
+    [
+      "response-output-json",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "output_text", text: "{" }],
+              },
+            ],
+          }),
+        ),
+    ],
+  ])(
+    "reports sanitized provider failure %s",
+    async (expectedReason, fetchResult) => {
+      vi.stubGlobal("fetch", vi.fn(fetchResult));
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI(
+          createOpenAIResponsesAdapter({ apiKey: "openai-key" }),
+        ),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(result.aiFailureSubjectId).toBeUndefined();
+    },
+  );
+
+  it.each([
+    [
+      "request-unexpected",
+      { generatePresentation: () => Promise.reject(new Error("secret")) },
+    ],
+    [
+      "contract-unexpected",
+      {
+        generatePresentation: () =>
+          Promise.resolve(
+            new Proxy(
+              {},
+              {
+                ownKeys: () => {
+                  throw new Error("secret");
+                },
+              },
+            ),
+          ),
+      },
+    ],
+  ])(
+    "reports sanitized unexpected failure %s",
+    async (expectedReason, openai) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI(openai),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(JSON.stringify(result)).not.toContain("secret");
+    },
+  );
 
   it("previews the exact payload without invoking Discord", async () => {
     vi.useFakeTimers();
@@ -1041,7 +1379,7 @@ describe("Daily Project Digest", () => {
       if (result.aiPresentation !== "failed") {
         throw new Error("Expected the AI presentation to time out.");
       }
-      expect(result.aiFailureReason).toBe("timeout");
+      expect(result.aiFailureReason).toBe("request-timeout");
       expect(adapters.discord).toEqual({ availability: "unavailable" });
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });

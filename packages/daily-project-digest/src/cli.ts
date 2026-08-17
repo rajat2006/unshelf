@@ -52,7 +52,12 @@ async function main(): Promise<void> {
       windowEnd: result.windowEnd,
       aiPresentation: result.aiPresentation,
       ...(result.aiPresentation === "failed"
-        ? { aiFailureReason: result.aiFailureReason }
+        ? {
+            aiFailureReason: result.aiFailureReason,
+            ...(result.aiFailureSubjectId === undefined
+              ? {}
+              : { aiFailureSubjectId: result.aiFailureSubjectId }),
+          }
         : {}),
     })}\n`,
   );
