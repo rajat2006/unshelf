@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("Daily Project Digest preview", () => {
-  it("previews the exact active delivery-work payload without delivering", async () => {
+  it("previews completed delivery work alongside the active snapshot", async () => {
     const trace: string[] = [];
     let summarizedPayload: DiscordPayload | undefined;
     const adapters: PreviewAdapters = {
@@ -18,10 +18,98 @@ describe("Daily Project Digest preview", () => {
         },
       },
       github: {
-        listOpenPullRequests: ({ windowEnd }) => {
-          trace.push(`github:${windowEnd.toISOString()}`);
+        listPullRequests: ({ windowStart, windowEnd }) => {
+          trace.push(
+            `github:${windowStart.toISOString()}:${windowEnd.toISOString()}`,
+          );
           return Promise.resolve([
             {
+              state: "MERGED",
+              mergedAt: "2026-08-17T12:00:00.000Z",
+              number: 116,
+              title: "Finish completed delivery reporting",
+              baseRefName: "dev",
+              headRefName: "agent/completed-delivery",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-16T17:30:00.000Z",
+              number: 117,
+              title: "Include the window start",
+              baseRefName: "dev",
+              headRefName: "agent/window-start",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-17T17:30:00.000Z",
+              number: 118,
+              title: "Exclude the window end",
+              baseRefName: "dev",
+              headRefName: "agent/window-end",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-16T17:29:59.999Z",
+              number: 119,
+              title: "Exclude an earlier merge",
+              baseRefName: "dev",
+              headRefName: "agent/before-window",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "CLOSED",
+              mergedAt: null,
+              number: 120,
+              title: "Ignore closed unmerged work",
+              baseRefName: "dev",
+              headRefName: "agent/closed-unmerged",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-17T13:00:00.000Z",
+              number: 121,
+              title: "Ignore a direct hotfix merge",
+              baseRefName: "main",
+              headRefName: "hotfix/direct-main",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: true,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "OPEN",
+              mergedAt: null,
               number: 101,
               title: "Keep draft delivery work visible",
               baseRefName: "dev",
@@ -34,6 +122,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 102,
               title: "Provision digest access",
               baseRefName: "dev",
@@ -46,6 +136,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 103,
               title: "Shape the preview wording",
               baseRefName: "dev",
@@ -64,6 +156,8 @@ describe("Daily Project Digest preview", () => {
               ],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 104,
               title: "Ignore an arbitrary blocked issue mention",
               baseRefName: "dev",
@@ -76,6 +170,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 105,
               title: "Repair production sign-in",
               baseRefName: "main",
@@ -88,6 +184,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 106,
               title: "Release dev",
               baseRefName: "main",
@@ -100,6 +198,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             {
+              state: "OPEN",
+              mergedAt: null,
               number: 107,
               title: "Stale direct hotfix",
               baseRefName: "main",
@@ -112,6 +212,8 @@ describe("Daily Project Digest preview", () => {
               closingIssues: [],
             },
             ...["A", "B", "C", "D", "E", "F", "G", "H"].map((title, index) => ({
+              state: "OPEN" as const,
+              mergedAt: null,
               number: 108 + index,
               title,
               baseRefName: "dev",
@@ -141,7 +243,7 @@ describe("Daily Project Digest preview", () => {
 
     expect(trace).toEqual([
       "clock",
-      "github:2026-08-17T17:30:00.000Z",
+      "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "summary",
     ]);
     expect(result).toEqual({
@@ -155,6 +257,11 @@ describe("Daily Project Digest preview", () => {
             description: "2 items need attention; 11 efforts are still moving.",
             color: 5793266,
             fields: [
+              {
+                name: "Completed — Merged and ready for a release",
+                value:
+                  "[Finish completed delivery reporting is completed.](https://github.com/rajat2006/unshelf/pull/116)\n[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
+              },
               {
                 name: "Blocked — Needs attention before work can continue",
                 value:

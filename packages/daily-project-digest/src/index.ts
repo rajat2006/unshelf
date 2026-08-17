@@ -22,6 +22,8 @@ type ClosingIssueEvidence = {
 };
 
 export type PullRequestEvidence = {
+  state: "OPEN" | "CLOSED" | "MERGED";
+  mergedAt: string | null;
   number: number;
   title: string;
   baseRefName: string;
@@ -39,7 +41,8 @@ export type ClockAdapter = {
 };
 
 export type GitHubAdapter = {
-  listOpenPullRequests(input: {
+  listPullRequests(input: {
+    windowStart: Date;
     windowEnd: Date;
   }): Promise<PullRequestEvidence[]>;
 };
@@ -62,10 +65,10 @@ export type PreviewAdapters = {
 
 export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
 
-type ActiveSubject = {
+type DigestSubject = {
   number: number;
   title: string;
-  lifecycle: "blocked" | "in-progress";
+  lifecycle: "completed" | "blocked" | "in-progress";
 };
 
 const discordLimits = {
@@ -103,13 +106,17 @@ export async function runDailyProjectDigest(
   if (Number.isNaN(windowEnd.getTime())) {
     throw new Error("Daily Project Digest received an invalid window end.");
   }
+  const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1_000);
 
-  const pullRequests = await adapters.github.listOpenPullRequests({
+  const pullRequests = await adapters.github.listPullRequests({
+    windowStart: new Date(windowStart),
     windowEnd: new Date(windowEnd),
   });
   const subjects = pullRequests
-    .filter(isEligibleDeliveryPullRequest)
-    .map(toActiveSubject)
+    .map((pullRequest) =>
+      toDigestSubject({ pullRequest, windowStart, windowEnd }),
+    )
+    .filter((subject) => subject !== undefined)
     .sort((left, right) => left.number - right.number);
   const payload = renderPayload({ subjects, windowEnd });
   preflightDiscordPayload(payload);
@@ -125,10 +132,11 @@ export async function runDailyProjectDigest(
 function isEligibleDeliveryPullRequest(
   pullRequest: PullRequestEvidence,
 ): boolean {
-  if (pullRequest.baseRefName === "dev") {
+  if (pullRequest.state === "OPEN" && pullRequest.baseRefName === "dev") {
     return true;
   }
   return (
+    pullRequest.state === "OPEN" &&
     pullRequest.baseRefName === "main" &&
     pullRequest.headRefName !== "dev" &&
     pullRequest.headRefName !== "main" &&
@@ -138,7 +146,39 @@ function isEligibleDeliveryPullRequest(
   );
 }
 
-function toActiveSubject(pullRequest: PullRequestEvidence): ActiveSubject {
+function toDigestSubject({
+  pullRequest,
+  windowStart,
+  windowEnd,
+}: {
+  pullRequest: PullRequestEvidence;
+  windowStart: Date;
+  windowEnd: Date;
+}): DigestSubject | undefined {
+  if (pullRequest.state === "MERGED") {
+    if (pullRequest.mergedAt === null) {
+      throw new Error("GitHub returned invalid merged pull-request evidence.");
+    }
+    const mergedAt = new Date(pullRequest.mergedAt);
+    if (Number.isNaN(mergedAt.getTime())) {
+      throw new Error("GitHub returned invalid merged pull-request evidence.");
+    }
+    return pullRequest.baseRefName === "dev" &&
+      mergedAt >= windowStart &&
+      mergedAt < windowEnd
+      ? {
+          number: pullRequest.number,
+          title: normalizeTitle({
+            title: pullRequest.title,
+            number: pullRequest.number,
+          }),
+          lifecycle: "completed",
+        }
+      : undefined;
+  }
+  if (!isEligibleDeliveryPullRequest(pullRequest)) {
+    return undefined;
+  }
   const isBlocked =
     hasBlockingLabel(pullRequest.labels) ||
     hasOpenDependency(pullRequest.blockedBy) ||
@@ -168,9 +208,12 @@ function renderPayload({
   subjects,
   windowEnd,
 }: {
-  subjects: ActiveSubject[];
+  subjects: DigestSubject[];
   windowEnd: Date;
 }): DiscordPayload {
+  const completed = subjects.filter(
+    (subject) => subject.lifecycle === "completed",
+  );
   const blocked = subjects.filter((subject) => subject.lifecycle === "blocked");
   const inProgress = subjects.filter(
     (subject) => subject.lifecycle === "in-progress",
@@ -184,6 +227,11 @@ function renderPayload({
   }
 
   const fields = [
+    renderSection({
+      name: "Completed — Merged and ready for a release",
+      lifecycle: "completed",
+      subjects: completed,
+    }),
     renderSection({
       name: "Blocked — Needs attention before work can continue",
       lifecycle: "blocked",
@@ -202,6 +250,7 @@ function renderPayload({
       {
         title: "Daily Project Digest",
         description: headline({
+          completed: completed.length,
           blocked: blocked.length,
           inProgress: inProgress.length,
         }),
@@ -222,8 +271,8 @@ function renderSection({
   subjects,
 }: {
   name: string;
-  lifecycle: ActiveSubject["lifecycle"];
-  subjects: ActiveSubject[];
+  lifecycle: DigestSubject["lifecycle"];
+  subjects: DigestSubject[];
 }): { name: string; value: string } | undefined {
   if (subjects.length === 0) {
     return undefined;
@@ -248,8 +297,8 @@ function renderSectionValue({
   lifecycle,
   visibleCount,
 }: {
-  subjects: ActiveSubject[];
-  lifecycle: ActiveSubject["lifecycle"];
+  subjects: DigestSubject[];
+  lifecycle: DigestSubject["lifecycle"];
   visibleCount: number;
 }): string {
   const lines = subjects
@@ -262,7 +311,10 @@ function renderSectionValue({
   return lines.join("\n");
 }
 
-function overflowUrl(lifecycle: ActiveSubject["lifecycle"]): string {
+function overflowUrl(lifecycle: DigestSubject["lifecycle"]): string {
+  if (lifecycle === "completed") {
+    return `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Amerged+base%3Adev`;
+  }
   return lifecycle === "blocked"
     ? `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+label%3Aagent%3Ablocked%2Cagent%3Aqueued%2Cneeds-info`
     : `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info`;
@@ -272,10 +324,15 @@ function renderSubject({
   subject,
   lifecycle,
 }: {
-  subject: ActiveSubject;
-  lifecycle: ActiveSubject["lifecycle"];
+  subject: DigestSubject;
+  lifecycle: DigestSubject["lifecycle"];
 }): string {
-  const state = lifecycle === "blocked" ? "blocked" : "in progress";
+  const state =
+    lifecycle === "completed"
+      ? "completed"
+      : lifecycle === "blocked"
+        ? "blocked"
+        : "in progress";
   return `[${subject.title} is ${state}.](${digestRepository.webUrl}/pull/${subject.number})`;
 }
 
@@ -300,14 +357,19 @@ function normalizeTitle({
 }
 
 function headline({
+  completed,
   blocked,
   inProgress,
 }: {
+  completed: number;
   blocked: number;
   inProgress: number;
 }): string {
   if (blocked > 0) {
     return `${blocked} item${blocked === 1 ? " needs" : "s need"} attention; ${inProgress} ${inProgress === 1 ? "effort is" : "efforts are"} still moving.`;
+  }
+  if (completed > 0) {
+    return `${completed} meaningful change${completed === 1 ? "" : "s"} landed; ${inProgress} ${inProgress === 1 ? "effort is" : "efforts are"} underway.`;
   }
   return `${inProgress} ${inProgress === 1 ? "effort is" : "efforts are"} moving forward.`;
 }
