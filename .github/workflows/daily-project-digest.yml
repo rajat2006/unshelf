@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Preview the exact prospective Discord payload
+        description: Preview or deliver the exact prospective Discord payload
         required: true
         type: choice
-        options: [preview]
+        options: [preview, deliver]
 
-# Preview is a trusted, read-only job. AI wording is optional, and it receives no
-# Discord webhook or delivery adapter capability.
+# This is one trusted, read-only generation job. AI wording is optional. The
+# Discord webhook is mapped only on the explicit manual-delivery step.
 permissions:
   contents: read
   deployments: read
@@ -18,9 +18,8 @@ permissions:
   issues: read
 
 jobs:
-  preview:
-    name: Preview
-    if: inputs.mode == 'preview'
+  digest:
+    name: ${{ inputs.mode == 'deliver' && 'Deliver' || 'Preview' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -48,7 +47,16 @@ jobs:
         run: pnpm --filter @unshelf/daily-project-digest build
 
       - name: Preview exact Discord payload
+        if: inputs.mode == 'preview'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DAILY_DIGEST_OPENAI_API_KEY: ${{ secrets.DAILY_DIGEST_OPENAI_API_KEY }}
         run: node packages/daily-project-digest/dist/cli.js preview
+
+      - name: Deliver exact Discord payload
+        if: inputs.mode == 'deliver'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DAILY_DIGEST_OPENAI_API_KEY: ${{ secrets.DAILY_DIGEST_OPENAI_API_KEY }}
+          DAILY_DIGEST_DISCORD_WEBHOOK_URL: ${{ secrets.DAILY_DIGEST_DISCORD_WEBHOOK_URL }}
+        run: node packages/daily-project-digest/dist/cli.js deliver

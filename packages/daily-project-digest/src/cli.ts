@@ -1,30 +1,46 @@
 #!/usr/bin/env node
 
-import { createGitHubActionsPreviewAdapters } from "./github-actions.js";
+import {
+  createGitHubActionsDeliveryAdapters,
+  createGitHubActionsPreviewAdapters,
+} from "./github-actions.js";
 import { runDailyProjectDigest } from "./index.js";
 
 async function main(): Promise<void> {
+  const mode = process.argv[2];
   const token = process.env.GITHUB_TOKEN;
   const repository = process.env.GITHUB_REPOSITORY;
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (
     process.argv.length !== 3 ||
-    process.argv[2] !== "preview" ||
+    (mode !== "preview" && mode !== "deliver") ||
     token === undefined ||
-    repository === undefined ||
-    summaryPath === undefined
+    repository === undefined
   ) {
-    throw new Error("Daily Project Digest preview configuration is invalid.");
+    throw new Error("Daily Project Digest configuration is invalid.");
   }
-  const result = await runDailyProjectDigest(
-    { mode: "preview" },
-    createGitHubActionsPreviewAdapters({
-      token,
-      repository,
-      summaryPath,
-      openaiApiKey: process.env.DAILY_DIGEST_OPENAI_API_KEY,
-    }),
-  );
+  const commonInput = {
+    token,
+    repository,
+    openaiApiKey: process.env.DAILY_DIGEST_OPENAI_API_KEY,
+  };
+  const result =
+    mode === "preview"
+      ? await runDailyProjectDigest(
+          { mode },
+          createGitHubActionsPreviewAdapters({
+            ...commonInput,
+            summaryPath: requiredEnvironmentValue("GITHUB_STEP_SUMMARY"),
+          }),
+        )
+      : await runDailyProjectDigest(
+          { mode },
+          createGitHubActionsDeliveryAdapters({
+            ...commonInput,
+            webhookUrl: requiredEnvironmentValue(
+              "DAILY_DIGEST_DISCORD_WEBHOOK_URL",
+            ),
+          }),
+        );
   process.stdout.write(
     `${JSON.stringify({
       ok: true,
@@ -34,9 +50,17 @@ async function main(): Promise<void> {
   );
 }
 
+function requiredEnvironmentValue(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    throw new Error("Daily Project Digest configuration is invalid.");
+  }
+  return value;
+}
+
 try {
   await main();
 } catch {
-  process.stderr.write("Daily Project Digest preview failed safely.\n");
+  process.stderr.write("Daily Project Digest failed safely.\n");
   process.exitCode = 1;
 }

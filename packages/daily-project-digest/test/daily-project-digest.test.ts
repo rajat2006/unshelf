@@ -1,22 +1,82 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  createGitHubActionsPreviewAdapters,
+  createDiscordWebhookAdapter,
   runDailyProjectDigest,
+  type DeliveryAdapters,
   type DiscordPayload,
   type PreviewAdapters,
 } from "../src/index.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-describe("Daily Project Digest preview", () => {
-  it("previews production releases alongside completed and active work", async () => {
+describe("Daily Project Digest", () => {
+  it("delivers production releases alongside completed and active work", async () => {
+    vi.useFakeTimers();
+    const retryClockStart = Date.now();
     const trace: string[] = [];
-    let summarizedPayload: DiscordPayload | undefined;
+    let deliveredPayload: DiscordPayload | undefined;
     let aiInput: unknown;
-    const adapters: PreviewAdapters = {
+    const webhookRequests: Array<{ url: string; body: unknown }> = [];
+    let webhookAttempt = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        if (typeof init?.body !== "string") {
+          throw new Error("Expected a serialized Discord payload.");
+        }
+        webhookAttempt += 1;
+        webhookRequests.push({
+          url:
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url,
+          body: JSON.parse(init.body) as unknown,
+        });
+        if (webhookAttempt === 1) {
+          const interruptedRateLimit = new Response(
+            JSON.stringify({ retry_after: 0.25 }),
+            {
+              status: 429,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+          vi.spyOn(interruptedRateLimit, "text").mockRejectedValue(
+            new TypeError("response stream interrupted"),
+          );
+          return Promise.resolve(interruptedRateLimit);
+        }
+        if (webhookAttempt === 2) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ retry_after: 0.25 }), {
+              status: 429,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({
+            id: "123456789012345678",
+            channel_id: "234567890123456789",
+            webhook_id: "345678901234567890",
+            author: { id: "345678901234567890" },
+            content: "",
+            timestamp: "2026-08-17T17:30:01.000Z",
+            type: 0,
+          }),
+        );
+      }),
+    );
+    const webhook = createDiscordWebhookAdapter({
+      webhookUrl:
+        "https://discord.com/api/webhooks/345678901234567890/secret-token",
+    });
+    const adapters: DeliveryAdapters = {
       clock: {
         now: () => {
           trace.push("clock");
@@ -483,11 +543,12 @@ describe("Daily Project Digest preview", () => {
           ]);
         },
       },
-      summary: {
-        writePreview: (payload) => {
-          trace.push("summary");
-          summarizedPayload = payload;
-          return Promise.resolve();
+      summary: { availability: "unavailable" },
+      discord: {
+        deliver: async (payload) => {
+          trace.push("discord");
+          deliveredPayload = payload;
+          await webhook.deliver(payload);
         },
       },
       openai: {
@@ -597,17 +658,18 @@ describe("Daily Project Digest preview", () => {
           });
         },
       },
-      discord: { availability: "unavailable" },
     };
 
-    const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
+    const run = runDailyProjectDigest({ mode: "deliver" }, adapters);
+    await vi.runAllTimersAsync();
+    const result = await run;
 
     expect(trace).toEqual([
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "deployments:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "openai",
-      "summary",
+      "discord",
     ]);
     expect(aiInput).toEqual({
       schemaVersion: "1",
@@ -672,7 +734,7 @@ describe("Daily Project Digest preview", () => {
       ],
     });
     expect(result).toEqual({
-      mode: "preview",
+      mode: "deliver",
       windowEnd: "2026-08-17T17:30:00.000Z",
       payload: {
         allowed_mentions: { parse: [] },
@@ -710,14 +772,26 @@ describe("Daily Project Digest preview", () => {
               },
             ],
             footer: {
-              text: "Updates are based on authoritative GitHub activity.",
+              text: "Updates are based on authoritative GitHub activity. · Digest 20260817T173000000Z",
             },
             timestamp: "2026-08-17T17:30:00.000Z",
           },
         ],
       },
     });
-    expect(summarizedPayload).toBe(result.payload);
+    expect(deliveredPayload).toBe(result.payload);
+    expect(webhookRequests).toHaveLength(3);
+    expect(Date.now() - retryClockStart).toBe(1_250);
+    expect(webhookRequests.map((request) => request.url)).toEqual([
+      "https://discord.com/api/webhooks/345678901234567890/secret-token?wait=true",
+      "https://discord.com/api/webhooks/345678901234567890/secret-token?wait=true",
+      "https://discord.com/api/webhooks/345678901234567890/secret-token?wait=true",
+    ]);
+    expect(webhookRequests.map((request) => request.body)).toEqual([
+      result.payload,
+      result.payload,
+      result.payload,
+    ]);
   });
 
   it("falls back for the whole digest when any AI item is invalid", async () => {
@@ -740,7 +814,8 @@ describe("Daily Project Digest preview", () => {
         ],
       }),
     );
-    const adapters: PreviewAdapters = {
+    let deliveredPayload: DiscordPayload | undefined;
+    const adapters: DeliveryAdapters = {
       clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
       github: {
         listPullRequests: () =>
@@ -777,12 +852,17 @@ describe("Daily Project Digest preview", () => {
         listDeployments: () => Promise.resolve([]),
         listWayfinderMaps: () => Promise.resolve([]),
       },
-      summary: { writePreview: () => Promise.resolve() },
+      summary: { availability: "unavailable" },
       openai: { generatePresentation: openai },
-      discord: { availability: "unavailable" },
+      discord: {
+        deliver: (payload) => {
+          deliveredPayload = payload;
+          return Promise.resolve();
+        },
+      },
     };
 
-    const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
+    const result = await runDailyProjectDigest({ mode: "deliver" }, adapters);
 
     expect(openai).toHaveBeenCalledOnce();
     expect(result.payload.embeds?.[0]?.fields).toEqual([
@@ -797,94 +877,41 @@ describe("Daily Project Digest preview", () => {
           "[In progress: Improve the learning plan overview.](https://github.com/rajat2006/unshelf/pull/202)",
       },
     ]);
+    expect(deliveredPayload).toBe(result.payload);
   });
 
-  it("gathers complete Wayfinder map routes and their explicit blockers", async () => {
-    const closedRoutes = Array.from({ length: 100 }, (_, index) => ({
-      number: 500 + index,
-      state: "closed",
-      labels: [],
-    }));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string | URL | Request) => {
-        const url = new URL(
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url,
-        );
-        let value: unknown;
-        if (url.pathname.endsWith("/issues")) {
-          value = [
-            {
-              number: 424,
-              title: "Wayfinder: publish a Daily Project Digest to Discord",
-              state: "open",
-              state_reason: "reopened",
-              closed_at: null,
-              labels: [{ name: "wayfinder:map" }],
-            },
-          ];
-        } else if (url.pathname.endsWith("/issues/424/sub_issues")) {
-          value =
-            url.searchParams.get("page") === "1"
-              ? closedRoutes
-              : [
-                  {
-                    number: 700,
-                    state: "open",
-                    labels: [{ name: "needs-info" }],
-                  },
-                ];
-        } else if (
-          url.pathname.endsWith("/issues/700/dependencies/blocked_by")
-        ) {
-          value = [{ state: "open" }];
-        } else {
-          throw new Error(`Unexpected GitHub request: ${url.pathname}`);
-        }
-        return Promise.resolve(
-          new Response(JSON.stringify(value), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }),
-    );
-    const adapters = createGitHubActionsPreviewAdapters({
-      token: "github-token",
-      repository: "rajat2006/unshelf",
-      summaryPath: "/tmp/daily-project-digest-test-summary",
-    });
-
-    const maps = await adapters.github.listWayfinderMaps({
-      windowStart: new Date("2026-08-16T17:30:00.000Z"),
-      windowEnd: new Date("2026-08-17T17:30:00.000Z"),
-    });
-
-    expect(maps).toEqual([
-      {
-        state: "OPEN",
-        stateReason: "REOPENED",
-        closedAt: null,
-        number: 424,
-        title: "Wayfinder: publish a Daily Project Digest to Discord",
-        labels: ["wayfinder:map"],
-        children: [
-          ...closedRoutes.map(() => ({
-            state: "CLOSED" as const,
-            labels: [],
-            blockedBy: [],
-          })),
-          {
-            state: "OPEN",
-            labels: ["needs-info"],
-            blockedBy: [{ state: "OPEN" }],
-          },
-        ],
+  it("previews the exact payload without invoking Discord", async () => {
+    const deliver = vi.fn(() => Promise.reject(new Error("must not deliver")));
+    const discord = {
+      availability: "unavailable" as const,
+      deliver,
+    };
+    let summarizedPayload: DiscordPayload | undefined;
+    const adapters: PreviewAdapters = {
+      clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
+      github: {
+        listPullRequests: () => Promise.resolve([]),
+        listDeployments: () => Promise.resolve([]),
+        listWayfinderMaps: () => Promise.resolve([]),
       },
-    ]);
+      summary: {
+        writePreview: (payload) => {
+          summarizedPayload = payload;
+          return Promise.resolve();
+        },
+      },
+      openai: { availability: "unavailable" },
+      discord,
+    };
+
+    const result = await runDailyProjectDigest({ mode: "preview" }, adapters);
+
+    expect(result.payload).toEqual({
+      allowed_mentions: { parse: [] },
+      content:
+        "🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.\nDigest 20260817T173000000Z",
+    });
+    expect(summarizedPayload).toBe(result.payload);
+    expect(deliver).not.toHaveBeenCalled();
   });
 });

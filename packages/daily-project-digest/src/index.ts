@@ -106,18 +106,36 @@ export type OpenAIAdapterBoundary =
       generatePresentation(input: OpenAIPresentationInput): Promise<unknown>;
     };
 
-export type DiscordAdapterBoundary = { availability: "unavailable" };
+type UnavailableAdapter = { availability: "unavailable" };
+
+export type DiscordAdapterBoundary =
+  | UnavailableAdapter
+  | {
+      deliver(payload: DiscordPayload): Promise<void>;
+    };
 
 export type PreviewAdapters = {
   clock: ClockAdapter;
   github: GitHubAdapter;
   summary: SummaryAdapter;
   openai: OpenAIAdapterBoundary;
-  discord: DiscordAdapterBoundary;
+  discord: UnavailableAdapter;
 };
 
-export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
+export type DeliveryAdapters = {
+  clock: ClockAdapter;
+  github: GitHubAdapter;
+  summary: UnavailableAdapter;
+  openai: OpenAIAdapterBoundary;
+  discord: Exclude<DiscordAdapterBoundary, UnavailableAdapter>;
+};
+
+export {
+  createGitHubActionsDeliveryAdapters,
+  createGitHubActionsPreviewAdapters,
+} from "./github-actions.js";
 export { createOpenAIResponsesAdapter } from "./openai.js";
+export { createDiscordWebhookAdapter } from "./discord.js";
 
 type DigestLifecycle = "released" | "completed" | "blocked" | "in-progress";
 
@@ -195,14 +213,24 @@ const releaseLabels = new Set([
 const aiSchemaVersion = "1" as const;
 const maintenanceOverflowUrl = `${digestRepository.webUrl}/issues?q=sort%3Aupdated-desc`;
 
-export async function runDailyProjectDigest(
-  input: { mode: "preview" },
-  adapters: PreviewAdapters,
-): Promise<{
-  mode: "preview";
+type DigestRunResult<Mode extends "preview" | "deliver"> = {
+  mode: Mode;
   windowEnd: string;
   payload: DiscordPayload;
-}> {
+};
+
+export function runDailyProjectDigest(
+  input: { mode: "preview" },
+  adapters: PreviewAdapters,
+): Promise<DigestRunResult<"preview">>;
+export function runDailyProjectDigest(
+  input: { mode: "deliver" },
+  adapters: DeliveryAdapters,
+): Promise<DigestRunResult<"deliver">>;
+export async function runDailyProjectDigest(
+  input: { mode: "preview" } | { mode: "deliver" },
+  adapters: PreviewAdapters | DeliveryAdapters,
+): Promise<DigestRunResult<"preview" | "deliver">> {
   const windowEnd = adapters.clock.now();
   if (Number.isNaN(windowEnd.getTime())) {
     throw new Error("Daily Project Digest received an invalid window end.");
@@ -240,7 +268,21 @@ export async function runDailyProjectDigest(
   const payload = renderPayload({ subjects: presentedSubjects, windowEnd });
   preflightDiscordPayload(payload);
 
-  await adapters.summary.writePreview(payload);
+  if (input.mode === "preview") {
+    if (!("writePreview" in adapters.summary)) {
+      throw new Error(
+        "Daily Project Digest preview capability is unavailable.",
+      );
+    }
+    await adapters.summary.writePreview(payload);
+  } else {
+    if (!("deliver" in adapters.discord)) {
+      throw new Error(
+        "Daily Project Digest delivery capability is unavailable.",
+      );
+    }
+    await adapters.discord.deliver(payload);
+  }
   return {
     mode: input.mode,
     windowEnd: windowEnd.toISOString(),
@@ -667,6 +709,9 @@ function renderPayload({
   subjects: PresentedSubject[];
   windowEnd: Date;
 }): DiscordPayload {
+  const deliveryIdentifier = `Digest ${windowEnd
+    .toISOString()
+    .replace(/[-:.]/g, "")}`;
   const lifecycleCounts = {
     released: subjects.filter((subject) => subject.lifecycle === "released")
       .length,
@@ -701,8 +746,7 @@ function renderPayload({
   if (subjects.length === 0) {
     return {
       allowed_mentions: { parse: [] },
-      content:
-        "🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.",
+      content: `🌙 **Quiet day for Unshelf**\nNo project updates to report in this snapshot.\n${deliveryIdentifier}`,
     };
   }
 
@@ -743,7 +787,7 @@ function renderPayload({
         color: 0x5865f2,
         fields,
         footer: {
-          text: "Updates are based on authoritative GitHub activity.",
+          text: `Updates are based on authoritative GitHub activity. · ${deliveryIdentifier}`,
         },
         timestamp: windowEnd.toISOString(),
       },

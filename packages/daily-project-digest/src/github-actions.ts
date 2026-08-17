@@ -1,20 +1,29 @@
 import { appendFile } from "node:fs/promises";
 
 import type {
+  DeliveryAdapters,
   DeploymentEvidence,
   DiscordPayload,
   PreviewAdapters,
   PullRequestEvidence,
   WayfinderMapEvidence,
 } from "./index.js";
+import { createDiscordWebhookAdapter } from "./discord.js";
 import { createOpenAIResponsesAdapter } from "./openai.js";
 
-type GitHubActionsPreviewInput = {
+type GitHubActionsInput = {
   token: string;
   repository: string;
-  summaryPath: string;
   openaiApiKey?: string;
 };
+
+type GitHubActionsPreviewInput = {
+  summaryPath: string;
+} & GitHubActionsInput;
+
+type GitHubActionsDeliveryInput = {
+  webhookUrl: string;
+} & GitHubActionsInput;
 
 type GitHubRequest = {
   token: string;
@@ -104,15 +113,43 @@ const releaseCarrierCommitsQuery = `
 export function createGitHubActionsPreviewAdapters(
   input: GitHubActionsPreviewInput,
 ): PreviewAdapters {
+  if (input.summaryPath === "") {
+    throw new Error("Daily Project Digest preview configuration is invalid.");
+  }
+  return {
+    ...createGitHubActionsAdapters(input),
+    summary: {
+      writePreview: (payload) =>
+        writePreview({
+          summaryPath: input.summaryPath,
+          payload,
+        }),
+    },
+    discord: { availability: "unavailable" },
+  };
+}
+
+export function createGitHubActionsDeliveryAdapters(
+  input: GitHubActionsDeliveryInput,
+): DeliveryAdapters {
+  return {
+    ...createGitHubActionsAdapters(input),
+    summary: { availability: "unavailable" },
+    discord: createDiscordWebhookAdapter({ webhookUrl: input.webhookUrl }),
+  };
+}
+
+function createGitHubActionsAdapters(
+  input: GitHubActionsInput,
+): Pick<DeliveryAdapters, "clock" | "github" | "openai"> {
   const [owner, name, extra] = input.repository.split("/");
   if (
     owner === undefined ||
     name === undefined ||
     extra !== undefined ||
-    input.token === "" ||
-    input.summaryPath === ""
+    input.token === ""
   ) {
-    throw new Error("Daily Project Digest preview configuration is invalid.");
+    throw new Error("Daily Project Digest configuration is invalid.");
   }
 
   return {
@@ -133,18 +170,10 @@ export function createGitHubActionsPreviewAdapters(
           github: { token: input.token, owner, name },
         }),
     },
-    summary: {
-      writePreview: (payload) =>
-        writePreview({
-          summaryPath: input.summaryPath,
-          payload,
-        }),
-    },
     openai:
       input.openaiApiKey === undefined || input.openaiApiKey === ""
         ? { availability: "unavailable" }
         : createOpenAIResponsesAdapter({ apiKey: input.openaiApiKey }),
-    discord: { availability: "unavailable" },
   };
 }
 
@@ -274,7 +303,9 @@ async function gatherWayfinderRoutes({
             !isInteger(number) ||
             (stateValue !== "open" && stateValue !== "closed")
           ) {
-            throw new Error("GitHub returned invalid Wayfinder route evidence.");
+            throw new Error(
+              "GitHub returned invalid Wayfinder route evidence.",
+            );
           }
           const state: "OPEN" | "CLOSED" =
             stateValue === "open" ? "OPEN" : "CLOSED";
@@ -402,10 +433,7 @@ async function gatherDeployments({
         newlyContainedCommitOids.has(pullRequest.mergeCommitOid) ||
         releaseCarrierCommitOids.has(pullRequest.mergeCommitOid)
       ) {
-        releasedPullRequests.set(
-          pullRequest.pullRequest.number,
-          pullRequest,
-        );
+        releasedPullRequests.set(pullRequest.pullRequest.number, pullRequest);
       }
     }
     newlyContainedByDeployment.set(
@@ -426,17 +454,15 @@ async function gatherDeployments({
   }));
 }
 
-function compareDeployments([
-  left,
-  right,
-]: [DeploymentWithStatus, DeploymentWithStatus]): number {
+function compareDeployments([left, right]: [
+  DeploymentWithStatus,
+  DeploymentWithStatus,
+]): number {
   const byStatusTime = left.statusAt.localeCompare(right.statusAt);
   return byStatusTime === 0 ? left.id - right.id : byStatusTime;
 }
 
-function isAggregateReleaseCarrier(
-  pullRequest: PullRequestEvidence,
-): boolean {
+function isAggregateReleaseCarrier(pullRequest: PullRequestEvidence): boolean {
   return (
     pullRequest.baseRefName === "main" && pullRequest.headRefName === "dev"
   );
@@ -619,7 +645,9 @@ async function gatherComparisonCommitOids({
     const pageTotal = response?.total_commits;
     const commits = response?.commits;
     if (!isInteger(pageTotal) || !Array.isArray(commits)) {
-      throw new Error("GitHub returned invalid deployment comparison evidence.");
+      throw new Error(
+        "GitHub returned invalid deployment comparison evidence.",
+      );
     }
     totalCommits ??= pageTotal;
     if (totalCommits !== pageTotal) {
@@ -628,8 +656,7 @@ async function gatherComparisonCommitOids({
     addCommitOids({
       values: commits,
       commitOids,
-      errorMessage:
-        "GitHub returned invalid deployment comparison evidence.",
+      errorMessage: "GitHub returned invalid deployment comparison evidence.",
     });
     if (commitOids.size >= totalCommits) {
       return commitOids;
@@ -744,7 +771,9 @@ async function gatherMergedPullRequests({
     });
     const root = record(response);
     if (root === undefined || root.errors !== undefined) {
-      throw new Error("GitHub rejected merged pull-request evidence gathering.");
+      throw new Error(
+        "GitHub rejected merged pull-request evidence gathering.",
+      );
     }
     const connection = nestedRecord(root, [
       "data",
@@ -766,7 +795,9 @@ async function gatherMergedPullRequests({
     hasNextPage = pageHasNext;
     cursor = endCursor;
     if (hasNextPage && cursor === null) {
-      throw new Error("GitHub returned incomplete merged pull-request evidence.");
+      throw new Error(
+        "GitHub returned incomplete merged pull-request evidence.",
+      );
     }
   }
   return pullRequests;
