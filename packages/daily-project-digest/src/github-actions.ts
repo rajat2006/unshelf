@@ -44,7 +44,7 @@ const openPullRequestsQuery = `
   query OpenPullRequests($owner: String!, $name: String!, $after: String) {
     repository(owner: $owner, name: $name) {
       ref(qualifiedName: "refs/heads/main") { target { oid } }
-      pullRequests(states: OPEN, first: 50, after: $after, orderBy: { field: CREATED_AT, direction: ASC }) {
+      pullRequests(states: OPEN, first: 25, after: $after, orderBy: { field: CREATED_AT, direction: ASC }) {
         pageInfo { hasNextPage endCursor }
         nodes {
           number
