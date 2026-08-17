@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   Status,
   type DailyFocus,
@@ -9,19 +15,26 @@ import { ArrowLeft, CalendarDays, Check, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSummary } from "../items/ItemSummary";
 import { completionPercentage } from "../presentation/progress";
+import { useServerCalendar } from "../server-calendar/ServerCalendarProvider";
 
 type HistoryState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; focus: DailyFocus };
+
+interface BrowseDateState {
+  routeDate: string;
+  value: string;
+  valid: boolean;
+}
 
 /** One elapsed Daily Focus: frozen evidence with explicit reconsideration only. */
 export function DailyFocusHistorySurface({
@@ -34,28 +47,72 @@ export function DailyFocusHistorySurface({
   const date = selectedDate ?? routeDate;
   const location = useLocation();
   const navigate = useNavigate();
-  const [browseDate, setBrowseDate] = useState(date);
+  const calendar = useServerCalendar();
+  const [browseDateState, setBrowseDateState] = useState<BrowseDateState>({
+    routeDate: date,
+    value: date,
+    valid: true,
+  });
+  const browseDate =
+    browseDateState.routeDate === date ? browseDateState.value : date;
+  const browseDateValid =
+    browseDateState.routeDate === date ? browseDateState.valid : true;
   const [state, setState] = useState<HistoryState>({ status: "loading" });
   const [addedItemIds, setAddedItemIds] = useState<Set<ItemId>>(new Set());
   const [addingItemId, setAddingItemId] = useState<ItemId>();
   const [mutationError, setMutationError] = useState(false);
+  const newestHistoryRequest = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++newestHistoryRequest.current;
     setState({ status: "loading" });
     try {
-      setState({
-        status: "ready",
-        focus: await fetchDailyFocusHistory(user, date),
-      });
+      const focus = await fetchDailyFocusHistory(user, date);
+      if (requestId === newestHistoryRequest.current) {
+        setState({ status: "ready", focus });
+      }
     } catch {
-      setState({ status: "error" });
+      if (requestId === newestHistoryRequest.current) {
+        setState({ status: "error" });
+      }
     }
   }, [date, user]);
 
+  const stageBrowseDate = useCallback(
+    (nextDate: string | null) => {
+      if (!nextDate) return;
+      setBrowseDateState((current) => ({
+        ...current,
+        routeDate: date,
+        value: nextDate,
+      }));
+    },
+    [date],
+  );
+
+  const updateBrowseDateValidity = useCallback(
+    (valid: boolean) => {
+      setBrowseDateState((current) => {
+        if (current.routeDate !== date) {
+          return { routeDate: date, value: date, valid };
+        }
+        return current.valid === valid ? current : { ...current, valid };
+      });
+    },
+    [date],
+  );
+
   useEffect(() => {
-    setBrowseDate(date);
+    setBrowseDateState((current) =>
+      current.routeDate === date
+        ? current
+        : { routeDate: date, value: date, valid: true },
+    );
     setAddedItemIds(new Set());
     void load();
+    return () => {
+      newestHistoryRequest.current += 1;
+    };
   }, [date, load]);
 
   async function reconsider(itemId: ItemId) {
@@ -74,6 +131,11 @@ export function DailyFocusHistorySurface({
   function browse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (browseDate) {
+      setBrowseDateState({
+        routeDate: browseDate,
+        value: browseDate,
+        valid: true,
+      });
       void navigate({
         pathname: `/today/${browseDate}`,
         search: location.search,
@@ -113,17 +175,32 @@ export function DailyFocusHistorySurface({
         <form
           className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end"
           onSubmit={browse}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              event.target instanceof HTMLInputElement
+            ) {
+              event.preventDefault();
+            }
+          }}
         >
           <Field className="sm:w-52">
             <FieldLabel htmlFor="daily-focus-date">Daily Focus date</FieldLabel>
-            <Input
+            <DatePickerField
+              key={date}
               id="daily-focus-date"
-              type="date"
               value={browseDate}
-              onChange={(event) => setBrowseDate(event.target.value)}
+              today={calendar.today}
+              required
+              onValueChange={stageBrowseDate}
+              onValidityChange={updateBrowseDateValidity}
             />
           </Field>
-          <Button type="submit" variant="secondary">
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={!browseDateValid}
+          >
             <CalendarDays aria-hidden="true" />
             View date
           </Button>

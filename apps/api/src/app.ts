@@ -13,6 +13,7 @@ import {
   createSourceInspectionService,
   type SourceInspectionService,
 } from "./source-inspections/service";
+import { createServerCalendarRouter } from "./server-calendar/router";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -105,6 +106,11 @@ export function createApp(
       auth,
       options.sourceInspectionService ?? createSourceInspectionService(),
     ),
+  );
+  app.use(
+    "/api/server-calendar",
+    captureRouteMount,
+    createServerCalendarRouter(db, auth),
   );
   app.use(markRoutingResolved);
   app.use(

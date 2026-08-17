@@ -47,6 +47,7 @@ function resolveDeploymentCompose(): ResolvedCompose {
         API_IMAGE: `ghcr.io/rajat2006/unshelf-api@${digest}`,
         WEB_IMAGE: `ghcr.io/rajat2006/unshelf-web@${digest}`,
         DATABASE_URL: "postgresql://opaque-runtime-value",
+        DATABASE_TIME_ZONE: "America/Los_Angeles",
         DATABASE_NETWORK: "unshelf-nonproduction-database",
         APP_NAME: "unshelf-development",
         PUBLIC_ORIGIN: "https://generated.example.com",
@@ -118,6 +119,7 @@ describe("deployment Compose contract", () => {
     expect(services.migrate?.environment).toEqual({
       APPLICATION_NAME: "unshelf-development",
       DATABASE_URL: "postgresql://opaque-runtime-value",
+      DATABASE_TIME_ZONE: "America/Los_Angeles",
       LOG_LEVEL: "info",
       MIGRATION_MODE: "apply",
     });
@@ -126,6 +128,7 @@ describe("deployment Compose contract", () => {
       CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
       CLERK_SECRET_KEY: "test-clerk-secret",
       DATABASE_URL: "postgresql://opaque-runtime-value",
+      DATABASE_TIME_ZONE: "America/Los_Angeles",
       LOG_LEVEL: "info",
       PORT: "3001",
       PUBLIC_ORIGIN: "https://generated.example.com",

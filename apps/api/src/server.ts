@@ -1,7 +1,7 @@
 import { createApp } from "./app";
 import { startApiServer } from "./api-server";
 import { createClerkAuth } from "./middleware/auth";
-import { createDatabase } from "./db";
+import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
 import { createGenericSourceInspector } from "./source-inspections/generic-inspector";
@@ -56,10 +56,7 @@ await superviseApiProcess({
           });
     }
 
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error("DATABASE_URL is required");
-    }
+    const databaseConfig = readDatabaseConfig(process.env);
 
     // Clerk needs its keys to verify sessions on protected routes.
     // `clerkMiddleware` reads them from the environment; fail fast rather than
@@ -75,7 +72,7 @@ await superviseApiProcess({
     }
 
     const port = Number(process.env.PORT ?? 3001);
-    const db = createDatabase(connectionString);
+    const db = createDatabase(databaseConfig);
     const publicTransport = createGuardedPublicTransport({
       resolver: createNodeHostResolver(),
       connection: createNodeConnectionTransport(),

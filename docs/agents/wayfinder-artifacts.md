@@ -15,6 +15,11 @@ A map may have one shared branch and draft PR per artifact class. Create one onl
 
 Use the immutable map number in branch names. Base both PRs on the default branch, link the map in each PR body, and reuse the class's map-level PR for every ticket.
 
+Legacy artifact PRs that predate the shared-branch convention must carry the
+`wayfinder:artifact` label while they remain open. The Daily Project Digest uses
+that maintainer-owned marker to keep those PRs as evidence of their map instead
+of reporting them as independent delivery work.
+
 Raw research belongs in the research-and-prototype PR. Promote durable findings by expressing them in maintained documentation on the decision-document PR. Preserve rejected, unsuccessful, and inconclusive work when its evidence or limits explain a decision.
 
 ## Publish one ticket
