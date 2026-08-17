@@ -381,6 +381,14 @@ function CaptureComposer({
               setTitle(event.target.value);
               setErrors((current) => ({ ...current, title: undefined }));
             }}
+            onBlur={(event) => {
+              if (event.target.value.trim().length === 0) {
+                setErrors((current) => ({
+                  ...current,
+                  title: "Enter a title.",
+                }));
+              }
+            }}
             placeholder="What did you find?"
             aria-labelledby="capture-title-label"
             aria-invalid={Boolean(errors.title)}
@@ -416,6 +424,14 @@ function CaptureComposer({
               aria-labelledby="capture-type-label"
               aria-invalid={Boolean(errors.type)}
               aria-describedby={errors.type ? "capture-type-error" : undefined}
+              onBlur={() => {
+                if (type === "") {
+                  setErrors((current) => ({
+                    ...current,
+                    type: "Choose a type.",
+                  }));
+                }
+              }}
             >
               <SelectValue placeholder="Choose a type…" />
             </SelectTrigger>

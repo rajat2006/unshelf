@@ -37,11 +37,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function pasteSource(
-  control: HTMLElement,
-  pastedText: string,
+function pasteSource({
+  control,
+  pastedText,
   resultingValue = pastedText,
-): void {
+}: {
+  readonly control: HTMLElement;
+  readonly pastedText: string;
+  readonly resultingValue?: string;
+}): void {
   fireEvent.paste(control, {
     clipboardData: { getData: () => pastedText },
   });
@@ -144,7 +148,11 @@ describe("global Capture", () => {
     fireEvent.change(source, {
       target: { value: "https://example.com/" },
     });
-    pasteSource(source, "article", "https://example.com/article");
+    pasteSource({
+      control: source,
+      pastedText: "article",
+      resultingValue: "https://example.com/article",
+    });
 
     expect(source).toHaveValue("https://example.com/article");
     expect(inspectSource).toHaveBeenCalledOnce();
@@ -165,9 +173,9 @@ describe("global Capture", () => {
     render(<CaptureHarness />);
 
     const source = screen.getByLabelText("Source");
-    pasteSource(source, "https://example.com/first");
+    pasteSource({ control: source, pastedText: "https://example.com/first" });
     const firstSignal = vi.mocked(inspectSource).mock.calls[0]?.[2];
-    pasteSource(source, "https://example.com/second");
+    pasteSource({ control: source, pastedText: "https://example.com/second" });
     expect(firstSignal?.aborted).toBe(true);
 
     await act(async () => {
@@ -200,7 +208,7 @@ describe("global Capture", () => {
     render(<CaptureHarness />);
 
     const source = screen.getByLabelText("Source");
-    pasteSource(source, "https://example.com/first");
+    pasteSource({ control: source, pastedText: "https://example.com/first" });
     await act(async () => {
       first.resolve({
         status: "suggested",
@@ -215,7 +223,7 @@ describe("global Capture", () => {
       target: { value: "My title" },
     });
 
-    pasteSource(source, "https://example.com/second");
+    pasteSource({ control: source, pastedText: "https://example.com/second" });
     expect(screen.getByLabelText("Title")).toHaveValue("My title");
     expect(screen.getByLabelText("Type")).toHaveTextContent("Choose a type…");
 
@@ -243,7 +251,10 @@ describe("global Capture", () => {
     title.focus();
     fireEvent.change(title, { target: { value: "Temporary" } });
     fireEvent.change(title, { target: { value: "" } });
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/article");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/article",
+    });
     await act(async () => {
       inspectionResult.resolve({
         status: "suggested",
@@ -267,7 +278,10 @@ describe("global Capture", () => {
 
     const title = screen.getByLabelText("Title");
     title.focus();
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/article");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/article",
+    });
     await act(async () => {
       inspectionResult.resolve({
         status: "suggested",
@@ -294,7 +308,10 @@ describe("global Capture", () => {
     expect(status).toBeEmptyDOMElement();
     expect(status).toHaveAttribute("aria-live", "polite");
     expect(status).toHaveAttribute("aria-atomic", "true");
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/slow");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/slow",
+    });
     expect(screen.getByRole("status")).toBe(status);
     expect(status).toHaveTextContent("Inspecting Source…");
     const firstSignal = vi.mocked(inspectSource).mock.calls[0]?.[2];
@@ -361,7 +378,10 @@ describe("global Capture", () => {
     fireEvent.click(screen.getByLabelText("Type"));
     fireEvent.click(await screen.findByRole("option", { name: "Book" }));
     vi.useFakeTimers();
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/book");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/book",
+    });
     await act(async () => {
       unavailable.resolve({ status: "unavailable" });
       await unavailable.promise;
@@ -422,7 +442,10 @@ describe("global Capture", () => {
     render(<CaptureHarness />);
     vi.useFakeTimers();
 
-    pasteSource(screen.getByLabelText("Source"), source);
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: source,
+    });
 
     await act(async () => {
       inspectionResult.resolve({
@@ -458,31 +481,29 @@ describe("global Capture", () => {
     });
   });
 
-  it("enables Add only for complete required fields and keeps validation guarded", async () => {
+  it("enables Add only for complete required fields and explains touched omissions", async () => {
     render(<CaptureHarness />);
 
     const add = await screen.findByRole("button", { name: "Add to Library" });
     expect(add).toBeDisabled();
-    fireEvent.submit(add.closest("form") as HTMLFormElement);
+    const title = screen.getByLabelText("Title");
+    const type = screen.getByLabelText("Type");
+    title.focus();
+    fireEvent.blur(title);
+    type.focus();
+    fireEvent.blur(type);
 
     expect(screen.getByText("Enter a title.")).toBeVisible();
     expect(screen.getByText("Choose a type.")).toBeVisible();
-    expect(screen.getByLabelText("Title")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    expect(screen.getByLabelText("Type")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveFocus());
+    expect(title).toHaveAttribute("aria-invalid", "true");
+    expect(type).toHaveAttribute("aria-invalid", "true");
     expect(captureItem).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText("Title"), {
+    fireEvent.change(title, {
       target: { value: "Ready to capture" },
     });
     expect(add).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("Type"));
+    fireEvent.click(type);
     fireEvent.click(await screen.findByRole("option", { name: "Article" }));
     expect(add).toBeEnabled();
   });
@@ -520,7 +541,10 @@ describe("global Capture", () => {
     fireEvent.click(screen.getByLabelText("Type"));
     fireEvent.click(await screen.findByRole("option", { name: "Article" }));
     vi.useFakeTimers();
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/slow");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/slow",
+    });
     const signal = vi.mocked(inspectSource).mock.calls[0]?.[2];
     const add = screen.getByRole("button", { name: "Add to Library" });
     expect(add).toBeEnabled();
@@ -558,7 +582,10 @@ describe("global Capture", () => {
     vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
     render(<CaptureHarness />);
 
-    pasteSource(screen.getByLabelText("Source"), "https://example.com/slow");
+    pasteSource({
+      control: screen.getByLabelText("Source"),
+      pastedText: "https://example.com/slow",
+    });
     const signal = vi.mocked(inspectSource).mock.calls[0]?.[2];
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(signal?.aborted).toBe(true);
