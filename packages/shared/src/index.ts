@@ -276,6 +276,7 @@ export type DiscoverHistoryCursor = string & {
 export interface DiscoveryHistoryEntry {
   id: DiscoveryId;
   candidateId: CandidateId;
+  itemId: ItemId | null;
   followId: FollowId;
   followName: string | null;
   state: "kept" | "dismissed";

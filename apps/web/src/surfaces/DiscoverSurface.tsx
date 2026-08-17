@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import type {
   ConfirmFollowFailure,
@@ -428,6 +428,36 @@ export function DiscoverSurface({
     }
   };
 
+  const finishKeep = async ({
+    discoveryId,
+    title,
+  }: {
+    discoveryId: DiscoveryId;
+    title: string;
+  }) => {
+    setWorkspaceState((current) =>
+      current.kind === "ready"
+        ? {
+            kind: "ready",
+            workspace: {
+              ...current.workspace,
+              discoveries: current.workspace.discoveries.filter(
+                ({ id }) => id !== discoveryId,
+              ),
+            },
+          }
+        : current,
+    );
+    setAnnouncement(`${title} was kept in Library.`);
+    try {
+      await loadWorkspace();
+    } catch {
+      setAnnouncement(
+        `${title} was kept in Library, but the intake could not refresh. Reload Discover to retry.`,
+      );
+    }
+  };
+
   const confirmPreview = async (
     preview: FollowPreview,
     idempotencyKey: IdempotencyKey = crypto.randomUUID() as IdempotencyKey,
@@ -581,6 +611,7 @@ export function DiscoverSurface({
             onDecision={(discoveryIds, decision, idempotencyKey) =>
               void runDecision(discoveryIds, decision, idempotencyKey)
             }
+            onKeep={finishKeep}
             selectedFollowId={selectedFollowIdFromLocation({
               workspace: workspaceState.workspace,
               location: backgroundLocation ?? location,
@@ -782,6 +813,7 @@ function Workspace({
   onRefreshWorkspace,
   onLifecycleChange,
   onDecision,
+  onKeep,
   selectedFollowId,
   onSelectFollow,
   itemBackgroundLocation,
@@ -802,6 +834,10 @@ function Workspace({
     decision: "seen" | "dismissed",
     idempotencyKey?: IdempotencyKey,
   ) => void;
+  onKeep: (result: {
+    discoveryId: DiscoveryId;
+    title: string;
+  }) => Promise<void>;
   selectedFollowId: FollowId | null;
   onSelectFollow: (followId: FollowId | null) => void;
   itemBackgroundLocation: ItemBackgroundLocation;
@@ -940,7 +976,7 @@ function Workspace({
                 ? "Refreshing all…"
                 : "Refresh all"}
             </Button>
-            <HistoryDialog />
+            <HistoryDialog itemBackgroundLocation={itemBackgroundLocation} />
             <Button
               type="button"
               size="compact"
@@ -1107,6 +1143,7 @@ function Workspace({
                       : null
                   }
                   onDecision={onDecision}
+                  onKeep={onKeep}
                   itemBackgroundLocation={itemBackgroundLocation}
                 />
               ))}
@@ -1276,7 +1313,11 @@ type HistoryState =
       cursor: DiscoverHistoryCursor | undefined;
     };
 
-function HistoryDialog() {
+function HistoryDialog({
+  itemBackgroundLocation,
+}: {
+  itemBackgroundLocation: ItemBackgroundLocation;
+}) {
   const user = useCurrentUser();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<HistoryState>({ kind: "idle" });
@@ -1372,6 +1413,15 @@ function HistoryDialog() {
                       discovery.followName ??
                       "Follow unavailable"}
                   </p>
+                  {discovery.itemId !== null ? (
+                    <Link
+                      className="inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      to={`/items/${discovery.itemId}`}
+                      state={itemDetailRouteState(itemBackgroundLocation)}
+                    >
+                      Open Item
+                    </Link>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -1438,6 +1488,7 @@ function DiscoveryCard({
   pending,
   pendingDecision,
   onDecision,
+  onKeep,
   itemBackgroundLocation,
 }: {
   discovery: DiscoverySummary;
@@ -1448,10 +1499,13 @@ function DiscoveryCard({
     discoveryIds: DiscoveryId[],
     decision: "seen" | "dismissed",
   ) => void;
+  onKeep: (result: {
+    discoveryId: DiscoveryId;
+    title: string;
+  }) => Promise<void>;
   itemBackgroundLocation: ItemBackgroundLocation;
 }) {
   const user = useCurrentUser();
-  const navigate = useNavigate();
   const keepTriggerRef = useRef<HTMLButtonElement>(null);
   const [keepOpen, setKeepOpen] = useState(false);
   const [keepTitle, setKeepTitle] = useState(discovery.title ?? "");
@@ -1501,8 +1555,10 @@ function DiscoveryCard({
         setKeepFailure(keepFailureMessage(result.error));
         return;
       }
-      void navigate(`/items/${result.item.id}`, {
-        state: itemDetailRouteState(itemBackgroundLocation),
+      setKeepOpen(false);
+      await onKeep({
+        discoveryId: result.discovery.id,
+        title: result.item.title,
       });
     } catch {
       setKeepFailure(
@@ -1570,7 +1626,16 @@ function DiscoveryCard({
           </span>
         )}
         {discovery.itemId !== null ? (
-          <p className="text-xs font-medium text-primary">Already in Library</p>
+          <p className="text-xs font-medium text-primary">
+            Already in Library ·{" "}
+            <Link
+              className="underline-offset-4 hover:underline"
+              to={`/items/${discovery.itemId}`}
+              state={itemDetailRouteState(itemBackgroundLocation)}
+            >
+              Open Item
+            </Link>
+          </p>
         ) : !metadataAvailable ? (
           <p className="text-xs text-muted-foreground">
             Keep unavailable. Retry this Follow to restore current details.

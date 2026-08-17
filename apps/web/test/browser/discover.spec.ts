@@ -267,7 +267,9 @@ test("a User can manage several Follows and decide the combined Discover intake"
     .click();
   await page.keyboard.press("Escape");
 
-  await page.getByRole("button", { name: /^All Follows/ }).click();
+  await page.getByRole("button", { name: /^Quiet Learning/ }).click();
+  const discoverFilterUrl = page.url();
+  expect(new URL(discoverFilterUrl).searchParams.get("follow")).not.toBeNull();
   const keepCard = page
     .getByRole("listitem")
     .filter({ hasText: "A deep module" });
@@ -277,15 +279,23 @@ test("a User can manage several Follows and decide the combined Discover intake"
     .getByRole("textbox", { name: "Item title" })
     .fill("My approved deep module");
   await keepDialog.getByRole("button", { name: "Keep in Library" }).click();
-  await expect(page).toHaveURL(/\/test\/browser\/items\//);
-  await page.getByRole("button", { name: "Close details" }).click();
-  await expect(page).toHaveURL(/\/test\/browser\/discover/);
+  await expect(page).toHaveURL(discoverFilterUrl);
+  await expect(keepDialog).not.toBeVisible();
+  await expect(keepCard).not.toBeVisible();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "My approved deep module was kept in Library",
+    }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "History" }).click();
   const history = page.getByRole("dialog", { name: "Discovery history" });
   await expect(history.getByText("A deep module")).toBeVisible();
   await expect(history.getByText("Dismissed").first()).toBeVisible();
-  await page.keyboard.press("Escape");
+  await history.getByRole("link", { name: "Open Item" }).click();
+  await expect(page).toHaveURL(/\/test\/browser\/items\//);
+  await page.getByRole("button", { name: "Close details" }).click();
+  await expect(page).toHaveURL(discoverFilterUrl);
 
   await page.getByRole("button", { name: "Capture" }).click();
   await expect(page.getByRole("dialog", { name: "Capture" })).toBeVisible();

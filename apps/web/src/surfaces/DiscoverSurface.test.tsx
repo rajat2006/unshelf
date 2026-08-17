@@ -181,9 +181,11 @@ afterEach(() => {
 });
 
 describe("Discover channel setup", () => {
-  it("confirms approved Item fields and opens the canonical Item over the active Follow", async () => {
+  it("confirms approved Item fields and leaves the active Follow intake when its reread fails", async () => {
     const itemId = "00000000-0000-0000-0000-000000000040" as ItemId;
-    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(storedWorkspace);
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(storedWorkspace)
+      .mockRejectedValueOnce(new Error("reread failed"));
     vi.mocked(keepDiscovery).mockResolvedValue({
       ok: true,
       discovery: {
@@ -231,9 +233,17 @@ describe("Discover channel setup", () => {
     );
     await waitFor(() =>
       expect(screen.getByLabelText("Test location")).toHaveTextContent(
-        `/items/${itemId}|/discover?follow=${storedWorkspace.follows[0].id}`,
+        `/discover?follow=${storedWorkspace.follows[0].id}|`,
       ),
     );
+    expect(
+      screen.queryByRole("dialog", { name: "Keep in Library" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("A deep module")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "My approved title was kept in Library, but the intake could not refresh",
+    );
+    expect(fetchDiscoverWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it("preserves confirmation edits and the mutation key through pending and failure recovery", async () => {
@@ -312,7 +322,11 @@ describe("Discover channel setup", () => {
     });
     renderDiscover();
 
-    expect(await screen.findByText("Already in Library")).toBeVisible();
+    expect(await screen.findByText(/Already in Library/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Item" })).toHaveAttribute(
+      "href",
+      `/items/${linkedItemId}`,
+    );
     expect(
       screen.getByText(/Keep unavailable.*Retry this Follow/),
     ).toBeVisible();
@@ -432,6 +446,7 @@ describe("Discover channel setup", () => {
       ...dismissed,
       id: "00000000-0000-0000-0000-000000000021" as DiscoveryId,
       state: "kept" as const,
+      itemId: "00000000-0000-0000-0000-000000000040" as ItemId,
       title: null,
       source: null,
       publisher: null,
@@ -461,6 +476,10 @@ describe("Discover channel setup", () => {
     expect(
       await screen.findByText("Provider details unavailable"),
     ).toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: "Open Item" }));
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/items/00000000-0000-0000-0000-000000000040|/discover",
+    );
     expect(fetchDiscoverHistory).toHaveBeenLastCalledWith(auth.user, cursor);
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));

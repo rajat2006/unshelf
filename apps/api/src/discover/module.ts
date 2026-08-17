@@ -3146,6 +3146,7 @@ async function selectHistory({
     .select({
       id: discoverDiscoveries.id,
       candidateId: discoverDiscoveries.candidateId,
+      itemId: discoverCandidates.itemId,
       followId: discoverDiscoveries.followId,
       followName: discoverProviderTargetProjections.publisher,
       state: discoverDiscoveries.state,
@@ -3217,6 +3218,7 @@ async function selectHistory({
     discoveries: pageRows.map((row) => ({
       id: row.id as DiscoveryId,
       candidateId: row.candidateId as CandidateId,
+      itemId: row.itemId as ItemId | null,
       followId: row.followId as FollowId,
       followName: row.followName,
       state: row.state as "kept" | "dismissed",
