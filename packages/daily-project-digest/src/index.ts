@@ -3,6 +3,7 @@ import {
   DigestFailure,
   type AIPresentationFailureReason,
 } from "./failures.js";
+import { hasLifecycleStatusClaim } from "./ai-presentation-policy.js";
 import { asRecord } from "./provider-support.js";
 
 export type DiscordPayload = {
@@ -468,7 +469,8 @@ function applyOpenAIPresentation({
         subjectId: item.subjectId,
       });
     }
-    const sentenceFailure = aiSentenceFailure(item.sentence);
+    const sentence = item.sentence.trim();
+    const sentenceFailure = aiSentenceFailure(sentence);
     if (sentenceFailure !== undefined) {
       throw new AIPresentationFailure({
         reason: sentenceFailure,
@@ -497,7 +499,7 @@ function applyOpenAIPresentation({
       });
     }
     presentationBySubject.set(item.subjectId, {
-      sentence: item.sentence,
+      sentence,
       audienceGroup: item.audienceGroup,
     });
   }
@@ -551,26 +553,18 @@ function exactRecord(
 function aiSentenceFailure(
   sentence: string,
 ): AIPresentationFailureReason | undefined {
-  if (sentence !== sentence.trim()) return "contract-sentence-whitespace";
-  if (sentence.length < 12 || sentence.length > 180)
+  if (sentence.length === 0 || sentence.length > 180)
     return "contract-sentence-length";
   if (hasControlCharacter(sentence)) return "contract-sentence-control";
-  if (/^\s*(?:[-+>]|\d+[.)])\s/.test(sentence)) return "contract-sentence-list";
   if (
     /(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) ||
     /\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence)
   )
     return "contract-sentence-url";
-  if (!/^[^.!?\r\n]+[.!?]$/.test(sentence))
-    return "contract-sentence-punctuation";
   if (/(?:\[|\]|[*_`~#><|])/.test(sentence))
     return "contract-sentence-markdown";
   if (/@/.test(sentence)) return "contract-sentence-mention";
-  if (
-    /\b(?:production|live|releas(?:e[ds]?|ing)|complet(?:e[ds]?|ing)|block(?:s|ed|ing)?|closed|open|waiting|pending|queued|awaiting|delayed|dependency|paused|stalled|halted|stopped|ready|done|finished|remaining|in progress|merg(?:e[ds]?|ing)|deploy(?:s|ed|ing|ments?)?|ship(?:s|ped|ping)?|land(?:s|ed|ing)?|underway|moving forward|needs attention)\b/i.test(
-      sentence,
-    )
-  )
+  if (hasLifecycleStatusClaim(sentence))
     return "contract-sentence-lifecycle";
   if (
     /\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
