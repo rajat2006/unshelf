@@ -52,6 +52,22 @@ export type DeploymentEvidence = {
   newlyContainedPullRequests: PullRequestEvidence[];
 };
 
+type WayfinderRouteEvidence = {
+  state: "OPEN" | "CLOSED";
+  labels: string[];
+  blockedBy: DependencyEvidence[];
+};
+
+export type WayfinderMapEvidence = {
+  state: "OPEN" | "CLOSED";
+  stateReason: "COMPLETED" | "NOT_PLANNED" | null;
+  closedAt: string | null;
+  number: number;
+  title: string;
+  labels: string[];
+  children: WayfinderRouteEvidence[];
+};
+
 export type ClockAdapter = {
   now(): Date;
 };
@@ -64,6 +80,7 @@ type DigestWindow = {
 export type GitHubAdapter = {
   listPullRequests(window: DigestWindow): Promise<PullRequestEvidence[]>;
   listDeployments(window: DigestWindow): Promise<DeploymentEvidence[]>;
+  listWayfinderMaps(window: DigestWindow): Promise<WayfinderMapEvidence[]>;
 };
 
 export type SummaryAdapter = {
@@ -87,6 +104,7 @@ export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
 type DigestLifecycle = "released" | "completed" | "blocked" | "in-progress";
 
 type DigestSubject = {
+  kind: "pull-request" | "wayfinder-map";
   number: number;
   title: string;
   lifecycle: DigestLifecycle;
@@ -166,17 +184,24 @@ export async function runDailyProjectDigest(
     windowEnd,
   };
 
-  const [pullRequests, deployments] = await Promise.all([
+  const [pullRequests, deployments, wayfinderMaps] = await Promise.all([
     adapters.github.listPullRequests(copyWindow(window)),
     adapters.github.listDeployments(copyWindow(window)),
+    adapters.github.listWayfinderMaps(copyWindow(window)),
   ]);
+  const wayfinderMapNumbers = new Set(
+    wayfinderMaps.map((wayfinderMap) => wayfinderMap.number),
+  );
   const subjects = deduplicateSubjects(
     [
       ...pullRequests.map((pullRequest) =>
-        toDigestSubject({ pullRequest, window }),
+        toDigestSubject({ pullRequest, window, wayfinderMapNumbers }),
       ),
       ...deployments.flatMap((deployment) =>
-        toReleasedSubjects({ deployment, window }),
+        toReleasedSubjects({ deployment, window, wayfinderMapNumbers }),
+      ),
+      ...wayfinderMaps.map((wayfinderMap) =>
+        toWayfinderSubject({ wayfinderMap, window }),
       ),
     ].filter((subject) => subject !== undefined),
   ).sort((left, right) => left.number - right.number);
@@ -218,10 +243,15 @@ function isEligibleDeliveryPullRequest(
 function toDigestSubject({
   pullRequest,
   window,
+  wayfinderMapNumbers,
 }: {
   pullRequest: PullRequestEvidence;
   window: DigestWindow;
+  wayfinderMapNumbers: Set<number>;
 }): DigestSubject | undefined {
+  if (isWayfinderArtifactPullRequest({ pullRequest, wayfinderMapNumbers })) {
+    return undefined;
+  }
   if (pullRequest.state === "MERGED") {
     if (pullRequest.mergedAt === null) {
       throw new Error("GitHub returned invalid merged pull-request evidence.");
@@ -234,6 +264,7 @@ function toDigestSubject({
       mergedAt >= window.windowStart &&
       mergedAt < window.windowEnd
       ? {
+          kind: "pull-request",
           number: pullRequest.number,
           title: normalizeTitle({
             title: pullRequest.title,
@@ -254,6 +285,7 @@ function toDigestSubject({
         hasBlockingLabel(issue.labels) || hasOpenDependency(issue.blockedBy),
     );
   return {
+    kind: "pull-request",
     number: pullRequest.number,
     title: normalizeTitle({
       title: pullRequest.title,
@@ -266,9 +298,11 @@ function toDigestSubject({
 function toReleasedSubjects({
   deployment,
   window,
+  wayfinderMapNumbers,
 }: {
   deployment: DeploymentEvidence;
   window: DigestWindow;
+  wayfinderMapNumbers: Set<number>;
 }): DigestSubject[] {
   if (
     deployment.environment !== "production" ||
@@ -285,8 +319,15 @@ function toReleasedSubjects({
     return [];
   }
   return deployment.newlyContainedPullRequests
-    .filter(isReleasedDeliveryPullRequest)
+    .filter(
+      (pullRequest) =>
+        !isWayfinderArtifactPullRequest({
+          pullRequest,
+          wayfinderMapNumbers,
+        }) && isReleasedDeliveryPullRequest(pullRequest),
+    )
     .map((pullRequest) => ({
+      kind: "pull-request",
       number: pullRequest.number,
       title: normalizeTitle({
         title: pullRequest.title,
@@ -294,6 +335,79 @@ function toReleasedSubjects({
       }),
       lifecycle: "released",
     }));
+}
+
+function toWayfinderSubject({
+  wayfinderMap,
+  window,
+}: {
+  wayfinderMap: WayfinderMapEvidence;
+  window: DigestWindow;
+}): DigestSubject | undefined {
+  if (!wayfinderMap.labels.includes("wayfinder:map")) {
+    return undefined;
+  }
+  if (wayfinderMap.state === "CLOSED") {
+    if (
+      wayfinderMap.stateReason !== "COMPLETED" ||
+      wayfinderMap.closedAt === null
+    ) {
+      return undefined;
+    }
+    const closedAt = new Date(wayfinderMap.closedAt);
+    if (Number.isNaN(closedAt.getTime())) {
+      throw new Error("GitHub returned invalid Wayfinder map evidence.");
+    }
+    if (closedAt < window.windowStart || closedAt >= window.windowEnd) {
+      return undefined;
+    }
+    return wayfinderSubject({ wayfinderMap, lifecycle: "completed" });
+  }
+  const remainingRoutes = wayfinderMap.children.filter(
+    (route) => route.state === "OPEN",
+  );
+  const everyRemainingRouteIsBlocked =
+    remainingRoutes.length > 0 &&
+    remainingRoutes.every(
+      (route) =>
+        hasBlockingLabel(route.labels) || hasOpenDependency(route.blockedBy),
+    );
+  return wayfinderSubject({
+    wayfinderMap,
+    lifecycle: everyRemainingRouteIsBlocked ? "blocked" : "in-progress",
+  });
+}
+
+function wayfinderSubject({
+  wayfinderMap,
+  lifecycle,
+}: {
+  wayfinderMap: WayfinderMapEvidence;
+  lifecycle: "completed" | "blocked" | "in-progress";
+}): DigestSubject {
+  return {
+    kind: "wayfinder-map",
+    number: wayfinderMap.number,
+    title: normalizeTitle({
+      title: wayfinderMap.title,
+      number: wayfinderMap.number,
+    }),
+    lifecycle,
+  };
+}
+
+function isWayfinderArtifactPullRequest({
+  pullRequest,
+  wayfinderMapNumbers,
+}: {
+  pullRequest: PullRequestEvidence;
+  wayfinderMapNumbers: Set<number>;
+}): boolean {
+  const match =
+    /^wayfinder\/map-(\d+)-(?:decision-documents|research-and-prototypes)$/.exec(
+      pullRequest.headRefName,
+    );
+  return match !== null && wayfinderMapNumbers.has(Number(match[1]));
 }
 
 function isReleasedDeliveryPullRequest(
@@ -463,7 +577,9 @@ function renderSubject({
   lifecycle: DigestSubject["lifecycle"];
 }): string {
   const state = lifecyclePresentation[lifecycle].state;
-  return `[${subject.title} is ${state}.](${digestRepository.webUrl}/pull/${subject.number})`;
+  const collection =
+    subject.kind === "wayfinder-map" ? "issues" : "pull";
+  return `[${subject.title} is ${state}.](${digestRepository.webUrl}/${collection}/${subject.number})`;
 }
 
 function normalizeTitle({

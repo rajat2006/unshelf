@@ -5,6 +5,7 @@ import type {
   DiscordPayload,
   PreviewAdapters,
   PullRequestEvidence,
+  WayfinderMapEvidence,
 } from "./index.js";
 
 type GitHubActionsPreviewInput = {
@@ -125,6 +126,10 @@ export function createGitHubActionsPreviewAdapters(
           github: { token: input.token, owner, name },
           window,
         }),
+      listWayfinderMaps: () =>
+        gatherWayfinderMaps({
+          github: { token: input.token, owner, name },
+        }),
     },
     summary: {
       writePreview: (payload) =>
@@ -150,6 +155,130 @@ async function gatherPullRequests({
     gatherRecentlyMergedPullRequests({ github, windowStart }),
   ]);
   return [...open, ...merged];
+}
+
+async function gatherWayfinderMaps({
+  github,
+}: {
+  github: GitHubRepositoryContext;
+}): Promise<WayfinderMapEvidence[]> {
+  const maps: WayfinderMapEvidence[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/issues?labels=wayfinder%3Amap&state=all&sort=created&direction=asc&per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid Wayfinder map evidence.");
+    }
+    const pageMaps = response
+      .filter((value) => record(value)?.pull_request === undefined)
+      .map(parseWayfinderMap);
+    maps.push(
+      ...(await Promise.all(
+        pageMaps.map(async (wayfinderMap) => ({
+          ...wayfinderMap,
+          children: await gatherWayfinderRoutes({
+            github,
+            mapNumber: wayfinderMap.number,
+          }),
+        })),
+      )),
+    );
+    if (response.length < 100) {
+      return maps;
+    }
+  }
+}
+
+function parseWayfinderMap(
+  value: unknown,
+): Omit<WayfinderMapEvidence, "children"> {
+  const issue = record(value);
+  const number = issue?.number;
+  const title = issue?.title;
+  const stateValue = issue?.state;
+  const stateReasonValue = issue?.state_reason;
+  const closedAtValue = issue?.closed_at;
+  if (
+    !isInteger(number) ||
+    typeof title !== "string" ||
+    (stateValue !== "open" && stateValue !== "closed") ||
+    (stateReasonValue !== null &&
+      stateReasonValue !== "completed" &&
+      stateReasonValue !== "not_planned") ||
+    (closedAtValue !== null && typeof closedAtValue !== "string")
+  ) {
+    throw new Error("GitHub returned invalid Wayfinder map evidence.");
+  }
+  const state = stateValue === "open" ? "OPEN" : "CLOSED";
+  const stateReason =
+    stateReasonValue === null
+      ? null
+      : stateReasonValue === "completed"
+        ? "COMPLETED"
+        : "NOT_PLANNED";
+  if (
+    (state === "OPEN" && (stateReason !== null || closedAtValue !== null)) ||
+    (state === "CLOSED" && (stateReason === null || closedAtValue === null))
+  ) {
+    throw new Error("GitHub returned invalid Wayfinder map evidence.");
+  }
+  return {
+    state,
+    stateReason,
+    closedAt: closedAtValue,
+    number,
+    title,
+    labels: parseRestLabels(issue?.labels),
+  };
+}
+
+async function gatherWayfinderRoutes({
+  github,
+  mapNumber,
+}: {
+  github: GitHubRepositoryContext;
+  mapNumber: number;
+}): Promise<WayfinderMapEvidence["children"]> {
+  const routes: WayfinderMapEvidence["children"] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/issues/${mapNumber}/sub_issues?per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid Wayfinder route evidence.");
+    }
+    routes.push(
+      ...(await Promise.all(
+        response.map(async (value) => {
+          const issue = record(value);
+          const number = issue?.number;
+          const stateValue = issue?.state;
+          if (
+            !isInteger(number) ||
+            (stateValue !== "open" && stateValue !== "closed")
+          ) {
+            throw new Error("GitHub returned invalid Wayfinder route evidence.");
+          }
+          const state: "OPEN" | "CLOSED" =
+            stateValue === "open" ? "OPEN" : "CLOSED";
+          return {
+            state,
+            labels: parseRestLabels(issue?.labels),
+            blockedBy:
+              state === "OPEN"
+                ? await fetchDependencies({ github, issueNumber: number })
+                : [],
+          };
+        }),
+      )),
+    );
+    if (response.length < 100) {
+      return routes;
+    }
+  }
 }
 
 type DeploymentRecord = {
@@ -919,6 +1048,19 @@ function parseLabels(value: unknown): string[] {
   }
   return connection.nodes.map((node) => {
     const name = record(node)?.name;
+    if (typeof name !== "string") {
+      throw new Error("GitHub returned invalid label evidence.");
+    }
+    return name;
+  });
+}
+
+function parseRestLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error("GitHub returned invalid label evidence.");
+  }
+  return value.map((label) => {
+    const name = record(label)?.name;
     if (typeof name !== "string") {
       throw new Error("GitHub returned invalid label evidence.");
     }

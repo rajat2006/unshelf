@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createGitHubActionsPreviewAdapters,
   runDailyProjectDigest,
   type DiscordPayload,
   type PreviewAdapters,
 } from "../src/index.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("Daily Project Digest preview", () => {
   it("previews production releases alongside completed and active work", async () => {
@@ -225,6 +230,34 @@ describe("Daily Project Digest preview", () => {
               blockedBy: [],
               closingIssues: [],
             },
+            {
+              state: "OPEN",
+              mergedAt: null,
+              number: 126,
+              title: "Maintain the digest decision documents",
+              baseRefName: "dev",
+              headRefName: "wayfinder/map-100-decision-documents",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: true,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
+            {
+              state: "MERGED",
+              mergedAt: "2026-08-17T14:30:00.000Z",
+              number: 127,
+              title: "Preserve the digest planning prototype",
+              baseRefName: "dev",
+              headRefName: "wayfinder/map-98-research-and-prototypes",
+              headRepository: "rajat2006/unshelf",
+              labels: [],
+              isDraft: false,
+              headContainsMain: false,
+              blockedBy: [],
+              closingIssues: [],
+            },
             ...["A", "B", "C", "D", "E", "F", "G", "H"].map((title, index) => ({
               state: "OPEN" as const,
               mergedAt: null,
@@ -239,6 +272,77 @@ describe("Daily Project Digest preview", () => {
               blockedBy: [],
               closingIssues: [],
             })),
+          ]);
+        },
+        listWayfinderMaps: () => {
+          trace.push("wayfinder");
+          return Promise.resolve([
+            {
+              state: "CLOSED",
+              stateReason: "COMPLETED",
+              closedAt: "2026-08-17T11:00:00.000Z",
+              number: 98,
+              title: "Choose the Daily Project Digest direction",
+              labels: ["wayfinder:map"],
+              children: [
+                { state: "CLOSED", labels: [], blockedBy: [] },
+              ],
+            },
+            {
+              state: "OPEN",
+              stateReason: null,
+              closedAt: null,
+              number: 99,
+              title: "Plan reliable project updates",
+              labels: ["wayfinder:map"],
+              children: [
+                {
+                  state: "OPEN",
+                  labels: [],
+                  blockedBy: [{ state: "OPEN" }],
+                },
+                {
+                  state: "OPEN",
+                  labels: ["needs-info"],
+                  blockedBy: [],
+                },
+                { state: "CLOSED", labels: [], blockedBy: [] },
+              ],
+            },
+            {
+              state: "OPEN",
+              stateReason: null,
+              closedAt: null,
+              number: 100,
+              title: "Shape the next Unshelf experience",
+              labels: ["wayfinder:map"],
+              children: [
+                {
+                  state: "OPEN",
+                  labels: ["agent:blocked"],
+                  blockedBy: [],
+                },
+                { state: "OPEN", labels: [], blockedBy: [] },
+              ],
+            },
+            {
+              state: "CLOSED",
+              stateReason: "COMPLETED",
+              closedAt: "2026-08-17T17:30:00.000Z",
+              number: 128,
+              title: "Exclude a map closed at the window end",
+              labels: ["wayfinder:map"],
+              children: [],
+            },
+            {
+              state: "CLOSED",
+              stateReason: "NOT_PLANNED",
+              closedAt: "2026-08-17T10:00:00.000Z",
+              number: 129,
+              title: "Exclude an abandoned map",
+              labels: ["wayfinder:map"],
+              children: [],
+            },
           ]);
         },
         listDeployments: ({ windowStart, windowEnd }) => {
@@ -370,6 +474,7 @@ describe("Daily Project Digest preview", () => {
       "clock",
       "github:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
       "deployments:2026-08-16T17:30:00.000Z:2026-08-17T17:30:00.000Z",
+      "wayfinder",
       "summary",
     ]);
     expect(result).toEqual({
@@ -381,7 +486,7 @@ describe("Daily Project Digest preview", () => {
           {
             title: "Daily Project Digest",
             description:
-              "3 changes reached production; 1 meaningful change landed; 2 items need attention; 11 efforts are still moving.",
+              "3 changes reached production; 2 meaningful changes landed; 3 items need attention; 12 efforts are still moving.",
             color: 5793266,
             fields: [
               {
@@ -392,17 +497,17 @@ describe("Daily Project Digest preview", () => {
               {
                 name: "Completed — Merged and ready for a release",
                 value:
-                  "[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
+                  "[Choose the Daily Project Digest direction is completed.](https://github.com/rajat2006/unshelf/issues/98)\n[Include the window start is completed.](https://github.com/rajat2006/unshelf/pull/117)",
               },
               {
                 name: "Blocked — Needs attention before work can continue",
                 value:
-                  "[Provision digest access is blocked.](https://github.com/rajat2006/unshelf/pull/102)\n[Shape the preview wording is blocked.](https://github.com/rajat2006/unshelf/pull/103)",
+                  "[Plan reliable project updates is blocked.](https://github.com/rajat2006/unshelf/issues/99)\n[Provision digest access is blocked.](https://github.com/rajat2006/unshelf/pull/102)\n[Shape the preview wording is blocked.](https://github.com/rajat2006/unshelf/pull/103)",
               },
               {
                 name: "In progress — Actively moving forward",
                 value:
-                  "[Keep draft delivery work visible is in progress.](https://github.com/rajat2006/unshelf/pull/101)\n[Ignore an arbitrary blocked issue mention is in progress.](https://github.com/rajat2006/unshelf/pull/104)\n[Repair production sign-in is in progress.](https://github.com/rajat2006/unshelf/pull/105)\n[A is in progress.](https://github.com/rajat2006/unshelf/pull/108)\n[B is in progress.](https://github.com/rajat2006/unshelf/pull/109)\n[C is in progress.](https://github.com/rajat2006/unshelf/pull/110)\n[D is in progress.](https://github.com/rajat2006/unshelf/pull/111)\n[E is in progress.](https://github.com/rajat2006/unshelf/pull/112)\n[F is in progress.](https://github.com/rajat2006/unshelf/pull/113)\n[G is in progress.](https://github.com/rajat2006/unshelf/pull/114)\n[+ 1 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
+                  "[Shape the next Unshelf experience is in progress.](https://github.com/rajat2006/unshelf/issues/100)\n[Keep draft delivery work visible is in progress.](https://github.com/rajat2006/unshelf/pull/101)\n[Ignore an arbitrary blocked issue mention is in progress.](https://github.com/rajat2006/unshelf/pull/104)\n[Repair production sign-in is in progress.](https://github.com/rajat2006/unshelf/pull/105)\n[A is in progress.](https://github.com/rajat2006/unshelf/pull/108)\n[B is in progress.](https://github.com/rajat2006/unshelf/pull/109)\n[C is in progress.](https://github.com/rajat2006/unshelf/pull/110)\n[D is in progress.](https://github.com/rajat2006/unshelf/pull/111)\n[E is in progress.](https://github.com/rajat2006/unshelf/pull/112)\n[F is in progress.](https://github.com/rajat2006/unshelf/pull/113)\n[+ 2 more on GitHub](https://github.com/rajat2006/unshelf/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info)",
               },
             ],
             footer: {
@@ -414,5 +519,94 @@ describe("Daily Project Digest preview", () => {
       },
     });
     expect(summarizedPayload).toBe(result.payload);
+  });
+
+  it("gathers complete Wayfinder map routes and their explicit blockers", async () => {
+    const closedRoutes = Array.from({ length: 100 }, (_, index) => ({
+      number: 500 + index,
+      state: "closed",
+      labels: [],
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const url = new URL(
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url,
+        );
+        let value: unknown;
+        if (url.pathname.endsWith("/issues")) {
+          value = [
+            {
+              number: 424,
+              title: "Wayfinder: publish a Daily Project Digest to Discord",
+              state: "open",
+              state_reason: null,
+              closed_at: null,
+              labels: [{ name: "wayfinder:map" }],
+            },
+          ];
+        } else if (url.pathname.endsWith("/issues/424/sub_issues")) {
+          value =
+            url.searchParams.get("page") === "1"
+              ? closedRoutes
+              : [
+                  {
+                    number: 700,
+                    state: "open",
+                    labels: [{ name: "needs-info" }],
+                  },
+                ];
+        } else if (
+          url.pathname.endsWith("/issues/700/dependencies/blocked_by")
+        ) {
+          value = [{ state: "open" }];
+        } else {
+          throw new Error(`Unexpected GitHub request: ${url.pathname}`);
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(value), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    const adapters = createGitHubActionsPreviewAdapters({
+      token: "github-token",
+      repository: "rajat2006/unshelf",
+      summaryPath: "/tmp/daily-project-digest-test-summary",
+    });
+
+    const maps = await adapters.github.listWayfinderMaps({
+      windowStart: new Date("2026-08-16T17:30:00.000Z"),
+      windowEnd: new Date("2026-08-17T17:30:00.000Z"),
+    });
+
+    expect(maps).toEqual([
+      {
+        state: "OPEN",
+        stateReason: null,
+        closedAt: null,
+        number: 424,
+        title: "Wayfinder: publish a Daily Project Digest to Discord",
+        labels: ["wayfinder:map"],
+        children: [
+          ...closedRoutes.map(() => ({
+            state: "CLOSED" as const,
+            labels: [],
+            blockedBy: [],
+          })),
+          {
+            state: "OPEN",
+            labels: ["needs-info"],
+            blockedBy: [{ state: "OPEN" }],
+          },
+        ],
+      },
+    ]);
   });
 });
