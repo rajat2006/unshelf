@@ -29,7 +29,6 @@ export type AIPresentationFailureReason =
   | "contract-sentence-control"
   | "contract-sentence-list"
   | "contract-sentence-punctuation"
-  | "contract-sentence-opening"
   | "contract-sentence-url"
   | "contract-sentence-markdown"
   | "contract-sentence-mention"
