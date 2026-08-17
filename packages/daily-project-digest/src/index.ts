@@ -396,16 +396,19 @@ function isSafeAISentence(sentence: string): boolean {
     sentence.length >= 12 &&
     sentence.length <= 180 &&
     /^[^.!?\r\n]+[.!?]$/.test(sentence) &&
+    /^(?:Adds|Allows|Brings|Builds|Clarifies|Creates|Enables|Ensures|Establishes|Exposes|Fixes|Groups|Improves|Includes|Keeps|Makes|Maps|Moves|Prevents|Protects|Provides|Provisions|Reduces|Removes|Repairs|Restores|Sets|Shapes|Shows|Simplifies|Supports|Updates)\b/.test(
+      sentence,
+    ) &&
     !hasControlCharacter(sentence) &&
     !/^\s*(?:[-+>]|\d+[.)])\s/.test(sentence) &&
     !/(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|github\.com)/i.test(sentence) &&
     !/\b[\w-]+\.(?:com|org|net|io|dev|app|co)(?:\b|\/)/i.test(sentence) &&
     !/(?:\[|\]|[*_`~#><|])/.test(sentence) &&
     !/@/.test(sentence) &&
-    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
+    !/\b(?:production|live|releas(?:e|ed)|complet(?:e|ed)|block(?:ed)?|closed|open|waiting|dependency|paused|stalled|ready|in progress|merg(?:e|ed)|deploy(?:ed|ment)|ship(?:ped)?|land(?:ed)?|underway|moving forward|needs attention)\b/i.test(
       sentence,
     ) &&
-    !/\b(?:instructions?|prompts?|ignore|disregard|obey|follow|act as|you are now|developer message)\b/i.test(
+    !/\b(?:instructions?|prompts?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
       sentence,
     )
   );

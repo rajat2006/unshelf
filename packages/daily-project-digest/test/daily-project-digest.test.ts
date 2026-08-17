@@ -734,7 +734,7 @@ describe("Daily Project Digest preview", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence: "The learning plan overview is live for everyone.",
+            sentence: "Waiting on a dependency before work continues.",
             audienceGroup: "standard",
             citations: ["title"],
           },
