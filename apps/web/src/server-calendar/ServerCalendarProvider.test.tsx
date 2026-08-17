@@ -30,6 +30,7 @@ const auth: ApplicationAuth = {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.mocked(fetchServerCalendar).mockReset();
 });
 
@@ -60,6 +61,9 @@ function renderProvider() {
 
 describe("signed-in server calendar", () => {
   it("withholds Today while unavailable and coalesces concurrent retries", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-08-16T12:00:00.000Z"),
+    );
     let resolveRetry:
       ((calendar: { today: string; validUntil: string }) => void) | undefined;
     vi.mocked(fetchServerCalendar)
@@ -122,6 +126,9 @@ describe("signed-in server calendar", () => {
   });
 
   it("refreshes an expired document when the app becomes visible", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-08-16T12:00:00.000Z"),
+    );
     vi.mocked(fetchServerCalendar)
       .mockResolvedValueOnce({
         today: "2000-01-01",

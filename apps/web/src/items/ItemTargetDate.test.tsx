@@ -180,9 +180,11 @@ describe("Item Target date editor", () => {
     expect(input).toBeDisabled();
 
     resolveSave(changed);
-    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(changed));
-    expect(input).toBeEnabled();
-    expect(input).toHaveFocus();
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalledWith(changed);
+      expect(input).toBeEnabled();
+      expect(input).toHaveFocus();
+    });
   });
 
   it("immediately saves the authoritative Today", async () => {
