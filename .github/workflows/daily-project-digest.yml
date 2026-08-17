@@ -1,0 +1,52 @@
+name: Daily Project Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview the exact prospective Discord payload
+        required: true
+        type: choice
+        options: [preview]
+
+# Preview is a trusted, read-only job. It receives no deployment environment,
+# OpenAI credential, Discord webhook, or delivery adapter capability.
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  preview:
+    name: Preview
+    if: inputs.mode == 'preview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out trusted digest code
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build trusted digest
+        run: pnpm --filter @unshelf/daily-project-digest build
+
+      - name: Preview exact Discord payload
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node packages/daily-project-digest/dist/cli.js preview
