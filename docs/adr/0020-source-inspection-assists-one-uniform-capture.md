@@ -49,19 +49,20 @@ guesses never determine Type.
 
 YouTube is classified by resource shape rather than hostname. Recognized videos
 may suggest their canonical title and Type _video_; playlists may suggest their
-canonical title and Type _playlist_. A Community Post suggests Type _other_ and
-uses its first meaningful post text or poll or quiz question as a derived title;
-a textless Post leaves title unresolved. Ambiguous and unsupported YouTube routes
-leave Type unresolved. A video description is not a substitute title.
+canonical title and Type _playlist_. A recognized direct Community Post Source
+suggests Type _other_, leaves title unresolved, and performs no Post-page fetch.
+Ambiguous and unsupported YouTube routes leave both fields unresolved. A video
+description is not a substitute title.
 
-The product deliberately allows a confirmed YouTube title or derived Post title
-to become the ordinary durable Item title without a refreshable Provider-metadata
-projection. Current YouTube policy applies refresh and deletion requirements to
-API-derived titles, while available non-API acquisition paths carry separate
-automated-access or policy uncertainty. The production acquisition mechanism and
-its compliance treatment remain an explicit architecture responsibility; this
-decision records the accepted product behavior and risk rather than declaring a
-particular mechanism compliant.
+The product deliberately allows a confirmed YouTube oEmbed video or playlist
+title to become the ordinary durable Item title without a refreshable
+Provider-metadata projection. It accepts that no adequate current first-party
+YouTube retention contract for oEmbed was found; this is an explicit product
+risk, not a claim of compliance. The YouTube Data API is excluded because its
+title retention duties conflict with the no-projection boundary, and YouTube
+page extraction is excluded because of its automated-access and drift risk.
+[ADR-0021](./0021-source-inspection-is-stateless-and-guarded.md) owns the
+production mechanism, safety boundary, and kill switch.
 
 ## Consequences
 
