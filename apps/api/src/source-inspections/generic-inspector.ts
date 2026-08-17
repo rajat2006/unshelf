@@ -6,6 +6,7 @@ import { Parser } from "htmlparser2";
 import type { GuardedPublicTransport } from "./guarded-transport";
 
 const DECOMPRESSED_BYTE_LIMIT = 256 * 1024;
+const ENCODING_PRESCAN_BYTE_LIMIT = 1024;
 const TITLE_CODE_POINT_LIMIT = 512;
 
 const requestHeaders = {
@@ -74,15 +75,15 @@ function isHtml(contentType: string | undefined): boolean {
   return mediaType === "text/html" || mediaType === "application/xhtml+xml";
 }
 
-function declaredCharacterEncoding(contentType: string | undefined): string {
+function declaredCharacterEncoding(
+  contentType: string | undefined,
+): string | null {
   const match =
     /(?:^|;)\s*charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s]+))/iu.exec(
       contentType ?? "",
     );
-  const label = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "utf-8")
-    .trim()
-    .toLowerCase();
-  return label === "iso-8859-1" ? "windows-1252" : label;
+  const label = match?.[1] ?? match?.[2] ?? match?.[3];
+  return label === undefined ? null : normalizeCharacterEncoding(label);
 }
 
 type AcceptedEncoding = "identity" | "gzip" | "deflate" | "br";
@@ -130,19 +131,23 @@ async function readDocumentTitle({
   signal,
 }: {
   readonly body: AsyncIterable<Uint8Array>;
-  readonly characterEncoding: string;
+  readonly characterEncoding: string | null;
   readonly signal: AbortSignal;
 }): Promise<string | null> {
   let decoder: TextDecoder | undefined;
   let encodingPrelude: Uint8Array = new Uint8Array();
   let decompressedBytes = 0;
   let inTitle = false;
+  let titleStarted = false;
   let headClosed = false;
   let title = "";
   const parser = new Parser(
     {
       onopentag: (name) => {
-        if (name === "title" && !headClosed) inTitle = true;
+        if (name === "title" && !headClosed && !titleStarted) {
+          inTitle = true;
+          titleStarted = true;
+        }
         if (name === "body") {
           headClosed = true;
           parser.pause();
@@ -167,10 +172,16 @@ async function readDocumentTitle({
     decompressedBytes += chunk.byteLength;
     if (decompressedBytes > DECOMPRESSED_BYTE_LIMIT) return null;
     if (decoder === undefined) {
-      encodingPrelude = concatenateBytes(encodingPrelude, chunk);
-      if (encodingPrelude.byteLength < 3) continue;
+      encodingPrelude = concatenateBytes({
+        first: encodingPrelude,
+        second: chunk,
+      });
+      if (encodingPrelude.byteLength < ENCODING_PRESCAN_BYTE_LIMIT) continue;
       decoder = new TextDecoder(
-        byteOrderMarkEncoding(encodingPrelude) ?? characterEncoding,
+        selectCharacterEncoding({
+          bytes: encodingPrelude,
+          declared: characterEncoding,
+        }),
       );
       parser.write(decoder.decode(encodingPrelude, { stream: true }));
       encodingPrelude = new Uint8Array();
@@ -180,7 +191,10 @@ async function readDocumentTitle({
     if (headClosed) break;
   }
   decoder ??= new TextDecoder(
-    byteOrderMarkEncoding(encodingPrelude) ?? characterEncoding,
+    selectCharacterEncoding({
+      bytes: encodingPrelude,
+      declared: characterEncoding,
+    }),
   );
   if (encodingPrelude.byteLength > 0) {
     parser.write(decoder.decode(encodingPrelude, { stream: true }));
@@ -192,6 +206,50 @@ async function readDocumentTitle({
   return [...normalized].slice(0, TITLE_CODE_POINT_LIMIT).join("");
 }
 
+function selectCharacterEncoding({
+  bytes,
+  declared,
+}: {
+  readonly bytes: Uint8Array;
+  readonly declared: string | null;
+}): string {
+  return (
+    byteOrderMarkEncoding(bytes) ??
+    declared ??
+    sniffHtmlCharacterEncoding(bytes) ??
+    "utf-8"
+  );
+}
+
+function sniffHtmlCharacterEncoding(bytes: Uint8Array): string | null {
+  let encoding: string | null = null;
+  const parser = new Parser({
+    onopentag: (name, attributes) => {
+      if (name !== "meta" || encoding !== null) return;
+      const charset = attributes.charset;
+      if (charset !== undefined) {
+        encoding = normalizeCharacterEncoding(charset);
+        return;
+      }
+      if (attributes["http-equiv"]?.toLowerCase() !== "content-type") return;
+      encoding = declaredCharacterEncoding(attributes.content);
+    },
+  });
+  parser.end(
+    new TextDecoder("windows-1252").decode(
+      bytes.subarray(0, ENCODING_PRESCAN_BYTE_LIMIT),
+    ),
+  );
+  return encoding;
+}
+
+function normalizeCharacterEncoding(label: string): string {
+  const normalized = label.trim().toLowerCase();
+  return normalized === "iso-8859-1" || normalized === "us-ascii"
+    ? "windows-1252"
+    : normalized;
+}
+
 function byteOrderMarkEncoding(bytes: Uint8Array): string | null {
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     return "utf-8";
@@ -201,7 +259,13 @@ function byteOrderMarkEncoding(bytes: Uint8Array): string | null {
   return null;
 }
 
-function concatenateBytes(first: Uint8Array, second: Uint8Array): Uint8Array {
+function concatenateBytes({
+  first,
+  second,
+}: {
+  readonly first: Uint8Array;
+  readonly second: Uint8Array;
+}): Uint8Array {
   const combined = new Uint8Array(first.byteLength + second.byteLength);
   combined.set(first);
   combined.set(second, first.byteLength);

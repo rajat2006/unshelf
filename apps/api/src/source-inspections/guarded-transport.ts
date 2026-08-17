@@ -21,10 +21,12 @@ export interface GuardedPublicTransport {
 
 export interface HostResolution {
   readonly aliases: readonly string[];
-  readonly addresses: readonly {
-    readonly address: string;
-    readonly family: 4 | 6;
-  }[];
+  readonly addresses: readonly ResolvedAddress[];
+}
+
+export interface ResolvedAddress {
+  readonly address: string;
+  readonly family: 4 | 6;
 }
 
 export interface HostResolver {
@@ -37,8 +39,7 @@ export interface HostResolver {
 export interface ConnectionTransport {
   request(input: {
     readonly url: URL;
-    readonly address: string;
-    readonly family: 4 | 6;
+    readonly pinnedAddress: ResolvedAddress;
     readonly headers: Readonly<Record<string, string>>;
     readonly connectTimeoutMs: number;
     readonly headersTimeoutMs: number;
@@ -255,8 +256,7 @@ async function requestValidatedUrl({
   const response = await raceWithAbort(
     connection.request({
       url,
-      address: pinned.address,
-      family: pinned.family,
+      pinnedAddress: pinned,
       headers: Object.fromEntries(
         Object.entries(headers).filter(([name]) =>
           outboundHeaderNames.has(name.toLowerCase()),
@@ -296,12 +296,16 @@ function withTransferLimit({
   readonly disposeDeadline: () => void;
 }): GuardedTransportResponse {
   let cancelled = false;
+  const abort = () => cancel();
   const cancel = () => {
     if (cancelled) return;
     cancelled = true;
+    signal.removeEventListener("abort", abort);
     response.cancel();
     disposeDeadline();
   };
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) cancel();
   return {
     ...response,
     body: boundedBody({

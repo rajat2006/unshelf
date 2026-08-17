@@ -137,6 +137,58 @@ describe("Generic Source inspector", () => {
     ).resolves.toMatchObject({ title: "Snowman ☃" });
   });
 
+  it("honors an HTML meta encoding declaration within the bounded prescan", async () => {
+    const prefix = new TextEncoder().encode(
+      '<head><meta charset="windows-1252"><title>Calm ',
+    );
+    const suffix = new TextEncoder().encode(" capture</title></head>");
+    const html = new Uint8Array(prefix.length + 1 + suffix.length);
+    html.set(prefix);
+    html[prefix.length] = 0x96;
+    html.set(suffix, prefix.length + 1);
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: byteChunks([html]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/meta-encoded",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ title: "Calm – capture" });
+  });
+
+  it("uses only the first document title element", async () => {
+    const get = vi.fn<GuardedPublicTransport["get"]>(() =>
+      Promise.resolve({
+        ok: true,
+        response: {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          body: chunks([
+            "<head><title>Publisher title</title><title>Ignored title</title></head>",
+          ]),
+          cancel: vi.fn(),
+        },
+      }),
+    );
+
+    await expect(
+      createGenericSourceInspector({ transport: { get } })({
+        source: "https://example.com/two-titles",
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ title: "Publisher title" });
+  });
+
   it.each([
     {
       caseName: "non-200 response",

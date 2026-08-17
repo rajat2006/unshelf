@@ -6,6 +6,7 @@ import type {
   ConnectionTransport,
   GuardedTransportResponse,
   HostResolver,
+  ResolvedAddress,
 } from "./guarded-transport";
 
 const CNAME_LIMIT = 16;
@@ -16,7 +17,7 @@ export function createNodeHostResolver(): HostResolver {
       const pending = [hostname];
       const visited = new Set<string>();
       const aliases: string[] = [];
-      const addresses: { address: string; family: 4 | 6 }[] = [];
+      const addresses: ResolvedAddress[] = [];
 
       while (pending.length > 0) {
         signal.throwIfAborted();
@@ -69,8 +70,8 @@ async function resolveRecords(
 }
 
 function uniqueAddresses(
-  addresses: readonly { readonly address: string; readonly family: 4 | 6 }[],
-): { address: string; family: 4 | 6 }[] {
+  addresses: readonly ResolvedAddress[],
+): ResolvedAddress[] {
   return [
     ...new Map(
       addresses.map((entry) => [`${entry.family}:${entry.address}`, entry]),
@@ -85,10 +86,8 @@ export function createNodeConnectionTransport(): ConnectionTransport {
         const lookup: LookupFunction = (_hostname, options, callback) => {
           callback(
             null,
-            options.all
-              ? [{ address: input.address, family: input.family }]
-              : input.address,
-            options.all ? undefined : input.family,
+            options.all ? [input.pinnedAddress] : input.pinnedAddress.address,
+            options.all ? undefined : input.pinnedAddress.family,
           );
         };
         const client = input.url.protocol === "https:" ? https : http;

@@ -46,8 +46,7 @@ describe("Guarded public transport", () => {
     });
     expect(request).toHaveBeenCalledWith({
       url: new URL("https://example.com/article?token=sensitive"),
-      address: "93.184.216.34",
-      family: 4,
+      pinnedAddress: { address: "93.184.216.34", family: 4 },
       headers: { accept: "text/html" },
       connectTimeoutMs: 500,
       headersTimeoutMs: 1_500,
@@ -166,7 +165,7 @@ describe("Guarded public transport", () => {
     ]);
     expect(request.mock.calls[1]?.[0]).toMatchObject({
       url: new URL("https://cdn.example.net/final?edition=current"),
-      address: "142.250.72.14",
+      pinnedAddress: { address: "142.250.72.14", family: 4 },
     });
     expect(redirectCancel).toHaveBeenCalledOnce();
   });
@@ -334,6 +333,38 @@ describe("Guarded public transport", () => {
     await expect(pending).resolves.toEqual({ ok: false });
     expect(request).not.toHaveBeenCalled();
     expect(cancelDeadline).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels an open response when its caller aborts", async () => {
+    const cancel = vi.fn();
+    const controller = new AbortController();
+    const result = await createGuardedPublicTransport({
+      resolver: {
+        resolve: () =>
+          Promise.resolve({
+            aliases: [],
+            addresses: [{ address: "93.184.216.34", family: 4 }],
+          }),
+      },
+      connection: {
+        request: () =>
+          Promise.resolve({
+            status: 200,
+            headers: { "content-type": "text/html" },
+            body: emptyBody(),
+            cancel,
+          }),
+      },
+    }).get({
+      source: "https://example.com/article",
+      headers: {},
+      signal: controller.signal,
+    });
+    if (!result.ok) throw new Error("Expected an open response");
+
+    controller.abort();
+
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("refuses DNS resolution after its 300 ms phase ceiling", async () => {
