@@ -9,12 +9,15 @@ async function expectPopoverAccessible(page: Page) {
   expect(accessibility.violations).toEqual([]);
 }
 
-async function expectCalendarDayStatesDistinct(calendar: Locator) {
+async function expectCalendarDayStatesDistinct(
+  calendar: Locator,
+  { selectedIsFocused = true } = {},
+) {
   const selected = calendar.locator('button[data-selected="true"]');
   const outside = calendar.locator('button[data-outside="true"]').first();
   const ordinary = calendar
     .locator(
-      'td:not([data-outside]) > button:not([data-selected]):not([data-today]):not(:disabled)',
+      "td:not([data-outside]) > button:not([data-selected]):not([data-today]):not(:disabled)",
     )
     .first();
   await expect(selected).toBeVisible();
@@ -34,13 +37,13 @@ async function expectCalendarDayStatesDistinct(calendar: Locator) {
       }),
     ),
   );
-  expect(selectedStyle.backgroundColor).not.toBe(
-    ordinaryStyle.backgroundColor,
-  );
+  expect(selectedStyle.backgroundColor).not.toBe(ordinaryStyle.backgroundColor);
   expect(outsideStyle.color).not.toBe(ordinaryStyle.color);
   expect(outsideStyle.borderColor).not.toBe(ordinaryStyle.borderColor);
-  await expect(selected).toBeFocused();
-  expect(selectedStyle.boxShadow).not.toBe(ordinaryStyle.boxShadow);
+  if (selectedIsFocused) {
+    await expect(selected).toBeFocused();
+    expect(selectedStyle.boxShadow).not.toBe(ordinaryStyle.boxShadow);
+  }
 
   const disabledStyle = await ordinary.evaluate((element) => {
     const disabledDay = element.cloneNode(true) as HTMLButtonElement;
@@ -77,9 +80,7 @@ async function showCalendarMonth({
   });
   await yearPicker.focus();
   await yearPicker.press("Enter");
-  await page
-    .getByRole("option", { name: String(Number(year)) })
-    .press("Enter");
+  await page.getByRole("option", { name: String(Number(year)) }).press("Enter");
   const monthPicker = calendar.getByRole("combobox", {
     name: "Choose the Month",
   });
@@ -259,9 +260,11 @@ test("the themed date picker chooses and saves a Target date across responsive i
   }
 
   await expect(input).toHaveAttribute("type", "text");
-  const trigger = sidebar.getByRole("button", { name: "Choose date" });
-  await trigger.focus();
-  await trigger.press("Enter");
+  await expect(
+    sidebar.getByRole("button", { name: "Choose date" }),
+  ).toHaveCount(0);
+  await input.focus();
+  await input.press("Alt+ArrowDown");
   const calendar = page.getByRole("dialog", { name: "Choose date" });
   await expect(calendar).toBeVisible();
 
@@ -298,12 +301,13 @@ test("the themed date picker chooses and saves a Target date across responsive i
   await septemberEighth.press("Enter");
 
   await expect(input).toHaveValue("09/08/2098");
-  await expect(trigger).toBeEnabled();
-  await expect(trigger).toBeFocused();
+  await expect(input).toBeEnabled();
+  await expect(input).toBeFocused();
 
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await trigger.click();
-  await expectCalendarDayStatesDistinct(calendar);
+  await input.click();
+  await expect(input).toBeFocused();
+  await expectCalendarDayStatesDistinct(calendar, { selectedIsFocused: false });
   await expect
     .poll(() =>
       calendar.evaluate((element) =>
@@ -322,7 +326,7 @@ test("the themed date picker chooses and saves a Target date across responsive i
   });
   await expectTodayMarkerVisible(calendar);
   await page.keyboard.press("Escape");
-  await expect(trigger).toBeFocused();
+  await expect(input).toBeFocused();
 
   if (testInfo.project.name === "desktop") {
     await page.getByLabel("Theme", { exact: true }).click();
@@ -334,8 +338,8 @@ test("the themed date picker chooses and saves a Target date across responsive i
     await expect
       .poll(() => page.evaluate(() => window.visualViewport?.scale))
       .toBe(2);
-    await trigger.focus();
-    await trigger.press("Enter");
+    await input.focus();
+    await input.press("Alt+ArrowDown");
     const layout = await page.evaluate(() => ({
       page: document.documentElement.scrollWidth,
       viewport: document.documentElement.clientWidth,
@@ -631,7 +635,7 @@ test("Target date recovers authoritative Today without using the browser clock",
   ).json()) as { today: string };
   await sidebar.getByRole("button", { name: "Retry Today" }).click();
   if (testInfo.project.name !== "phone") {
-    await sidebar.getByRole("button", { name: "Choose date" }).click();
+    await input.click();
   }
   await expect(today).toBeEnabled();
   await today.click();

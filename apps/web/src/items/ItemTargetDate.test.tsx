@@ -161,10 +161,11 @@ describe("Item Target date editor", () => {
       }),
     );
     const onChanged = renderTargetDate();
-    const trigger = screen.getByRole("button", { name: "Choose date" });
-    await waitFor(() => expect(trigger).toBeEnabled());
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitFor(() => expect(input).toBeEnabled());
 
-    fireEvent.click(trigger);
+    input.focus();
+    fireEvent.click(input);
     fireEvent.click(
       screen.getByRole("button", { name: "Monday, August 24th, 2026" }),
     );
@@ -176,12 +177,12 @@ describe("Item Target date editor", () => {
         "2026-08-24",
       ),
     );
-    expect(trigger).toBeDisabled();
+    expect(input).toBeDisabled();
 
     resolveSave(changed);
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(changed));
-    expect(trigger).toBeEnabled();
-    expect(trigger).toHaveFocus();
+    expect(input).toBeEnabled();
+    expect(input).toHaveFocus();
   });
 
   it("immediately saves the authoritative Today", async () => {
@@ -189,9 +190,10 @@ describe("Item Target date editor", () => {
     vi.mocked(updateItemTargetDate).mockResolvedValue(changed);
     const onChanged = renderTargetDate();
 
-    const trigger = screen.getByRole("button", { name: "Choose date" });
-    await waitFor(() => expect(trigger).toBeEnabled());
-    fireEvent.click(trigger);
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitFor(() => expect(input).toBeEnabled());
+    input.focus();
+    fireEvent.click(input);
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
 
     await waitFor(() =>
@@ -218,7 +220,9 @@ describe("Item Target date editor", () => {
     expect(
       await screen.findByText("Authoritative Today is unavailable."),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    input.focus();
+    fireEvent.click(input);
     expect(
       screen.queryByRole("button", { name: "Today" }),
     ).not.toBeInTheDocument();
@@ -233,8 +237,9 @@ describe("Item Target date editor", () => {
     expect(onChanged).toHaveBeenCalledWith(cleared);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry Today" }));
+    fireEvent.click(input);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Choose date" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Today" })).toBeEnabled(),
     );
   });
 });

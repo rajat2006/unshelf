@@ -29,6 +29,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function openCalendarFromInput({ focusCalendar = false } = {}) {
+  const input = screen.getByLabelText("Target date");
+  input.focus();
+  if (focusCalendar) {
+    fireEvent.keyDown(input, { altKey: true, key: "ArrowDown" });
+  } else {
+    fireEvent.click(input);
+  }
+  return input;
+}
+
 describe("DatePickerField", () => {
   it("reports the initial controlled value as valid when requested", () => {
     const onValidityChange = vi.fn();
@@ -93,6 +104,38 @@ describe("DatePickerField", () => {
     expect(onValueChange).toHaveBeenCalledWith("2028-02-29");
   });
 
+  it("opens the desktop calendar from the date input without a separate button", () => {
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-16"
+        today="2026-08-16"
+        locale="en-GB"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("Target date");
+    expect(
+      screen.queryByRole("button", { name: "Choose date" }),
+    ).not.toBeInTheDocument();
+    expect(input).toHaveRole("combobox");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    input.focus();
+    fireEvent.click(input);
+
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeVisible();
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveFocus();
+    const selectedToday = screen.getByRole("button", {
+      name: /Today.*August 16th, 2026.*selected/i,
+    });
+    expect(selectedToday).toHaveAttribute("data-selected", "true");
+    expect(selectedToday).toHaveAttribute("data-today", "true");
+  });
+
   it("chooses a date from the desktop calendar", async () => {
     const onValueChange = vi.fn();
     render(
@@ -106,7 +149,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    const input = openCalendarFromInput();
     fireEvent.click(
       screen.getByRole("button", { name: "Monday, August 24th, 2026" }),
     );
@@ -115,9 +158,7 @@ describe("DatePickerField", () => {
     expect(
       screen.queryByRole("dialog", { name: "Choose date" }),
     ).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Choose date" })).toHaveFocus(),
-    );
+    await waitFor(() => expect(input).toHaveFocus());
   });
 
   it("navigates directly by month and year without closing the calendar", async () => {
@@ -133,7 +174,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    openCalendarFromInput();
     fireEvent.click(screen.getByRole("combobox", { name: "Choose the Month" }));
     fireEvent.click(await screen.findByRole("option", { name: "September" }));
     expect(screen.getByRole("dialog", { name: "Choose date" })).toBeVisible();
@@ -166,7 +207,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    openCalendarFromInput();
 
     expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
     expect(
@@ -185,7 +226,7 @@ describe("DatePickerField", () => {
     expect(onValueChange).not.toHaveBeenCalled();
   });
 
-  it("focuses the selected day and returns focus to the trigger on Escape", async () => {
+  it("focuses the selected day and returns focus to the input on Escape", async () => {
     render(
       <DatePickerField
         id="target-date"
@@ -197,8 +238,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    const trigger = screen.getByRole("button", { name: "Choose date" });
-    fireEvent.click(trigger);
+    const input = openCalendarFromInput({ focusCalendar: true });
     const selectedDay = screen.getByRole("button", {
       name: "Sunday, August 16th, 2026, selected",
     });
@@ -211,7 +251,7 @@ describe("DatePickerField", () => {
         screen.queryByRole("dialog", { name: "Choose date" }),
       ).not.toBeInTheDocument(),
     );
-    expect(trigger).toHaveFocus();
+    expect(input).toHaveFocus();
   });
 
   it("does not open an empty calendar without authoritative Today", () => {
@@ -226,7 +266,12 @@ describe("DatePickerField", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Choose date" })).toBeDisabled();
+    const input = screen.getByLabelText("Target date");
+    expect(input).not.toHaveAttribute("role", "combobox");
+    expect(input).not.toHaveAttribute("aria-haspopup");
+    expect(input).not.toHaveAttribute("aria-expanded");
+    input.focus();
+    fireEvent.click(input);
     expect(
       screen.queryByRole("dialog", { name: "Choose date" }),
     ).not.toBeInTheDocument();
@@ -245,7 +290,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    openCalendarFromInput();
 
     const selected = screen.getByRole("button", {
       name: /January 1st, 1, selected/,
@@ -271,7 +316,7 @@ describe("DatePickerField", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose date" }));
+    openCalendarFromInput();
 
     expect(
       screen.getByRole("button", { name: /August 16th, 2026, selected/ }),
@@ -424,8 +469,7 @@ describe("DatePickerField", () => {
     );
 
     const input = screen.getByLabelText("Target date");
-    const trigger = screen.getByRole("button", { name: "Choose date" });
-    fireEvent.click(trigger);
+    openCalendarFromInput();
     const today = screen.getByRole("button", { name: "Today" });
     fireEvent.change(input, { target: { value: "02/29/20" } });
     fireEvent.blur(input, { relatedTarget: today });
@@ -434,7 +478,7 @@ describe("DatePickerField", () => {
     fireEvent.click(today);
     expect(onValueChange).toHaveBeenCalledWith("2026-08-16");
 
-    fireEvent.click(trigger);
+    openCalendarFromInput();
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onValueChange).toHaveBeenCalledWith(null);
   });

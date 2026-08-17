@@ -21,9 +21,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-const CalendarOwnerContext = React.createContext<string | undefined>(
-  undefined,
-);
+const CalendarOwnerContext = React.createContext<string | undefined>(undefined);
 
 function Calendar({
   className,
@@ -39,84 +37,88 @@ function Calendar({
     <CalendarOwnerContext.Provider value={calendarOwner}>
       <DayPicker
         data-calendar-owner={calendarOwner}
-      showOutsideDays={showOutsideDays}
-      className={cn("w-fit bg-popover p-2", className)}
-      classNames={{
-        root: cn("w-fit", defaults.root),
-        months: cn("relative", defaults.months),
-        month: cn("grid gap-2", defaults.month),
-        nav: cn(
-          "absolute inset-x-0 top-0 flex items-center justify-between",
-          defaults.nav,
-        ),
-        button_previous: cn(
-          buttonVariants({ variant: "quiet", size: "icon-compact" }),
-          "z-10",
-          defaults.button_previous,
-        ),
-        button_next: cn(
-          buttonVariants({ variant: "quiet", size: "icon-compact" }),
-          "z-10",
-          defaults.button_next,
-        ),
-        month_caption: cn(
-          "flex h-8 items-center justify-center px-7",
-          defaults.month_caption,
-        ),
-        dropdowns: cn(
-          "flex items-center justify-center gap-1",
-          defaults.dropdowns,
-        ),
-        month_grid: cn(
-          "w-full border-separate border-spacing-1",
-          defaults.month_grid,
-        ),
-        weekdays: defaults.weekdays,
-        weekday: cn(
-          "size-7 pb-1 text-center text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
-          defaults.weekday,
-        ),
-        week: defaults.week,
-        day: cn("size-7 p-0 text-center", defaults.day),
-        today: cn("relative", defaults.today),
-        selected: cn(defaults.selected),
-        outside: cn("text-muted-foreground/55", defaults.outside),
-        disabled: cn(
-          "pointer-events-none text-muted-foreground/35",
-          defaults.disabled,
-        ),
-        hidden: cn("invisible", defaults.hidden),
-        ...classNames,
-      }}
-      components={{
-        Root: ({ className: rootClassName, rootRef, ...rootProps }) => (
-          <div
-            data-slot="calendar"
-            ref={rootRef}
-            className={cn(rootClassName)}
-            {...rootProps}
-          />
-        ),
-        Chevron: ({ className: iconClassName, orientation, ...iconProps }) => {
-          const Icon =
-            orientation === "left"
-              ? ChevronLeftIcon
-              : orientation === "right"
-                ? ChevronRightIcon
-                : ChevronDownIcon;
-          return (
-            <Icon
-              aria-hidden="true"
-              className={cn("size-4", iconClassName)}
-              {...iconProps}
+        showOutsideDays={showOutsideDays}
+        className={cn("w-fit bg-popover p-2", className)}
+        classNames={{
+          root: cn("w-fit", defaults.root),
+          months: cn("relative", defaults.months),
+          month: cn("grid gap-2", defaults.month),
+          nav: cn(
+            "absolute inset-x-0 top-0 flex items-center justify-between",
+            defaults.nav,
+          ),
+          button_previous: cn(
+            buttonVariants({ variant: "quiet", size: "icon-compact" }),
+            "z-10",
+            defaults.button_previous,
+          ),
+          button_next: cn(
+            buttonVariants({ variant: "quiet", size: "icon-compact" }),
+            "z-10",
+            defaults.button_next,
+          ),
+          month_caption: cn(
+            "flex h-8 items-center justify-center rounded-[var(--radius-control)] bg-accent/55 px-7",
+            defaults.month_caption,
+          ),
+          dropdowns: cn(
+            "flex items-center justify-center gap-1",
+            defaults.dropdowns,
+          ),
+          month_grid: cn(
+            "w-full border-separate border-spacing-1",
+            defaults.month_grid,
+          ),
+          weekdays: defaults.weekdays,
+          weekday: cn(
+            "size-7 pb-1 text-center text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+            defaults.weekday,
+          ),
+          week: defaults.week,
+          day: cn("size-7 p-0 text-center", defaults.day),
+          today: cn("relative", defaults.today),
+          selected: cn(defaults.selected),
+          outside: cn("text-muted-foreground/55", defaults.outside),
+          disabled: cn(
+            "pointer-events-none text-muted-foreground/35",
+            defaults.disabled,
+          ),
+          hidden: cn("invisible", defaults.hidden),
+          ...classNames,
+        }}
+        components={{
+          Root: ({ className: rootClassName, rootRef, ...rootProps }) => (
+            <div
+              data-slot="calendar"
+              ref={rootRef}
+              className={cn(rootClassName)}
+              {...rootProps}
             />
-          );
-        },
-        DayButton: CalendarDayButton,
-        MonthsDropdown: CalendarDropdown,
-        YearsDropdown: CalendarDropdown,
-        ...components,
-      }}
+          ),
+          Chevron: ({
+            className: iconClassName,
+            orientation,
+            ...iconProps
+          }) => {
+            const Icon =
+              orientation === "left"
+                ? ChevronLeftIcon
+                : orientation === "right"
+                  ? ChevronRightIcon
+                  : ChevronDownIcon;
+            return (
+              <Icon
+                aria-hidden="true"
+                className={cn("size-4", iconClassName)}
+                {...iconProps}
+              />
+            );
+          },
+          DayButton: CalendarDayButton,
+          MonthsDropdown: CalendarDropdown,
+          YearsDropdown: CalendarDropdown,
+          ...components,
+        }}
         {...props}
       />
     </CalendarOwnerContext.Provider>
@@ -168,9 +170,9 @@ function CalendarDropdown({
       value={selectedValue}
       disabled={disabled}
       onValueChange={(nextValue) => {
-        onChange?.(
-          { target: { value: nextValue } } as React.ChangeEvent<HTMLSelectElement>,
-        );
+        onChange?.({
+          target: { value: nextValue },
+        } as React.ChangeEvent<HTMLSelectElement>);
         setTimeout(() => {
           const calendar = Array.from(
             document.querySelectorAll<HTMLElement>("[data-calendar-owner]"),
@@ -180,9 +182,7 @@ function CalendarDropdown({
             calendar.querySelectorAll<HTMLButtonElement>(
               "[data-calendar-dropdown]",
             ),
-          ).find(
-            (trigger) => trigger.dataset.calendarDropdown === ariaLabel,
-          );
+          ).find((trigger) => trigger.dataset.calendarDropdown === ariaLabel);
           nextTrigger?.focus();
         }, 0);
       }}

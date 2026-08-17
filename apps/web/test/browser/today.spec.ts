@@ -251,13 +251,11 @@ test("a User browses frozen Daily Focus history and explicitly re-adds unfinishe
     const [year, month, routedDay] = historicalDate.split("-").map(Number);
     const selectedDay = routedDay === 1 ? 2 : 1;
     const selectedDate = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
-    await page.getByRole("button", { name: "Choose date" }).click();
+    await dateInput.click();
     await page
       .getByRole("button", { name: dayButtonName(selectedDate) })
       .click();
-    await expect(
-      page.getByRole("button", { name: "Choose date" }),
-    ).toBeFocused();
+    await expect(dateInput).toBeFocused();
     await expect(page).toHaveURL(
       new RegExp(`/today/${historicalDate}(?:\\?|$)`),
     );

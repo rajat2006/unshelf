@@ -6,8 +6,8 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover";
 import {
   calendarDateToLocalDate,
@@ -77,8 +77,9 @@ export function DatePickerField({
   const currentValidity = useRef(validationError === undefined);
   const fieldRef = useRef<HTMLDivElement>(null);
   const calendarContentRef = useRef<HTMLDivElement>(null);
-  const calendarTriggerRef = useRef<HTMLButtonElement>(null);
-  const restoreCalendarTriggerFocus = useRef(false);
+  const desktopInputRef = useRef<HTMLInputElement>(null);
+  const focusCalendarOnOpen = useRef(false);
+  const restoreDesktopInputFocus = useRef(false);
   const canClear = allowClear && !required;
 
   function reportValidity(valid: boolean) {
@@ -91,9 +92,9 @@ export function DatePickerField({
   }, [onValidityChange]);
 
   useEffect(() => {
-    if (!disabled && restoreCalendarTriggerFocus.current) {
-      restoreCalendarTriggerFocus.current = false;
-      calendarTriggerRef.current?.focus();
+    if (!disabled && restoreDesktopInputFocus.current) {
+      restoreDesktopInputFocus.current = false;
+      desktopInputRef.current?.focus();
     }
   }, [disabled]);
 
@@ -151,7 +152,7 @@ export function DatePickerField({
           disabled={disabled || !todayIsInBounds}
           onClick={() => {
             if (todayIsInBounds) {
-              if (isDesktop) restoreCalendarTriggerFocus.current = true;
+              if (isDesktop) restoreDesktopInputFocus.current = true;
               emitAction(today);
               setCalendarOpen(false);
             }
@@ -168,7 +169,7 @@ export function DatePickerField({
           className="min-h-11 sm:min-h-8"
           disabled={disabled}
           onClick={() => {
-            if (isDesktop) restoreCalendarTriggerFocus.current = true;
+            if (isDesktop) restoreDesktopInputFocus.current = true;
             emitAction(null);
             setCalendarOpen(false);
           }}
@@ -269,105 +270,123 @@ export function DatePickerField({
       })
     : undefined;
 
+  function openDesktopCalendar({ focusCalendar }: { focusCalendar: boolean }) {
+    if (disabled || !openingDate) return;
+    focusCalendarOnOpen.current = focusCalendar;
+    setVisibleMonth(openingDate);
+    setCalendarOpen(true);
+  }
+
   const input = isDesktop ? (
-    <>
-      <Input
-        {...sharedInputProps}
-        type="text"
-        inputMode="numeric"
-        value={draft}
-        onChange={(event) => {
-          const nextDraft = event.target.value;
-          setDraft(nextDraft);
-          setValidationError(undefined);
-          reportValidity(
-            nextDraft === ""
-              ? canClear
-              : parseLocalizedCalendarDate({
-                  value: nextDraft,
-                  locale,
-                  min,
-                  max,
-                }).ok,
-          );
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") validateDraft();
-        }}
-      />
-      <Popover
-        open={calendarOpen}
-        onOpenChange={(open) => {
-          if (open && openingDate) setVisibleMonth(openingDate);
-          setCalendarOpen(open && openingDate !== undefined);
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            ref={calendarTriggerRef}
-            type="button"
-            variant="secondary"
-            size="icon-compact"
-            aria-label="Choose date"
-            aria-describedby={describedBy || undefined}
-            disabled={disabled || openingDate === undefined}
-          >
-            <CalendarDaysIcon aria-hidden="true" />
-          </Button>
-        </PopoverTrigger>
-        {openingDate && calendarBounds && (
-          <PopoverContent
-            ref={calendarContentRef}
-            role="dialog"
-            aria-label="Choose date"
-            className="w-[252px] gap-1 p-1.5"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              if (!calendarTriggerRef.current?.disabled) {
-                restoreCalendarTriggerFocus.current = false;
-                calendarTriggerRef.current?.focus();
-              }
+    <Popover
+      open={calendarOpen}
+      onOpenChange={(open) => {
+        if (open && openingDate) setVisibleMonth(openingDate);
+        setCalendarOpen(open && openingDate !== undefined);
+      }}
+    >
+      <PopoverAnchor asChild>
+        <div className="flex w-full min-w-40 items-center gap-2 rounded-xl border border-primary/25 bg-quiet-panel px-3 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--color-card)_90%,transparent),0_5px_16px_color-mix(in_oklab,var(--color-primary)_8%,transparent)] transition-[border-color,box-shadow] focus-within:border-primary/60 focus-within:ring-3 focus-within:ring-ring/15 has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:ring-3 has-[input[aria-invalid=true]]:ring-destructive/20 sm:w-52">
+          <Input
+            {...sharedInputProps}
+            ref={desktopInputRef}
+            type="text"
+            inputMode="numeric"
+            role={openingDate ? "combobox" : undefined}
+            value={draft}
+            aria-haspopup={openingDate ? "dialog" : undefined}
+            aria-expanded={openingDate ? calendarOpen : undefined}
+            aria-controls={calendarOpen ? `${id}-calendar-dialog` : undefined}
+            className="h-10 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+            onClick={() => openDesktopCalendar({ focusCalendar: false })}
+            onChange={(event) => {
+              const nextDraft = event.target.value;
+              setDraft(nextDraft);
+              setValidationError(undefined);
+              reportValidity(
+                nextDraft === ""
+                  ? canClear
+                  : parseLocalizedCalendarDate({
+                      value: nextDraft,
+                      locale,
+                      min,
+                      max,
+                    }).ok,
+              );
             }}
-            onBlur={(event) => handleCompositeBlur(event.relatedTarget)}
+            onKeyDown={(event) => {
+              if (event.altKey && event.key === "ArrowDown") {
+                event.preventDefault();
+                openDesktopCalendar({ focusCalendar: true });
+                return;
+              }
+              if (event.key === "Enter") validateDraft();
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary [&_svg]:size-4"
           >
-            <Calendar
-              mode="single"
-              required
-              autoFocus
-              selected={selectedDate}
-              today={authoritativeToday ?? NO_AUTHORITATIVE_TODAY}
-              modifiers={{ authoritativeToday }}
-              month={visibleMonth}
-              onMonthChange={setVisibleMonth}
-              startMonth={calendarBounds.start}
-              endMonth={calendarBounds.end}
-              captionLayout="dropdown"
-              navLayout="around"
-              disabled={[
-                ...(calendarBounds.minimum
-                  ? [{ before: calendarBounds.minimum }]
-                  : []),
-                ...(calendarBounds.maximum
-                  ? [{ after: calendarBounds.maximum }]
-                  : []),
-              ]}
-              onSelect={(date) => {
-                const nextValue = localDateToCalendarDate(date);
-                if (!nextValue) return;
-                restoreCalendarTriggerFocus.current = true;
-                emitAction(nextValue);
-                setCalendarOpen(false);
-              }}
-            />
-            {(allowToday || (canClear && value !== null)) && (
-              <div className="flex items-center justify-end gap-1 border-t border-border px-1 pt-1">
-                {actions}
-              </div>
-            )}
-          </PopoverContent>
-        )}
-      </Popover>
-    </>
+            <CalendarDaysIcon />
+          </span>
+        </div>
+      </PopoverAnchor>
+      {openingDate && calendarBounds && (
+        <PopoverContent
+          id={`${id}-calendar-dialog`}
+          ref={calendarContentRef}
+          role="dialog"
+          aria-label="Choose date"
+          className="w-[252px] gap-1 rounded-xl border border-primary/20 p-1.5 ring-0"
+          onOpenAutoFocus={(event) => {
+            if (!focusCalendarOnOpen.current) event.preventDefault();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!desktopInputRef.current?.disabled) {
+              restoreDesktopInputFocus.current = false;
+              desktopInputRef.current?.focus();
+            }
+          }}
+          onBlur={(event) => handleCompositeBlur(event.relatedTarget)}
+        >
+          <Calendar
+            mode="single"
+            required
+            autoFocus={focusCalendarOnOpen.current}
+            selected={selectedDate}
+            today={authoritativeToday ?? NO_AUTHORITATIVE_TODAY}
+            modifiers={{ authoritativeToday }}
+            month={visibleMonth}
+            onMonthChange={setVisibleMonth}
+            startMonth={calendarBounds.start}
+            endMonth={calendarBounds.end}
+            captionLayout="dropdown"
+            navLayout="around"
+            disabled={[
+              ...(calendarBounds.minimum
+                ? [{ before: calendarBounds.minimum }]
+                : []),
+              ...(calendarBounds.maximum
+                ? [{ after: calendarBounds.maximum }]
+                : []),
+            ]}
+            onSelect={(date) => {
+              const nextValue = localDateToCalendarDate(date);
+              if (!nextValue) return;
+              restoreDesktopInputFocus.current = true;
+              emitAction(nextValue);
+              setCalendarOpen(false);
+            }}
+          />
+          {(allowToday || (canClear && value !== null)) && (
+            <div className="flex items-center justify-end gap-1 border-t border-border px-1 pt-1">
+              {actions}
+            </div>
+          )}
+        </PopoverContent>
+      )}
+    </Popover>
   ) : (
     <Input
       {...sharedInputProps}
