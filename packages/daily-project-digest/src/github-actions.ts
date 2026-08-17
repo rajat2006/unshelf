@@ -85,6 +85,19 @@ const mergedPullRequestsQuery = `
   }
 `;
 
+const releaseCarrierCommitsQuery = `
+  query ReleaseCarrierCommits($owner: String!, $name: String!, $number: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        commits(first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { commit { oid } }
+        }
+      }
+    }
+  }
+`;
+
 export function createGitHubActionsPreviewAdapters(
   input: GitHubActionsPreviewInput,
 ): PreviewAdapters {
@@ -492,23 +505,58 @@ async function gatherPullRequestCommitOids({
   pullRequestNumber: number;
 }): Promise<Set<string>> {
   const commitOids = new Set<string>();
-  for (let page = 1; ; page += 1) {
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  while (hasNextPage) {
     const response = await githubJson({
       token: github.token,
-      path: `/repos/${github.owner}/${github.name}/pulls/${pullRequestNumber}/commits?per_page=100&page=${page}`,
+      path: "/graphql",
+      method: "POST",
+      body: {
+        query: releaseCarrierCommitsQuery,
+        variables: {
+          owner: github.owner,
+          name: github.name,
+          number: pullRequestNumber,
+          after: cursor,
+        },
+      },
     });
-    if (!Array.isArray(response)) {
+    const root = record(response);
+    if (root === undefined || root.errors !== undefined) {
+      throw new Error("GitHub rejected release-carrier evidence gathering.");
+    }
+    const connection = nestedRecord(root, [
+      "data",
+      "repository",
+      "pullRequest",
+      "commits",
+    ]);
+    const nodes = connection?.nodes;
+    const pageInfo = nestedRecord(connection, ["pageInfo"]);
+    const pageHasNext = pageInfo?.hasNextPage;
+    const endCursor = pageInfo?.endCursor;
+    if (
+      !Array.isArray(nodes) ||
+      typeof pageHasNext !== "boolean" ||
+      (endCursor !== null && typeof endCursor !== "string")
+    ) {
       throw new Error("GitHub returned invalid release-carrier evidence.");
     }
-    addCommitOids({
-      values: response,
-      commitOids,
-      errorMessage: "GitHub returned invalid release-carrier evidence.",
-    });
-    if (response.length < 100) {
-      return commitOids;
+    for (const value of nodes) {
+      const oid = nestedString(record(value), ["commit", "oid"]);
+      if (oid === undefined) {
+        throw new Error("GitHub returned invalid release-carrier evidence.");
+      }
+      commitOids.add(oid);
+    }
+    hasNextPage = pageHasNext;
+    cursor = endCursor;
+    if (hasNextPage && cursor === null) {
+      throw new Error("GitHub returned incomplete release-carrier evidence.");
     }
   }
+  return commitOids;
 }
 
 function addCommitOids({
