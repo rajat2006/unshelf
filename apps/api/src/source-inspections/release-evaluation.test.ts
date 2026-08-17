@@ -34,6 +34,20 @@ describe("Source inspection release manifest", () => {
       caseName: "signed bearer-like Source",
       source: "https://publisher.com/article?access_token=secret",
     },
+    {
+      caseName: "short signed Source",
+      source: "https://publisher.com/article?sig=secret",
+    },
+    {
+      caseName: "path bearer Source",
+      source:
+        "https://publisher.com/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature/article",
+    },
+    {
+      caseName: "fragment bearer Source",
+      source:
+        "https://publisher.com/article#eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
+    },
   ])("refuses a $caseName", ({ source }) => {
     const document = minimumManifest();
     document.cases[0] = { ...document.cases[0], source };
@@ -53,6 +67,51 @@ describe("Source inspection release manifest", () => {
       source: "https://publisher.com/duplicate",
       expected: first.expected,
     } as unknown as typeof first;
+
+    expect(parseSourceInspectionReleaseManifest(document)).toMatchObject({
+      ok: false,
+      error: "invalid_manifest",
+    });
+  });
+
+  it("refuses a Source whose local route does not match its declared class", () => {
+    const document = minimumManifest();
+    const youtubeCase = document.cases.find(
+      (item) => item.sourceClass === "youtube_video",
+    );
+    if (youtubeCase === undefined) throw new Error("Expected a YouTube case");
+    youtubeCase.source = "https://publisher.com/not-youtube";
+
+    expect(parseSourceInspectionReleaseManifest(document)).toMatchObject({
+      ok: false,
+      error: "invalid_manifest",
+    });
+  });
+
+  it("requires strong Type evidence across article, video, course, and book", () => {
+    const document = minimumManifest();
+    for (const [index, item] of document.cases.entries()) {
+      if (item.sourceClass === "generic_title_type") {
+        document.cases[index] = {
+          ...item,
+          expected: { ...item.expected, type: "article" },
+        };
+      }
+    }
+
+    expect(parseSourceInspectionReleaseManifest(document)).toMatchObject({
+      ok: false,
+      error: "invalid_manifest",
+    });
+  });
+
+  it("requires every manual-fallback category", () => {
+    const document = minimumManifest();
+    for (const item of document.cases) {
+      if (item.sourceClass === "generic_manual_fallback") {
+        item.fallbackReason = "blocked_origin";
+      }
+    }
 
     expect(parseSourceInspectionReleaseManifest(document)).toMatchObject({
       ok: false,
@@ -497,16 +556,30 @@ function minimumManifest() {
   const createCase = ({
     sourceClass,
     expected,
+    fallbackReason,
   }: {
     sourceClass: string;
     expected: Readonly<Record<string, unknown>>;
+    fallbackReason?: string;
   }) => {
     nextId += 1;
+    const suffix = String(nextId).padStart(10, "0");
+    const source =
+      sourceClass === "youtube_video"
+        ? `https://www.youtube.com/watch?v=v${suffix}`
+        : sourceClass === "youtube_playlist"
+          ? `https://www.youtube.com/playlist?list=PL${suffix}`
+          : sourceClass === "youtube_community_post"
+            ? `https://www.youtube.com/post/Ug${suffix}`
+            : sourceClass === "youtube_unresolved"
+              ? `https://www.youtube.com/@channel${suffix}`
+              : `https://publisher.com/material/${nextId}`;
     return {
       id: `case-${String(nextId).padStart(3, "0")}`,
       sourceClass,
-      source: `https://publisher.com/material/${nextId}`,
+      source,
       expected,
+      ...(fallbackReason === undefined ? {} : { fallbackReason }),
     };
   };
 
@@ -514,13 +587,13 @@ function minimumManifest() {
     schemaVersion: 1,
     corpusVersion: "2026.08.1",
     cases: [
-      ...Array.from({ length: 10 }, () =>
+      ...Array.from({ length: 10 }, (_, index) =>
         createCase({
           sourceClass: "generic_title_type",
           expected: {
             outcome: "suggested",
             acceptedTitles: ["Expected title"],
-            type: "article",
+            type: ["article", "video", "course", "book"][index % 4],
           },
         }),
       ),
@@ -533,10 +606,17 @@ function minimumManifest() {
           },
         }),
       ),
-      ...Array.from({ length: 10 }, () =>
+      ...Array.from({ length: 10 }, (_, index) =>
         createCase({
           sourceClass: "generic_manual_fallback",
           expected: { outcome: "unavailable" },
+          fallbackReason: [
+            "blocked_origin",
+            "no_metadata",
+            "redirect",
+            "timeout",
+            "unsupported_content",
+          ][index % 5],
         }),
       ),
       ...Array.from({ length: 10 }, () =>

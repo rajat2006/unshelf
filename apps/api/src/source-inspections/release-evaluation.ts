@@ -1,10 +1,14 @@
-import { Type, type SourceInspectionResponse } from "@unshelf/shared";
+import { Type } from "@unshelf/shared";
 import { isIP } from "node:net";
-import type {
-  SourceInspectionCompletion,
-  SourceInspectionServiceResult,
-  SourceInspectionTerminalCode,
-} from "./service";
+import { classifySource } from "./classifier";
+import type { SourceInspectionTerminalCode } from "./service";
+import type { SourceInspectionReleaseObservation } from "./release-observation-runner";
+export {
+  collectSourceInspectionReleaseObservations,
+  type InspectSourceForRelease,
+  type SourceInspectionReleaseObservation,
+  type SourceInspectionReleaseRuntime,
+} from "./release-observation-runner";
 
 const sourceClasses = [
   "generic_title_type",
@@ -18,6 +22,17 @@ const sourceClasses = [
 
 export type SourceInspectionReleaseClass = (typeof sourceClasses)[number];
 
+const fallbackReasons = [
+  "blocked_origin",
+  "no_metadata",
+  "redirect",
+  "timeout",
+  "unsupported_content",
+] as const;
+
+export type SourceInspectionReleaseFallbackReason =
+  (typeof fallbackReasons)[number];
+
 interface SourceInspectionReleaseExpectation {
   readonly outcome: "suggested" | "unavailable";
   readonly acceptedTitles?: readonly string[];
@@ -29,20 +44,13 @@ export interface SourceInspectionReleaseCase {
   readonly sourceClass: SourceInspectionReleaseClass;
   readonly source: string;
   readonly expected: SourceInspectionReleaseExpectation;
+  readonly fallbackReason?: SourceInspectionReleaseFallbackReason;
 }
 
 export interface SourceInspectionReleaseManifest {
   readonly schemaVersion: 1;
   readonly corpusVersion: string;
   readonly cases: readonly SourceInspectionReleaseCase[];
-}
-
-export interface SourceInspectionReleaseObservation {
-  readonly caseId: string;
-  readonly sourceClass: SourceInspectionReleaseClass;
-  readonly response: SourceInspectionResponse;
-  readonly completion: SourceInspectionCompletion;
-  readonly callerDurationMs: number;
 }
 
 export interface SourceInspectionQualificationEvidence {
@@ -93,21 +101,6 @@ export interface SourceInspectionReleaseReport {
   readonly gates: readonly SourceInspectionReleaseGate[];
 }
 
-export type InspectSourceForRelease = (input: {
-  readonly source: string;
-  readonly signal: AbortSignal;
-  readonly observeCompletion: (completion: SourceInspectionCompletion) => void;
-}) => Promise<SourceInspectionServiceResult>;
-
-export interface SourceInspectionReleaseRuntime {
-  readonly nowMilliseconds: () => number;
-  readonly wait: (delayMs: number) => Promise<void>;
-  readonly schedule: (input: {
-    readonly delayMs: number;
-    readonly callback: () => void;
-  }) => () => void;
-}
-
 export type SourceInspectionReleaseManifestResult =
   | { readonly ok: true; readonly manifest: SourceInspectionReleaseManifest }
   | {
@@ -128,7 +121,9 @@ const privateHostnameSuffixes = [
   ".test",
 ] as const;
 const signedParameterName =
-  /(?:^|[-_])(auth|bearer|credential|jwt|key|secret|session|signature|signed|token)(?:$|[-_])/iu;
+  /(?:^|[-_])(auth|bearer|code|credential|expires|jwt|key|policy|secret|session|sig|signature|signed|token)(?:$|[-_])/iu;
+const bearerLikeValue =
+  /(?:^|[/#])(?:bearer(?:%20|\s)+)?eyJ[\w-]+\.[\w-]+\.[\w-]+(?:$|[/#?&])/iu;
 
 export function parseSourceInspectionReleaseManifest(
   document: unknown,
@@ -398,129 +393,6 @@ export function evaluateSourceInspectionRelease({
   };
 }
 
-export async function collectSourceInspectionReleaseObservations({
-  cases,
-  inspect,
-  runtime,
-}: {
-  readonly cases: readonly SourceInspectionReleaseCase[];
-  readonly inspect: InspectSourceForRelease;
-  readonly runtime: SourceInspectionReleaseRuntime;
-}): Promise<SourceInspectionReleaseObservation[]> {
-  const observations: SourceInspectionReleaseObservation[] = [];
-  let lastStartedAt: number | undefined;
-  for (const releaseCase of cases) {
-    for (let observation = 0; observation < 3; observation += 1) {
-      if (lastStartedAt !== undefined) {
-        const untilNextStart = Math.max(
-          0,
-          lastStartedAt + 3_000 - runtime.nowMilliseconds(),
-        );
-        if (untilNextStart > 0) await runtime.wait(untilNextStart);
-      }
-      const startedAt = runtime.nowMilliseconds();
-      lastStartedAt = startedAt;
-      observations.push(
-        await observeReleaseCase({ releaseCase, inspect, runtime, startedAt }),
-      );
-    }
-  }
-  return observations;
-}
-
-async function observeReleaseCase({
-  releaseCase,
-  inspect,
-  runtime,
-  startedAt,
-}: {
-  readonly releaseCase: SourceInspectionReleaseCase;
-  readonly inspect: InspectSourceForRelease;
-  readonly runtime: SourceInspectionReleaseRuntime;
-  readonly startedAt: number;
-}): Promise<SourceInspectionReleaseObservation> {
-  const controller = new AbortController();
-  let completion: SourceInspectionCompletion | undefined;
-  let cancelDeadline = (): void => undefined;
-  const timedOut = new Promise<{
-    readonly response: SourceInspectionResponse;
-    readonly completion: SourceInspectionCompletion;
-  }>((resolve) => {
-    const finish = (): void => {
-      controller.abort(new Error("Source inspection release deadline"));
-      resolve({
-        response: { status: "unavailable" },
-        completion: syntheticCompletion({
-          sourceClass: releaseCase.sourceClass,
-          terminalCode: "timeout",
-          durationMs: 3_000,
-        }),
-      });
-    };
-    cancelDeadline = runtime.schedule({ delayMs: 3_000, callback: finish });
-  });
-  const inspected = Promise.resolve()
-    .then(() =>
-      inspect({
-        source: releaseCase.source,
-        signal: controller.signal,
-        observeCompletion: (value) => {
-          completion = value;
-        },
-      }),
-    )
-    .then((result) => ({
-      response: result.ok
-        ? result.response
-        : ({ status: "unavailable" } as const),
-      completion:
-        completion ??
-        syntheticCompletion({
-          sourceClass: releaseCase.sourceClass,
-          terminalCode: "unexpected",
-          durationMs: Math.max(0, runtime.nowMilliseconds() - startedAt),
-        }),
-    }))
-    .catch(() => ({
-      response: { status: "unavailable" } as const,
-      completion: syntheticCompletion({
-        sourceClass: releaseCase.sourceClass,
-        terminalCode: controller.signal.aborted ? "cancelled" : "unexpected",
-        durationMs: Math.max(0, runtime.nowMilliseconds() - startedAt),
-      }),
-    }));
-  const result = await Promise.race([inspected, timedOut]);
-  cancelDeadline();
-  return {
-    caseId: releaseCase.id,
-    sourceClass: releaseCase.sourceClass,
-    response: result.response,
-    completion: result.completion,
-    callerDurationMs: Math.max(0, runtime.nowMilliseconds() - startedAt),
-  };
-}
-
-function syntheticCompletion({
-  sourceClass,
-  terminalCode,
-  durationMs,
-}: {
-  readonly sourceClass: SourceInspectionReleaseClass;
-  readonly terminalCode: SourceInspectionTerminalCode;
-  readonly durationMs: number;
-}): SourceInspectionCompletion {
-  return {
-    strategy: sourceClass.startsWith("generic_") ? "generic" : "youtube",
-    terminalCode,
-    suggestedTitle: false,
-    suggestedType: false,
-    durationMs,
-    phaseTimingsMs: {},
-    redirectCountBucket: "unknown",
-    byteCountBucket: "unknown",
-  };
-}
-
 function summarizeClass({
   cases,
   observations,
@@ -739,13 +611,14 @@ function parseCase({
   }
   requireExactKeys({
     value: candidate,
-    allowed: ["id", "sourceClass", "source", "expected"],
+    allowed: ["id", "sourceClass", "source", "expected", "fallbackReason"],
     path,
     issues,
   });
   const id = candidate.id;
   const sourceClass = candidate.sourceClass;
   const source = candidate.source;
+  const fallbackReason = candidate.fallbackReason;
   if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]{2,63}$/u.test(id)) {
     issues.push(`${path}.id must be a stable opaque identifier`);
   }
@@ -754,6 +627,22 @@ function parseCase({
   }
   if (typeof source !== "string" || !isNonSecretPublicSource(source)) {
     issues.push(`${path}.source must be a non-secret public HTTP(S) Source`);
+  }
+  if (
+    typeof source === "string" &&
+    isSourceClass(sourceClass) &&
+    !sourceMatchesClass({ source, sourceClass })
+  ) {
+    issues.push(`${path}.source does not match sourceClass ${sourceClass}`);
+  }
+  if (
+    sourceClass === "generic_manual_fallback"
+      ? !isFallbackReason(fallbackReason)
+      : fallbackReason !== undefined
+  ) {
+    issues.push(
+      `${path}.fallbackReason must identify the generic manual-fallback category`,
+    );
   }
   const expected = parseExpectation({
     candidate: candidate.expected,
@@ -769,7 +658,13 @@ function parseCase({
   ) {
     return null;
   }
-  return { id, sourceClass, source, expected };
+  return {
+    id,
+    sourceClass,
+    source,
+    expected,
+    ...(isFallbackReason(fallbackReason) ? { fallbackReason } : {}),
+  };
 }
 
 function parseExpectation({
@@ -914,6 +809,26 @@ function validateDistribution({
       issues.push(`corpus does not meet the ${sourceClass} minimum`);
     }
   }
+  const strongTypes = new Set(
+    cases
+      .filter((item) => item.sourceClass === "generic_title_type")
+      .map((item) => item.expected.type),
+  );
+  for (const type of [Type.Article, Type.Video, Type.Course, Type.Book]) {
+    if (!strongTypes.has(type)) {
+      issues.push(
+        `corpus must include strong expected Type evidence for ${type}`,
+      );
+    }
+  }
+  const representedFallbackReasons = new Set(
+    cases.map((item) => item.fallbackReason).filter(isFallbackReason),
+  );
+  for (const reason of fallbackReasons) {
+    if (!representedFallbackReasons.has(reason)) {
+      issues.push(`corpus must include generic manual fallback for ${reason}`);
+    }
+  }
 }
 
 function isNonSecretPublicSource(source: string): boolean {
@@ -948,7 +863,46 @@ function isNonSecretPublicSource(source: string): boolean {
       return false;
     }
   }
-  return true;
+  return !bearerLikeValue.test(`${url.pathname}${url.search}${url.hash}`);
+}
+
+function isFallbackReason(
+  value: unknown,
+): value is SourceInspectionReleaseFallbackReason {
+  return fallbackReasons.some((reason) => reason === value);
+}
+
+function sourceMatchesClass({
+  source,
+  sourceClass,
+}: {
+  readonly source: string;
+  readonly sourceClass: SourceInspectionReleaseClass;
+}): boolean {
+  const classification = classifySource(source);
+  switch (sourceClass) {
+    case "generic_title_type":
+    case "generic_title_only":
+    case "generic_manual_fallback":
+      return classification.classification === "generic";
+    case "youtube_video":
+      return (
+        classification.classification === "youtube" &&
+        classification.type === Type.Video
+      );
+    case "youtube_playlist":
+      return (
+        classification.classification === "youtube" &&
+        classification.type === Type.Playlist
+      );
+    case "youtube_community_post":
+      return (
+        classification.classification === "youtube" &&
+        classification.type === Type.Other
+      );
+    case "youtube_unresolved":
+      return classification.classification === "unsupported_youtube";
+  }
 }
 
 function isSourceClass(value: unknown): value is SourceInspectionReleaseClass {

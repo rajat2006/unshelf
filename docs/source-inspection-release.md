@@ -36,7 +36,8 @@ skipped. Live third-party Sources do not belong in these suites.
 
 The input is strict JSON with `schemaVersion: 1`, a stable `corpusVersion`, and a
 `cases` array. Each case has a unique opaque `id`, one `sourceClass`, the exact
-public `source`, and an explicit `expected` object:
+public `source`, and an explicit `expected` object. A
+`generic_manual_fallback` case also has a `fallbackReason`:
 
 ```json
 {
@@ -66,17 +67,18 @@ are:
 | --- | --- | ---: |
 | `generic_title_type` | title alternatives and strong expected Type | 8 |
 | `generic_title_only` | title alternatives, no expected Type | 10 |
-| `generic_manual_fallback` | `unavailable`, no title or Type | 10 |
+| `generic_manual_fallback` | `unavailable`, no title or Type; one `fallbackReason` | 10 |
 | `youtube_video` | title alternatives and Type `video` | 8 |
 | `youtube_playlist` | title alternatives and Type `playlist` | 6 |
 | `youtube_community_post` | Type `other`, no title | 3 |
 | `youtube_unresolved` | `unavailable`, no title or Type | 3 |
 
 The corpus must contain at least 60 cases, including at least 20 title-capable
-generic cases. At least ten of those must be title-only. Cases should be sampled
-from real Capture behavior and cover blocked origins, missing metadata,
-redirect/timeout behavior, and unsupported content within the generic fallback
-class.
+generic cases. At least ten of those must be title-only. Strong-Type cases must
+include article, video, course, and book evidence. The validator also requires
+all five generic fallback reasons: `blocked_origin`, `no_metadata`, `redirect`,
+`timeout`, and `unsupported_content`. Cases should be sampled from real Capture
+behavior.
 
 The validator refuses unknown fields, missing expected classes, duplicate or
 unstable identities, non-HTTP(S) and non-host Sources, IP literals, local/private
