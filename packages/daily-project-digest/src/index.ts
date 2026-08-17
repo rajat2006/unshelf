@@ -84,10 +84,12 @@ export type PreviewAdapters = {
 
 export { createGitHubActionsPreviewAdapters } from "./github-actions.js";
 
+type DigestLifecycle = "released" | "completed" | "blocked" | "in-progress";
+
 type DigestSubject = {
   number: number;
   title: string;
-  lifecycle: "released" | "completed" | "blocked" | "in-progress";
+  lifecycle: DigestLifecycle;
 };
 
 const discordLimits = {
@@ -105,6 +107,40 @@ const digestRepository = {
   nameWithOwner: "rajat2006/unshelf",
   webUrl: "https://github.com/rajat2006/unshelf",
 } as const;
+const lifecyclePresentation: Record<
+  DigestLifecycle,
+  {
+    precedence: number;
+    sectionName: string;
+    state: string;
+    overflowUrl: string;
+  }
+> = {
+  released: {
+    precedence: 4,
+    sectionName: "Released — Live in production",
+    state: "released",
+    overflowUrl: `${digestRepository.webUrl}/deployments/production`,
+  },
+  completed: {
+    precedence: 3,
+    sectionName: "Completed — Merged and ready for a release",
+    state: "completed",
+    overflowUrl: `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Amerged+base%3Adev`,
+  },
+  blocked: {
+    precedence: 2,
+    sectionName: "Blocked — Needs attention before work can continue",
+    state: "blocked",
+    overflowUrl: `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+label%3Aagent%3Ablocked%2Cagent%3Aqueued%2Cneeds-info`,
+  },
+  "in-progress": {
+    precedence: 1,
+    sectionName: "In progress — Actively moving forward",
+    state: "in progress",
+    overflowUrl: `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info`,
+  },
+};
 
 const blockingLabels = new Set(["agent:queued", "agent:blocked", "needs-info"]);
 const releaseLabels = new Set([
@@ -280,17 +316,12 @@ function isReleasedDeliveryPullRequest(
 
 function deduplicateSubjects(subjects: DigestSubject[]): DigestSubject[] {
   const subjectsByNumber = new Map<number, DigestSubject>();
-  const precedence: Record<DigestSubject["lifecycle"], number> = {
-    released: 4,
-    completed: 3,
-    blocked: 2,
-    "in-progress": 1,
-  };
   for (const subject of subjects) {
     const existing = subjectsByNumber.get(subject.number);
     if (
       existing === undefined ||
-      precedence[subject.lifecycle] > precedence[existing.lifecycle]
+      lifecyclePresentation[subject.lifecycle].precedence >
+        lifecyclePresentation[existing.lifecycle].precedence
     ) {
       subjectsByNumber.set(subject.number, subject);
     }
@@ -333,22 +364,22 @@ function renderPayload({
 
   const fields = [
     renderSection({
-      name: "Released — Live in production",
+      name: lifecyclePresentation.released.sectionName,
       lifecycle: "released",
       subjects: released,
     }),
     renderSection({
-      name: "Completed — Merged and ready for a release",
+      name: lifecyclePresentation.completed.sectionName,
       lifecycle: "completed",
       subjects: completed,
     }),
     renderSection({
-      name: "Blocked — Needs attention before work can continue",
+      name: lifecyclePresentation.blocked.sectionName,
       lifecycle: "blocked",
       subjects: blocked,
     }),
     renderSection({
-      name: "In progress — Actively moving forward",
+      name: lifecyclePresentation["in-progress"].sectionName,
       lifecycle: "in-progress",
       subjects: inProgress,
     }),
@@ -417,21 +448,11 @@ function renderSectionValue({
     .map((subject) => renderSubject({ subject, lifecycle }));
   const remainder = subjects.length - visibleCount;
   if (remainder > 0) {
-    lines.push(`[+ ${remainder} more on GitHub](${overflowUrl(lifecycle)})`);
+    lines.push(
+      `[+ ${remainder} more on GitHub](${lifecyclePresentation[lifecycle].overflowUrl})`,
+    );
   }
   return lines.join("\n");
-}
-
-function overflowUrl(lifecycle: DigestSubject["lifecycle"]): string {
-  if (lifecycle === "released") {
-    return `${digestRepository.webUrl}/deployments/production`;
-  }
-  if (lifecycle === "completed") {
-    return `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Amerged+base%3Adev`;
-  }
-  return lifecycle === "blocked"
-    ? `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+label%3Aagent%3Ablocked%2Cagent%3Aqueued%2Cneeds-info`
-    : `${digestRepository.webUrl}/pulls?q=is%3Apr+is%3Aopen+-label%3Aagent%3Ablocked+-label%3Aagent%3Aqueued+-label%3Aneeds-info`;
 }
 
 function renderSubject({
@@ -441,14 +462,7 @@ function renderSubject({
   subject: DigestSubject;
   lifecycle: DigestSubject["lifecycle"];
 }): string {
-  const state =
-    lifecycle === "released"
-      ? "released"
-      : lifecycle === "completed"
-      ? "completed"
-      : lifecycle === "blocked"
-        ? "blocked"
-        : "in progress";
+  const state = lifecyclePresentation[lifecycle].state;
   return `[${subject.title} is ${state}.](${digestRepository.webUrl}/pull/${subject.number})`;
 }
 

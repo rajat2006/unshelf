@@ -202,7 +202,7 @@ async function gatherDeployments({
         deployment.status === "success" &&
         reachability.get(deployment.sha) === true,
     )
-    .sort(compareDeployments);
+    .sort((...deployments) => compareDeployments(deployments));
   const releasesInWindow = successfulProductionDeployments.filter(
     (deployment) => {
       const statusAt = new Date(deployment.statusAt);
@@ -225,9 +225,27 @@ async function gatherDeployments({
       precedingOid: precedingDeployment?.sha,
       deployedOid: deployment.sha,
     });
+    const releaseCarrierCommitOids = new Set<string>();
+    for (const pullRequest of mergedPullRequests) {
+      if (
+        newlyContainedCommitOids.has(pullRequest.mergeCommitOid) &&
+        isAggregateReleaseCarrier(pullRequest.pullRequest)
+      ) {
+        const carrierCommitOids = await gatherPullRequestCommitOids({
+          github,
+          pullRequestNumber: pullRequest.pullRequest.number,
+        });
+        for (const oid of carrierCommitOids) {
+          releaseCarrierCommitOids.add(oid);
+        }
+      }
+    }
     const releasedPullRequests = new Map<number, MergedPullRequest>();
     for (const pullRequest of mergedPullRequests) {
-      if (newlyContainedCommitOids.has(pullRequest.mergeCommitOid)) {
+      if (
+        newlyContainedCommitOids.has(pullRequest.mergeCommitOid) ||
+        releaseCarrierCommitOids.has(pullRequest.mergeCommitOid)
+      ) {
         releasedPullRequests.set(
           pullRequest.pullRequest.number,
           pullRequest,
@@ -252,12 +270,20 @@ async function gatherDeployments({
   }));
 }
 
-function compareDeployments(
-  left: DeploymentWithStatus,
-  right: DeploymentWithStatus,
-): number {
+function compareDeployments([
+  left,
+  right,
+]: [DeploymentWithStatus, DeploymentWithStatus]): number {
   const byStatusTime = left.statusAt.localeCompare(right.statusAt);
   return byStatusTime === 0 ? left.id - right.id : byStatusTime;
+}
+
+function isAggregateReleaseCarrier(
+  pullRequest: PullRequestEvidence,
+): boolean {
+  return (
+    pullRequest.baseRefName === "main" && pullRequest.headRefName === "dev"
+  );
 }
 
 async function fetchMainOid({
@@ -405,13 +431,11 @@ async function gatherCommitHistoryOids({
     if (!Array.isArray(response)) {
       throw new Error("GitHub returned invalid deployed revision evidence.");
     }
-    for (const value of response) {
-      const oid = record(value)?.sha;
-      if (typeof oid !== "string") {
-        throw new Error("GitHub returned invalid deployed revision evidence.");
-      }
-      commitOids.add(oid);
-    }
+    addCommitOids({
+      values: response,
+      commitOids,
+      errorMessage: "GitHub returned invalid deployed revision evidence.",
+    });
     if (response.length < 100) {
       return commitOids;
     }
@@ -445,19 +469,63 @@ async function gatherComparisonCommitOids({
     if (totalCommits !== pageTotal) {
       throw new Error("GitHub returned inconsistent deployment evidence.");
     }
-    for (const value of commits) {
-      const oid = record(value)?.sha;
-      if (typeof oid !== "string") {
-        throw new Error("GitHub returned invalid deployment comparison evidence.");
-      }
-      commitOids.add(oid);
-    }
+    addCommitOids({
+      values: commits,
+      commitOids,
+      errorMessage:
+        "GitHub returned invalid deployment comparison evidence.",
+    });
     if (commitOids.size >= totalCommits) {
       return commitOids;
     }
     if (commits.length === 0) {
       throw new Error("GitHub returned incomplete deployment evidence.");
     }
+  }
+}
+
+async function gatherPullRequestCommitOids({
+  github,
+  pullRequestNumber,
+}: {
+  github: GitHubRepositoryContext;
+  pullRequestNumber: number;
+}): Promise<Set<string>> {
+  const commitOids = new Set<string>();
+  for (let page = 1; ; page += 1) {
+    const response = await githubJson({
+      token: github.token,
+      path: `/repos/${github.owner}/${github.name}/pulls/${pullRequestNumber}/commits?per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response)) {
+      throw new Error("GitHub returned invalid release-carrier evidence.");
+    }
+    addCommitOids({
+      values: response,
+      commitOids,
+      errorMessage: "GitHub returned invalid release-carrier evidence.",
+    });
+    if (response.length < 100) {
+      return commitOids;
+    }
+  }
+}
+
+function addCommitOids({
+  values,
+  commitOids,
+  errorMessage,
+}: {
+  values: unknown[];
+  commitOids: Set<string>;
+  errorMessage: string;
+}): void {
+  for (const value of values) {
+    const oid = record(value)?.sha;
+    if (typeof oid !== "string") {
+      throw new Error(errorMessage);
+    }
+    commitOids.add(oid);
   }
 }
 
