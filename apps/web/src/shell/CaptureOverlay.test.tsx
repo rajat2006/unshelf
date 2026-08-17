@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,7 +11,7 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { useCallback, useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { Type } from "@unshelf/shared";
+import { Type, type SourceInspectionResponse } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import { captureItem, inspectSource } from "../api";
@@ -27,6 +28,14 @@ const auth: ApplicationAuth = {
   SignInButton: ({ children }) => children,
   UserButton: () => <button type="button">Account</button>,
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -78,9 +87,273 @@ function CapturedItems() {
 
 describe("global Capture", () => {
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     vi.mocked(captureItem).mockReset();
     vi.mocked(inspectSource).mockReset();
+  });
+
+  it("inspects an eligible typed Source after a resettable pause", async () => {
+    vi.useFakeTimers();
+    vi.mocked(inspectSource).mockReturnValue(new Promise(() => undefined));
+    render(<CaptureHarness />);
+
+    const source = screen.getByLabelText("Source");
+    fireEvent.change(source, {
+      target: { value: "https://example.com/first" },
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    fireEvent.change(source, {
+      target: { value: "https://example.com/final" },
+    });
+    act(() => {
+      vi.advanceTimersByTime(299);
+    });
+    expect(inspectSource).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(inspectSource).toHaveBeenCalledOnce();
+    expect(inspectSource).toHaveBeenCalledWith(
+      auth.user,
+      { source: "https://example.com/final" },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("aborts a replaced Source and ignores its late result", async () => {
+    vi.useFakeTimers();
+    const first = deferred<SourceInspectionResponse>();
+    const second = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    render(<CaptureHarness />);
+
+    const source = screen.getByLabelText("Source");
+    fireEvent.paste(source, {
+      clipboardData: { getData: () => "https://example.com/first" },
+    });
+    const firstSignal = vi.mocked(inspectSource).mock.calls[0]?.[2];
+    fireEvent.paste(source, {
+      clipboardData: { getData: () => "https://example.com/second" },
+    });
+    expect(firstSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      second.resolve({
+        status: "suggested",
+        title: "Current title",
+        titleEvidence: "document_title",
+      });
+      await second.promise;
+    });
+    await act(async () => {
+      first.resolve({
+        status: "suggested",
+        title: "Stale title",
+        titleEvidence: "document_title",
+      });
+      await first.promise;
+    });
+
+    expect(screen.getByLabelText("Title")).toHaveValue("Current title");
+  });
+
+  it("keeps User-owned fields while replacing untouched suggestions", async () => {
+    vi.useFakeTimers();
+    const first = deferred<SourceInspectionResponse>();
+    const second = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    render(<CaptureHarness />);
+
+    const source = screen.getByLabelText("Source");
+    fireEvent.paste(source, {
+      clipboardData: { getData: () => "https://example.com/first" },
+    });
+    await act(async () => {
+      first.resolve({
+        status: "suggested",
+        title: "First title",
+        titleEvidence: "open_graph",
+        type: Type.Article,
+        typeEvidence: "open_graph",
+      });
+      await first.promise;
+    });
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "My title" },
+    });
+
+    fireEvent.paste(source, {
+      clipboardData: { getData: () => "https://example.com/second" },
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("My title");
+    expect(screen.getByLabelText("Type")).toHaveTextContent("Choose a type…");
+
+    await act(async () => {
+      second.resolve({
+        status: "suggested",
+        title: "Second title",
+        titleEvidence: "document_title",
+        type: Type.Course,
+        typeEvidence: "schema_org",
+      });
+      await second.promise;
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("My title");
+    expect(screen.getByLabelText("Type")).toHaveTextContent("Course");
+  });
+
+  it("treats clearing as ownership but focus alone as unowned", async () => {
+    vi.useFakeTimers();
+    const inspectionResult = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
+    render(<CaptureHarness />);
+
+    const title = screen.getByLabelText("Title");
+    title.focus();
+    fireEvent.change(title, { target: { value: "Temporary" } });
+    fireEvent.change(title, { target: { value: "" } });
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/article" },
+    });
+    await act(async () => {
+      inspectionResult.resolve({
+        status: "suggested",
+        title: "Publisher title",
+        titleEvidence: "document_title",
+        type: Type.Article,
+        typeEvidence: "schema_org",
+      });
+      await inspectionResult.promise;
+    });
+
+    expect(title).toHaveValue("");
+    expect(screen.getByLabelText("Type")).toHaveTextContent("Article");
+  });
+
+  it("allows a suggestion after focus without mutation", async () => {
+    vi.useFakeTimers();
+    const inspectionResult = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
+    render(<CaptureHarness />);
+
+    const title = screen.getByLabelText("Title");
+    title.focus();
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/article" },
+    });
+    await act(async () => {
+      inspectionResult.resolve({
+        status: "suggested",
+        title: "Publisher title",
+        titleEvidence: "document_title",
+      });
+      await inspectionResult.promise;
+    });
+
+    expect(title).toHaveValue("Publisher title");
+    expect(title).toHaveFocus();
+  });
+
+  it("leaves inspecting after three seconds and retries only on request", async () => {
+    vi.useFakeTimers();
+    const first = deferred<SourceInspectionResponse>();
+    const retry = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(retry.promise);
+    render(<CaptureHarness />);
+
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/slow" },
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Inspecting Source…");
+    const firstSignal = vi.mocked(inspectSource).mock.calls[0]?.[2];
+
+    act(() => {
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(firstSignal?.aborted).toBe(true);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Source inspection unavailable. Continue manually.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Source inspection" }),
+    );
+    expect(inspectSource).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent("Inspecting Source…");
+
+    const title = screen.getByLabelText("Title");
+    title.focus();
+    await act(async () => {
+      retry.resolve({
+        status: "suggested",
+        type: Type.Video,
+        typeEvidence: "open_graph",
+      });
+      await retry.promise;
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Suggested Type.");
+    expect(
+      screen.queryByRole("button", { name: "Retry Source inspection" }),
+    ).not.toBeInTheDocument();
+    expect(title).toHaveFocus();
+  });
+
+  it("preserves User-owned fields across an unavailable result and Retry", async () => {
+    const unavailable = deferred<SourceInspectionResponse>();
+    const retry = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource)
+      .mockReturnValueOnce(unavailable.promise)
+      .mockReturnValueOnce(retry.promise);
+    render(<CaptureHarness />);
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "My title" },
+    });
+    fireEvent.click(screen.getByLabelText("Type"));
+    fireEvent.click(await screen.findByRole("option", { name: "Book" }));
+    vi.useFakeTimers();
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/book" },
+    });
+    await act(async () => {
+      unavailable.resolve({ status: "unavailable" });
+      await unavailable.promise;
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Source inspection" }),
+    );
+    expect(screen.getByLabelText("Title")).toHaveValue("My title");
+    expect(screen.getByLabelText("Type")).toHaveTextContent("Book");
+    expect(inspectSource).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps ineligible Source text on the manual Capture path", () => {
+    vi.useFakeTimers();
+    render(<CaptureHarness />);
+
+    fireEvent.change(screen.getByLabelText("Source"), {
+      target: { value: "course://private-notes" },
+    });
+    act(() => {
+      vi.advanceTimersByTime(3_300);
+    });
+
+    expect(inspectSource).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Source")).toHaveValue(
+      "course://private-notes",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("opens with Source first and focused", async () => {
@@ -96,11 +369,8 @@ describe("global Capture", () => {
 
   it("suggests an editable Type and captures the exact pasted Source", async () => {
     const source = "  https://youtu.be/M7lc1UVf-VE?si=share-value  ";
-    vi.mocked(inspectSource).mockResolvedValue({
-      status: "suggested",
-      type: Type.Video,
-      typeEvidence: "youtube_route",
-    });
+    const inspectionResult = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
     vi.mocked(captureItem).mockResolvedValue(
       {} as Awaited<ReturnType<typeof captureItem>>,
     );
@@ -110,6 +380,14 @@ describe("global Capture", () => {
       clipboardData: { getData: () => source },
     });
 
+    await act(async () => {
+      inspectionResult.resolve({
+        status: "suggested",
+        type: Type.Video,
+        typeEvidence: "youtube_route",
+      });
+      await inspectionResult.promise;
+    });
     await waitFor(() =>
       expect(screen.getByLabelText("Type")).toHaveTextContent("Video"),
     );
@@ -174,6 +452,80 @@ describe("global Capture", () => {
     expect(submitting).toBeDisabled();
     fireEvent.click(submitting);
     expect(captureItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Add available during inspection and supersedes its late result", async () => {
+    const inspectionResult = deferred<SourceInspectionResponse>();
+    const captureResult = deferred<Awaited<ReturnType<typeof captureItem>>>();
+    vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
+    vi.mocked(captureItem).mockReturnValue(captureResult.promise);
+    render(<CaptureHarness />);
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "User title" },
+    });
+    fireEvent.click(screen.getByLabelText("Type"));
+    fireEvent.click(await screen.findByRole("option", { name: "Article" }));
+    vi.useFakeTimers();
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/slow" },
+    });
+    const signal = vi.mocked(inspectSource).mock.calls[0]?.[2];
+    const add = screen.getByRole("button", { name: "Add to Library" });
+    expect(add).toBeEnabled();
+
+    fireEvent.click(add);
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      inspectionResult.resolve({
+        status: "suggested",
+        title: "Late title",
+        titleEvidence: "open_graph",
+        type: Type.Video,
+        typeEvidence: "open_graph",
+      });
+      await inspectionResult.promise;
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("User title");
+    expect(screen.getByLabelText("Type")).toHaveTextContent("Article");
+    expect(captureItem).toHaveBeenCalledWith(auth.user, {
+      title: "User title",
+      type: "article",
+      source: "https://example.com/slow",
+    });
+
+    vi.useRealTimers();
+    await act(async () => {
+      captureResult.resolve({} as Awaited<ReturnType<typeof captureItem>>);
+      await captureResult.promise;
+    });
+  });
+
+  it("aborts inspection on close and reopens with fresh Capture state", async () => {
+    vi.useFakeTimers();
+    const inspectionResult = deferred<SourceInspectionResponse>();
+    vi.mocked(inspectSource).mockReturnValue(inspectionResult.promise);
+    render(<CaptureHarness />);
+
+    fireEvent.paste(screen.getByLabelText("Source"), {
+      clipboardData: { getData: () => "https://example.com/slow" },
+    });
+    const signal = vi.mocked(inspectSource).mock.calls[0]?.[2];
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      inspectionResult.resolve({
+        status: "suggested",
+        title: "Late title",
+        titleEvidence: "document_title",
+      });
+      await inspectionResult.promise;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    expect(screen.getByLabelText("Source")).toHaveValue("");
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("contains request failure and preserves values for retry", async () => {

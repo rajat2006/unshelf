@@ -44,6 +44,39 @@ interface CaptureErrors {
   type?: string;
 }
 
+type InspectionState =
+  | { status: "idle" }
+  | { status: "inspecting" }
+  | { status: "suggested"; title: boolean; type: boolean }
+  | { status: "unavailable" };
+
+const INSPECTION_DEBOUNCE_MS = 300;
+const INSPECTION_DEADLINE_MS = 3_000;
+const MAX_INSPECTION_SOURCE_LENGTH = 8 * 1_024;
+
+function isInspectionEligible(source: string): boolean {
+  if (source.length > MAX_INSPECTION_SOURCE_LENGTH) return false;
+
+  try {
+    const workingUrl = new URL(source.trim());
+    return workingUrl.protocol === "http:" || workingUrl.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function inspectionMessage(inspection: InspectionState): string | null {
+  if (inspection.status === "idle") return null;
+  if (inspection.status === "inspecting") return "Inspecting Source…";
+  if (inspection.status === "unavailable") {
+    return "Source inspection unavailable. Continue manually.";
+  }
+  if (inspection.title && inspection.type) return "Suggested Title and Type.";
+  if (inspection.title) return "Suggested Title.";
+  if (inspection.type) return "Suggested Type.";
+  return "Source inspected. Your entries were kept.";
+}
+
 /** The one global, non-navigating manual Capture into the Library. */
 export function CaptureOverlay({
   isOpen,
@@ -67,17 +100,149 @@ function CaptureComposer({
   const user = useCurrentUser();
   const titleRef = useRef<HTMLInputElement>(null);
   const inspectionController = useRef<AbortController | null>(null);
+  const inspectionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inspectionDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inspectionRevision = useRef(0);
+  const titleUserOwned = useRef(false);
+  const typeUserOwned = useRef(false);
+  const titleSuggested = useRef(false);
+  const typeSuggested = useRef(false);
   const [title, setTitle] = useState("");
   const [type, setType] = useState<Type | "">("");
   const [source, setSource] = useState("");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<CaptureErrors>({});
   const [requestFailed, setRequestFailed] = useState(false);
-  const [typeSuggested, setTypeSuggested] = useState(false);
+  const [inspection, setInspection] = useState<InspectionState>({
+    status: "idle",
+  });
+
+  function clearInspectionTimers(): void {
+    if (inspectionDebounce.current !== null) {
+      clearTimeout(inspectionDebounce.current);
+      inspectionDebounce.current = null;
+    }
+    if (inspectionDeadline.current !== null) {
+      clearTimeout(inspectionDeadline.current);
+      inspectionDeadline.current = null;
+    }
+  }
+
+  function supersedeInspection(): number {
+    clearInspectionTimers();
+    inspectionController.current?.abort();
+    inspectionController.current = null;
+    inspectionRevision.current += 1;
+    return inspectionRevision.current;
+  }
+
+  function startInspection(exactSource: string, revision: number): void {
+    if (revision !== inspectionRevision.current) return;
+
+    const controller = new AbortController();
+    inspectionController.current = controller;
+    setInspection({ status: "inspecting" });
+    inspectionDeadline.current = setTimeout(() => {
+      if (revision !== inspectionRevision.current) return;
+      controller.abort();
+      inspectionController.current = null;
+      inspectionRevision.current += 1;
+      setInspection({ status: "unavailable" });
+    }, INSPECTION_DEADLINE_MS);
+
+    void inspectSource(user, { source: exactSource }, controller.signal)
+      .then((response) => {
+        if (
+          controller.signal.aborted ||
+          revision !== inspectionRevision.current
+        ) {
+          return;
+        }
+
+        clearInspectionTimers();
+        inspectionController.current = null;
+        if (response.status === "unavailable") {
+          setInspection({ status: "unavailable" });
+          return;
+        }
+
+        let appliedTitle = false;
+        let appliedType = false;
+        if (response.title !== undefined && !titleUserOwned.current) {
+          titleSuggested.current = true;
+          appliedTitle = true;
+          setTitle(response.title);
+          setErrors((current) => ({ ...current, title: undefined }));
+        }
+        if (response.type !== undefined && !typeUserOwned.current) {
+          typeSuggested.current = true;
+          appliedType = true;
+          setType(response.type);
+          setErrors((current) => ({ ...current, type: undefined }));
+        }
+        setInspection({
+          status: "suggested",
+          title: appliedTitle,
+          type: appliedType,
+        });
+      })
+      .catch(() => {
+        if (
+          controller.signal.aborted ||
+          revision !== inspectionRevision.current
+        ) {
+          return;
+        }
+        clearInspectionTimers();
+        inspectionController.current = null;
+        setInspection({ status: "unavailable" });
+      });
+  }
+
+  function changeSource(nextSource: string, inspectImmediately: boolean): void {
+    setSource(nextSource);
+    const revision = supersedeInspection();
+
+    if (titleSuggested.current && !titleUserOwned.current) {
+      titleSuggested.current = false;
+      setTitle("");
+    }
+    if (typeSuggested.current && !typeUserOwned.current) {
+      typeSuggested.current = false;
+      setType("");
+    }
+    setInspection({ status: "idle" });
+
+    if (!isInspectionEligible(nextSource)) return;
+    if (inspectImmediately) {
+      startInspection(nextSource, revision);
+      return;
+    }
+    inspectionDebounce.current = setTimeout(
+      () => startInspection(nextSource, revision),
+      INSPECTION_DEBOUNCE_MS,
+    );
+  }
+
+  function retryInspection(): void {
+    const revision = supersedeInspection();
+    if (!isInspectionEligible(source)) {
+      setInspection({ status: "idle" });
+      return;
+    }
+    startInspection(source, revision);
+  }
 
   useEffect(
     () => () => {
+      if (inspectionDebounce.current !== null) {
+        clearTimeout(inspectionDebounce.current);
+      }
+      if (inspectionDeadline.current !== null) {
+        clearTimeout(inspectionDeadline.current);
+      }
       inspectionController.current?.abort();
+      inspectionRevision.current += 1;
     },
     [],
   );
@@ -85,30 +250,15 @@ function CaptureComposer({
   function inspectPastedSource(event: ClipboardEvent<HTMLInputElement>): void {
     event.preventDefault();
     const pastedSource = event.clipboardData.getData("text");
-    setSource(pastedSource);
-    setTypeSuggested(false);
-    inspectionController.current?.abort();
-    const controller = new AbortController();
-    inspectionController.current = controller;
-
-    void inspectSource(user, { source: pastedSource }, controller.signal)
-      .then((response) => {
-        if (
-          !controller.signal.aborted &&
-          response.status === "suggested" &&
-          response.type !== undefined
-        ) {
-          setType(response.type);
-          setTypeSuggested(true);
-          setErrors((current) => ({ ...current, type: undefined }));
-        }
-      })
-      .catch(() => undefined);
+    changeSource(pastedSource, true);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (saving) return;
+
+    supersedeInspection();
+    setInspection({ status: "idle" });
 
     const nextErrors: CaptureErrors = {};
     if (title.trim().length === 0) nextErrors.title = "Enter a title.";
@@ -137,6 +287,8 @@ function CaptureComposer({
     }
   }
 
+  const statusMessage = inspectionMessage(inspection);
+
   return (
     <DialogContent aria-describedby="capture-description">
       <DialogHeader>
@@ -160,7 +312,7 @@ function CaptureComposer({
               id="capture-source"
               aria-labelledby="capture-source-label"
               value={source}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(event) => changeSource(event.target.value, false)}
               onPaste={inspectPastedSource}
               placeholder="Paste a link, or leave blank for an offline Item"
               autoFocus
@@ -171,15 +323,43 @@ function CaptureComposer({
           </Field>
         </div>
 
+        {statusMessage !== null && (
+          <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+            <p role="status" aria-live="polite">
+              {statusMessage}
+            </p>
+            {inspection.status === "unavailable" && (
+              <Button
+                type="button"
+                variant="quiet"
+                size="compact"
+                aria-label="Retry Source inspection"
+                onClick={retryInspection}
+              >
+                Retry
+              </Button>
+            )}
+          </div>
+        )}
+
         <Field data-invalid={Boolean(errors.title)}>
-          <FieldLabel id="capture-title-label" htmlFor="capture-title">
-            Title
-          </FieldLabel>
+          <div className="flex items-center gap-2">
+            <FieldLabel id="capture-title-label" htmlFor="capture-title">
+              Title
+            </FieldLabel>
+            {titleSuggested.current && (
+              <span className="text-xs font-normal text-primary">
+                Suggested
+              </span>
+            )}
+          </div>
           <Input
             ref={titleRef}
             id="capture-title"
             value={title}
             onChange={(event) => {
+              titleUserOwned.current = true;
+              titleSuggested.current = false;
               setTitle(event.target.value);
               setErrors((current) => ({ ...current, title: undefined }));
             }}
@@ -198,7 +378,7 @@ function CaptureComposer({
             <FieldLabel id="capture-type-label" htmlFor="capture-type">
               Type
             </FieldLabel>
-            {typeSuggested && (
+            {typeSuggested.current && (
               <span className="text-xs font-normal text-primary">
                 Suggested
               </span>
@@ -207,8 +387,9 @@ function CaptureComposer({
           <Select
             value={type}
             onValueChange={(value) => {
+              typeUserOwned.current = true;
+              typeSuggested.current = false;
               setType(value as Type);
-              setTypeSuggested(false);
               setErrors((current) => ({ ...current, type: undefined }));
             }}
           >
