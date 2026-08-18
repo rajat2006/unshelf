@@ -1,0 +1,2 @@
+export const lifecycleAuthorityPrompt =
+  "The surrounding digest supplies delivery status separately, so never state or imply it. Before returning, rewrite any sentence containing lifecycle words or variants such as production, live, release, complete, block, open, closed, waiting, pending, queued, awaiting, delayed, dependency, paused, stalled, halted, stopped, ready, done, finished, remaining, in progress, merge, deploy, ship, land, underway, moving forward, or needs attention.";

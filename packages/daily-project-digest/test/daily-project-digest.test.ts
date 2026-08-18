@@ -867,8 +867,7 @@ describe("Daily Project Digest", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence:
-              "Updates what ships, lands, deploys, releases, completes, blocks, and merges.",
+            sentence: "Improves plans at https://example.com.",
             audienceGroup: "standard",
             citations: ["title"],
           },
@@ -930,7 +929,7 @@ describe("Daily Project Digest", () => {
     if (result.aiPresentation !== "failed") {
       throw new Error("Expected the AI presentation to fail validation.");
     }
-    expect(result.aiFailureReason).toBe("contract-sentence-lifecycle");
+    expect(result.aiFailureReason).toBe("contract-sentence-url");
     expect(result.aiFailureSubjectId).toBe("pull-request:202");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
@@ -948,6 +947,75 @@ describe("Daily Project Digest", () => {
   });
 
   it.each([
+    {
+      style: "natural punctuation",
+      sentence: "Learners get a clearer view. Planning feels simpler.",
+    },
+    {
+      style: "a list prefix",
+      sentence: "- Learners get a clearer plan overview",
+    },
+    {
+      style: "surrounding whitespace",
+      sentence: " Learners get a clearer plan overview ",
+      renderedSentence: "Learners get a clearer plan overview",
+    },
+    {
+      style: "surrounding whitespace at the delivery limit",
+      sentence: ` ${"x".repeat(180)} `,
+      renderedSentence: "x".repeat(180),
+    },
+    { style: "concise wording", sentence: "Clear." },
+    {
+      style: "lifecycle words used as subject matter",
+      sentence: "Explains product release automation in plain language.",
+    },
+    {
+      style: "open used outside project status",
+      sentence: "Makes workshops that are open to everyone easier to find.",
+    },
+    {
+      style: "live used outside project status",
+      sentence: "Shows which sessions are live for learners.",
+    },
+    {
+      style: "moving forward used as ordinary prose",
+      sentence: "Makes moving forward easier for learners.",
+    },
+    {
+      style: "needs attention used as ordinary prose",
+      sentence: "Explains what needs attention in each lesson.",
+    },
+    {
+      style: "prompt terminology used as subject matter",
+      sentence: "Makes the AI prompt easier to understand.",
+    },
+    {
+      style: "lifecycle wording chosen by the presentation model",
+      sentence: "The digest is now live.",
+    },
+  ])(
+    "accepts $style as prompt-guided wording",
+    async ({ sentence, renderedSentence = sentence }) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI({
+          generatePresentation: () =>
+            Promise.resolve({
+              schemaVersion: "1",
+              items: [{ ...validPresentationItem, sentence }],
+            }),
+        }),
+      );
+
+      expect(result.aiPresentation).toBe("applied");
+      expect(result.payload.embeds?.[0]?.fields[0]?.value).toBe(
+        `[${renderedSentence}](https://github.com/rajat2006/unshelf/pull/202)`,
+      );
+    },
+  );
+
+  it.each([
     ["contract-envelope", null, undefined],
     [
       "contract-envelope",
@@ -962,10 +1030,10 @@ describe("Daily Project Digest", () => {
       "pull-request:202",
     ],
     [
-      "contract-sentence-whitespace",
+      "contract-sentence-length",
       {
         schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: " Improves plans." }],
+        items: [{ ...validPresentationItem, sentence: "x".repeat(181) }],
       },
       "pull-request:202",
     ],
@@ -973,7 +1041,7 @@ describe("Daily Project Digest", () => {
       "contract-sentence-length",
       {
         schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: "Improves." }],
+        items: [{ ...validPresentationItem, sentence: "   " }],
       },
       "pull-request:202",
     ],
@@ -984,32 +1052,6 @@ describe("Daily Project Digest", () => {
         items: [
           { ...validPresentationItem, sentence: "Improves user\u0007 plans." },
         ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-list",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "- Improves user plans." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-punctuation",
-      {
-        schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: "Improves user plans" }],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-opening",
-      {
-        schemaVersion: "1",
-        items: [{ ...validPresentationItem, sentence: "Enhances user plans." }],
       },
       "pull-request:202",
     ],
@@ -1045,26 +1087,6 @@ describe("Daily Project Digest", () => {
             ...validPresentationItem,
             sentence: "Improves plans for @readers.",
           },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-lifecycle",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "Improves completed plans." },
-        ],
-      },
-      "pull-request:202",
-    ],
-    [
-      "contract-sentence-prompt-control",
-      {
-        schemaVersion: "1",
-        items: [
-          { ...validPresentationItem, sentence: "Improves prompt handling." },
         ],
       },
       "pull-request:202",
