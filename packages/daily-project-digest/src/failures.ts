@@ -29,8 +29,6 @@ export type AIPresentationFailureReason =
   | "contract-sentence-url"
   | "contract-sentence-markdown"
   | "contract-sentence-mention"
-  | "contract-sentence-lifecycle"
-  | "contract-sentence-prompt-control"
   | "contract-duplicate-subject"
   | "contract-unknown-subject"
   | "contract-citation"

@@ -3,7 +3,6 @@ import {
   DigestFailure,
   type AIPresentationFailureReason,
 } from "./failures.js";
-import { hasLifecycleStatusClaim } from "./ai-presentation-policy.js";
 import { asRecord } from "./provider-support.js";
 
 export type DiscordPayload = {
@@ -564,14 +563,6 @@ function aiSentenceFailure(
   if (/(?:\[|\]|[*_`~#><|])/.test(sentence))
     return "contract-sentence-markdown";
   if (/@/.test(sentence)) return "contract-sentence-mention";
-  if (hasLifecycleStatusClaim(sentence))
-    return "contract-sentence-lifecycle";
-  if (
-    /\b(?:instructions?|directives?|prompts?|model|rules?|roles?|ignore|disregard|obey|follow|execute|commands?|respond|output|classify|supplied text|act as|you are now|developer message)\b/i.test(
-      sentence,
-    )
-  )
-    return "contract-sentence-prompt-control";
   return undefined;
 }
 
