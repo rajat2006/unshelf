@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDiscordWebhookAdapter,
   createGitHubActionsPreviewAdapters,
+  createOpenAIResponsesAdapter,
   runDailyProjectDigest,
   type DeliveryAdapters,
   type DiscordPayload,
@@ -16,6 +17,45 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+function deliveryAdaptersWithOpenAI(
+  openai: DeliveryAdapters["openai"],
+): DeliveryAdapters {
+  return {
+    clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
+    github: {
+      listPullRequests: () =>
+        Promise.resolve([
+          {
+            state: "OPEN" as const,
+            mergedAt: null,
+            number: 202,
+            title: "Improve the learning plan overview",
+            baseRefName: "dev",
+            headRefName: "agent/learning-plan-overview",
+            headRepository: "rajat2006/unshelf",
+            labels: [],
+            isDraft: false,
+            headContainsMain: false,
+            blockedBy: [],
+            closingIssues: [],
+          },
+        ]),
+      listDeployments: () => Promise.resolve([]),
+      listWayfinderMaps: () => Promise.resolve([]),
+    },
+    summary: { availability: "unavailable" },
+    openai,
+    discord: { deliver: () => Promise.resolve() },
+  };
+}
+
+const validPresentationItem = {
+  subjectId: "pull-request:202",
+  sentence: "Improves the learning plan overview for readers.",
+  audienceGroup: "standard",
+  citations: ["title"],
+} as const;
 
 describe("Daily Project Digest", () => {
   it("delivers production releases alongside completed and active work", async () => {
@@ -827,8 +867,7 @@ describe("Daily Project Digest", () => {
           },
           {
             subjectId: "pull-request:202",
-            sentence:
-              "Updates what ships, lands, deploys, releases, completes, blocks, and merges.",
+            sentence: "Improves plans at https://example.com.",
             audienceGroup: "standard",
             citations: ["title"],
           },
@@ -890,7 +929,8 @@ describe("Daily Project Digest", () => {
     if (result.aiPresentation !== "failed") {
       throw new Error("Expected the AI presentation to fail validation.");
     }
-    expect(result.aiFailureReason).toBe("contract-validation");
+    expect(result.aiFailureReason).toBe("contract-sentence-url");
+    expect(result.aiFailureSubjectId).toBe("pull-request:202");
     expect(result.payload.embeds?.[0]?.fields).toEqual([
       {
         name: "Completed — Merged and ready for a release",
@@ -905,6 +945,326 @@ describe("Daily Project Digest", () => {
     ]);
     expect(deliveredPayload).toBe(result.payload);
   });
+
+  it.each([
+    {
+      style: "natural punctuation",
+      sentence: "Learners get a clearer view. Planning feels simpler.",
+    },
+    {
+      style: "a list prefix",
+      sentence: "- Learners get a clearer plan overview",
+    },
+    {
+      style: "surrounding whitespace",
+      sentence: " Learners get a clearer plan overview ",
+      renderedSentence: "Learners get a clearer plan overview",
+    },
+    {
+      style: "surrounding whitespace at the delivery limit",
+      sentence: ` ${"x".repeat(180)} `,
+      renderedSentence: "x".repeat(180),
+    },
+    { style: "concise wording", sentence: "Clear." },
+    {
+      style: "lifecycle words used as subject matter",
+      sentence: "Explains product release automation in plain language.",
+    },
+    {
+      style: "open used outside project status",
+      sentence: "Makes workshops that are open to everyone easier to find.",
+    },
+    {
+      style: "live used outside project status",
+      sentence: "Shows which sessions are live for learners.",
+    },
+    {
+      style: "moving forward used as ordinary prose",
+      sentence: "Makes moving forward easier for learners.",
+    },
+    {
+      style: "needs attention used as ordinary prose",
+      sentence: "Explains what needs attention in each lesson.",
+    },
+    {
+      style: "prompt terminology used as subject matter",
+      sentence: "Makes the AI prompt easier to understand.",
+    },
+    {
+      style: "lifecycle wording chosen by the presentation model",
+      sentence: "The digest is now live.",
+    },
+  ])(
+    "accepts $style as prompt-guided wording",
+    async ({ sentence, renderedSentence = sentence }) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI({
+          generatePresentation: () =>
+            Promise.resolve({
+              schemaVersion: "1",
+              items: [{ ...validPresentationItem, sentence }],
+            }),
+        }),
+      );
+
+      expect(result.aiPresentation).toBe("applied");
+      expect(result.payload.embeds?.[0]?.fields[0]?.value).toBe(
+        `[${renderedSentence}](https://github.com/rajat2006/unshelf/pull/202)`,
+      );
+    },
+  );
+
+  it.each([
+    ["contract-envelope", null, undefined],
+    [
+      "contract-envelope",
+      { schemaVersion: "1", items: [], extra: true },
+      undefined,
+    ],
+    ["contract-schema-version", { schemaVersion: "2", items: [] }, undefined],
+    ["contract-items", { schemaVersion: "1", items: null }, undefined],
+    [
+      "contract-item-shape",
+      { schemaVersion: "1", items: [{ subjectId: "pull-request:202" }] },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-length",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: "x".repeat(181) }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-length",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, sentence: "   " }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-control",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves user\u0007 plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-url",
+      {
+        schemaVersion: "1",
+        items: [
+          {
+            ...validPresentationItem,
+            sentence: "Improves plans at https://example.com.",
+          },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-markdown",
+      {
+        schemaVersion: "1",
+        items: [
+          { ...validPresentationItem, sentence: "Improves *user* plans." },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-sentence-mention",
+      {
+        schemaVersion: "1",
+        items: [
+          {
+            ...validPresentationItem,
+            sentence: "Improves plans for @readers.",
+          },
+        ],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-duplicate-subject",
+      {
+        schemaVersion: "1",
+        items: [validPresentationItem, validPresentationItem],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-unknown-subject",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, subjectId: "pull-request:999" }],
+      },
+      undefined,
+    ],
+    [
+      "contract-citation",
+      {
+        schemaVersion: "1",
+        items: [{ ...validPresentationItem, citations: [] }],
+      },
+      "pull-request:202",
+    ],
+    [
+      "contract-subject-set",
+      { schemaVersion: "1", items: [] },
+      "pull-request:202",
+    ],
+  ])(
+    "reports %s without exposing AI content",
+    async (expectedReason, response, expectedSubjectId) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI({
+          generatePresentation: () => Promise.resolve(response),
+        }),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(result.aiFailureSubjectId).toBe(expectedSubjectId);
+      expect(JSON.stringify(result)).not.toContain("Enhances user plans");
+    },
+  );
+
+  it.each([
+    ["request-network", () => Promise.reject(new TypeError("offline"))],
+    [
+      "response-http-authentication",
+      () => Promise.resolve(new Response(null, { status: 401 })),
+    ],
+    [
+      "response-http-rate-limit",
+      () => Promise.resolve(new Response(null, { status: 429 })),
+    ],
+    [
+      "response-http-client",
+      () => Promise.resolve(new Response(null, { status: 400 })),
+    ],
+    [
+      "response-http-provider",
+      () => Promise.resolve(new Response(null, { status: 500 })),
+    ],
+    ["response-body-json", () => Promise.resolve(new Response("not json"))],
+    [
+      "response-incomplete",
+      () =>
+        Promise.resolve(Response.json({ status: "in_progress", output: [] })),
+    ],
+    [
+      "response-envelope",
+      () => Promise.resolve(Response.json({ status: "completed" })),
+    ],
+    [
+      "response-refusal",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "refusal", refusal: "no" }],
+              },
+            ],
+          }),
+        ),
+    ],
+    [
+      "response-output-text",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [{ type: "message", content: [] }],
+          }),
+        ),
+    ],
+    [
+      "response-output-json",
+      () =>
+        Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "output_text", text: "{" }],
+              },
+            ],
+          }),
+        ),
+    ],
+  ])(
+    "reports sanitized provider failure %s",
+    async (expectedReason, fetchResult) => {
+      vi.stubGlobal("fetch", vi.fn(fetchResult));
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI(
+          createOpenAIResponsesAdapter({ apiKey: "openai-key" }),
+        ),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(result.aiFailureSubjectId).toBeUndefined();
+    },
+  );
+
+  it.each([
+    [
+      "request-unexpected",
+      { generatePresentation: () => Promise.reject(new Error("secret")) },
+    ],
+    [
+      "contract-unexpected",
+      {
+        generatePresentation: () =>
+          Promise.resolve(
+            new Proxy(
+              {},
+              {
+                ownKeys: () => {
+                  throw new Error("secret");
+                },
+              },
+            ),
+          ),
+      },
+    ],
+  ])(
+    "reports sanitized unexpected failure %s",
+    async (expectedReason, openai) => {
+      const result = await runDailyProjectDigest(
+        { mode: "deliver" },
+        deliveryAdaptersWithOpenAI(openai),
+      );
+
+      expect(result.aiPresentation).toBe("failed");
+      if (result.aiPresentation !== "failed") {
+        throw new Error("Expected the AI presentation to fail.");
+      }
+      expect(result.aiFailureReason).toBe(expectedReason);
+      expect(JSON.stringify(result)).not.toContain("secret");
+    },
+  );
 
   it("previews the exact payload without invoking Discord", async () => {
     vi.useFakeTimers();
@@ -1041,7 +1401,7 @@ describe("Daily Project Digest", () => {
       if (result.aiPresentation !== "failed") {
         throw new Error("Expected the AI presentation to time out.");
       }
-      expect(result.aiFailureReason).toBe("timeout");
+      expect(result.aiFailureReason).toBe("request-timeout");
       expect(adapters.discord).toEqual({ availability: "unavailable" });
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
