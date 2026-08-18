@@ -20,6 +20,7 @@ import { LibrarySurface } from "./surfaces/LibrarySurface";
 import { LearningPlanSurface } from "./surfaces/LearningPlanSurface";
 import { TodaySurface } from "./surfaces/TodaySurface";
 import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
+import { WholeProductPrototype } from "./surfaces/WholeProductPrototype";
 
 /**
  * The routed Unshelf shell (design spec §3–§5, ADR-0013).
@@ -32,6 +33,19 @@ import { DailyFocusHistorySurface } from "./surfaces/DailyFocusHistorySurface";
  * destination; an unknown route offers recovery to Today.
  */
 export function App() {
+  const location = useLocation();
+
+  if (
+    import.meta.env.DEV &&
+    location.pathname === "/prototype/bookmark-to-action"
+  ) {
+    return <WholeProductPrototype />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const { status } = useApplicationAuth();
 
   if (status === "loading") {
