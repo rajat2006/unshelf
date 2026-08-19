@@ -14,13 +14,13 @@ import {
 import type {
   GenericInspectionDiagnostics,
   GenericSourceInspector,
-} from "./generic-inspector";
+} from "./inspectors/generic-inspector";
 import type {
   AdmitInspectionDestination,
   ByteCountBucket,
   RedirectCountBucket,
   SourceInspectionPhaseTimings,
-} from "./guarded-transport";
+} from "./transport/guarded-transport";
 import {
   createSourceInspectionAdmissionGate,
   type SourceInspectionAdmissionGate,
@@ -28,7 +28,7 @@ import {
 import {
   YOUTUBE_OEMBED_HOSTNAME,
   type YouTubeTitleInspector,
-} from "./youtube-title-inspector";
+} from "./inspectors/youtube-title-inspector";
 
 export interface InspectSourceInput {
   readonly source: string;

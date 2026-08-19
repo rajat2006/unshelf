@@ -10,6 +10,9 @@ import type {
 } from "./guarded-transport";
 import { SourceInspectionTimeoutError } from "./guarded-transport";
 
+// Node adapters expose cancellable DNS and pinned-address connections to the
+// guarded transport; policy decisions stay in guarded-transport.ts.
+
 const CNAME_LIMIT = 16;
 
 interface NodeDnsResolver {

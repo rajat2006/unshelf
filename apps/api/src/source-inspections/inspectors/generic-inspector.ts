@@ -4,14 +4,17 @@ import { Parser } from "htmlparser2";
 import {
   decodeSourceInspectionContent,
   normalizeSourceInspectionContentEncoding,
-} from "./content-decoding";
+} from "../transport/content-decoding";
 import type {
   AdmitInspectionDestination,
   GuardedPublicTransport,
   SourceInspectionTransportDiagnostics,
-} from "./guarded-transport";
-import { createInspectionDiagnosticReporter } from "./guarded-transport";
+} from "../transport/guarded-transport";
+import { createInspectionDiagnosticReporter } from "../transport/guarded-transport";
 import { resolveGenericMetadata } from "./generic-metadata";
+
+// Owns bounded HTML acquisition/decoding and delegates inert metadata policy;
+// every transport or parsing refusal remains a quiet manual-Capture fallback.
 
 const DECOMPRESSED_BYTE_LIMIT = 256 * 1024;
 const ENCODING_PRESCAN_BYTE_LIMIT = 1024;

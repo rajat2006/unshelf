@@ -4,18 +4,18 @@ import { createClerkAuth } from "./middleware/auth";
 import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
-import { createGenericSourceInspector } from "./source-inspections/generic-inspector";
-import { createGuardedPublicTransport } from "./source-inspections/guarded-transport";
+import { createGenericSourceInspector } from "./source-inspections/inspectors/generic-inspector";
+import { createGuardedPublicTransport } from "./source-inspections/transport/guarded-transport";
 import {
   createNodeConnectionTransport,
   createNodeHostResolver,
-} from "./source-inspections/node-network";
+} from "./source-inspections/transport/node-network";
 import {
   createSourceInspectionService,
   parseSourceInspectionDisabled,
   parseSourceInspectionDeniedHostnames,
 } from "./source-inspections/service";
-import { createYouTubeTitleInspector } from "./source-inspections/youtube-title-inspector";
+import { createYouTubeTitleInspector } from "./source-inspections/inspectors/youtube-title-inspector";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;

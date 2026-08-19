@@ -1,15 +1,15 @@
 import { TextDecoder } from "node:util";
-import type { CanonicalYouTubeSource } from "./classifier";
+import type { CanonicalYouTubeSource } from "../classifier";
 import {
   decodeSourceInspectionContent,
   normalizeSourceInspectionContentEncoding,
-} from "./content-decoding";
+} from "../transport/content-decoding";
 import type {
   AdmitInspectionDestination,
   GuardedPublicTransport,
   SourceInspectionTransportDiagnostics,
-} from "./guarded-transport";
-import { createInspectionDiagnosticReporter } from "./guarded-transport";
+} from "../transport/guarded-transport";
+import { createInspectionDiagnosticReporter } from "../transport/guarded-transport";
 import { normalizeSuggestionTitle } from "./suggestion-title";
 
 const OEMBED_ENDPOINT = "https://www.youtube.com/oembed";

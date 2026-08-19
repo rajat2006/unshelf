@@ -1,6 +1,9 @@
 import { Type, type SourceInspectionResponse } from "@unshelf/shared";
 import { normalizeSuggestionTitle } from "./suggestion-title";
 
+// Resolves already-extracted metadata by explicit evidence precedence. It does
+// not fetch, follow embedded references, or infer Type from weak page signals.
+
 const JSON_LD_DEPTH_LIMIT = 16;
 const JSON_LD_NODE_LIMIT = 2_000;
 

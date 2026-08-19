@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import { createGenericSourceInspector } from "./generic-inspector";
-import type { GuardedPublicTransport } from "./guarded-transport";
+import type { GuardedPublicTransport } from "../transport/guarded-transport";
 
 describe("Generic Source inspector", () => {
   it.each([

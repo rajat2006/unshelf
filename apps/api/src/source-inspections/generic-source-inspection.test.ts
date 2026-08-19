@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { UserId } from "@unshelf/shared";
-import { createGenericSourceInspector } from "./generic-inspector";
+import { createGenericSourceInspector } from "./inspectors/generic-inspector";
 import {
   createGuardedPublicTransport,
   type ConnectionTransport,
   type HostResolver,
-} from "./guarded-transport";
+} from "./transport/guarded-transport";
 import { createSourceInspectionService } from "./service";
 
 const userId = "a156d86a-09d3-4935-9bf0-1820fa357f90" as UserId;

@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
-import type { CanonicalYouTubeSource } from "./classifier";
-import type { GuardedPublicTransport } from "./guarded-transport";
+import type { CanonicalYouTubeSource } from "../classifier";
+import type { GuardedPublicTransport } from "../transport/guarded-transport";
 import { createYouTubeTitleInspector } from "./youtube-title-inspector";
 
 const canonicalVideoSource =

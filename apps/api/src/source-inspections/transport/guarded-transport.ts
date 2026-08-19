@@ -1,6 +1,9 @@
 import { BlockList, isIP } from "node:net";
 import { performance } from "node:perf_hooks";
 
+// The sole arbitrary-public-network boundary: validate and pin every destination,
+// re-run the guard on redirects, and collapse policy failures to unavailable.
+
 export interface GuardedTransportResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string | undefined>>;

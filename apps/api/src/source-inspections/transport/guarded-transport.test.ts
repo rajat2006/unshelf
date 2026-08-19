@@ -5,7 +5,7 @@ import {
   type HostResolver,
   type InspectionClock,
 } from "./guarded-transport";
-import { anyValue } from "../../test/assertion-boundaries";
+import { anyValue } from "../../../test/assertion-boundaries";
 
 describe("Guarded public transport", () => {
   it("pins a validated public address and omits only the fragment", async () => {

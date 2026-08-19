@@ -8,7 +8,7 @@ import {
   type SourceInspectionCompletion,
 } from "./service";
 import { createSourceInspectionAdmissionGate } from "./admission-gate";
-import type { GenericSourceInspector } from "./generic-inspector";
+import type { GenericSourceInspector } from "./inspectors/generic-inspector";
 import { anyValue } from "../../test/assertion-boundaries";
 
 const userId = "a156d86a-09d3-4935-9bf0-1820fa357f90" as UserId;
