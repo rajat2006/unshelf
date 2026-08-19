@@ -185,6 +185,8 @@ closed. Unrelated base failures, ambiguous fixes, merge conflicts, and required
 base updates also stop recovery. The existing `agent:blocked` comment records the
 reason and run URL; retry is manual. Leaf retries resume only one matching open
 same-repo draft PR on the deterministic branch/base and never force-push.
+Agents publish only through the shared Product CI CLI: it refuses a third repair
+before pushing and records the action only after a successful push.
 
 This exception does not grant lifecycle authority: agents cannot change issues,
 labels, reviews, comments, threads, child state, ready state, merge state, or

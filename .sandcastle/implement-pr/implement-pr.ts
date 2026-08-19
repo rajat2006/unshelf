@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
-import { writeHeadBoundJson } from "../head-bound-output";
+import { writeImplementPrOutput } from "../head-bound-output";
 import {
   implementPrOutputSchema,
   type ImplementPrOutput,
@@ -100,11 +100,9 @@ fs.writeFileSync(path.join(ctx.outputDir, "pr_comment.md"), body);
 // id against the PR's real threads first). The thread is left open — resolution
 // is the reviewer's call, matching CVM.
 const replies = buildThreadReplies(result.output);
-writeHeadBoundJson({
+writeImplementPrOutput({
   outputDir: ctx.outputDir,
-  jsonFile: "thread_replies.json",
-  value: replies,
-  headFile: "implement_pr_head_sha.txt",
+  replies,
   headSha: execFileSync("git", ["rev-parse", "HEAD"], {
     encoding: "utf8",
   }).trim(),

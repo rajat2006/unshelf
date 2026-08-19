@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   inspectProductCi,
+  publishProductCiCandidate,
   requestProductCiRerun,
   waitForProductCi,
   type ProductCiGitHub,
   type ProductCiJob,
   type ProductCiPullRequest,
   type ProductCiRun,
-  type RecoveryState,
 } from "./product-ci";
 
 const pullRequest: ProductCiPullRequest = {
@@ -272,25 +272,77 @@ describe("Product CI polling and diagnostics", () => {
 });
 
 describe("Product CI recovery budget", () => {
-  it("counts repair pushes and accepted reruns but not publication or diagnosis", async () => {
-    let state: RecoveryState = { actions: [] };
+  it("counts successful repair pushes and accepted reruns but not initial publication", async () => {
+    const pushes: string[] = [];
+    const initial = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      mode: "initial",
+      state: { actions: [] },
+      push: async (branch) => pushes.push(branch),
+    });
+    expect(initial).toEqual({ ok: true, state: { actions: [] } });
+
     const github = new FakeGitHub();
     github.runs = [run({ conclusion: "failure" })];
     github.jobs.set(100, [job({ conclusion: "failure" })]);
+    const repair = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      mode: "repair",
+      state: initial.ok ? initial.state : { actions: [] },
+      push: async (branch) => pushes.push(branch),
+    });
+    expect(repair).toEqual({ ok: true, state: { actions: ["repair-push"] } });
 
-    state = { actions: [...state.actions, "repair-push"] };
     const rerun = await requestProductCiRerun({
       github,
       prNumber: 42,
       runId: 100,
-      state,
+      state: repair.ok ? repair.state : { actions: [] },
     });
 
     expect(rerun).toEqual({
       ok: true,
       state: { actions: ["repair-push", "rerun"] },
     });
+    expect(pushes).toEqual([
+      "agent/issue-42-example",
+      "agent/issue-42-example",
+    ]);
     expect(github.rerunIds).toEqual([100]);
+  });
+
+  it("does not consume a recovery action when a repair push fails", async () => {
+    const result = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      mode: "repair",
+      state: { actions: [] },
+      push: async () => {
+        throw new Error("non-fast-forward");
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Candidate push failed: non-fast-forward",
+    });
+  });
+
+  it("refuses a third repair push before mutating the branch", async () => {
+    let pushed = false;
+    const result = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      mode: "repair",
+      state: { actions: ["repair-push", "rerun"] },
+      push: async () => {
+        pushed = true;
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("two"),
+    });
+    expect(pushed).toBe(false);
   });
 
   it("refuses a third recovery mutation", async () => {

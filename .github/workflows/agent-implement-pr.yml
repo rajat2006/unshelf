@@ -284,10 +284,7 @@ jobs:
         id: publish_gate
         run: |
           set -euo pipefail
-          expected=$(cat "${RUNNER_TEMP}/implement_pr_head_sha.txt")
-          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
-          [ "$live" = "$expected" ] || { echo "PR head changed after feedback regeneration; refusing stale publication."; exit 1; }
-          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
           owner="${GH_REPO%/*}"
           repo="${GH_REPO#*/}"
           threads=$(gh api graphql -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
@@ -341,7 +338,7 @@ jobs:
             fi
             # Each reply is its own protected mutation, so refresh exact-candidate
             # proof immediately before posting it.
-            if ! pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"; then
+            if ! pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"; then
               echo "Product CI proof changed before reply on $tid."
               failed=$((failed + 1))
               break
@@ -361,12 +358,7 @@ jobs:
 
       - name: Final Product CI gate — publish feedback summary
         if: steps.gate.outputs.proceed == 'true' && success()
-        run: |
-          set -euo pipefail
-          expected=$(cat "${RUNNER_TEMP}/implement_pr_head_sha.txt")
-          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
-          [ "$live" = "$expected" ] || { echo "PR head changed while replies were posted; refusing stale summary."; exit 1; }
-          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
 
       - name: Post the summary comment
         if: steps.gate.outputs.proceed == 'true' && success()

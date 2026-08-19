@@ -207,12 +207,7 @@ jobs:
 
       - name: Final Product CI gate — publish review
         if: steps.gate.outputs.proceed == 'true' && success()
-        run: |
-          set -euo pipefail
-          expected=$(cat "${RUNNER_TEMP}/review_head_sha.txt")
-          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
-          [ "$live" = "$expected" ] || { echo "PR head changed after the automated review; refusing stale publication."; exit 1; }
-          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/review_head_sha.txt"
 
       - name: Post the review (summary + inline comments)
         if: steps.gate.outputs.proceed == 'true' && success()
@@ -228,12 +223,7 @@ jobs:
 
       - name: Final Product CI gate — mark ready
         if: steps.gate.outputs.proceed == 'true' && success()
-        run: |
-          set -euo pipefail
-          expected=$(cat "${RUNNER_TEMP}/review_head_sha.txt")
-          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
-          [ "$live" = "$expected" ] || { echo "PR head changed after review publication; refusing ready transition."; exit 1; }
-          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/review_head_sha.txt"
 
       - name: Mark the PR ready for review
         if: steps.gate.outputs.proceed == 'true' && success()
@@ -260,8 +250,13 @@ jobs:
         run: |
           set -uo pipefail
           gh pr edit "$PR_NUMBER" --add-label "agent:blocked" || true
+          reason="(no reason file written — check the workflow logs)"
+          if [ -f "${RUNNER_TEMP}/failure_reason.txt" ]; then
+            reason=$(cat "${RUNNER_TEMP}/failure_reason.txt")
+          fi
           {
             printf '%s\n\n' '`agent:review` run failed — the PR was left as a draft.'
+            printf '**Reason:** %s\n\n' "$reason"
             printf '**Workflow run:** %s\n\n' "$RUN_URL"
             printf '%s\n' 'Clear `agent:blocked` and re-add `agent:review` to retry.'
           } > "${RUNNER_TEMP}/review_failed.md"

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
-import { writeHeadBoundJson } from "../head-bound-output";
+import { writeReviewOutput } from "../head-bound-output";
 import { parseDiffLines } from "../parse-diff-lines";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { loadProductivePrompt } from "../productive-prompt";
@@ -69,11 +69,9 @@ const { payload, inline, fixed, unresolved } = buildReviewPayload(
   result.output,
   changed,
 );
-writeHeadBoundJson({
+writeReviewOutput({
   outputDir: ctx.outputDir,
-  jsonFile: "review_payload.json",
-  value: payload,
-  headFile: "review_head_sha.txt",
+  payload,
   headSha: execFileSync("git", ["rev-parse", "HEAD"], {
     encoding: "utf8",
   }).trim(),

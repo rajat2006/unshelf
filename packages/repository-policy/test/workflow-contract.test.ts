@@ -134,7 +134,9 @@ describe("repository delivery workflows", () => {
     expect(workflow).toContain('.state == "OPEN"');
     expect(workflow).toContain(".isDraft == true");
     expect(workflow).toContain(".isCrossRepository == false");
+    expect(workflow).toContain(".author.login == $owner");
     expect(workflow).toContain(".baseRefName == $base");
+    expect(workflow).toContain("matching-refs/heads/${branch}");
     expect(workflow).toContain('git checkout -B "$BRANCH" "origin/$BRANCH"');
     expect(workflow).toContain("Reconcile the agent-owned draft PR");
   });
@@ -152,8 +154,11 @@ describe("repository delivery workflows", () => {
       prd.indexOf("Chain — re-label the PRD"),
     );
     expect(review).toContain("review_head_sha.txt");
+    expect(review).toContain("--expected-head-file");
+    expect(review).toContain("printf '**Reason:** %s\\n\\n' \"$reason\"");
     expect(review.match(/Final Product CI gate/g)).toHaveLength(2);
     expect(implementPr).toContain("implement_pr_head_sha.txt");
+    expect(implementPr).toContain("--expected-head-file");
     expect(implementPr).toContain("current_ids=$(gh api graphql");
     expect(
       implementPr.match(/product-ci-cli.ts final-gate/g)?.length,

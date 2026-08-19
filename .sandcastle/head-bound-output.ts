@@ -21,3 +21,39 @@ export function writeHeadBoundJson({
   );
   fs.writeFileSync(path.join(outputDir, headFile), `${headSha}\n`);
 }
+
+export function writeReviewOutput({
+  outputDir,
+  payload,
+  headSha,
+}: {
+  outputDir: string;
+  payload: unknown;
+  headSha: string;
+}) {
+  writeHeadBoundJson({
+    outputDir,
+    jsonFile: "review_payload.json",
+    value: payload,
+    headFile: "review_head_sha.txt",
+    headSha,
+  });
+}
+
+export function writeImplementPrOutput({
+  outputDir,
+  replies,
+  headSha,
+}: {
+  outputDir: string;
+  replies: unknown;
+  headSha: string;
+}) {
+  writeHeadBoundJson({
+    outputDir,
+    jsonFile: "thread_replies.json",
+    value: replies,
+    headFile: "implement_pr_head_sha.txt",
+    headSha,
+  });
+}

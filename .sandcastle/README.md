@@ -157,7 +157,8 @@ pinned Sandcastle version and Unshelf's provider set:
   fail-closed Product CI boundary. It reads the live PR, selects only the `CI`
   pull-request run associated with its exact head/base pair, requires the latest
   attempt's `Product` job to complete successfully, bounds diagnostics and
-  polling, revalidates reruns, and enforces the two-action recovery budget. The
+  polling, performs/account successful candidate pushes, revalidates reruns, and
+  enforces the two-action recovery budget. The
   GitHub dependency and polling clock are injectable for deterministic tests.
 - **`productive-prompt.ts` / `product-ci-prompt.md`** — composes the same Product
   CI publication/recovery contract exactly once into Implement, Implement PRD,

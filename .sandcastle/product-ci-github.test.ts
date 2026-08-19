@@ -3,13 +3,15 @@ import { GhProductCiGitHub } from "./product-ci-github";
 
 describe("GitHub Product CI adapter", () => {
   it("maps pull request, run, and Product-job API responses", async () => {
+    const headSha = "a".repeat(40);
+    const baseSha = "b".repeat(40);
     const responses = [
       JSON.stringify({
         number: 42,
         state: "open",
         draft: true,
-        head: { sha: "head", ref: "agent/issue-42", repo: { full_name: "o/r" } },
-        base: { sha: "base", ref: "dev", repo: { full_name: "o/r" } },
+        head: { sha: headSha, ref: "agent/issue-42", repo: { full_name: "o/r" } },
+        base: { sha: baseSha, ref: "dev", repo: { full_name: "o/r" } },
       }),
       JSON.stringify({
         workflow_runs: [{
@@ -19,12 +21,12 @@ describe("GitHub Product CI adapter", () => {
           event: "pull_request",
           status: "completed",
           conclusion: "success",
-          html_url: "run-url",
+          html_url: "https://github.test/runs/100",
           created_at: "2026-08-19T00:00:00Z",
-          pull_requests: [{ number: 42, head: { sha: "head" }, base: { sha: "base" } }],
+          pull_requests: [{ number: 42, head: { sha: headSha }, base: { sha: baseSha } }],
         }],
       }),
-      JSON.stringify({ jobs: [{ id: 200, name: "Product", status: "completed", conclusion: "success", html_url: "job-url" }] }),
+      JSON.stringify({ jobs: [{ id: 200, name: "Product", status: "completed", conclusion: "success", html_url: "https://github.test/jobs/200" }] }),
     ];
     const github = new GhProductCiGitHub({
       repository: "o/r",
@@ -32,8 +34,8 @@ describe("GitHub Product CI adapter", () => {
     });
 
     await expect(github.getPullRequest(42)).resolves.toMatchObject({
-      headSha: "head",
-      baseSha: "base",
+      headSha,
+      baseSha,
       repository: "o/r",
     });
     await expect(github.listWorkflowRuns()).resolves.toEqual([
@@ -51,5 +53,26 @@ describe("GitHub Product CI adapter", () => {
     });
 
     await expect(github.getPullRequest(42)).rejects.toThrow("Malformed GitHub");
+  });
+
+  it("rejects invalid run timestamps instead of accepting ambiguous ordering", async () => {
+    const github = new GhProductCiGitHub({
+      repository: "o/r",
+      execute: async () => JSON.stringify({
+        workflow_runs: [{
+          id: 100,
+          run_attempt: 1,
+          name: "CI",
+          event: "pull_request",
+          status: "completed",
+          conclusion: "success",
+          html_url: "https://github.test/runs/100",
+          created_at: "not-a-timestamp",
+          pull_requests: [],
+        }],
+      }),
+    });
+
+    await expect(github.listWorkflowRuns()).rejects.toThrow("Malformed GitHub");
   });
 });

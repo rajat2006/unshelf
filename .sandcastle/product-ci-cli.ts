@@ -1,9 +1,11 @@
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import {
   inspectProductCi,
-  recordRecoveryAction,
+  publishProductCiCandidate,
   requestProductCiRerun,
   waitForProductCi,
   type RecoveryState,
@@ -14,6 +16,7 @@ import { requireEnv } from "./require-env";
 const stateSchema = z.object({
   actions: z.array(z.enum(["repair-push", "rerun"])).max(2),
 });
+const execFileAsync = promisify(execFile);
 
 const [command, ...args] = process.argv.slice(2);
 const repository = requireEnv("GH_REPO");
@@ -27,7 +30,7 @@ switch (command) {
   case "inspect":
   case "final-gate": {
     const verdict = await inspectProductCi({ github, prNumber: numberArg("--pr") });
-    reportVerdict(verdict);
+    reportVerdict(verdict, optionalArg("--expected-head-file"));
     break;
   }
   case "wait": {
@@ -40,14 +43,22 @@ switch (command) {
     reportVerdict(verdict);
     break;
   }
-  case "record-repair-push": {
-    const result = recordRecoveryAction({
+  case "push": {
+    const mode = stringArg("--mode");
+    if (mode !== "initial" && mode !== "repair") {
+      fail("--mode must be initial or repair.");
+    }
+    const result = await publishProductCiCandidate({
+      branch: stringArg("--branch"),
+      mode,
       state: readState(),
-      action: "repair-push",
+      push: pushBranch,
     });
     if (!result.ok) fail(result.reason);
     writeState(result.state);
-    console.log(`Recorded repair push (${result.state.actions.length}/2 actions).`);
+    console.log(
+      `Published ${mode} candidate (${result.state.actions.length}/2 recovery actions).`,
+    );
     break;
   }
   case "rerun": {
@@ -65,7 +76,7 @@ switch (command) {
   default:
     fail(
       "Usage: product-ci-cli.ts inspect|wait|final-gate --pr N; " +
-        "rerun --pr N --run ID; or record-repair-push",
+        "rerun --pr N --run ID; or push --branch NAME --mode initial|repair",
     );
 }
 
@@ -76,6 +87,17 @@ function numberArg(name: string, fallback?: number) {
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) fail(`${name} must be a positive integer.`);
   return value;
+}
+
+function stringArg(name: string) {
+  const value = optionalArg(name);
+  if (!value) fail(`${name} is required.`);
+  return value;
+}
+
+function optionalArg(name: string) {
+  const index = args.indexOf(name);
+  return index === -1 ? undefined : args[index + 1];
 }
 
 function readState(): RecoveryState {
@@ -89,8 +111,19 @@ function writeState(state: RecoveryState) {
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
 }
 
-function reportVerdict(verdict: Awaited<ReturnType<typeof inspectProductCi>>) {
+function reportVerdict(
+  verdict: Awaited<ReturnType<typeof inspectProductCi>>,
+  expectedHeadFile?: string,
+) {
   if (verdict.ok) {
+    if (expectedHeadFile) {
+      const expected = fs.readFileSync(expectedHeadFile, "utf8").trim();
+      if (verdict.proof.headSha !== expected) {
+        fail(
+          `PR head ${verdict.proof.headSha} does not match the output-bound head ${expected}.`,
+        );
+      }
+    }
     console.log(
       `Product CI passed for PR #${verdict.proof.prNumber} at ` +
         `${verdict.proof.headSha}/${verdict.proof.baseSha} (${verdict.proof.runUrl}).`,
@@ -98,6 +131,14 @@ function reportVerdict(verdict: Awaited<ReturnType<typeof inspectProductCi>>) {
     return;
   }
   fail(`${verdict.reason}\n${verdict.diagnostics}`);
+}
+
+async function pushBranch(branch: string) {
+  await execFileAsync(
+    "git",
+    ["push", "origin", `HEAD:refs/heads/${branch}`],
+    { maxBuffer: 16 * 1024 * 1024 },
+  );
 }
 
 function fail(message: string): never {

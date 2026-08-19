@@ -39,6 +39,8 @@ Make one or more commits on `{{BRANCH}}` with conventional-commit messages
 
 Commit locally before entering the publication and Product CI phase below. Do
 not edit labels, comments, review state, or the issue, and do **not** close it.
+The draft PR body must contain `Closes #{{ISSUE_NUMBER}}` so a blocked retry can
+unambiguously resume the automation-owned PR.
 
 <!-- PRODUCT_CI_RECOVERY -->
 

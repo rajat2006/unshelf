@@ -9,6 +9,28 @@ import type {
 } from "./product-ci";
 
 const execFileAsync = promisify(execFile);
+const shaSchema = z.string().regex(/^[0-9a-f]{40}$/);
+const statusSchema = z.enum([
+  "requested",
+  "waiting",
+  "queued",
+  "pending",
+  "in_progress",
+  "completed",
+]);
+const conclusionSchema = z
+  .enum([
+    "action_required",
+    "cancelled",
+    "failure",
+    "neutral",
+    "skipped",
+    "stale",
+    "startup_failure",
+    "success",
+    "timed_out",
+  ])
+  .nullable();
 
 export type GhExecutor = (args: readonly string[]) => Promise<string>;
 
@@ -18,12 +40,12 @@ const pullRequestSchema = z.object({
   merged: z.boolean().optional(),
   draft: z.boolean(),
   head: z.object({
-    sha: z.string().min(1),
+    sha: shaSchema,
     ref: z.string().min(1),
     repo: z.object({ full_name: z.string().min(1) }),
   }),
   base: z.object({
-    sha: z.string().min(1),
+    sha: shaSchema,
     ref: z.string().min(1),
     repo: z.object({ full_name: z.string().min(1) }),
   }),
@@ -32,17 +54,17 @@ const pullRequestSchema = z.object({
 const runSchema = z.object({
   id: z.number().int().positive(),
   run_attempt: z.number().int().positive(),
-  name: z.string().min(1),
-  event: z.string().min(1),
-  status: z.string().min(1),
-  conclusion: z.string().nullable(),
-  html_url: z.string().min(1),
-  created_at: z.string().min(1),
+  name: z.literal("CI"),
+  event: z.literal("pull_request"),
+  status: statusSchema,
+  conclusion: conclusionSchema,
+  html_url: z.url(),
+  created_at: z.iso.datetime(),
   pull_requests: z.array(
     z.object({
       number: z.number().int().positive(),
-      head: z.object({ sha: z.string().min(1) }),
-      base: z.object({ sha: z.string().min(1) }),
+      head: z.object({ sha: shaSchema }),
+      base: z.object({ sha: shaSchema }),
     }),
   ),
 });
@@ -52,9 +74,9 @@ const runsSchema = z.object({ workflow_runs: z.array(runSchema) });
 const jobSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1),
-  status: z.string().min(1),
-  conclusion: z.string().nullable(),
-  html_url: z.string().min(1),
+  status: statusSchema,
+  conclusion: conclusionSchema,
+  html_url: z.url(),
 });
 
 const jobsSchema = z.object({ jobs: z.array(jobSchema) });

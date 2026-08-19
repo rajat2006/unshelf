@@ -60,6 +60,8 @@ closing the PRD is the merged PR's job.
 
 Commit locally before entering the publication and Product CI phase below. Do
 not edit labels or comments, and do not close the sub-issue or PRD.
+The draft PR body must contain `Closes #{{PRD_NUMBER}}`; it closes the PRD only
+when a human eventually merges it, never during this run.
 
 <!-- PRODUCT_CI_RECOVERY -->
 

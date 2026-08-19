@@ -1,8 +1,11 @@
 ## Product CI recovery contract
 
 After producing commits and passing the repository's local checks, publish the
-current automation branch with a plain, non-force push. Create or update only
-that branch's same-repository draft pull request against the stated base. Initial
+current automation branch only through
+`product-ci-cli.ts push --branch <branch> --mode initial`. Use `--mode repair` for
+every later pushed head. The CLI performs a plain, non-force push and accounts
+successful repair pushes. Create or update only that branch's same-repository
+draft pull request against the stated base. Initial
 branch publication and draft-PR creation consume no recovery action.
 
 Resolve the PR number after publication with `gh pr view --json number --jq .number`.
@@ -15,9 +18,8 @@ or unreadable evidence never counts as success. Polling must print progress.
 You may take at most two recovery actions in this active call. A successful push
 of one or more repair commits is one action; an accepted no-code rerun request is
 one action. Diagnosis, local edits, local checks, commits not yet pushed, initial
-publication, and draft-PR upsert consume zero. Record a repair push through the
-CLI immediately after it succeeds with `product-ci-cli.ts record-repair-push`;
-request reruns with `product-ci-cli.ts rerun --pr <number> --run <run-id>`. The
+publication, and draft-PR upsert consume zero. Never invoke `git push` directly.
+Request reruns with `product-ci-cli.ts rerun --pr <number> --run <run-id>`. The
 CLI revalidates the current PR/head/base before accepting one.
 
 Only repair failures plausibly introduced by this work and safely within its

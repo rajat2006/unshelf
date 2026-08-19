@@ -3,22 +3,23 @@ const PRODUCT_JOB = "Product";
 const MAX_DIAGNOSTIC_CHARACTERS = 8_000;
 export const MAX_RECOVERY_ACTIONS = 2;
 
-export interface ProductCiPullRequest {
+export interface ProductCiCandidate {
+  readonly headSha: string;
+  readonly baseSha: string;
+}
+
+export interface ProductCiPullRequest extends ProductCiCandidate {
   readonly number: number;
   readonly state: "OPEN" | "CLOSED" | "MERGED";
   readonly draft: boolean;
-  readonly headSha: string;
-  readonly baseSha: string;
   readonly headRef: string;
   readonly baseRef: string;
   readonly headRepository: string;
   readonly repository: string;
 }
 
-export interface ProductCiRunPullRequest {
+export interface ProductCiRunPullRequest extends ProductCiCandidate {
   readonly number: number;
-  readonly headSha: string;
-  readonly baseSha: string;
 }
 
 export interface ProductCiRun {
@@ -50,7 +51,7 @@ export interface ProductCiGitHub {
   rerunFailedJobs(runId: number): Promise<void>;
 }
 
-export interface ProductCiProof {
+export interface ProductCiProof extends ProductCiCandidate {
   readonly prNumber: number;
   readonly headSha: string;
   readonly baseSha: string;
@@ -112,7 +113,7 @@ export async function inspectProductCi({
     const runs = await github.listWorkflowRuns();
     const relevant = runs
       .filter((candidate) => isCurrentRun({ candidate, pullRequest }))
-      .sort(compareRunsNewestFirst);
+      .sort((left, right) => compareRunsNewestFirst({ left, right }));
     const current = relevant[0];
     if (!current) {
       return failure(
@@ -247,6 +248,32 @@ export function recordRecoveryAction({
   return { ok: true, state: { actions: [...state.actions, action] } };
 }
 
+export async function publishProductCiCandidate({
+  branch,
+  mode,
+  state,
+  push,
+}: {
+  branch: string;
+  mode: "initial" | "repair";
+  state: RecoveryState;
+  push: (branch: string) => Promise<unknown>;
+}): Promise<RecoveryResult> {
+  const accounted =
+    mode === "repair"
+      ? recordRecoveryAction({ state, action: "repair-push" })
+      : { ok: true as const, state };
+  if (!accounted.ok) return accounted;
+
+  try {
+    await push(branch);
+    return accounted;
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `Candidate push failed: ${detail}` };
+  }
+}
+
 export async function requestProductCiRerun({
   github,
   prNumber,
@@ -304,7 +331,13 @@ function isCurrentRun({
   );
 }
 
-function compareRunsNewestFirst(left: ProductCiRun, right: ProductCiRun) {
+function compareRunsNewestFirst({
+  left,
+  right,
+}: {
+  left: ProductCiRun;
+  right: ProductCiRun;
+}) {
   const byCreatedAt = Date.parse(right.createdAt) - Date.parse(left.createdAt);
   if (byCreatedAt !== 0) return byCreatedAt;
   if (right.attempt !== left.attempt) return right.attempt - left.attempt;
