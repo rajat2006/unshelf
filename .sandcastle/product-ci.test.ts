@@ -254,7 +254,8 @@ describe("Product CI polling and diagnostics", () => {
 
   it("times out without waiting on real time", async () => {
     const github = new FakeGitHub();
-    github.runs = [];
+    github.runs = [run({ status: "in_progress", conclusion: null })];
+    github.jobs.set(100, [job({ status: "in_progress", conclusion: null })]);
 
     const verdict = await waitForProductCi({
       github,
@@ -267,6 +268,9 @@ describe("Product CI polling and diagnostics", () => {
     });
 
     expect(verdict).toMatchObject({ ok: false, status: "timed-out" });
+    if (!verdict.ok) {
+      expect(verdict.diagnostics).toContain("https://github.test/runs/100");
+    }
   });
 });
 

@@ -416,7 +416,13 @@ function failure(
   reason: string,
   run?: ProductCiRun,
 ): ProductCiVerdict {
-  return { ok: false, status, error: reason, run, diagnostics: reason };
+  return {
+    ok: false,
+    status,
+    error: reason,
+    run,
+    diagnostics: [reason, run ? `Run: ${run.url}` : ""].filter(Boolean).join("\n"),
+  };
 }
 
 function defaultSleep(milliseconds: number) {

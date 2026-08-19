@@ -2,10 +2,33 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { requireEnv } from "./require-env";
-import { verifyUnresolvedThreadSet } from "./review-threads";
+import {
+  collectUnresolvedThreadIds,
+  verifyUnresolvedThreadSet,
+} from "./review-threads";
 
 const execFileAsync = promisify(execFile);
 const threadIdsSchema = z.array(z.string().min(1));
+const responseSchema = z.object({
+  data: z.object({
+    repository: z.object({
+      pullRequest: z.object({
+        reviewThreads: z.object({
+          nodes: z.array(
+            z.object({
+              id: z.string().min(1),
+              isResolved: z.boolean(),
+            }),
+          ),
+          pageInfo: z.object({
+            hasNextPage: z.boolean(),
+            endCursor: z.string().min(1).nullable(),
+          }),
+        }),
+      }),
+    }),
+  }),
+});
 const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
@@ -28,28 +51,37 @@ async function unresolvedThreadIds(prNumber: number) {
   const [owner, name] = repository.split("/");
   if (!owner || !name) fail("GH_REPO must be an owner/name repository.");
   const query = `
-    query($owner: String!, $name: String!, $pr: Int!) {
+    query($owner: String!, $name: String!, $pr: Int!, $after: String) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $pr) {
-          reviewThreads(first: 100) { nodes { id isResolved } }
+          reviewThreads(first: 100, after: $after) {
+            nodes { id isResolved }
+            pageInfo { hasNextPage endCursor }
+          }
         }
       }
     }`;
-  const { stdout } = await execFileAsync("gh", [
-    "api",
-    "graphql",
-    "-f",
-    `owner=${owner}`,
-    "-f",
-    `name=${name}`,
-    "-F",
-    `pr=${prNumber}`,
-    "-f",
-    `query=${query}`,
-    "--jq",
-    "[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .id]",
-  ]);
-  return threadIdsSchema.parse(JSON.parse(stdout));
+  const ids = await collectUnresolvedThreadIds({
+    loadPage: async (after) => {
+      const request = [
+        "api",
+        "graphql",
+        "-f",
+        `owner=${owner}`,
+        "-f",
+        `name=${name}`,
+        "-F",
+        `pr=${prNumber}`,
+        "-f",
+        `query=${query}`,
+      ];
+      if (after) request.push("-f", `after=${after}`);
+      const { stdout } = await execFileAsync("gh", request);
+      return responseSchema.parse(JSON.parse(stdout)).data.repository.pullRequest
+        .reviewThreads;
+    },
+  });
+  return threadIdsSchema.parse(ids);
 }
 
 function numberArg(name: string) {

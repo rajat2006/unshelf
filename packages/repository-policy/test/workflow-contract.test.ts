@@ -137,6 +137,8 @@ describe("repository delivery workflows", () => {
     expect(workflow).toContain(".author.login == $owner");
     expect(workflow).toContain(".baseRefName == $base");
     expect(workflow).toContain("matching-refs/heads/${branch}");
+    expect(workflow).toContain('if [ "$exact_ref" != "1" ]; then');
+    expect(workflow).toContain("head branch is absent");
     expect(workflow).toContain('git checkout -B "$BRANCH" "origin/$BRANCH"');
     expect(workflow).toContain("Reconcile the agent-owned draft PR");
   });
@@ -160,6 +162,10 @@ describe("repository delivery workflows", () => {
     expect(implementPr).toContain("implement_pr_head_sha.txt");
     expect(implementPr).toContain("--expected-head-file");
     expect(implementPr).toContain("review-threads-cli.ts snapshot");
+    expect(implementPr).toContain("--paginate --slurp");
+    expect(implementPr).toContain(
+      "reviewThreads(first: 100, after: $endCursor)",
+    );
     expect(
       implementPr.match(/review-threads-cli\.ts assert-current/g),
     ).toHaveLength(2);

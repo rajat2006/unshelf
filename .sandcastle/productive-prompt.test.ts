@@ -39,6 +39,8 @@ describe("productive prompt contract", () => {
     expect(implementPr.indexOf("Product CI recovery contract")).toBeLessThan(
       implementPr.indexOf("Re-check the green head"),
     );
+    expect(implementPr).toContain("--paginate --slurp");
+    expect(implementPr).toContain("after:$endCursor");
   });
 
   it("keeps Product CI recovery out of extraction and metadata prompts", () => {

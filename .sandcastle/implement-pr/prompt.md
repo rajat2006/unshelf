@@ -13,13 +13,15 @@ which is the only API that exposes each thread's `isResolved` state (the REST
 ```
 repo=$(gh repo view --json owner,name -q '.owner.login + " " + .name')
 set -- $repo   # $1=owner  $2=name
-gh api graphql -f owner="$1" -f name="$2" -F pr={{PR_NUMBER}} -f query='
-  query($owner:String!,$name:String!,$pr:Int!){
+gh api graphql --paginate --slurp \
+  -f owner="$1" -f name="$2" -F pr={{PR_NUMBER}} -f query='
+  query($owner:String!,$name:String!,$pr:Int!,$endCursor:String){
     repository(owner:$owner,name:$name){
       pullRequest(number:$pr){
-        reviewThreads(first:100){ nodes{
+        reviewThreads(first:100,after:$endCursor){ nodes{
           id isResolved isOutdated path line
-          comments(first:20){ nodes{ author{login} body } } } }
+          comments(first:20){ nodes{ author{login} body } } }
+          pageInfo{hasNextPage endCursor} }
         reviews(first:50){ nodes{ author{login} state body } } } } }'
 ```
 

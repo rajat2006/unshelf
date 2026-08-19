@@ -150,6 +150,15 @@ jobs:
             echo "existing_pr_url=multiple PRs for ${branch}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          refs=""
+          if ! refs=$(gh api "repos/${GH_REPO}/git/matching-refs/heads/${branch}" 2>/dev/null); then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exact_ref=$(echo "$refs" | jq --arg ref "refs/heads/$branch" '[.[] | select(.ref == $ref)] | length')
+
           if [ "$count" = "1" ]; then
             valid=$(echo "$candidates" | jq --arg base "$BASE_BRANCH" --arg branch "$branch" --arg issue "$ISSUE_NUMBER" --arg owner "$owner" '
               .[0] | select(.state == "OPEN" and .isDraft == true and .isCrossRepository == false and .baseRefName == $base and .headRefName == $branch and .author.login == $owner and (.body | test("(?i)(closes|fixes|resolves)\\s+#" + $issue + "\\b")))')
@@ -159,23 +168,20 @@ jobs:
               echo "existing_pr_url=$(echo "$candidates" | jq -r '.[0].url')" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            if [ "$exact_ref" != "1" ]; then
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+              echo "existing_pr_url=$(echo "$candidates" | jq -r '.[0].url') (head branch is absent)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             resume_pr=$(echo "$valid" | jq -r '.number')
             echo "resume_pr=$resume_pr" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$count" = "0" ]; then
-            refs=""
-            if ! refs=$(gh api "repos/${GH_REPO}/git/matching-refs/heads/${branch}" 2>/dev/null); then
-              echo "proceed=false" >> "$GITHUB_OUTPUT"
-              echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            exact_ref=$(echo "$refs" | jq --arg ref "refs/heads/$branch" '[.[] | select(.ref == $ref)] | length')
-            if [ "$exact_ref" != "0" ]; then
-              echo "proceed=false" >> "$GITHUB_OUTPUT"
-              echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
-              echo "existing_pr_url=remote branch ${branch} exists without its draft PR" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if [ "$count" = "0" ] && [ "$exact_ref" != "0" ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+            echo "existing_pr_url=remote branch ${branch} exists without its draft PR" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           targeting=$(gh pr list --state open --search "in:body \"#${ISSUE_NUMBER}\"" --json number,url,body \
             --jq "[.[] | select(.body | test(\"(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b\"))]")
