@@ -1,7 +1,7 @@
 import { SOURCE_INSPECTION_SOURCE_BYTE_LIMIT, Type } from "@unshelf/shared";
 import { isIP } from "node:net";
-import { classifySource } from "./classifier";
-import type { SourceInspectionTerminalCode } from "./service";
+import { classifySource } from "../classifier";
+import type { SourceInspectionTerminalCode } from "../service";
 import type { SourceInspectionReleaseObservation } from "./release-observation-runner";
 export {
   collectSourceInspectionReleaseObservations,
@@ -21,6 +21,68 @@ const sourceClasses = [
 ] as const;
 
 export type SourceInspectionReleaseClass = (typeof sourceClasses)[number];
+
+interface SourceInspectionReleaseClassPolicy {
+  readonly source:
+    | { readonly classification: "generic" }
+    | { readonly classification: "unsupported_youtube" }
+    | { readonly classification: "youtube"; readonly type: Type };
+  readonly expectation: {
+    readonly outcome: "suggested" | "unavailable";
+    readonly hasTitles: boolean;
+    readonly types: readonly Type[];
+  };
+}
+
+const sourceClassPolicies = {
+  generic_title_type: {
+    source: { classification: "generic" },
+    expectation: {
+      outcome: "suggested",
+      hasTitles: true,
+      types: [Type.Article, Type.Video, Type.Course, Type.Book],
+    },
+  },
+  generic_title_only: {
+    source: { classification: "generic" },
+    expectation: { outcome: "suggested", hasTitles: true, types: [] },
+  },
+  generic_manual_fallback: {
+    source: { classification: "generic" },
+    expectation: { outcome: "unavailable", hasTitles: false, types: [] },
+  },
+  youtube_video: {
+    source: { classification: "youtube", type: Type.Video },
+    expectation: {
+      outcome: "suggested",
+      hasTitles: true,
+      types: [Type.Video],
+    },
+  },
+  youtube_playlist: {
+    source: { classification: "youtube", type: Type.Playlist },
+    expectation: {
+      outcome: "suggested",
+      hasTitles: true,
+      types: [Type.Playlist],
+    },
+  },
+  youtube_community_post: {
+    source: { classification: "youtube", type: Type.Other },
+    expectation: {
+      outcome: "suggested",
+      hasTitles: false,
+      types: [Type.Other],
+    },
+  },
+  youtube_unresolved: {
+    source: { classification: "unsupported_youtube" },
+    expectation: { outcome: "unavailable", hasTitles: false, types: [] },
+  },
+} satisfies Record<
+  SourceInspectionReleaseClass,
+  SourceInspectionReleaseClassPolicy
+>;
 
 const fallbackReasons = [
   "blocked_origin",
@@ -509,63 +571,37 @@ function timeoutGates(
   );
 }
 
-function exactGate({
-  id,
-  actual,
-  threshold,
-  failureStatus = "failed",
-}: {
+interface ReleaseGateInput {
   readonly id: string;
   readonly actual: number;
   readonly threshold: number;
   readonly failureStatus?: "failed" | "disable_oembed";
-}): SourceInspectionReleaseGate {
-  return {
-    id,
-    status: actual === threshold ? "passed" : failureStatus,
-    actual,
-    threshold,
-    comparison: "exactly",
-  };
 }
 
-function atLeastGate({
-  id,
-  actual,
-  threshold,
-  failureStatus = "failed",
-}: {
-  readonly id: string;
-  readonly actual: number;
-  readonly threshold: number;
-  readonly failureStatus?: "failed" | "disable_oembed";
-}): SourceInspectionReleaseGate {
-  return {
-    id,
-    status: actual >= threshold ? "passed" : failureStatus,
-    actual,
-    threshold,
-    comparison: "at_least",
-  };
-}
+const exactGate = createGate("exactly");
+const atLeastGate = createGate("at_least");
+const atMostGate = createGate("at_most");
 
-function atMostGate({
-  id,
-  actual,
-  threshold,
-  failureStatus = "failed",
-}: {
-  readonly id: string;
-  readonly actual: number;
-  readonly threshold: number;
-  readonly failureStatus?: "failed" | "disable_oembed";
-}): SourceInspectionReleaseGate {
-  return {
+function createGate(comparison: SourceInspectionReleaseGate["comparison"]) {
+  return ({
     id,
-    status: actual <= threshold ? "passed" : failureStatus,
     actual,
     threshold,
-    comparison: "at_most",
+    failureStatus = "failed",
+  }: ReleaseGateInput): SourceInspectionReleaseGate => {
+    const passed =
+      comparison === "exactly"
+        ? actual === threshold
+        : comparison === "at_least"
+          ? actual >= threshold
+          : actual <= threshold;
+    return {
+      id,
+      status: passed ? "passed" : failureStatus,
+      actual,
+      threshold,
+      comparison,
+    };
   };
 }
 
@@ -748,28 +784,14 @@ function expectationMatchesClass({
   readonly hasTitles: boolean;
   readonly type: unknown;
 }): boolean {
-  switch (sourceClass) {
-    case "generic_title_type":
-      return (
-        outcome === "suggested" &&
-        hasTitles &&
-        (type === Type.Article ||
-          type === Type.Video ||
-          type === Type.Course ||
-          type === Type.Book)
-      );
-    case "generic_title_only":
-      return outcome === "suggested" && hasTitles && type === undefined;
-    case "generic_manual_fallback":
-    case "youtube_unresolved":
-      return outcome === "unavailable" && !hasTitles && type === undefined;
-    case "youtube_video":
-      return outcome === "suggested" && hasTitles && type === Type.Video;
-    case "youtube_playlist":
-      return outcome === "suggested" && hasTitles && type === Type.Playlist;
-    case "youtube_community_post":
-      return outcome === "suggested" && !hasTitles && type === Type.Other;
-  }
+  const expectation = sourceClassPolicies[sourceClass].expectation;
+  return (
+    outcome === expectation.outcome &&
+    hasTitles === expectation.hasTitles &&
+    (expectation.types.length === 0
+      ? type === undefined
+      : expectation.types.some((expectedType) => expectedType === type))
+  );
 }
 
 function validateDistribution({
@@ -881,29 +903,13 @@ function sourceMatchesClass({
   readonly sourceClass: SourceInspectionReleaseClass;
 }): boolean {
   const classification = classifySource(source);
-  switch (sourceClass) {
-    case "generic_title_type":
-    case "generic_title_only":
-    case "generic_manual_fallback":
-      return classification.classification === "generic";
-    case "youtube_video":
-      return (
-        classification.classification === "youtube" &&
-        classification.type === Type.Video
-      );
-    case "youtube_playlist":
-      return (
-        classification.classification === "youtube" &&
-        classification.type === Type.Playlist
-      );
-    case "youtube_community_post":
-      return (
-        classification.classification === "youtube" &&
-        classification.type === Type.Other
-      );
-    case "youtube_unresolved":
-      return classification.classification === "unsupported_youtube";
-  }
+  const expected = sourceClassPolicies[sourceClass].source;
+  return (
+    classification.classification === expected.classification &&
+    (expected.classification !== "youtube" ||
+      (classification.classification === "youtube" &&
+        classification.type === expected.type))
+  );
 }
 
 function isSourceClass(value: unknown): value is SourceInspectionReleaseClass {

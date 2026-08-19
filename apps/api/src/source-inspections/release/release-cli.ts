@@ -4,18 +4,18 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { UserId } from "@unshelf/shared";
-import { createGenericSourceInspector } from "./generic-inspector";
-import { createGuardedPublicTransport } from "./guarded-transport";
+import { createGenericSourceInspector } from "../generic-inspector";
+import { createGuardedPublicTransport } from "../guarded-transport";
 import {
   createNodeConnectionTransport,
   createNodeHostResolver,
-} from "./node-network";
+} from "../node-network";
 import { runSourceInspectionReleaseCommand } from "./release-command";
 import {
   createSourceInspectionService,
   parseSourceInspectionDeniedHostnames,
-} from "./service";
-import { createYouTubeTitleInspector } from "./youtube-title-inspector";
+} from "../service";
+import { createYouTubeTitleInspector } from "../youtube-title-inspector";
 
 const transport = createGuardedPublicTransport({
   resolver: createNodeHostResolver(),

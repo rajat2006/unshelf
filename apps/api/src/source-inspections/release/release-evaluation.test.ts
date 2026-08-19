@@ -7,7 +7,7 @@ import {
   type SourceInspectionReleaseCase,
   type SourceInspectionReleaseObservation,
 } from "./release-evaluation";
-import type { SourceInspectionCompletion } from "./service";
+import type { SourceInspectionCompletion } from "../service";
 import { runSourceInspectionReleaseCommand } from "./release-command";
 
 describe("Source inspection release manifest", () => {

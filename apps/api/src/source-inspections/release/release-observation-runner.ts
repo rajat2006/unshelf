@@ -7,7 +7,7 @@ import type {
   SourceInspectionCompletion,
   SourceInspectionServiceResult,
   SourceInspectionTerminalCode,
-} from "./service";
+} from "../service";
 
 export interface SourceInspectionReleaseObservation {
   readonly caseId: string;
