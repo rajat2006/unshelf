@@ -285,23 +285,16 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
-          owner="${GH_REPO%/*}"
-          repo="${GH_REPO#*/}"
-          threads=$(gh api graphql -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
-            query($owner: String!, $name: String!, $pr: Int!) {
-              repository(owner: $owner, name: $name) {
-                pullRequest(number: $pr) {
-                  reviewThreads(first: 100) { nodes { id isResolved } }
-                } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes')
-          echo "valid_thread_ids=$(echo "$threads" | jq -c '[.[] | select(.isResolved == false) | .id]')" >> "$GITHUB_OUTPUT"
+          valid_thread_ids=$(pnpm --dir .sandcastle exec tsx review-threads-cli.ts snapshot --pr "$PR_NUMBER")
+          echo "valid_thread_ids=$valid_thread_ids" >> "$GITHUB_OUTPUT"
 
       - name: Reply on answered threads
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           # Allowlist of review-thread node IDs that actually exist on THIS PR,
           # fetched by the gate. Every agent-provided threadId is checked against
-          # it before any mutation, so a hallucinated or cross-PR id can't reply to
-          # an unrelated thread (the agent's output is untrusted input here).
+        # it before any mutation, so a concurrent thread-set change or a
+        # hallucinated/cross-PR id fails closed (agent output is untrusted input).
           VALID_THREAD_IDS: ${{ steps.publish_gate.outputs.valid_thread_ids }}
         # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
         # answered review thread. Reply on each thread whose id is on this PR. We
@@ -309,8 +302,7 @@ jobs:
         # (matching CVM, which only replies). A validated id that FAILS to post is
         # a real delivery error (auth/API), not an expected skip — we attempt every
         # thread, then fail the step so the run lands in agent:blocked rather than
-        # silently dropping the conversational output and reporting success. An id
-        # that isn't on this PR's unresolved threads is skipped, not a failure.
+        # silently dropping conversational output or publishing against stale state.
         run: |
           set -uo pipefail
           file="${RUNNER_TEMP}/thread_replies.json"
@@ -323,18 +315,15 @@ jobs:
           for i in $(seq 0 $((count - 1))); do
             tid=$(jq -r ".[$i].threadId" "$file")
             body=$(jq -r ".[$i].body" "$file")
-            owner="${GH_REPO%/*}"
-            repo="${GH_REPO#*/}"
-            current_ids=$(gh api graphql -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
-              query($owner: String!, $name: String!, $pr: Int!) {
-                repository(owner: $owner, name: $name) {
-                  pullRequest(number: $pr) {
-                    reviewThreads(first: 100) { nodes { id isResolved } }
-                  } } }' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .id]')
-            if ! echo "$VALID_THREAD_IDS" | jq -e --arg t "$tid" 'index($t)' >/dev/null ||
-               ! echo "$current_ids" | jq -e --arg t "$tid" 'index($t)' >/dev/null; then
-              echo "threadId $tid is not an unresolved review thread on this PR — skipping (possible hallucinated, cross-PR, or already-resolved id)."
-              continue
+            if ! echo "$VALID_THREAD_IDS" | jq -e --arg t "$tid" 'index($t)' >/dev/null; then
+              echo "threadId $tid was not in the inspected unresolved-thread set."
+              failed=$((failed + 1))
+              break
+            fi
+            if ! pnpm --dir .sandcastle exec tsx review-threads-cli.ts assert-current --pr "$PR_NUMBER" --expected "$VALID_THREAD_IDS"; then
+              echo "The unresolved review-thread set changed before reply on $tid."
+              failed=$((failed + 1))
+              break
             fi
             # Each reply is its own protected mutation, so refresh exact-candidate
             # proof immediately before posting it.
@@ -358,7 +347,11 @@ jobs:
 
       - name: Final Product CI gate — publish feedback summary
         if: steps.gate.outputs.proceed == 'true' && success()
-        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
+        env:
+          VALID_THREAD_IDS: ${{ steps.publish_gate.outputs.valid_thread_ids }}
+        run: |
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
+          pnpm --dir .sandcastle exec tsx review-threads-cli.ts assert-current --pr "$PR_NUMBER" --expected "$VALID_THREAD_IDS"
 
       - name: Post the summary comment
         if: steps.gate.outputs.proceed == 'true' && success()

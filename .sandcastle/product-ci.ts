@@ -2,6 +2,27 @@ const PRODUCT_WORKFLOW = "CI";
 const PRODUCT_JOB = "Product";
 const MAX_DIAGNOSTIC_CHARACTERS = 8_000;
 export const MAX_RECOVERY_ACTIONS = 2;
+export const PRODUCT_CI_STATUSES = [
+  "requested",
+  "waiting",
+  "queued",
+  "pending",
+  "in_progress",
+  "completed",
+] as const;
+export const PRODUCT_CI_CONCLUSIONS = [
+  "action_required",
+  "cancelled",
+  "failure",
+  "neutral",
+  "skipped",
+  "stale",
+  "startup_failure",
+  "success",
+  "timed_out",
+] as const;
+export type ProductCiStatus = (typeof PRODUCT_CI_STATUSES)[number];
+export type ProductCiConclusion = (typeof PRODUCT_CI_CONCLUSIONS)[number] | null;
 
 export interface ProductCiCandidate {
   readonly headSha: string;
@@ -27,8 +48,8 @@ export interface ProductCiRun {
   readonly attempt: number;
   readonly workflowName: string;
   readonly event: string;
-  readonly status: string;
-  readonly conclusion: string | null;
+  readonly status: ProductCiStatus;
+  readonly conclusion: ProductCiConclusion;
   readonly url: string;
   readonly createdAt: string;
   readonly pullRequests: readonly ProductCiRunPullRequest[];
@@ -37,8 +58,8 @@ export interface ProductCiRun {
 export interface ProductCiJob {
   readonly id: number;
   readonly name: string;
-  readonly status: string;
-  readonly conclusion: string | null;
+  readonly status: ProductCiStatus;
+  readonly conclusion: ProductCiConclusion;
   readonly url: string;
 }
 
@@ -53,8 +74,6 @@ export interface ProductCiGitHub {
 
 export interface ProductCiProof extends ProductCiCandidate {
   readonly prNumber: number;
-  readonly headSha: string;
-  readonly baseSha: string;
   readonly runId: number;
   readonly runAttempt: number;
   readonly runUrl: string;
@@ -75,7 +94,7 @@ export type ProductCiVerdict =
   | {
       readonly ok: false;
       readonly status: ProductCiFailureStatus;
-      readonly reason: string;
+      readonly error: string;
       readonly run?: ProductCiRun;
       readonly diagnostics: string;
     };
@@ -84,11 +103,13 @@ export type RecoveryAction = "repair-push" | "rerun";
 
 export interface RecoveryState {
   readonly actions: readonly RecoveryAction[];
+  readonly branch?: string;
+  readonly publishedHeadSha?: string;
 }
 
 export type RecoveryResult =
   | { readonly ok: true; readonly state: RecoveryState }
-  | { readonly ok: false; readonly reason: string };
+  | { readonly ok: false; readonly error: string };
 
 export async function inspectProductCi({
   github,
@@ -113,7 +134,7 @@ export async function inspectProductCi({
     const runs = await github.listWorkflowRuns();
     const relevant = runs
       .filter((candidate) => isCurrentRun({ candidate, pullRequest }))
-      .sort((left, right) => compareRunsNewestFirst({ left, right }));
+      .sort(compareRunsNewestFirst);
     const current = relevant[0];
     if (!current) {
       return failure(
@@ -227,7 +248,7 @@ export async function waitForProductCi({
 
   return failure(
     "timed-out",
-    `Timed out waiting for Product CI on PR #${prNumber}. Last state: ${last.reason}`,
+    `Timed out waiting for Product CI on PR #${prNumber}. Last state: ${last.error}`,
     last.ok ? undefined : last.run,
   );
 }
@@ -242,35 +263,55 @@ export function recordRecoveryAction({
   if (state.actions.length >= MAX_RECOVERY_ACTIONS) {
     return {
       ok: false,
-      reason: "The two permitted Product CI recovery actions are already exhausted.",
+      error: "The two permitted Product CI recovery actions are already exhausted.",
     };
   }
-  return { ok: true, state: { actions: [...state.actions, action] } };
+  return {
+    ok: true,
+    state: { ...state, actions: [...state.actions, action] },
+  };
 }
 
 export async function publishProductCiCandidate({
   branch,
-  mode,
+  expectedBranch,
+  headSha,
   state,
   push,
 }: {
   branch: string;
-  mode: "initial" | "repair";
+  expectedBranch: string;
+  headSha: string;
   state: RecoveryState;
   push: (branch: string) => Promise<unknown>;
 }): Promise<RecoveryResult> {
-  const accounted =
-    mode === "repair"
+  if (branch !== expectedBranch || (state.branch && state.branch !== branch)) {
+    return {
+      ok: false,
+      error: "Candidate pushes are restricted to the current automation branch.",
+    };
+  }
+
+  const isRepair =
+    state.publishedHeadSha !== undefined && state.publishedHeadSha !== headSha;
+  const accounted = isRepair
       ? recordRecoveryAction({ state, action: "repair-push" })
       : { ok: true as const, state };
   if (!accounted.ok) return accounted;
 
   try {
     await push(branch);
-    return accounted;
+    return {
+      ok: true,
+      state: {
+        ...accounted.state,
+        branch,
+        publishedHeadSha: headSha,
+      },
+    };
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { ok: false, reason: `Candidate push failed: ${detail}` };
+    return { ok: false, error: `Candidate push failed: ${detail}` };
   }
 }
 
@@ -296,7 +337,7 @@ export async function requestProductCiRerun({
   ) {
     return {
       ok: false,
-      reason:
+      error:
         "The requested run is not the current failed Product CI candidate; refusing to rerun stale evidence.",
     };
   }
@@ -306,7 +347,7 @@ export async function requestProductCiRerun({
     return accounted;
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { ok: false, reason: `GitHub rejected the Product CI rerun: ${detail}` };
+    return { ok: false, error: `GitHub rejected the Product CI rerun: ${detail}` };
   }
 }
 
@@ -331,13 +372,9 @@ function isCurrentRun({
   );
 }
 
-function compareRunsNewestFirst({
-  left,
-  right,
-}: {
-  left: ProductCiRun;
-  right: ProductCiRun;
-}) {
+function compareRunsNewestFirst(
+  ...[left, right]: [ProductCiRun, ProductCiRun]
+) {
   const byCreatedAt = Date.parse(right.createdAt) - Date.parse(left.createdAt);
   if (byCreatedAt !== 0) return byCreatedAt;
   if (right.attempt !== left.attempt) return right.attempt - left.attempt;
@@ -371,7 +408,7 @@ async function failureWithDiagnostics({
   ]
     .filter(Boolean)
     .join("\n");
-  return { ok: false, status, reason, run, diagnostics };
+  return { ok: false, status, error: reason, run, diagnostics };
 }
 
 function failure(
@@ -379,7 +416,7 @@ function failure(
   reason: string,
   run?: ProductCiRun,
 ): ProductCiVerdict {
-  return { ok: false, status, reason, run, diagnostics: reason };
+  return { ok: false, status, error: reason, run, diagnostics: reason };
 }
 
 function defaultSleep(milliseconds: number) {

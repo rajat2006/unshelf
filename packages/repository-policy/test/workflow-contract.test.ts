@@ -159,7 +159,10 @@ describe("repository delivery workflows", () => {
     expect(review.match(/Final Product CI gate/g)).toHaveLength(2);
     expect(implementPr).toContain("implement_pr_head_sha.txt");
     expect(implementPr).toContain("--expected-head-file");
-    expect(implementPr).toContain("current_ids=$(gh api graphql");
+    expect(implementPr).toContain("review-threads-cli.ts snapshot");
+    expect(
+      implementPr.match(/review-threads-cli\.ts assert-current/g),
+    ).toHaveLength(2);
     expect(
       implementPr.match(/product-ci-cli.ts final-gate/g)?.length,
     ).toBeGreaterThanOrEqual(3);

@@ -7,30 +7,12 @@ import type {
   ProductCiPullRequest,
   ProductCiRun,
 } from "./product-ci";
+import { PRODUCT_CI_CONCLUSIONS, PRODUCT_CI_STATUSES } from "./product-ci";
 
 const execFileAsync = promisify(execFile);
 const shaSchema = z.string().regex(/^[0-9a-f]{40}$/);
-const statusSchema = z.enum([
-  "requested",
-  "waiting",
-  "queued",
-  "pending",
-  "in_progress",
-  "completed",
-]);
-const conclusionSchema = z
-  .enum([
-    "action_required",
-    "cancelled",
-    "failure",
-    "neutral",
-    "skipped",
-    "stale",
-    "startup_failure",
-    "success",
-    "timed_out",
-  ])
-  .nullable();
+const statusSchema = z.enum(PRODUCT_CI_STATUSES);
+const conclusionSchema = z.enum(PRODUCT_CI_CONCLUSIONS).nullable();
 
 export type GhExecutor = (args: readonly string[]) => Promise<string>;
 

@@ -1,11 +1,12 @@
 ## Product CI recovery contract
 
 After producing commits and passing the repository's local checks, publish the
-current automation branch only through
-`product-ci-cli.ts push --branch <branch> --mode initial`. Use `--mode repair` for
-every later pushed head. The CLI performs a plain, non-force push and accounts
-successful repair pushes. Create or update only that branch's same-repository
-draft pull request against the stated base. Initial
+current automation branch only through `product-ci-cli.ts push` with the
+workflow's `BRANCH` environment variable intact. Never override `BRANCH`: the
+CLI binds the push to that automation branch, recognizes the initial head itself,
+performs a plain non-force push, and accounts successful repair pushes. Create or
+update only that branch's same-repository draft pull request against the stated
+base. Initial
 branch publication and draft-PR creation consume no recovery action.
 
 Resolve the PR number after publication with `gh pr view --json number --jq .number`.

@@ -15,6 +15,8 @@ import { requireEnv } from "./require-env";
 
 const stateSchema = z.object({
   actions: z.array(z.enum(["repair-push", "rerun"])).max(2),
+  branch: z.string().min(1).optional(),
+  publishedHeadSha: z.string().min(1).optional(),
 });
 const execFileAsync = promisify(execFile);
 
@@ -44,20 +46,18 @@ switch (command) {
     break;
   }
   case "push": {
-    const mode = stringArg("--mode");
-    if (mode !== "initial" && mode !== "repair") {
-      fail("--mode must be initial or repair.");
-    }
+    const branch = requireEnv("BRANCH");
     const result = await publishProductCiCandidate({
-      branch: stringArg("--branch"),
-      mode,
+      branch,
+      expectedBranch: branch,
+      headSha: await currentHeadSha(),
       state: readState(),
       push: pushBranch,
     });
-    if (!result.ok) fail(result.reason);
+    if (!result.ok) fail(result.error);
     writeState(result.state);
     console.log(
-      `Published ${mode} candidate (${result.state.actions.length}/2 recovery actions).`,
+      `Published candidate (${result.state.actions.length}/2 recovery actions).`,
     );
     break;
   }
@@ -68,15 +68,15 @@ switch (command) {
       runId: numberArg("--run"),
       state: readState(),
     });
-    if (!result.ok) fail(result.reason);
+    if (!result.ok) fail(result.error);
     writeState(result.state);
     console.log(`Accepted Product CI rerun (${result.state.actions.length}/2 actions).`);
     break;
   }
   default:
     fail(
-      "Usage: product-ci-cli.ts inspect|wait|final-gate --pr N; " +
-        "rerun --pr N --run ID; or push --branch NAME --mode initial|repair",
+        "Usage: product-ci-cli.ts inspect|wait|final-gate --pr N; " +
+        "rerun --pr N --run ID; or push (with BRANCH set)",
     );
 }
 
@@ -86,12 +86,6 @@ function numberArg(name: string, fallback?: number) {
   if (raw === undefined && fallback !== undefined) return fallback;
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) fail(`${name} must be a positive integer.`);
-  return value;
-}
-
-function stringArg(name: string) {
-  const value = optionalArg(name);
-  if (!value) fail(`${name} is required.`);
   return value;
 }
 
@@ -130,7 +124,12 @@ function reportVerdict(
     );
     return;
   }
-  fail(`${verdict.reason}\n${verdict.diagnostics}`);
+  fail(`${verdict.error}\n${verdict.diagnostics}`);
+}
+
+async function currentHeadSha() {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"]);
+  return stdout.trim();
 }
 
 async function pushBranch(branch: string) {

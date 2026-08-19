@@ -52,6 +52,11 @@ function job(overrides: Partial<ProductCiJob> = {}): ProductCiJob {
   };
 }
 
+function advancingClock(step = 10) {
+  let time = 0;
+  return () => (time += step);
+}
+
 class FakeGitHub implements ProductCiGitHub {
   pullRequests: ProductCiPullRequest[] = [pullRequest];
   runs: ProductCiRun[] = [run()];
@@ -222,10 +227,7 @@ describe("Product CI polling and diagnostics", () => {
       prNumber: 42,
       timeoutMs: 1_000,
       pollIntervalMs: 10,
-      now: (() => {
-        let time = 0;
-        return () => (time += 10);
-      })(),
+      now: advancingClock(),
       sleep,
       progress,
     });
@@ -259,10 +261,7 @@ describe("Product CI polling and diagnostics", () => {
       prNumber: 42,
       timeoutMs: 20,
       pollIntervalMs: 10,
-      now: (() => {
-        let time = 0;
-        return () => (time += 10);
-      })(),
+      now: advancingClock(),
       sleep: async () => undefined,
       progress: () => undefined,
     });
@@ -276,22 +275,38 @@ describe("Product CI recovery budget", () => {
     const pushes: string[] = [];
     const initial = await publishProductCiCandidate({
       branch: "agent/issue-42-example",
-      mode: "initial",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "initial-head",
       state: { actions: [] },
       push: async (branch) => pushes.push(branch),
     });
-    expect(initial).toEqual({ ok: true, state: { actions: [] } });
+    expect(initial).toEqual({
+      ok: true,
+      state: {
+        actions: [],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "initial-head",
+      },
+    });
 
     const github = new FakeGitHub();
     github.runs = [run({ conclusion: "failure" })];
     github.jobs.set(100, [job({ conclusion: "failure" })]);
     const repair = await publishProductCiCandidate({
       branch: "agent/issue-42-example",
-      mode: "repair",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "repair-head",
       state: initial.ok ? initial.state : { actions: [] },
       push: async (branch) => pushes.push(branch),
     });
-    expect(repair).toEqual({ ok: true, state: { actions: ["repair-push"] } });
+    expect(repair).toEqual({
+      ok: true,
+      state: {
+        actions: ["repair-push"],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "repair-head",
+      },
+    });
 
     const rerun = await requestProductCiRerun({
       github,
@@ -302,7 +317,11 @@ describe("Product CI recovery budget", () => {
 
     expect(rerun).toEqual({
       ok: true,
-      state: { actions: ["repair-push", "rerun"] },
+      state: {
+        actions: ["repair-push", "rerun"],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "repair-head",
+      },
     });
     expect(pushes).toEqual([
       "agent/issue-42-example",
@@ -314,8 +333,13 @@ describe("Product CI recovery budget", () => {
   it("does not consume a recovery action when a repair push fails", async () => {
     const result = await publishProductCiCandidate({
       branch: "agent/issue-42-example",
-      mode: "repair",
-      state: { actions: [] },
+      expectedBranch: "agent/issue-42-example",
+      headSha: "repair-head",
+      state: {
+        actions: [],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "initial-head",
+      },
       push: async () => {
         throw new Error("non-fast-forward");
       },
@@ -323,16 +347,43 @@ describe("Product CI recovery budget", () => {
 
     expect(result).toEqual({
       ok: false,
-      reason: "Candidate push failed: non-fast-forward",
+      error: "Candidate push failed: non-fast-forward",
     });
   });
 
-  it("refuses a third repair push before mutating the branch", async () => {
+  it("derives repair status from the published head instead of trusting a caller", async () => {
+    const firstRepair = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "repair-one",
+      state: {
+        actions: [],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "initial-head",
+      },
+      push: async () => undefined,
+    });
+    const secondRepair = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "repair-two",
+      state: firstRepair.ok ? firstRepair.state : { actions: [] },
+      push: async () => undefined,
+    });
+
+    expect(secondRepair).toMatchObject({
+      ok: true,
+      state: { actions: ["repair-push", "repair-push"] },
+    });
+  });
+
+  it("refuses to publish to a branch other than the automation branch", async () => {
     let pushed = false;
     const result = await publishProductCiCandidate({
-      branch: "agent/issue-42-example",
-      mode: "repair",
-      state: { actions: ["repair-push", "rerun"] },
+      branch: "agent/issue-99-other",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "head",
+      state: { actions: [] },
       push: async () => {
         pushed = true;
       },
@@ -340,7 +391,30 @@ describe("Product CI recovery budget", () => {
 
     expect(result).toMatchObject({
       ok: false,
-      reason: expect.stringContaining("two"),
+      error: expect.stringContaining("automation branch"),
+    });
+    expect(pushed).toBe(false);
+  });
+
+  it("refuses a third repair push before mutating the branch", async () => {
+    let pushed = false;
+    const result = await publishProductCiCandidate({
+      branch: "agent/issue-42-example",
+      expectedBranch: "agent/issue-42-example",
+      headSha: "repair-three",
+      state: {
+        actions: ["repair-push", "rerun"],
+        branch: "agent/issue-42-example",
+        publishedHeadSha: "repair-two",
+      },
+      push: async () => {
+        pushed = true;
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("two"),
     });
     expect(pushed).toBe(false);
   });
@@ -357,7 +431,7 @@ describe("Product CI recovery budget", () => {
       state: { actions: ["repair-push", "rerun"] },
     });
 
-    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("two") });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("two") });
     expect(github.rerunIds).toEqual([]);
   });
 
@@ -374,7 +448,7 @@ describe("Product CI recovery budget", () => {
       state: { actions: [] },
     });
 
-    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("current") });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("current") });
     expect(github.rerunIds).toEqual([]);
   });
 });
