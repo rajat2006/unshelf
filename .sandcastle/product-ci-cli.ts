@@ -46,10 +46,11 @@ switch (command) {
     break;
   }
   case "push": {
-    const branch = requireEnv("BRANCH");
+    const expectedBranch = requireEnv("BRANCH");
+    const branch = await currentBranchName();
     const result = await publishProductCiCandidate({
       branch,
-      expectedBranch: branch,
+      expectedBranch,
       headSha: await currentHeadSha(),
       state: readState(),
       push: pushBranch,
@@ -130,6 +131,13 @@ function reportVerdict(
 async function currentHeadSha() {
   const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"]);
   return stdout.trim();
+}
+
+async function currentBranchName() {
+  const { stdout } = await execFileAsync("git", ["branch", "--show-current"]);
+  const branch = stdout.trim();
+  if (!branch) fail("Candidate publication requires a checked-out branch.");
+  return branch;
 }
 
 async function pushBranch(branch: string) {
