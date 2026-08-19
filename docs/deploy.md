@@ -49,12 +49,44 @@ The web publishable key is compiled into each environment-specific web image.
 There is no frontend build argument at runtime and no artifact promotion between
 channels.
 
-Source inspection has stricter sensitive-request, admission, and incident rules
-than ordinary API traffic. Follow the maintained
-[Source inspection operations runbook](source-inspection-operations.md) when
-configuring or responding to that boundary, and the
-[release qualification runbook](source-inspection-release.md) for default-off
-rollout and private-corpus evaluation.
+Source inspection has stricter sensitive-request and incident rules than
+ordinary API traffic. Use the controls below when configuring or responding to
+that boundary, and the [release qualification runbook](source-inspection-release.md)
+for default-off rollout and private-corpus evaluation.
+
+## Source inspection controls and recovery
+
+The API reads all three Source inspection controls at process start. Apply a
+change by restarting or redeploying the API.
+
+- `SOURCE_INSPECTION_DISABLED=true` returns manual fallback without calling an
+  inspection adapter. Compose defaults to this safe state; only explicit
+  `false` enables inspection.
+- `SOURCE_INSPECTION_YOUTUBE_OEMBED_DISABLED=true` keeps local YouTube Type
+  classification but skips title acquisition. Keep it enabled until the
+  separate oEmbed gate and risk acceptance pass.
+- `SOURCE_INSPECTION_DENIED_HOSTNAMES` is a comma-separated exact-host deny list.
+  Matching is case-insensitive and ignores one terminal DNS dot; wildcards and
+  suffix rules are not supported. Never put a full Source or query string here.
+
+Treat every Source as sensitive. Never put a Source, hostname, query, redirect,
+response content, resolved address, suggested value, or reversible hostname
+fingerprint in logs, metrics, traces, alerts, or incident notes. Operational
+records may use only the implementation's allowlisted strategy, terminal code,
+timing, bounded count buckets, and suggested-field booleans.
+
+For a safety or policy incident:
+
+1. Disable only oEmbed for an isolated title-policy issue; otherwise enable the
+   global kill switch. Add an exact hostname only when one origin is proven to
+   be the whole affected scope.
+2. Restart/redeploy and verify authenticated inspection returns `unavailable`
+   while ordinary manual Capture still succeeds. Do not probe the incident
+   Source from CI or copy it into a ticket.
+3. If Source-derived data escaped, stop further retention and follow the
+   log-system deletion and credential-response procedures with redacted scope.
+4. Keep the affected strategy disabled until deterministic tests and the
+   private release qualification pass at the original gates.
 
 ## Installed-version gate
 
