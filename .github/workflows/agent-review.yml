@@ -1,12 +1,9 @@
 name: Agent Review
 
 # The review leg of the chain (spec #52 / #65): applying `agent:review` to a PR
-# runs the repo's local `/code-review`, which reviews, fixes what it safely can,
-# and commits; the workflow pushes those fixes, posts the review, and marks the
-# PR ready. implement adds this label via AGENT_PAT so the chain fires
-# automatically (implement → review → ready). The agent only produces commits +
-# output files — this workflow owns every git, `gh`, and label mutation (spec
-# invariant H).
+# runs the repo's local `/code-review`, which reviews, fixes, publishes, recovers
+# Product CI, and regenerates findings when needed. The workflow owns review
+# publication, labels, and the ready transition.
 
 on:
   pull_request_target:
@@ -16,7 +13,7 @@ jobs:
   review:
     if: github.event.label.name == 'agent:review'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       # SHARED per-PR group across every PR-mutating capability (review /
       # implement-pr / update-branch), keyed on the PR number, so they queue
@@ -29,6 +26,7 @@ jobs:
       queue: max
     permissions:
       contents: write
+      actions: write
       pull-requests: write
       issues: write
 
@@ -193,6 +191,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.gate.outputs.issue_title }}
           BRANCH: ${{ steps.gate.outputs.head_ref }}
           OUTPUT_DIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
         run: pnpm --dir .sandcastle exec tsx review/review.ts
 
       - name: Push review fixes
@@ -206,6 +205,15 @@ jobs:
         # should fail loudly rather than clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
+      - name: Final Product CI gate — publish review
+        if: steps.gate.outputs.proceed == 'true' && success()
+        run: |
+          set -euo pipefail
+          expected=$(cat "${RUNNER_TEMP}/review_head_sha.txt")
+          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+          [ "$live" = "$expected" ] || { echo "PR head changed after the automated review; refusing stale publication."; exit 1; }
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+
       - name: Post the review (summary + inline comments)
         if: steps.gate.outputs.proceed == 'true' && success()
         # review.ts wrote a ready-to-POST GitHub reviews-API body (event=COMMENT,
@@ -217,6 +225,15 @@ jobs:
         # failed post is a run failure, and the anchor check already guards the
         # common 422 cause).
         run: gh api --method POST "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --input "${RUNNER_TEMP}/review_payload.json"
+
+      - name: Final Product CI gate — mark ready
+        if: steps.gate.outputs.proceed == 'true' && success()
+        run: |
+          set -euo pipefail
+          expected=$(cat "${RUNNER_TEMP}/review_head_sha.txt")
+          live=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+          [ "$live" = "$expected" ] || { echo "PR head changed after review publication; refusing ready transition."; exit 1; }
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
 
       - name: Mark the PR ready for review
         if: steps.gate.outputs.proceed == 'true' && success()
@@ -233,7 +250,7 @@ jobs:
 
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog; `cancelled()` covers a
-        # hard 60-min timeout breach. The PR is left as a draft (not marked ready)
+        # hard 120-min timeout breach. The PR is left as a draft (not marked ready)
         # so a stalled review can't be mistaken for a passed one, and it lands in
         # agent:blocked with a run-URL comment — the same failure lifecycle as
         # agent-implement.

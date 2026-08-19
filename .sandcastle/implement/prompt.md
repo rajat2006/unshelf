@@ -37,12 +37,13 @@ pnpm run test
 Make one or more commits on `{{BRANCH}}` with conventional-commit messages
 (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
 
-**Commit only.** Do not push, do not open a PR, and do not edit labels or the
-issue — the workflow owns every git, `gh`, and label mutation. Do **not** close
-the issue.
+Commit locally before entering the publication and Product CI phase below. Do
+not edit labels, comments, review state, or the issue, and do **not** close it.
+
+<!-- PRODUCT_CI_RECOVERY -->
 
 If you cannot complete the work — the issue is ambiguous, blocked on a decision,
 or needs a human — stop and explain why in your final message instead of
 committing a half-finished change. Leaving the branch with no commits is the
 correct signal for "a human needs to look at this"; the workflow will mark the
-issue blocked.
+issue blocked. Once you have published a draft PR, leave it in place when blocked.

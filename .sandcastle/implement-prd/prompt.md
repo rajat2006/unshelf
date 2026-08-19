@@ -58,9 +58,10 @@ in each commit body so the history is linkable from the PRD. Do **not** put
 `Closes` in a commit message — closing the sub-issue is the workflow's job, and
 closing the PRD is the merged PR's job.
 
-**Commit only.** Do not push, do not open a PR, and do not edit labels, close the
-sub-issue, or close the PRD — the workflow owns every git, `gh`, and label
-mutation.
+Commit locally before entering the publication and Product CI phase below. Do
+not edit labels or comments, and do not close the sub-issue or PRD.
+
+<!-- PRODUCT_CI_RECOVERY -->
 
 # WHEN YOU FINISH
 
@@ -71,7 +72,8 @@ JSON yet:
 - **Completed** — you implemented #{{SUB_ISSUE_NUMBER}} in this run and committed
   the work.
 - **Already satisfied** — the sub-issue was already fully implemented by an
-  earlier run, so there was nothing to do and you correctly made no new commits.
+  earlier run, you made no new commits, and the existing draft PR head is green.
+  A first-child run with no existing PR cannot use this outcome.
 - **Blocked** — you could **not** complete it (it is ambiguous, blocked on a
   decision, or needs a human). Do **not** force a half-finished commit: leave the
   branch untouched and explain why. A human will pick it up.

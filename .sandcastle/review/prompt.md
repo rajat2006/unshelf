@@ -71,14 +71,17 @@ pass cleanly, revert that fix and leave the finding unresolved instead.
 ### 3. Commit your fixes
 
 Commit the fixes you made in focused commits with clear messages (e.g.
-`Fix review finding: extract duplicated distance calc`). **Commit only — do not
-push, do not touch PR labels, comments, or `gh` state.** The workflow pushes your
-commits and posts the review; your job is the commits and the findings report.
+`Fix review finding: extract duplicated distance calc`). Do not touch PR labels,
+comments, review state, or threads.
 
 If you fixed nothing (the branch was already clean, or every finding was left for
 a human), make no commits.
 
-### 4. Re-review
+### 4. Publish and prove Product CI
+
+<!-- PRODUCT_CI_RECOVERY -->
+
+### 5. Re-review the green head
 
 Re-diff after your commits:
 
@@ -88,6 +91,8 @@ git diff origin/{{BASE_BRANCH}}...HEAD
 
 Confirm your fixes actually resolved the findings they targeted and did not
 introduce anything new (a fix that trips another smell is itself a finding).
+Any commit made during Product CI recovery invalidates the earlier review, so
+regenerate the complete findings against the resulting green head.
 
 # REPORTING
 

@@ -4,8 +4,10 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
+import { writeHeadBoundJson } from "../head-bound-output";
 import { parseDiffLines } from "../parse-diff-lines";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { loadProductivePrompt } from "../productive-prompt";
 import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { reviewOutputSchema, type ReviewOutput } from "../review-output";
 import { runWithExtraction } from "../run-with-extraction";
@@ -22,11 +24,10 @@ import { runWithExtraction } from "../run-with-extraction";
  * both review and serialise rigid JSON in one turn, and a malformed block
  * self-corrects via same-session retry (≤3×) before anything is posted.
  *
- * Per invariant H the runner emits ONLY commits + output files: the fix commits
- * land on the branch (the workflow pushes them) and `review_payload.json` — a
- * ready-to-POST GitHub *reviews* API body — is written to `OUTPUT_DIR`. The
- * workflow pushes, posts that review (a summary body plus inline comments), and
- * runs `gh pr ready`.
+ * The productive agent publishes fix/recovery commits and proves Product CI, but
+ * review publication remains workflow-owned. This runner writes the final
+ * `review_payload.json` and reviewed head SHA to `OUTPUT_DIR`; the workflow
+ * revalidates both before posting and before `gh pr ready`.
  */
 
 const ctx = loadCapabilityContext("review");
@@ -43,8 +44,10 @@ const result = await runWithExtraction({
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
-  promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: ctx.promptArgs,
+  prompt: loadProductivePrompt({
+    promptFile: path.join(import.meta.dirname, "prompt.md"),
+    promptArgs: ctx.promptArgs,
+  }),
   extractionPrompt: fs.readFileSync(
     path.join(import.meta.dirname, "extraction.md"),
     "utf8",
@@ -52,8 +55,8 @@ const result = await runWithExtraction({
   output: sandcastle.Output.object({ tag: "output", schema: reviewOutputSchema }),
 });
 
-// The diff now includes the agent's fix commits (the workflow pushes this exact
-// HEAD before posting), so its new-side line numbers are the ones an inline
+// The diff now includes the agent's fix/recovery commits, so its new-side line
+// numbers are the ones an inline
 // review comment must anchor to — GitHub's reviews API rejects the whole review
 // if any comment points off-diff.
 const diff = execFileSync("git", ["diff", `${reviewBase}...HEAD`], {
@@ -66,10 +69,15 @@ const { payload, inline, fixed, unresolved } = buildReviewPayload(
   result.output,
   changed,
 );
-fs.writeFileSync(
-  path.join(ctx.outputDir, "review_payload.json"),
-  JSON.stringify(payload, null, 2),
-);
+writeHeadBoundJson({
+  outputDir: ctx.outputDir,
+  jsonFile: "review_payload.json",
+  value: payload,
+  headFile: "review_head_sha.txt",
+  headSha: execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim(),
+});
 
 console.log(
   `\nReview complete: ${result.output.findings.length} finding(s) — ` +

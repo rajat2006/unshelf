@@ -6,8 +6,8 @@ name: Agent Implement PRD
 # does. Each run implements the first still-open sub-issue on an ACCUMULATING
 # branch, closes it, then re-labels the PRD (via AGENT_PAT) so the next run picks
 # up the next sub-issue. Review is requested only once every sub-issue is closed.
-# The agent only produces commits + output files — this workflow owns every git,
-# `gh`, and label mutation.
+# The productive agent may publish its current branch, upsert its own draft PR,
+# and recover Product CI. The workflow retains every lifecycle mutation.
 #
 # This listens for the SAME `agent:implement` labeled event as
 # `agent-implement.yml`. The two disambiguate purely by issue shape: the normal
@@ -34,6 +34,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      actions: write
       pull-requests: write
       issues: write
 
@@ -323,6 +324,7 @@ jobs:
           SUB_ISSUE_TITLE: ${{ steps.shape.outputs.next_open_title }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
         run: pnpm --dir .sandcastle exec tsx implement-prd/implement-prd.ts
 
       - name: Push branch
@@ -332,27 +334,24 @@ jobs:
         # NOT a force-push: the branch accumulates commits across sub-issue runs.
         run: git push origin "$BRANCH"
 
-      - name: Close the completed sub-issue
-        if: steps.shape.outputs.mode == 'run' && success()
-        env:
-          SUB_ISSUE_NUMBER: ${{ steps.shape.outputs.next_open_number }}
-        run: |
-          set -euo pipefail
-          commit_sha=$(git rev-parse HEAD)
-          gh issue close "$SUB_ISSUE_NUMBER" --comment "Implemented in ${commit_sha}. Part of #${PRD_NUMBER}."
-
-      - name: Check whether a PR already exists for this branch
+      - name: Find the agent-owned draft PR
         if: steps.shape.outputs.mode == 'run' && success()
         id: pr_lookup
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
         run: |
           set -euo pipefail
-          existing_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          matches=$(gh pr list --head "$BRANCH" --state open --json number,isDraft,isCrossRepository,baseRefName)
+          if [ "$(echo "$matches" | jq 'length')" != "1" ]; then
+            echo "Expected exactly one open draft PR for ${BRANCH}; the productive agent must publish it before returning."
+            exit 1
+          fi
+          existing_pr=$(echo "$matches" | jq -r --arg base "$BASE_BRANCH" '.[0] | select(.isDraft == true and .isCrossRepository == false and .baseRefName == $base) | .number // empty')
+          [ -n "$existing_pr" ] || { echo "The branch PR is ready, cross-repository, or targets the wrong base."; exit 1; }
           echo "existing_pr=$existing_pr" >> "$GITHUB_OUTPUT"
 
-      - name: Write PR title and description (only when opening a new PR)
-        if: steps.shape.outputs.mode == 'run' && success() && steps.pr_lookup.outputs.existing_pr == ''
+      - name: Write PR title and description
+        if: steps.shape.outputs.mode == 'run' && success()
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_HOME: ${{ runner.temp }}/.codex
@@ -363,7 +362,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm --dir .sandcastle exec tsx write-prd-pr/write-prd-pr.ts
 
-      - name: Open draft PR if one doesn't exist for this branch
+      - name: Reconcile the agent-owned draft PR
         if: steps.shape.outputs.mode == 'run' && success()
         id: open_pr
         env:
@@ -379,23 +378,12 @@ jobs:
           GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -n "$EXISTING_PR" ]; then
-            echo "pr_number=$EXISTING_PR" >> "$GITHUB_OUTPUT"
-            echo "created=false" >> "$GITHUB_OUTPUT"
-          else
-            pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")
-            pr_url=$(gh pr create \
-              --draft \
-              --base "$BASE_BRANCH" \
-              --head "$BRANCH" \
-              --title "$pr_title" \
-              --body-file "${RUNNER_TEMP}/pr_description.txt")
-            echo "pr_number=$(basename "$pr_url")" >> "$GITHUB_OUTPUT"
-            echo "created=true" >> "$GITHUB_OUTPUT"
-          fi
+          pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")
+          gh pr edit "$EXISTING_PR" --title "$pr_title" --body-file "${RUNNER_TEMP}/pr_description.txt"
+          echo "pr_number=$EXISTING_PR" >> "$GITHUB_OUTPUT"
 
       - name: Propagate the resolved provider label to the PR
-        if: steps.shape.outputs.mode == 'run' && success() && steps.open_pr.outputs.created == 'true'
+        if: steps.shape.outputs.mode == 'run' && success()
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
           PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
@@ -406,6 +394,21 @@ jobs:
         # branch on the other provider. Only meaningful on PR creation (the first
         # sub-issue run); GITHUB_TOKEN is fine — neither label triggers anything.
         run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
+
+      - name: Final Product CI gate — close child
+        if: steps.shape.outputs.mode == 'run' && success()
+        env:
+          PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+
+      - name: Close the completed sub-issue
+        if: steps.shape.outputs.mode == 'run' && success()
+        env:
+          SUB_ISSUE_NUMBER: ${{ steps.shape.outputs.next_open_number }}
+        run: |
+          set -euo pipefail
+          commit_sha=$(git rev-parse HEAD)
+          gh issue close "$SUB_ISSUE_NUMBER" --comment "Implemented in ${commit_sha}. Part of #${PRD_NUMBER}."
 
       - name: Re-check remaining open sub-issues
         if: steps.shape.outputs.mode == 'run' && success()
@@ -437,6 +440,12 @@ jobs:
             exit 1
           fi
           echo "count=$remaining" >> "$GITHUB_OUTPUT"
+
+      - name: Final Product CI gate — advance PRD
+        if: steps.shape.outputs.mode == 'run' && success()
+        env:
+          PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
 
       - name: Chain — re-label the PRD to pick up the next sub-issue
         if: steps.shape.outputs.mode == 'run' && success() && steps.remaining.outputs.count != '0'

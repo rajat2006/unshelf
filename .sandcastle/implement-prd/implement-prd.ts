@@ -5,6 +5,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadPrdImplementContext } from "../capability-context";
 import { implementPrdOutputSchema } from "../implement-prd-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { loadProductivePrompt } from "../productive-prompt";
 import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
 import { verifyImplementPrdOutcome } from "../verify-implement-prd";
@@ -30,10 +31,10 @@ import { verifyImplementPrdOutcome } from "../verify-implement-prd";
  * sub-issue open and the PRD `agent:blocked` — while `completed`/`already-satisfied`
  * let the workflow close the sub-issue and advance.
  *
- * Per invariant H the runner never touches GitHub state: it only produces commits
- * (the workflow pushes them) and, on failure, a `failure_reason.txt` the
- * workflow's blocked path reads. Provider is resolved from the PRD's full label
- * set via {@link loadPrdImplementContext}.
+ * The productive agent may publish this branch, upsert its draft PR, and recover
+ * Product CI under the shared prompt contract. Lifecycle mutations remain in the
+ * workflow. On failure this runner writes `failure_reason.txt` for the blocked
+ * path. Provider is resolved from the PRD's full label set.
  */
 
 const ctx = loadPrdImplementContext("implement-prd");
@@ -49,8 +50,10 @@ const result = await runWithExtraction({
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
-  promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: ctx.promptArgs,
+  prompt: loadProductivePrompt({
+    promptFile: path.join(import.meta.dirname, "prompt.md"),
+    promptArgs: ctx.promptArgs,
+  }),
   extractionPrompt: fs.readFileSync(
     path.join(import.meta.dirname, "extraction.md"),
     "utf8",
