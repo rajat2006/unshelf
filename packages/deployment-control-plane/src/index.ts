@@ -210,6 +210,10 @@ function isValidPublicOrigin({
   }
 }
 
+// Reconciliation is monotonic: prove live authority and the immutable image
+// pair before mutation, resume at most one correlated Dokploy attempt, require
+// public health, then advance channel tags. Reordering can duplicate remote work
+// or advertise an unserved image pair.
 export async function runDeploymentCli(
   input: DeploymentCliInput,
 ): Promise<number> {
