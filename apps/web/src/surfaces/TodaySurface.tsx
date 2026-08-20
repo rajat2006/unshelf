@@ -273,7 +273,8 @@ export function TodaySurface() {
     try {
       const focus = await addItemToToday(user, item.id, origin);
       // Adds may resolve out of order. Merge this server-confirmed Item into the
-      // current Focus so an older response cannot erase another confirmed Add.
+      // current Daily Focus so an older response cannot erase another confirmed
+      // Add.
       setState((current) =>
         current.status === "loading"
           ? current
