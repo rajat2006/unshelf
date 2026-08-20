@@ -175,6 +175,9 @@ function selectSuggestions(facts: PlanningFacts[]): DailyPlanningSuggestion[] {
       ?.sort((first, second) => compareWithinSignal({ first, second }));
   }
 
+  // Give each populated signal one slot before filling spare capacity in signal
+  // priority order. SIGNALS therefore owns both suggestion diversity and final
+  // presentation order; per-signal sorting keeps every choice deterministic.
   const selected: SuggestionCandidate[] = [];
   for (const signal of SIGNALS) {
     const first = groups.get(signal)?.[0];

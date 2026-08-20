@@ -98,6 +98,9 @@ export function TodaySurface() {
   );
   queryRef.current = query;
 
+  // Search, retry, mutation replenishment, and full-load invalidation share one
+  // request generation; only the latest request may publish planning data or
+  // failure after newer intent has superseded it.
   const startPlanningRequest = useCallback(() => {
     const requestNumber = ++planningRequestNumber.current;
     return {
@@ -269,6 +272,8 @@ export function TodaySurface() {
     updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
+      // Adds may resolve out of order. Merge this server-confirmed Item into the
+      // current Focus so an older response cannot erase another confirmed Add.
       setState((current) =>
         current.status === "loading"
           ? current

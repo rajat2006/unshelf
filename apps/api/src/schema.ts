@@ -318,9 +318,10 @@ export const learningPlans = pgTable(
 );
 
 /**
- * The topology boundary for a Learning Plan. In this migration every node is a
- * Stage. The explicit node record is required by ADR-0018's topology boundary:
- * every edge joins Plan Node identities without manufacturing a Stage wrapper.
+ * Each Plan Node has stable identity within one Learning Plan. Edges reference
+ * that shared User- and Learning-Plan-scoped identity, while the node kind
+ * distinguishes a direct Item placement from a Stage without manufacturing a
+ * wrapper.
  */
 export const learningPlanNodes = pgTable(
   "learning_plan_nodes",

@@ -24,19 +24,11 @@ import {
 } from "../schema";
 
 /**
- * LearningPlan topology storage (ADR-0010, scoped per LearningPlan by ADR-0014). The LearningPlan's
- * shape is still the adjacency edge list — it is not a table of its own but a
- * derived view whose nodes are direct Item placements or Stages and whose edges are
- * `learningPlan_edges` rows — but now every read and write names *one* LearningPlan, not the
- * whole User. So there is nothing to create or name here: a LearningPlan's topology
- * exists the moment it has Stages, and this module only draws and erases the edges
- * between the Stages on that one LearningPlan.
- *
- * Every function takes the authenticated User's anchor id *and* the LearningPlan id and
- * scopes to both, so a foreign or cross-LearningPlan Stage is indistinguishable from a
- * missing one at the boundary. The one invariant the schema cannot cheaply
- * declare — acyclicity — is owned here, at the write seam, exactly where the
- * API-boundary tests exercise it.
+ * Own persisted topology for one Learning Plan: Plan Nodes are direct Item
+ * placements or Stages connected by directed edges. Every operation scopes
+ * through both User and Learning Plan so foreign nodes remain indistinguishable
+ * from missing ones; this write seam also owns acyclicity, which the schema
+ * cannot cheaply enforce.
  */
 
 interface EdgeRow {

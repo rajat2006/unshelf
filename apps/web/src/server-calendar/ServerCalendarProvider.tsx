@@ -38,7 +38,12 @@ const ServerCalendarContext =
 const maximumTimeout = 2_147_483_647;
 const canonicalDate = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Own the signed-in shell's one authoritative PostgreSQL calendar document. */
+/**
+ * The server-authoritative date is usable only through `validUntil`. Requests
+ * coalesce per signed-in User, and a User change invalidates the prior in-flight
+ * response; expiry and visibility recovery withhold stale dates until a current
+ * document arrives.
+ */
 export function ServerCalendarProvider({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
   const [state, setState] = useState<ServerCalendarState>({
