@@ -330,6 +330,9 @@ async function presentSubjects({
   if (subjects.length === 0 || !("generatePresentation" in openai)) {
     return { subjects: fallback, aiPresentation: "skipped" };
   }
+  // AI may change wording and audience grouping only; deterministic code owns
+  // canonical subjects and lifecycle. Any request or contract failure selects
+  // the complete fallback so AI and deterministic presentations are never mixed.
   const input = toOpenAIInput(subjects);
   let response: unknown;
   try {

@@ -416,6 +416,9 @@ async function gatherDeployments({
       );
     }
   }
+  // Keep the complete ordered history of successful production deployments
+  // reachable from current main: an in-window release compares against its
+  // preceding authoritative success even when that baseline predates the window.
   const successfulProductionDeployments = deployments
     .filter(
       (deployment) =>
@@ -446,6 +449,9 @@ async function gatherDeployments({
       precedingOid: precedingDeployment?.sha,
       deployedOid: deployment.sha,
     });
+    // A dev-to-main release PR is transport evidence, not a digest subject.
+    // Expand its complete commit set to attribute constituent delivery PRs while
+    // retaining direct hotfixes already present in the deployment delta.
     const releaseCarrierCommitOids = new Set<string>();
     for (const pullRequest of mergedPullRequests) {
       if (
@@ -555,6 +561,8 @@ function parseDeploymentRecord(value: unknown): DeploymentRecord {
   return { id, environment, sha };
 }
 
+// The newest historical success remains the authoritative release event; only a
+// deployment that never succeeded falls back to its newest status.
 async function fetchDeploymentWithAuthoritativeStatus({
   github,
   deployment,
