@@ -141,6 +141,8 @@ function configuredSecrets(values: readonly string[]): readonly string[] {
       // Configured secrets are commonly opaque strings rather than URLs.
     }
   }
+  // Redact overlapping configured values longest-first; replacing a shorter
+  // credential first could expose a recognizable suffix of the longer one.
   return [...secrets].sort((left, right) => right.length - left.length);
 }
 

@@ -10,6 +10,9 @@ export function boundLogRecord(
     return record as LogEvent & LogBindings;
   }
 
+  // Preserve request correlation and error identity ahead of bulky diagnostic
+  // payloads and stacks; the priority envelope is the final fallback only when
+  // those lower-priority reductions still exceed the transport budget.
   record.diagnosticTruncated = true;
   truncateFields(record, LOW_PRIORITY_DIAGNOSTIC_KEYS);
   if (serializedBytes(level, record) <= MAX_SERIALIZED_EVENT_BYTES) {
