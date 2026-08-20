@@ -5,6 +5,7 @@ import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { loadProductivePrompt } from "../productive-prompt";
 import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 
 /**
@@ -34,8 +35,10 @@ const result = await sandcastle.run({
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
-  promptFile: path.join(import.meta.dirname, "prompt.md"),
-  promptArgs: ctx.promptArgs,
+  prompt: loadProductivePrompt({
+    promptFile: path.join(import.meta.dirname, "prompt.md"),
+    promptArgs: ctx.promptArgs,
+  }),
 });
 
 const commitsAhead = Number(

@@ -2,11 +2,8 @@ name: Agent Implement-PR
 
 # Address review comments on an open PR (spec #52 / #66): applying
 # `agent:implement-pr` to a PR runs the `implement-pr` capability, which reads the
-# PR's review threads, changes what it safely can, and commits; the workflow
-# pushes those fix commits and posts a summary comment. It does NOT flip the PR's
-# draft/ready state — that belongs to the review leg. The agent only produces
-# commits + output files — this workflow owns every git, `gh`, and label mutation
-# (spec invariant H).
+# PR's review threads, fixes, publishes, and recovers Product CI. The workflow
+# owns replies and the summary comment. It does NOT flip draft/ready state.
 
 on:
   pull_request_target:
@@ -16,7 +13,7 @@ jobs:
   implement-pr:
     if: github.event.label.name == 'agent:implement-pr'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       # SHARED per-PR group across every PR-mutating capability (review /
       # implement-pr / update-branch), keyed on the PR number, so they queue
@@ -29,6 +26,7 @@ jobs:
       queue: max
     permissions:
       contents: write
+      actions: write
       pull-requests: write
       issues: write
 
@@ -268,6 +266,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.gate.outputs.issue_title }}
           BRANCH: ${{ steps.gate.outputs.head_ref }}
           OUTPUT_DIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
         run: pnpm --dir .sandcastle exec tsx implement-pr/implement-pr.ts
 
       - name: Push fix commits
@@ -280,22 +279,30 @@ jobs:
         # branch moved under us and should fail loudly rather than clobber.
         run: git push origin "HEAD:refs/heads/${HEAD_REF}"
 
+      - name: Final Product CI gate — publish feedback
+        if: steps.gate.outputs.proceed == 'true' && success()
+        id: publish_gate
+        run: |
+          set -euo pipefail
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
+          valid_thread_ids=$(pnpm --dir .sandcastle exec tsx review-threads-cli.ts snapshot --pr "$PR_NUMBER")
+          echo "valid_thread_ids=$valid_thread_ids" >> "$GITHUB_OUTPUT"
+
       - name: Reply on answered threads
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           # Allowlist of review-thread node IDs that actually exist on THIS PR,
           # fetched by the gate. Every agent-provided threadId is checked against
-          # it before any mutation, so a hallucinated or cross-PR id can't reply to
-          # an unrelated thread (the agent's output is untrusted input here).
-          VALID_THREAD_IDS: ${{ steps.gate.outputs.valid_thread_ids }}
+          # it before any mutation, so a concurrent thread-set change or a
+          # hallucinated/cross-PR id fails closed (agent output is untrusted input).
+          VALID_THREAD_IDS: ${{ steps.publish_gate.outputs.valid_thread_ids }}
         # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
         # answered review thread. Reply on each thread whose id is on this PR. We
         # deliberately do NOT resolve the thread: resolution is the reviewer's call
         # (matching CVM, which only replies). A validated id that FAILS to post is
         # a real delivery error (auth/API), not an expected skip — we attempt every
         # thread, then fail the step so the run lands in agent:blocked rather than
-        # silently dropping the conversational output and reporting success. An id
-        # that isn't on this PR's unresolved threads is skipped, not a failure.
+        # silently dropping conversational output or publishing against stale state.
         run: |
           set -uo pipefail
           file="${RUNNER_TEMP}/thread_replies.json"
@@ -309,8 +316,21 @@ jobs:
             tid=$(jq -r ".[$i].threadId" "$file")
             body=$(jq -r ".[$i].body" "$file")
             if ! echo "$VALID_THREAD_IDS" | jq -e --arg t "$tid" 'index($t)' >/dev/null; then
-              echo "threadId $tid is not an unresolved review thread on this PR — skipping (possible hallucinated, cross-PR, or already-resolved id)."
-              continue
+              echo "threadId $tid was not in the inspected unresolved-thread set."
+              failed=$((failed + 1))
+              break
+            fi
+            if ! pnpm --dir .sandcastle exec tsx review-threads-cli.ts assert-current --pr "$PR_NUMBER" --expected "$VALID_THREAD_IDS"; then
+              echo "The unresolved review-thread set changed before reply on $tid."
+              failed=$((failed + 1))
+              break
+            fi
+            # Each reply is its own protected mutation, so refresh exact-candidate
+            # proof immediately before posting it.
+            if ! pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"; then
+              echo "Product CI proof changed before reply on $tid."
+              failed=$((failed + 1))
+              break
             fi
             if ! gh api graphql -f threadId="$tid" -f body="$body" -f query='
               mutation($threadId: ID!, $body: String!) {
@@ -325,6 +345,14 @@ jobs:
             exit 1
           fi
 
+      - name: Final Product CI gate — publish feedback summary
+        if: steps.gate.outputs.proceed == 'true' && success()
+        env:
+          VALID_THREAD_IDS: ${{ steps.publish_gate.outputs.valid_thread_ids }}
+        run: |
+          pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER" --expected-head-file "${RUNNER_TEMP}/implement_pr_head_sha.txt"
+          pnpm --dir .sandcastle exec tsx review-threads-cli.ts assert-current --pr "$PR_NUMBER" --expected "$VALID_THREAD_IDS"
+
       - name: Post the summary comment
         if: steps.gate.outputs.proceed == 'true' && success()
         # implement-pr.ts wrote a Markdown summary of what it addressed vs
@@ -336,7 +364,7 @@ jobs:
 
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog; `cancelled()` covers a
-        # hard 60-min timeout breach. The PR keeps whatever draft/ready state it
+        # hard 120-min timeout breach. The PR keeps whatever draft/ready state it
         # had (implement-pr never changes it), and it lands in agent:blocked with a
         # run-URL comment — the same failure lifecycle as agent-implement/review.
         if: steps.gate.outputs.proceed == 'true' && (failure() || cancelled())

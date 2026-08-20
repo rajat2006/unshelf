@@ -29,6 +29,12 @@ const agentImplementPrdWorkflow = readFileSync(
   ),
   "utf8",
 );
+const productiveWorkflowNames = [
+  "agent-implement.yml",
+  "agent-implement-prd.yml",
+  "agent-review.yml",
+  "agent-implement-pr.yml",
+] as const;
 const workflowsDirectory = new URL(
   "../../../.github/workflows/",
   import.meta.url,
@@ -89,6 +95,84 @@ describe("repository delivery workflows", () => {
     expect(agentImplementPrdWorkflow).toContain("timeout-minutes: 120");
   });
 
+  it("gives every productive capability the Product CI recovery authority and time", () => {
+    for (const name of productiveWorkflowNames) {
+      const workflow = agentWorkflows.get(name);
+      expect(workflow, name).toContain("timeout-minutes: 120");
+      expect(workflow, name).toContain("actions: write");
+      expect(workflow, name).toContain("GH_TOKEN: ${{ secrets.AGENT_PAT }}");
+    }
+  });
+
+  it("runs an exact Product CI gate before protected lifecycle mutations", () => {
+    const mutations = new Map([
+      ["agent-implement.yml", "Request automated review"],
+      ["agent-implement-prd.yml", "Close the completed sub-issue"],
+      ["agent-review.yml", "Post the review"],
+      ["agent-implement-pr.yml", "Reply on answered threads"],
+    ]);
+
+    for (const [name, mutation] of mutations) {
+      const workflow = agentWorkflows.get(name) ?? "";
+      const gateIndex = workflow.indexOf("Final Product CI gate");
+      expect(gateIndex, name).toBeGreaterThan(-1);
+      expect(workflow.indexOf(mutation), name).toBeGreaterThan(gateIndex);
+    }
+  });
+
+  it("never force-pushes an automation branch retry", () => {
+    for (const name of productiveWorkflowNames) {
+      expect(agentWorkflows.get(name), name).not.toMatch(
+        /git push[^\n]*--force/,
+      );
+    }
+  });
+
+  it("resumes only an unambiguous same-repository draft leaf PR", () => {
+    const workflow = agentWorkflows.get("agent-implement.yml") ?? "";
+    expect(workflow).toContain("--state all");
+    expect(workflow).toContain('.state == "OPEN"');
+    expect(workflow).toContain(".isDraft == true");
+    expect(workflow).toContain(".isCrossRepository == false");
+    expect(workflow).toContain(".author.login == $owner");
+    expect(workflow).toContain(".baseRefName == $base");
+    expect(workflow).toContain("matching-refs/heads/${branch}");
+    expect(workflow).toContain('if [ "$exact_ref" != "1" ]; then');
+    expect(workflow).toContain("head branch is absent");
+    expect(workflow).toContain('git checkout -B "$BRANCH" "origin/$BRANCH"');
+    expect(workflow).toContain("Reconcile the agent-owned draft PR");
+  });
+
+  it("gates both PRD advances and head-bound review publications", () => {
+    const prd = agentWorkflows.get("agent-implement-prd.yml") ?? "";
+    const review = agentWorkflows.get("agent-review.yml") ?? "";
+    const implementPr = agentWorkflows.get("agent-implement-pr.yml") ?? "";
+
+    expect(prd.match(/Final Product CI gate/g)).toHaveLength(3);
+    expect(prd.indexOf("Final Product CI gate — pin provider")).toBeLessThan(
+      prd.indexOf("Propagate the resolved provider label"),
+    );
+    expect(prd.indexOf("Final Product CI gate — close child")).toBeLessThan(
+      prd.indexOf("Close the completed sub-issue"),
+    );
+    expect(prd.indexOf("Final Product CI gate — advance PRD")).toBeLessThan(
+      prd.indexOf("Chain — re-label the PRD"),
+    );
+    expect(review).toContain("review_head_sha.txt");
+    expect(review).toContain("--expected-head-file");
+    expect(review).toContain("printf '**Reason:** %s\\n\\n' \"$reason\"");
+    expect(review.match(/Final Product CI gate/g)).toHaveLength(2);
+    expect(implementPr).toContain("implement_pr_head_sha.txt");
+    expect(implementPr).toContain("--expected-head-file");
+    expect(implementPr).toContain("review-threads-cli.ts snapshot");
+    expect(
+      implementPr.match(/review-threads-cli\.ts assert-current/g),
+    ).toHaveLength(2);
+    expect(
+      implementPr.match(/product-ci-cli.ts final-gate/g)?.length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
   it("derives Sandcastle bases from the repository or pull request", () => {
     const defaultBranchWorkflows = [
       "agent-architecture-review.yml",
@@ -121,10 +205,10 @@ describe("repository delivery workflows", () => {
     }
 
     expect(agentWorkflows.get("agent-implement.yml")).toContain(
-      '--base "$BASE_BRANCH"',
+      "baseRefName == $base",
     );
     expect(agentWorkflows.get("agent-implement-prd.yml")).toContain(
-      '--base "$BASE_BRANCH"',
+      "baseRefName == $base",
     );
 
     for (const [name, workflow] of agentWorkflows) {
