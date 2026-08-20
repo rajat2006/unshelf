@@ -4,7 +4,6 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
-import { writeImplementPrOutput } from "../head-bound-output";
 import {
   implementPrOutputSchema,
   type ImplementPrOutput,
@@ -100,13 +99,14 @@ fs.writeFileSync(path.join(ctx.outputDir, "pr_comment.md"), body);
 // id against the PR's real threads first). The thread is left open — resolution
 // is the reviewer's call, matching CVM.
 const replies = buildThreadReplies(result.output);
-writeImplementPrOutput({
-  outputDir: ctx.outputDir,
-  replies,
-  headSha: execFileSync("git", ["rev-parse", "HEAD"], {
-    encoding: "utf8",
-  }).trim(),
-});
+fs.writeFileSync(
+  path.join(ctx.outputDir, "thread_replies.json"),
+  JSON.stringify(replies, null, 2),
+);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "implement_pr_head_sha.txt"),
+  `${execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()}\n`,
+);
 
 console.log(
   `\nimplement-pr complete: ${result.output.items.length} comment(s) — ` +

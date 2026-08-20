@@ -75,4 +75,28 @@ describe("GitHub Product CI adapter", () => {
 
     await expect(github.listWorkflowRuns()).rejects.toThrow("Malformed GitHub");
   });
+
+  it("reruns cancelled candidates as whole runs and failures as failed jobs", async () => {
+    const requests: string[][] = [];
+    const github = new GhProductCiGitHub({
+      repository: "o/r",
+      execute: async (args) => {
+        requests.push([...args]);
+        return "";
+      },
+    });
+
+    await github.rerunJobs({ runId: 100, failedOnly: false });
+    await github.rerunJobs({ runId: 101, failedOnly: true });
+
+    expect(requests).toEqual([
+      ["api", "--method", "POST", "repos/o/r/actions/runs/100/rerun"],
+      [
+        "api",
+        "--method",
+        "POST",
+        "repos/o/r/actions/runs/101/rerun-failed-jobs",
+      ],
+    ]);
+  });
 });

@@ -17,6 +17,7 @@ const stateSchema = z.object({
   actions: z.array(z.enum(["repair-push", "rerun"])).max(2),
   branch: z.string().min(1).optional(),
   publishedHeadSha: z.string().min(1).optional(),
+  pendingAction: z.enum(["repair-push", "rerun"]).optional(),
 });
 const execFileAsync = promisify(execFile);
 
@@ -39,7 +40,7 @@ switch (command) {
     const verdict = await waitForProductCi({
       github,
       prNumber: numberArg("--pr"),
-      timeoutMs: numberArg("--timeout-seconds", 5_400) * 1_000,
+      timeoutMs: (await waitTimeoutSeconds()) * 1_000,
       pollIntervalMs: numberArg("--poll-seconds", 30) * 1_000,
     });
     reportVerdict(verdict);
@@ -53,6 +54,7 @@ switch (command) {
       expectedBranch,
       headSha: await currentHeadSha(),
       state: readState(),
+      persistState: writeState,
       push: pushBranch,
     });
     if (!result.ok) fail(result.error);
@@ -68,15 +70,18 @@ switch (command) {
       prNumber: numberArg("--pr"),
       runId: numberArg("--run"),
       state: readState(),
+      persistState: writeState,
     });
     if (!result.ok) fail(result.error);
     writeState(result.state);
-    console.log(`Accepted Product CI rerun (${result.state.actions.length}/2 actions).`);
+    console.log(
+      `Accepted Product CI rerun (${result.state.actions.length}/2 actions).`,
+    );
     break;
   }
   default:
     fail(
-        "Usage: product-ci-cli.ts inspect|wait|final-gate --pr N; " +
+      "Usage: product-ci-cli.ts inspect|wait|final-gate --pr N; " +
         "rerun --pr N --run ID; or push (with BRANCH set)",
     );
 }
@@ -86,7 +91,9 @@ function numberArg(name: string, fallback?: number) {
   const raw = index === -1 ? undefined : args[index + 1];
   if (raw === undefined && fallback !== undefined) return fallback;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) fail(`${name} must be a positive integer.`);
+  if (!Number.isInteger(value) || value <= 0) {
+    fail(`${name} must be a positive integer.`);
+  }
   return value;
 }
 
@@ -95,10 +102,65 @@ function optionalArg(name: string) {
   return index === -1 ? undefined : args[index + 1];
 }
 
+async function waitTimeoutSeconds() {
+  const explicit = optionalArg("--timeout-seconds");
+  let requested: number | undefined;
+  if (explicit !== undefined) {
+    const value = Number(explicit);
+    if (!Number.isInteger(value) || value <= 0) {
+      fail("--timeout-seconds must be a positive integer.");
+    }
+    requested = value;
+  }
+
+  const runId = process.env.GITHUB_RUN_ID;
+  if (!runId) return requested ?? 5_400;
+
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync("gh", [
+      "api",
+      `repos/${repository}/actions/runs/${runId}`,
+      "--jq",
+      ".run_started_at",
+    ]));
+  } catch (error: unknown) {
+    fail(
+      `The workflow start time could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const startedAt = Date.parse(stdout.trim());
+  if (!Number.isFinite(startedAt)) {
+    fail(
+      "The workflow start time is unreadable; refusing an unbounded Product CI wait.",
+    );
+  }
+
+  const workflowTimeoutMs = 120 * 60 * 1_000;
+  const blockedReportingReserveMs = 5 * 60 * 1_000;
+  const remainingMs =
+    startedAt + workflowTimeoutMs - blockedReportingReserveMs - Date.now();
+  const seconds = Math.floor(remainingMs / 1_000);
+  if (seconds <= 0) {
+    fail("The workflow has no Product CI wait budget remaining.");
+  }
+  const timeoutSeconds = Math.min(requested ?? seconds, seconds);
+  console.log(`Product CI wait budget: ${timeoutSeconds} seconds remaining.`);
+  return timeoutSeconds;
+}
+
 function readState(): RecoveryState {
   if (!fs.existsSync(statePath)) return { actions: [] };
-  const parsed = stateSchema.safeParse(JSON.parse(fs.readFileSync(statePath, "utf8")));
-  if (!parsed.success) fail("Product CI recovery state is malformed; refusing to reset the budget.");
+  let json: unknown;
+  try {
+    json = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch {
+    fail("Product CI recovery state is malformed; refusing to reset the budget.");
+  }
+  const parsed = stateSchema.safeParse(json);
+  if (!parsed.success) {
+    fail("Product CI recovery state is malformed; refusing to reset the budget.");
+  }
   return parsed.data;
 }
 
@@ -151,6 +213,8 @@ async function pushBranch(branch: string) {
 function fail(message: string): never {
   console.error(message);
   const outputDir = process.env.OUTPUT_DIR ?? process.env.RUNNER_TEMP;
-  if (outputDir) fs.writeFileSync(path.join(outputDir, "failure_reason.txt"), message);
+  if (outputDir) {
+    fs.writeFileSync(path.join(outputDir, "failure_reason.txt"), message);
+  }
   process.exit(1);
 }

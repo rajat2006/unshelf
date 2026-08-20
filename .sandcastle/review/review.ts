@@ -4,7 +4,6 @@ import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { loadCapabilityContext } from "../capability-context";
-import { writeReviewOutput } from "../head-bound-output";
 import { parseDiffLines } from "../parse-diff-lines";
 import { prepareCodexAuth } from "../prepare-codex-auth";
 import { loadProductivePrompt } from "../productive-prompt";
@@ -56,26 +55,30 @@ const result = await runWithExtraction({
 });
 
 // The diff now includes the agent's fix/recovery commits, so its new-side line
-// numbers are the ones an inline
-// review comment must anchor to — GitHub's reviews API rejects the whole review
-// if any comment points off-diff.
+// numbers are the ones an inline review comment must anchor to — GitHub's reviews
+// API rejects the whole review if any comment points off-diff.
 const diff = execFileSync("git", ["diff", `${reviewBase}...HEAD`], {
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
 });
 const changed = parseDiffLines(diff);
+const reviewedHead = execFileSync("git", ["rev-parse", "HEAD"], {
+  encoding: "utf8",
+}).trim();
 
 const { payload, inline, fixed, unresolved } = buildReviewPayload(
   result.output,
   changed,
+  reviewedHead,
 );
-writeReviewOutput({
-  outputDir: ctx.outputDir,
-  payload,
-  headSha: execFileSync("git", ["rev-parse", "HEAD"], {
-    encoding: "utf8",
-  }).trim(),
-});
+fs.writeFileSync(
+  path.join(ctx.outputDir, "review_payload.json"),
+  JSON.stringify(payload, null, 2),
+);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "review_head_sha.txt"),
+  `${reviewedHead}\n`,
+);
 
 console.log(
   `\nReview complete: ${result.output.findings.length} finding(s) — ` +
@@ -93,6 +96,7 @@ interface InlineComment {
 
 /** The GitHub "create a review" request body (POST /pulls/{n}/reviews). */
 interface ReviewPayload {
+  readonly commit_id: string;
   readonly event: "COMMENT";
   readonly body: string;
   readonly comments: InlineComment[];
@@ -108,6 +112,7 @@ interface ReviewPayload {
 function buildReviewPayload(
   review: ReviewOutput,
   changedLines: Map<string, Set<number>>,
+  commitId: string,
 ): {
   payload: ReviewPayload;
   inline: number;
@@ -164,7 +169,12 @@ function buildReviewPayload(
   }
 
   return {
-    payload: { event: "COMMENT", body: `${body.join("\n")}\n`, comments },
+    payload: {
+      commit_id: commitId,
+      event: "COMMENT",
+      body: `${body.join("\n")}\n`,
+      comments,
+    },
     inline: comments.length,
     fixed: fixed.length,
     unresolved: unresolved.length,

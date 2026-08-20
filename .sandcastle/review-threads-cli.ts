@@ -2,10 +2,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { requireEnv } from "./require-env";
-import {
-  collectUnresolvedThreadIds,
-  verifyUnresolvedThreadSet,
-} from "./review-threads";
 
 const execFileAsync = promisify(execFile);
 const threadIdsSchema = z.array(z.string().min(1));
@@ -20,10 +16,6 @@ const responseSchema = z.object({
               isResolved: z.boolean(),
             }),
           ),
-          pageInfo: z.object({
-            hasNextPage: z.boolean(),
-            endCursor: z.string().min(1).nullable(),
-          }),
         }),
       }),
     }),
@@ -38,8 +30,18 @@ switch (command) {
   case "assert-current": {
     const expected = threadIdsSchema.parse(JSON.parse(stringArg("--expected")));
     const current = await unresolvedThreadIds(numberArg("--pr"));
-    const verdict = verifyUnresolvedThreadSet({ expected, current });
-    if (!verdict.ok) fail(verdict.error);
+    const expectedIds = [...new Set(expected)].sort();
+    const currentIds = [...new Set(current)].sort();
+    if (
+      expectedIds.length !== expected.length ||
+      currentIds.length !== current.length ||
+      expectedIds.length !== currentIds.length ||
+      expectedIds.some((id, index) => id !== currentIds[index])
+    ) {
+      fail(
+        "The unresolved review-thread set changed after agent inspection; refusing stale publication.",
+      );
+    }
     break;
   }
   default:
@@ -51,37 +53,32 @@ async function unresolvedThreadIds(prNumber: number) {
   const [owner, name] = repository.split("/");
   if (!owner || !name) fail("GH_REPO must be an owner/name repository.");
   const query = `
-    query($owner: String!, $name: String!, $pr: Int!, $after: String) {
+    query($owner: String!, $name: String!, $pr: Int!) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $pr) {
-          reviewThreads(first: 100, after: $after) {
+          reviewThreads(first: 100) {
             nodes { id isResolved }
-            pageInfo { hasNextPage endCursor }
           }
         }
       }
     }`;
-  const ids = await collectUnresolvedThreadIds({
-    loadPage: async (after) => {
-      const request = [
-        "api",
-        "graphql",
-        "-f",
-        `owner=${owner}`,
-        "-f",
-        `name=${name}`,
-        "-F",
-        `pr=${prNumber}`,
-        "-f",
-        `query=${query}`,
-      ];
-      if (after) request.push("-f", `after=${after}`);
-      const { stdout } = await execFileAsync("gh", request);
-      return responseSchema.parse(JSON.parse(stdout)).data.repository.pullRequest
-        .reviewThreads;
-    },
-  });
-  return threadIdsSchema.parse(ids);
+  const { stdout } = await execFileAsync("gh", [
+    "api",
+    "graphql",
+    "-f",
+    `owner=${owner}`,
+    "-f",
+    `name=${name}`,
+    "-F",
+    `pr=${prNumber}`,
+    "-f",
+    `query=${query}`,
+  ]);
+  const threads = responseSchema.parse(JSON.parse(stdout)).data.repository
+    .pullRequest.reviewThreads.nodes;
+  return threadIdsSchema.parse(
+    threads.filter((thread) => !thread.isResolved).map((thread) => thread.id),
+  );
 }
 
 function numberArg(name: string) {

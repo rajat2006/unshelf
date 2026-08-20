@@ -148,7 +148,10 @@ describe("repository delivery workflows", () => {
     const review = agentWorkflows.get("agent-review.yml") ?? "";
     const implementPr = agentWorkflows.get("agent-implement-pr.yml") ?? "";
 
-    expect(prd.match(/Final Product CI gate/g)).toHaveLength(2);
+    expect(prd.match(/Final Product CI gate/g)).toHaveLength(3);
+    expect(prd.indexOf("Final Product CI gate — pin provider")).toBeLessThan(
+      prd.indexOf("Propagate the resolved provider label"),
+    );
     expect(prd.indexOf("Final Product CI gate — close child")).toBeLessThan(
       prd.indexOf("Close the completed sub-issue"),
     );
@@ -162,10 +165,6 @@ describe("repository delivery workflows", () => {
     expect(implementPr).toContain("implement_pr_head_sha.txt");
     expect(implementPr).toContain("--expected-head-file");
     expect(implementPr).toContain("review-threads-cli.ts snapshot");
-    expect(implementPr).toContain("--paginate --slurp");
-    expect(implementPr).toContain(
-      "reviewThreads(first: 100, after: $endCursor)",
-    );
     expect(
       implementPr.match(/review-threads-cli\.ts assert-current/g),
     ).toHaveLength(2);

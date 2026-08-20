@@ -69,7 +69,13 @@ export interface ProductCiGitHub {
   listWorkflowRuns(): Promise<readonly ProductCiRun[]>;
   listRunJobs(runId: number): Promise<readonly ProductCiJob[]>;
   getJobLog(jobId: number): Promise<string>;
-  rerunFailedJobs(runId: number): Promise<void>;
+  rerunJobs({
+    runId,
+    failedOnly,
+  }: {
+    runId: number;
+    failedOnly: boolean;
+  }): Promise<void>;
 }
 
 export interface ProductCiProof extends ProductCiCandidate {
@@ -105,6 +111,7 @@ export interface RecoveryState {
   readonly actions: readonly RecoveryAction[];
   readonly branch?: string;
   readonly publishedHeadSha?: string;
+  readonly pendingAction?: RecoveryAction;
 }
 
 export type RecoveryResult =
@@ -132,10 +139,15 @@ export async function inspectProductCi({
     }
 
     const runs = await github.listWorkflowRuns();
-    const relevant = runs
-      .filter((candidate) => isCurrentRun({ candidate, pullRequest }))
-      .sort(compareRunsNewestFirst);
-    const current = relevant[0];
+    let current: ProductCiRun | undefined;
+    for (const candidate of runs) {
+      if (
+        isCurrentRun({ candidate, pullRequest }) &&
+        (!current || isNewerRun({ candidate, current }))
+      ) {
+        current = candidate;
+      }
+    }
     if (!current) {
       return failure(
         "missing",
@@ -260,6 +272,12 @@ export function recordRecoveryAction({
   state: RecoveryState;
   action: RecoveryAction;
 }): RecoveryResult {
+  if (state.pendingAction) {
+    return {
+      ok: false,
+      error: `A ${state.pendingAction} recovery mutation is still pending; refusing another action.`,
+    };
+  }
   if (state.actions.length >= MAX_RECOVERY_ACTIONS) {
     return {
       ok: false,
@@ -277,12 +295,14 @@ export async function publishProductCiCandidate({
   expectedBranch,
   headSha,
   state,
+  persistState,
   push,
 }: {
   branch: string;
   expectedBranch: string;
   headSha: string;
   state: RecoveryState;
+  persistState: (state: RecoveryState) => void | Promise<void>;
   push: (branch: string) => Promise<unknown>;
 }): Promise<RecoveryResult> {
   if (branch !== expectedBranch || (state.branch && state.branch !== branch)) {
@@ -295,9 +315,21 @@ export async function publishProductCiCandidate({
   const isRepair =
     state.publishedHeadSha !== undefined && state.publishedHeadSha !== headSha;
   const accounted = isRepair
-      ? recordRecoveryAction({ state, action: "repair-push" })
-      : { ok: true as const, state };
+    ? recordRecoveryAction({ state, action: "repair-push" })
+    : { ok: true as const, state };
   if (!accounted.ok) return accounted;
+
+  if (isRepair) {
+    try {
+      await persistState({ ...state, pendingAction: "repair-push" });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        error: `Recovery reservation could not be persisted: ${detail}`,
+      };
+    }
+  }
 
   try {
     await push(branch);
@@ -320,11 +352,13 @@ export async function requestProductCiRerun({
   prNumber,
   runId,
   state,
+  persistState,
 }: {
   github: ProductCiGitHub;
   prNumber: number;
   runId: number;
   state: RecoveryState;
+  persistState: (state: RecoveryState) => void | Promise<void>;
 }): Promise<RecoveryResult> {
   const accounted = recordRecoveryAction({ state, action: "rerun" });
   if (!accounted.ok) return accounted;
@@ -343,7 +377,20 @@ export async function requestProductCiRerun({
   }
 
   try {
-    await github.rerunFailedJobs(runId);
+    await persistState({ ...state, pendingAction: "rerun" });
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: `Recovery reservation could not be persisted: ${detail}`,
+    };
+  }
+
+  try {
+    await github.rerunJobs({
+      runId,
+      failedOnly: verdict.status === "failed",
+    });
     return accounted;
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -372,13 +419,22 @@ function isCurrentRun({
   );
 }
 
-function compareRunsNewestFirst(
-  ...[left, right]: [ProductCiRun, ProductCiRun]
-) {
-  const byCreatedAt = Date.parse(right.createdAt) - Date.parse(left.createdAt);
-  if (byCreatedAt !== 0) return byCreatedAt;
-  if (right.attempt !== left.attempt) return right.attempt - left.attempt;
-  return right.id - left.id;
+function isNewerRun({
+  candidate,
+  current,
+}: {
+  candidate: ProductCiRun;
+  current: ProductCiRun;
+}) {
+  const candidateCreatedAt = Date.parse(candidate.createdAt);
+  const currentCreatedAt = Date.parse(current.createdAt);
+  if (candidateCreatedAt !== currentCreatedAt) {
+    return candidateCreatedAt > currentCreatedAt;
+  }
+  if (candidate.attempt !== current.attempt) {
+    return candidate.attempt > current.attempt;
+  }
+  return candidate.id > current.id;
 }
 
 async function failureWithDiagnostics({

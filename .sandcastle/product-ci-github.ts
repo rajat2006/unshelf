@@ -145,12 +145,18 @@ export class GhProductCiGitHub implements ProductCiGitHub {
     ]);
   }
 
-  async rerunFailedJobs(runId: number) {
+  async rerunJobs({
+    runId,
+    failedOnly,
+  }: {
+    runId: number;
+    failedOnly: boolean;
+  }) {
     await this.#execute([
       "api",
       "--method",
       "POST",
-      `repos/${this.#repository}/actions/runs/${runId}/rerun-failed-jobs`,
+      `repos/${this.#repository}/actions/runs/${runId}/${failedOnly ? "rerun-failed-jobs" : "rerun"}`,
     ]);
   }
 }

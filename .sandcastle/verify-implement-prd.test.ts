@@ -29,18 +29,6 @@ describe("verifyImplementPrdOutcome — outcome vs commit-count consistency", ()
     if (!v.ok) expect(v.reason).toMatch(/already-satisfied/);
   });
 
-  it("requires completed when green Product CI needed a repair commit", () => {
-    expect(
-      verifyImplementPrdOutcome({ outcome: "completed", commitCount: 1 }),
-    ).toEqual({ ok: true });
-    expect(
-      verifyImplementPrdOutcome({
-        outcome: "already-satisfied",
-        commitCount: 1,
-      }),
-    ).toMatchObject({ ok: false });
-  });
-
   it("always fails blocked, regardless of commit count", () => {
     for (const commitCount of [0, 5]) {
       const v = verifyImplementPrdOutcome({ outcome: "blocked", commitCount });

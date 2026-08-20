@@ -382,6 +382,12 @@ jobs:
           gh pr edit "$EXISTING_PR" --title "$pr_title" --body-file "${RUNNER_TEMP}/pr_description.txt"
           echo "pr_number=$EXISTING_PR" >> "$GITHUB_OUTPUT"
 
+      - name: Final Product CI gate — pin provider
+        if: steps.shape.outputs.mode == 'run' && success()
+        env:
+          PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
+
       - name: Propagate the resolved provider label to the PR
         if: steps.shape.outputs.mode == 'run' && success()
         env:
@@ -391,8 +397,8 @@ jobs:
         # provider from the PR's OWN label set, so the PR must carry the label for
         # whichever provider implemented the PRD — pinned explicitly (agent:claude
         # or agent:codex) so a later flip of DEFAULT_PROVIDER can't review the
-        # branch on the other provider. Only meaningful on PR creation (the first
-        # sub-issue run); GITHUB_TOKEN is fine — neither label triggers anything.
+        # branch on the other provider. GITHUB_TOKEN is fine — neither provider
+        # label triggers a workflow.
         run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
 
       - name: Final Product CI gate — close child

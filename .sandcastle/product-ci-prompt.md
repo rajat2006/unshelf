@@ -6,15 +6,15 @@ workflow's `BRANCH` environment variable intact. Never override `BRANCH`: the
 CLI binds the push to that automation branch, recognizes the initial head itself,
 performs a plain non-force push, and accounts successful repair pushes. Create or
 update only that branch's same-repository draft pull request against the stated
-base. Initial
-branch publication and draft-PR creation consume no recovery action.
+base. Initial branch publication and draft-PR creation consume no recovery
+action.
 
 Resolve the PR number after publication with `gh pr view --json number --jq .number`.
 Run `pnpm --dir .sandcastle exec tsx product-ci-cli.ts wait --pr <number>` to
-inspect and wait for the `CI` pull-request
-workflow's `Product` job. Success is authoritative only for the exact live pull-request head and base.
-Missing, stale, cancelled, unsuccessful, malformed,
-or unreadable evidence never counts as success. Polling must print progress.
+inspect and wait for the `CI` pull-request workflow's `Product` job. Success is
+authoritative only for the exact live pull-request head and base. Missing, stale,
+cancelled, unsuccessful, malformed, or unreadable evidence never counts as
+success. Polling must print progress.
 
 You may take at most two recovery actions in this active call. A successful push
 of one or more repair commits is one action; an accepted no-code rerun request is

@@ -115,22 +115,18 @@ jobs:
           #      against, so a hallucinated or cross-PR id can't be replied to.
           owner="${GH_REPO%/*}"
           repo="${GH_REPO#*/}"
-          thread_pages=$(gh api graphql --paginate --slurp \
-            -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
-            query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+          threads=$(gh api graphql -f owner="$owner" -f name="$repo" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $name: String!, $pr: Int!) {
               repository(owner: $owner, name: $name) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 100, after: $endCursor) {
-                    nodes { id isResolved }
-                    pageInfo { hasNextPage endCursor }
-                  }
-                } } }')
+                  reviewThreads(first: 100) { nodes { id isResolved } }
+                } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes')
           # The reply allowlist is UNRESOLVED threads only: an addressed item must
           # reply on an open conversation, never re-open a thread a human already
           # resolved (even if the extraction points at one by mistake).
-          valid_thread_ids=$(echo "$thread_pages" | jq -c '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .id]')
+          valid_thread_ids=$(echo "$threads" | jq -c '[.[] | select(.isResolved == false) | .id]')
           echo "valid_thread_ids=$valid_thread_ids" >> "$GITHUB_OUTPUT"
-          unresolved=$(echo "$valid_thread_ids" | jq 'length')
+          unresolved=$(echo "$threads" | jq '[.[] | select(.isResolved == false)] | length')
 
           # No feedback ⇒ refuse before running the agent. Count the three distinct
           # feedback surfaces separately (as CVM does), so a review that lands as
@@ -297,8 +293,8 @@ jobs:
         env:
           # Allowlist of review-thread node IDs that actually exist on THIS PR,
           # fetched by the gate. Every agent-provided threadId is checked against
-        # it before any mutation, so a concurrent thread-set change or a
-        # hallucinated/cross-PR id fails closed (agent output is untrusted input).
+          # it before any mutation, so a concurrent thread-set change or a
+          # hallucinated/cross-PR id fails closed (agent output is untrusted input).
           VALID_THREAD_IDS: ${{ steps.publish_gate.outputs.valid_thread_ids }}
         # implement-pr.ts wrote thread_replies.json — one {threadId, body} per
         # answered review thread. Reply on each thread whose id is on this PR. We

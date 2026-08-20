@@ -369,22 +369,6 @@ jobs:
           gh pr edit "$pr_number" --title "$pr_title" --body-file "${RUNNER_TEMP}/pr_description.txt"
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Propagate the resolved provider label to the PR
-        if: steps.gate.outputs.proceed == 'true' && success()
-        env:
-          PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
-          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
-        # Provider continuity (spec §C/#64): the review workflow resolves its
-        # provider from the PR's OWN label set, so the PR must carry the label
-        # for whichever provider implemented it — otherwise a later flip of
-        # DEFAULT_PROVIDER would review the branch on the other provider. Pinning
-        # explicitly (agent:claude or agent:codex, not just agent:codex) makes
-        # the PR's provider independent of the default. Added BEFORE agent:review
-        # below so it is already present when the review gate reads the PR
-        # labels. GITHUB_TOKEN is fine here: neither provider label triggers a
-        # downstream workflow (only agent:review does).
-        run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
-
       - name: Final Product CI gate — request review
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
@@ -395,6 +379,7 @@ jobs:
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
           # AGENT_PAT so the labeled event triggers the downstream review
           # workflow — a GITHUB_TOKEN-applied label never triggers one. Falls
           # back to GITHUB_TOKEN; a human then re-adds agent:review to fire it.
@@ -402,12 +387,12 @@ jobs:
         run: |
           set -uo pipefail
           if [ -n "${AGENT_PAT:-}" ]; then
-            if GH_TOKEN="$AGENT_PAT" gh pr edit "$PR_NUMBER" --add-label "agent:review"; then
+            if GH_TOKEN="$AGENT_PAT" gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL" --add-label "agent:review"; then
               exit 0
             fi
             echo "AGENT_PAT label add failed; falling back to GITHUB_TOKEN (review will need a manual re-label)."
           fi
-          gh pr edit "$PR_NUMBER" --add-label "agent:review"
+          gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL" --add-label "agent:review"
 
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog (a non-zero tsx exit).
