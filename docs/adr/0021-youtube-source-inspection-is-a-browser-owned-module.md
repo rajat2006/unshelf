@@ -49,12 +49,12 @@ and Unshelf Origin; that privacy trade-off is accepted.
 Caller cancellation is composed with one 2.5-second acquisition deadline inside
 the three-second visible ceiling. The module counts decoded `ReadableStream`
 bytes and refuses bodies above 16 KiB. It accepts only HTTP 200 with a JSON
-content type, decodes strictly as UTF-8, parses one JSON object, requires oEmbed
-version 1.0 and a nonblank string title, normalizes outer and repeated whitespace,
-and rejects titles above 512 Unicode code points. Every other response field is
-ignored, especially embed HTML, thumbnails, author or provider values, and
-representation type. An accepted title is rendered only through React's text
-boundary.
+`application/json` content type, decodes as UTF-8, parses one JSON object, requires
+a nonblank string title, normalizes outer and repeated whitespace, and rejects
+titles above 512 Unicode code points. Every other response field is ignored,
+including oEmbed version and representation type, embed HTML, thumbnails, and
+author or provider values. An accepted title is rendered only through React's
+text boundary.
 
 Every status, CORS, redirect, network, deadline, abort, limit, encoding, JSON, or
 title-shape failure resolves to `null`. Local Type survives and Capture quietly
@@ -63,7 +63,10 @@ asks for a manual title.
 `VITE_YOUTUBE_OEMBED_ENABLED === "true"` is the fail-closed deploy-time switch for
 title acquisition only. When false or absent, `acquireTitle` performs no request
 while local Type classification and manual Capture continue. Changing this public
-build-time configuration requires rebuilding and deploying the web image.
+build-time configuration requires rebuilding and deploying the web image. The
+`Publish candidate images` workflow sets the exact value `"true"` for preview,
+development, and production builds; builds outside that configured workflow
+remain disabled unless they opt in explicitly.
 
 Source inspection adds no production telemetry, observer callback, or diagnostic
 event and retains no Source, identifier, canonical URL, title, response, or
@@ -82,7 +85,17 @@ Automated verification uses two surfaces without live YouTube calls:
 2. Rendered Capture tests replace the module with controlled results. They cover
    the 300 ms rule, local Type and optional Title, field ownership, Source
    replacement, cancellation, stale responses, quiet fallback, accessible status,
-   Add while checking, and exact Source submission.
+   Add while checking, and exact Source submission. Status assertions distinguish
+   checking, full suggestion, Type-only manual-title fallback, and preservation of
+   User-owned entries without locking exact prose.
+
+After an enabled development image is deployed, a human checks one public video
+and one public playlist in the ordinary signed-in dogfood browser. On failure, the
+title-enabled source revision must not advance to production. Disablement is a
+source-controlled flag-off revision that publishes and deploys a fresh matched API
+and web image pair; it is not a runtime container change or a web-only replacement.
+The check retains no Source, identifier, returned title, response body, HAR,
+screenshot, or corpus.
 
 There is no Source-inspection server route, shared request or evidence contract,
 generic metadata parser, arbitrary-host transport, DNS or redirect machinery,

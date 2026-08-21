@@ -9,16 +9,22 @@ creates neither an Item nor durable metadata.
 
 ## Eligibility
 
-- Source is the first field in the existing stable Capture form. Every Source
-  mutation, including paste, resets one 300 ms debounce.
-- Inspection accepts absolute HTTP(S) Sources only on `youtube.com`,
-  `www.youtube.com`, `m.youtube.com`, and `youtu.be`.
-- Eligible videos are `/watch?v=<video-id>`, `/shorts/<video-id>`, and
-  `youtu.be/<video-id>`. Eligible playlists are
-  `/playlist?list=<playlist-id>`. Harmless share, tracking, timestamp, and
-  fragment parameters may accompany one unambiguous identity.
-- Duplicate or malformed identifiers, mixed video-and-playlist identity,
-  credentials, explicit ports, embeds, Community Posts, live links, channels,
+- Source is the first field in the existing stable Capture form and receives
+  focus when Capture opens. Every Source mutation, including paste, resets one
+  300 ms debounce.
+- Inspection trims a working copy for eligibility but accepts only absolute
+  HTTP(S) Sources on `youtube.com`, `www.youtube.com`, `m.youtube.com`, and
+  `youtu.be`. Capture preserves the exact Source entered by the User.
+- A video identifier is exactly 11 ASCII letters, digits, underscores, or
+  hyphens. A playlist identifier is 10–80 characters from that same set.
+  Eligible videos are `/watch?v=<video-id>`, `/shorts/<video-id>`, and
+  `youtu.be/<video-id>`; an eligible playlist is
+  `/playlist?list=<playlist-id>`. Each resource path may have one trailing slash.
+- Non-identity query parameters and fragments do not affect classification and
+  never reach title acquisition. Duplicate `v` or `list` parameters, even with
+  equal values, and any Source carrying both identities are ambiguous.
+- Malformed or ambiguous identifiers, credentials, any explicit port including
+  a protocol-default port, embeds, Community Posts, live links, channels,
   handles, search, home, other routes, other YouTube properties, and every
   non-YouTube Source remain fully manual and cause no inspection network request.
 
@@ -54,11 +60,19 @@ is textual rather than color-only, and motion is never required. Cancellation an
 supersession are invisible.
 
 Add to Library remains available whenever title and Type are complete, including
-while title acquisition is active. It is the only confirmation, accepts untouched
-suggestions as the current values, invalidates outstanding inspection, and stores
-only the current title, confirmed Type, and Source exactly as entered. Inspection
-creates no evidence record, Provider identity, metadata projection, cache,
-refresh, sync, deduplication rule, or recurring Discovery relationship.
+while title acquisition is active. Before then it remains operable so ordinary
+submission validation can show inline required-field errors and focus Title before
+Type. It is the only confirmation, accepts untouched suggestions as the current
+values, invalidates outstanding inspection, and stores only the current title,
+confirmed Type, and Source exactly as entered. Inspection creates no evidence
+record, Provider identity, metadata projection, cache, refresh, sync,
+deduplication rule, or recurring Discovery relationship.
+
+Current research found no first-party YouTube oEmbed permission or title-retention
+contract. Enabling title suggestions and storing a User-confirmed title as an
+ordinary Item value therefore accepts product-policy uncertainty; it is not a
+claim of compliance. Title acquisition remains independently disableable, and
+Type-only assistance plus complete manual Capture are the fallback.
 
 Generic public-page inspection and every excluded YouTube shape must earn a fresh
 design rather than extending this contract speculatively.
