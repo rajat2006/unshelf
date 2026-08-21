@@ -204,16 +204,18 @@
       </section>
 
       <section class="card decision">
-        <h2>The shortest way to decide</h2>
+        <p class="eyebrow">Verdict · accepted for now</p>
+        <h2>Start fully manual</h2>
         <p>
-          If you dislike automatic updates, choose <strong>Balanced</strong>.
-          You decide when a preview is created or updated, but closing the pull
-          request still cleans it up automatically.
+          The label gives permission for a preview. You explicitly press
+          <strong>Create</strong>, <strong>Update</strong>, or
+          <strong>Delete</strong>. This needs the least setup now because pull
+          request events do not have to manage previews automatically.
         </p>
         <p class="muted" style="margin-bottom: 0">
-          Choose Fully automatic only if pressing Update becomes annoying.
-          Choose Fully manual only if you specifically want closed previews to
-          stay online until you delete them yourself.
+          The maintainer must remember to delete closed previews. Automatic
+          cleanup or updates can be added later only if that manual work becomes
+          a real burden.
         </p>
       </section>
     </main>
@@ -229,11 +231,11 @@
           balanced: {
             name: "Balanced",
             summary: "You create and update; cleanup is automatic.",
-            recommended: true,
           },
           manual: {
             name: "Fully manual",
             summary: "Nothing changes until you ask.",
+            recommended: true,
           },
         };
 
@@ -315,7 +317,7 @@
         };
       })();
 
-      let selectedApproach = "balanced";
+      let selectedApproach = "manual";
       let selectedSituation = "commit";
 
       const choices = document.getElementById("choices");
@@ -326,7 +328,7 @@
           .map(
             ([id, choice]) => `
               <button data-approach="${id}" class="${id === selectedApproach ? "active" : ""}">
-                <strong>${choice.name}${choice.recommended ? ' <span class="recommended">Recommended</span>' : ""}</strong>
+                <strong>${choice.name}${choice.recommended ? ' <span class="recommended">Selected for now</span>' : ""}</strong>
                 <span>${choice.summary}</span>
               </button>`,
           )
