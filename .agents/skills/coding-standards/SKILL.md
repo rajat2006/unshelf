@@ -9,7 +9,7 @@ Before writing or reviewing human-maintained code-like artifacts, always load [c
 
 ## References
 
-- [comments.md](comments.md) — navigational-comment admission, authority, maintenance, and review
+- [comments.md](comments.md) — when and how to write, maintain, and review code comments
 - [typescript.md](typescript.md) — TypeScript function parameters and type safety
 - [database.md](database.md) — PostgreSQL and Drizzle, connection ownership, and soft deletion
 - [services-and-testing.md](services-and-testing.md) — service tests and results, Vitest, and API integration setup
