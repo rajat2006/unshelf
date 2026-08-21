@@ -5,10 +5,11 @@ description: Unshelf coding standards for writing or reviewing code. Use when co
 
 # Coding standards
 
-Before writing code, load the reference or references matching the layers being changed. For questions about coding standards, load the references matching the subject; for repository-wide questions, load every reference. For code review or work spanning the stack, load every reference and check the complete diff against them.
+Before writing or reviewing human-maintained code-like artifacts, always load [comments.md](comments.md). Also load the references matching the affected layers. For questions about comment practice, load `comments.md`; for other coding-standard questions, load the references matching the subject. For repository-wide questions or work spanning the stack, load every reference and check the complete diff against them.
 
 ## References
 
+- [comments.md](comments.md) — when and how to write, maintain, and review code comments
 - [typescript.md](typescript.md) — TypeScript function parameters and type safety
 - [database.md](database.md) — PostgreSQL and Drizzle, connection ownership, and soft deletion
 - [services-and-testing.md](services-and-testing.md) — service tests and results, Vitest, and API integration setup

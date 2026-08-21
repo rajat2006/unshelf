@@ -10,6 +10,9 @@ export function boundLogRecord(
     return record as LogEvent & LogBindings;
   }
 
+  // Drop bulky diagnostics and stack traces before request IDs or error
+  // identity. Use the priority envelope only if those cuts still cannot fit the
+  // transport limit.
   record.diagnosticTruncated = true;
   truncateFields(record, LOW_PRIORITY_DIAGNOSTIC_KEYS);
   if (serializedBytes(level, record) <= MAX_SERIALIZED_EVENT_BYTES) {

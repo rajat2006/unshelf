@@ -454,11 +454,9 @@ export interface ItemLearningPlanNode {
 export type LearningPlanNode = StageLearningPlanNode | ItemLearningPlanNode;
 
 /**
- * The whole LearningPlan as it reads back (ADR-0010): the node set — the User's Stages,
- * each with derived progress — and the edge set between them. The LearningPlan is not a
- * table but a derived view, so both halves are read fresh; an unconnected Stage is
- * still a node, it simply has no edges yet. The layout is not here: it is derived
- * from the edges on the client, never stored.
+ * Contains every Plan Node and directed edge in a Learning Plan, including nodes
+ * without edges. Layout is derived from these edges on the client and is not
+ * part of this contract.
  */
 export interface LearningPlanView {
   /** Every direct Item placement and Stage as a first-class Plan Node. */

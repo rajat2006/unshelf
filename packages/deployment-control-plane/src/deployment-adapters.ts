@@ -158,6 +158,9 @@ export function createGitHubActionsDeploymentAdapters({
         if (!queueResult.ok || !deploymentResult.ok) {
           return { ok: false, code: "unavailable" };
         }
+        // A matching title only finds a candidate. Adopt it only when the Compose
+        // ID and full channel/source/run description match this deployment;
+        // otherwise fail closed.
         const queue = correlatedQueueRecords({
           value: queueResult.value,
           composeId,
@@ -290,6 +293,8 @@ function isExactHttpsOrigin(value: string | undefined): boolean {
   }
 }
 
+// The workflow event may be stale, so it cannot authorize a deployment. Re-read
+// the live dev head and require its exact successful push Product CI run.
 async function isApprovedDevelopmentIntent({
   environment,
   intent,
