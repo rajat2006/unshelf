@@ -11,5 +11,6 @@ test-results/
 # Local Claude Code worktrees (not part of the repo)
 .claude/worktrees/
 
-# Personal /teach workspaces, one folder per topic. Its own git repo.
+# Personal /teach workspaces, one folder per topic.
 /learning/
+/.learning/
