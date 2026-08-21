@@ -77,11 +77,16 @@ function CaptureComposer({
   // Source work can settle out of order; only its starting revision may update Capture.
   const sourceRevision = useRef(0);
   const activeInspection = useRef<AbortController | null>(null);
+  const pendingAcquisition = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelActiveInspection = useCallback((): void => {
     activeInspection.current?.abort();
     activeInspection.current = null;
+    if (pendingAcquisition.current !== null) {
+      clearTimeout(pendingAcquisition.current);
+      pendingAcquisition.current = null;
+    }
     if (visibleDeadline.current !== null) {
       clearTimeout(visibleDeadline.current);
       visibleDeadline.current = null;
@@ -121,6 +126,10 @@ function CaptureComposer({
       const settle = (suggestedTitle: boolean) => {
         if (revision !== sourceRevision.current) return;
         activeInspection.current = null;
+        if (pendingAcquisition.current !== null) {
+          clearTimeout(pendingAcquisition.current);
+          pendingAcquisition.current = null;
+        }
         if (visibleDeadline.current !== null) {
           clearTimeout(visibleDeadline.current);
           visibleDeadline.current = null;
@@ -129,17 +138,14 @@ function CaptureComposer({
           setInspectionStatus("YouTube details were suggested.");
         } else if (typeSuggestion.current && !typeOwned.current) {
           setInspectionStatus(
-            `${TYPE_LABELS[prepared.type]} Type was suggested; enter Title manually.`,
+            titleOwned.current
+              ? `${TYPE_LABELS[prepared.type]} Type was suggested; your Title was kept.`
+              : `${TYPE_LABELS[prepared.type]} Type was suggested; enter Title manually.`,
           );
         } else {
           setInspectionStatus("Your entries were kept.");
         }
       };
-
-      if (titleOwned.current) {
-        settle(false);
-        return;
-      }
 
       const controller = new AbortController();
       activeInspection.current = controller;
@@ -154,21 +160,32 @@ function CaptureComposer({
         settleOnce(false);
       }, 3_000);
 
-      void prepared.acquireTitle(controller.signal).then((acquiredTitle) => {
-        if (
-          revision !== sourceRevision.current ||
-          acquiredTitle === null ||
-          titleOwned.current
-        ) {
+      // Let the checking state commit before an owned Title or a disabled lookup
+      // can settle synchronously, so the polite region announces both states.
+      pendingAcquisition.current = setTimeout(() => {
+        pendingAcquisition.current = null;
+        if (revision !== sourceRevision.current) return;
+        if (titleOwned.current) {
           settleOnce(false);
           return;
         }
-        setTitle(acquiredTitle);
-        setErrors((current) => ({ ...current, title: undefined }));
-        titleSuggestion.current = true;
-        setTitleSuggested(true);
-        settleOnce(true);
-      });
+
+        void prepared.acquireTitle(controller.signal).then((acquiredTitle) => {
+          if (
+            revision !== sourceRevision.current ||
+            acquiredTitle === null ||
+            titleOwned.current
+          ) {
+            settleOnce(false);
+            return;
+          }
+          setTitle(acquiredTitle);
+          setErrors((current) => ({ ...current, title: undefined }));
+          titleSuggestion.current = true;
+          setTitleSuggested(true);
+          settleOnce(true);
+        });
+      }, 0);
     }, 300);
 
     return () => clearTimeout(debounce);
@@ -270,11 +287,7 @@ function CaptureComposer({
               if (activeInspection.current !== null) {
                 sourceRevision.current += 1;
                 cancelActiveInspection();
-                setInspectionStatus(
-                  typeSuggestion.current && !typeOwned.current && type !== ""
-                    ? `${TYPE_LABELS[type]} Type was suggested; your Title was kept.`
-                    : "Your entries were kept.",
-                );
+                setInspectionStatus("");
               }
               setTitle(event.target.value);
               setErrors((current) => ({ ...current, title: undefined }));

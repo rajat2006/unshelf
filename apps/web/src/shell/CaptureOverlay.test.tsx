@@ -152,6 +152,8 @@ describe("global Capture", () => {
     expect(screen.getByLabelText("Type")).toHaveTextContent("Video");
     expect(screen.getAllByText("Suggested")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
+    expect(acquireTitle).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(acquireTitle).toHaveBeenCalledOnce();
 
     await act(async () => {
@@ -199,6 +201,7 @@ describe("global Capture", () => {
       target: { value: "https://youtube.com/playlist?list=0123456789" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
     expect(screen.getByLabelText("Title")).toHaveValue("Suggested playlist");
     expect(screen.getByLabelText("Type")).toHaveTextContent("Playlist");
@@ -213,6 +216,7 @@ describe("global Capture", () => {
       target: { value: "https://youtube.com/watch?v=abcdefghijk" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
     expect(screen.getByLabelText("Title")).toHaveValue("");
     expect(screen.getByLabelText("Type")).toHaveTextContent("Article");
@@ -232,6 +236,7 @@ describe("global Capture", () => {
       target: { value: "https://youtu.be/abc_DEF-123" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     fireEvent.click(screen.getByLabelText("Type"));
     await act(async () => vi.advanceTimersByTimeAsync(0));
     fireEvent.click(screen.getByRole("option", { name: "Article" }));
@@ -242,6 +247,63 @@ describe("global Capture", () => {
 
     expect(screen.getByLabelText("Type")).toHaveTextContent("Article");
     expect(screen.getByRole("status")).toHaveTextContent(/entries were kept/i);
+  });
+
+  it("announces checking before settling with an already owned Title", async () => {
+    vi.useFakeTimers();
+    const acquireTitle = vi.fn().mockResolvedValue("Ignored title");
+    vi.mocked(prepareYouTubeSourceInspection).mockReturnValue({
+      type: Type.Video,
+      acquireTitle,
+    });
+    render(<CaptureHarness />);
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "My title" },
+    });
+    fireEvent.change(screen.getByLabelText("Source"), {
+      target: { value: "https://youtu.be/abc_DEF-123" },
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+
+    expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
+    expect(acquireTitle).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Type was suggested; your Title was kept/i,
+    );
+    expect(acquireTitle).not.toHaveBeenCalled();
+  });
+
+  it("keeps cancellation silent when the User takes ownership of Title", async () => {
+    vi.useFakeTimers();
+    const title = deferred<string | null>();
+    const acquireTitle = vi.fn((_signal: AbortSignal) => title.promise);
+    vi.mocked(prepareYouTubeSourceInspection).mockReturnValue({
+      type: Type.Video,
+      acquireTitle,
+    });
+    render(<CaptureHarness />);
+
+    fireEvent.change(screen.getByLabelText("Source"), {
+      target: { value: "https://youtu.be/abc_DEF-123" },
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    const signal = acquireTitle.mock.calls[0]?.[0];
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "My title" },
+    });
+
+    expect(signal?.aborted).toBe(true);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    await act(async () => {
+      title.resolve("Stale title");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("My title");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("clears required-field errors when suggestions complete the fields", async () => {
@@ -264,6 +326,7 @@ describe("global Capture", () => {
     expect(screen.queryByText("Choose a type.")).toBeNull();
     expect(screen.getByLabelText("Type")).toHaveAttribute("aria-invalid", "false");
     expect(screen.getByText("Enter a title.")).toBeVisible();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
     await act(async () => {
       title.resolve("Suggested title");
@@ -294,6 +357,7 @@ describe("global Capture", () => {
       target: { value: "https://youtu.be/abc_DEF-123" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     const firstSignal = firstAcquire.mock.calls[0]?.[0];
     expect(screen.getByLabelText("Type")).toHaveTextContent("Video");
 
@@ -306,6 +370,7 @@ describe("global Capture", () => {
     expect(screen.getByLabelText("Type")).toHaveTextContent("Choose a type");
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(screen.getByLabelText("Type")).toHaveTextContent("Playlist");
 
     await act(async () => {
@@ -336,6 +401,9 @@ describe("global Capture", () => {
       });
       await act(async () => vi.advanceTimersByTimeAsync(300));
 
+      expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
+      expect(acquireTitle).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
       expect(acquireTitle).toHaveBeenCalledOnce();
       expect(screen.getByRole("status")).toHaveTextContent(/Type was suggested/i);
       expect(screen.getByLabelText("Title")).toHaveValue("");
@@ -356,9 +424,10 @@ describe("global Capture", () => {
       target: { value: "https://youtu.be/abc_DEF-123" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     const signal = acquireTitle.mock.calls[0]?.[0];
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
-    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    await act(async () => vi.advanceTimersByTimeAsync(2_998));
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(signal?.aborted).toBe(true);
@@ -383,6 +452,7 @@ describe("global Capture", () => {
       target: { value: exactSource },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     const signal = acquireTitle.mock.calls[0]?.[0];
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
     fireEvent.change(screen.getByLabelText("Title"), {
@@ -427,6 +497,7 @@ describe("global Capture", () => {
       target: { value: "https://youtu.be/abc_DEF-123" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     const closeSignal = acquireTitle.mock.calls[0]?.[0];
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(closeSignal?.aborted).toBe(true);
@@ -445,6 +516,7 @@ describe("global Capture", () => {
       target: { value: "https://youtu.be/123456789ab" },
     });
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     const unmountSignal = acquireTitle.mock.calls[1]?.[0];
     rendered.unmount();
 
