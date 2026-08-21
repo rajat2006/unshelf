@@ -39,10 +39,10 @@ const maximumTimeout = 2_147_483_647;
 const canonicalDate = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * The server-authoritative date is usable only through `validUntil`. Requests
- * coalesce per signed-in User, and a User change invalidates the prior in-flight
- * response; expiry and visibility recovery withhold stale dates until a current
- * document arrives.
+ * Treat the server date as authoritative only until `validUntil`. Requests are
+ * shared per User, and switching Users invalidates any response still in flight.
+ * After expiry or returning to the tab, hide the old date until a fresh one
+ * arrives.
  */
 export function ServerCalendarProvider({ children }: { children: ReactNode }) {
   const user = useCurrentUser();

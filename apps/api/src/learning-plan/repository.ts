@@ -24,11 +24,10 @@ import {
 } from "../schema";
 
 /**
- * Own persisted topology for one Learning Plan: Plan Nodes are direct Item
- * placements or Stages connected by directed edges. Every operation scopes
- * through both User and Learning Plan so foreign nodes remain indistinguishable
- * from missing ones; this write seam also owns acyclicity, which the schema
- * cannot cheaply enforce.
+ * Stores the directed graph for one Learning Plan. Nodes can be direct Item
+ * placements or Stages. Every operation is scoped to both User and Learning
+ * Plan, so a foreign node looks missing. This repository also prevents cycles,
+ * which the database cannot enforce cheaply.
  */
 
 interface EdgeRow {

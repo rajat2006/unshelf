@@ -318,10 +318,9 @@ export const learningPlans = pgTable(
 );
 
 /**
- * Each Plan Node has stable identity within one Learning Plan. Edges reference
- * that shared User- and Learning-Plan-scoped identity, while the node kind
- * distinguishes a direct Item placement from a Stage without manufacturing a
- * wrapper.
+ * Gives every direct Item placement or Stage a stable identity within its
+ * User's Learning Plan. Edges point to that identity; `kind` tells the two node
+ * types apart.
  */
 export const learningPlanNodes = pgTable(
   "learning_plan_nodes",

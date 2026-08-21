@@ -416,9 +416,9 @@ async function gatherDeployments({
       );
     }
   }
-  // Keep the complete ordered history of successful production deployments
-  // reachable from current main: an in-window release compares against its
-  // preceding authoritative success even when that baseline predates the window.
+  // Keep the full ordered history of successful production deployments reachable
+  // from main. The first release inside the window may need an older deployment
+  // as its baseline.
   const successfulProductionDeployments = deployments
     .filter(
       (deployment) =>
@@ -449,9 +449,9 @@ async function gatherDeployments({
       precedingOid: precedingDeployment?.sha,
       deployedOid: deployment.sha,
     });
-    // A dev-to-main release PR is transport evidence, not a digest subject.
-    // Expand its complete commit set to attribute constituent delivery PRs while
-    // retaining direct hotfixes already present in the deployment delta.
+    // A dev-to-main release PR only carries the release; it is not itself a
+    // digest subject. Expand its commits to find the delivery PRs while keeping
+    // direct hotfixes from the deployment diff.
     const releaseCarrierCommitOids = new Set<string>();
     for (const pullRequest of mergedPullRequests) {
       if (
@@ -561,8 +561,8 @@ function parseDeploymentRecord(value: unknown): DeploymentRecord {
   return { id, environment, sha };
 }
 
-// The newest historical success remains the authoritative release event; only a
-// deployment that never succeeded falls back to its newest status.
+// Once a deployment has succeeded, that newest success remains its release event
+// even if a later status failed. Use the newest status only if it never succeeded.
 async function fetchDeploymentWithAuthoritativeStatus({
   github,
   deployment,

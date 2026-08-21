@@ -454,9 +454,9 @@ export interface ItemLearningPlanNode {
 export type LearningPlanNode = StageLearningPlanNode | ItemLearningPlanNode;
 
 /**
- * A Learning Plan's Plan Nodes and directed edges. Unconnected Plan Nodes remain
- * in the node set, while client layout is derived from the edges rather than
- * persisted in this contract.
+ * Contains every Plan Node and directed edge in a Learning Plan, including nodes
+ * without edges. Layout is derived from these edges on the client and is not
+ * part of this contract.
  */
 export interface LearningPlanView {
   /** Every direct Item placement and Stage as a first-class Plan Node. */

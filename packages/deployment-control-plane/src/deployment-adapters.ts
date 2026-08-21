@@ -158,9 +158,9 @@ export function createGitHubActionsDeploymentAdapters({
         if (!queueResult.ok || !deploymentResult.ok) {
           return { ok: false, code: "unavailable" };
         }
-        // A matching title is only a lookup hit. Compose identity and the full
-        // channel/source/run description must bind every record to this intent;
-        // any mismatch fails closed instead of adopting unrelated remote work.
+        // A matching title only finds a candidate. Adopt it only when the Compose
+        // ID and full channel/source/run description match this deployment;
+        // otherwise fail closed.
         const queue = correlatedQueueRecords({
           value: queueResult.value,
           composeId,
@@ -293,9 +293,8 @@ function isExactHttpsOrigin(value: string | undefined): boolean {
   }
 }
 
-// The workflow event only nominates development intent; mutation authority
-// comes from re-reading the live dev head and its exact successful push Product
-// CI run, so stale event authority fails closed.
+// The workflow event may be stale, so it cannot authorize a deployment. Re-read
+// the live dev head and require its exact successful push Product CI run.
 async function isApprovedDevelopmentIntent({
   environment,
   intent,
