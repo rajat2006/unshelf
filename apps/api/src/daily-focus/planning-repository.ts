@@ -175,6 +175,9 @@ function selectSuggestions(facts: PlanningFacts[]): DailyPlanningSuggestion[] {
       ?.sort((first, second) => compareWithinSignal({ first, second }));
   }
 
+  // Start with one suggestion from every available signal, then fill the
+  // remaining spots in SIGNALS order. Sorting each signal first keeps the final
+  // list deterministic.
   const selected: SuggestionCandidate[] = [];
   for (const signal of SIGNALS) {
     const first = groups.get(signal)?.[0];
