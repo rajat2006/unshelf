@@ -33,10 +33,13 @@ identity.
 - **All is not a table.** It is the query "every `Item` where `user_id` = me", so
   v1 needs no folder machinery; Stops are overlays that reference Items.
 - **v1 field shape:** `title` required (it is the Item's identity), `source`
-  optional (offline books have none), `type` user-chosen from
+  optional (offline books have none), `type` User-confirmed from
   {article, video, playlist, course, book, other} with no default, `status` from
   {not started, in progress, done} defaulting to *not started*. The enum values
   are cheap to revise later; the spine/detail split is the load-bearing decision.
-- **No fetching in v1.** Title is typed by hand; no page-metadata, thumbnail, or
-  table-of-contents fetch. When sub-item check-off and auto-fetch are picked up
-  (#9), they attach to the spine via detail/sub-item tables without reshaping it.
+- **Source inspection does not expand the spine.** An eligible YouTube Source may
+  suggest an editable title and Type before explicit Capture (ADR-0020), but the
+  Item still stores only the confirmed title, exact Source, and confirmed Type.
+  No inspection evidence, fetched representation, provenance, or refresh state is
+  added. If richer per-type metadata or auto-fetch is picked up later (#9), it
+  attaches through detail/sub-item tables rather than reshaping the spine.

@@ -149,8 +149,10 @@ revised by [#59](https://github.com/rajat2006/unshelf/issues/59) ·
   composer states it **lands in the Library, never a Trail**. It is a
   **non-navigating overlay**: it opens on any surface, files the Item into the
   store, and leaves you where you were. Capture is deliberately **pure intake**
-  (required title + chosen Type + optional Source); labelling at capture time is
-  deferred ([#75](https://github.com/rajat2006/unshelf/issues/75)).
+  through one Source-first form (optional Source + required title + confirmed
+  Type). Eligible YouTube Sources may suggest editable values, but Add to Library
+  remains explicit; labelling at capture time is deferred
+  ([#75](https://github.com/rajat2006/unshelf/issues/75)).
 
 Why this shape: the two axes kept reading as if one filtered the other whenever
 co-located, and a capture box above the Trails misread as "capture *into this
