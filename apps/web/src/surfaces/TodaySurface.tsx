@@ -98,6 +98,9 @@ export function TodaySurface() {
   );
   queryRef.current = query;
 
+  // Searches, retries, replenishment, and full reloads can overlap. They share
+  // this sequence number so only the newest request can update suggestions or
+  // show an error.
   const startPlanningRequest = useCallback(() => {
     const requestNumber = ++planningRequestNumber.current;
     return {
@@ -269,6 +272,9 @@ export function TodaySurface() {
     updatePendingAction({ kind: "add", itemId: item.id, pending: true });
     try {
       const focus = await addItemToToday(user, item.id, origin);
+      // Add requests can finish out of order, so merge each confirmed Item into
+      // the current Daily Focus. Replacing the state would drop newer confirmed
+      // items.
       setState((current) =>
         current.status === "loading"
           ? current

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
@@ -8,6 +9,7 @@ import {
   type ImplementPrOutput,
 } from "../implement-pr-output";
 import { prepareCodexAuth } from "../prepare-codex-auth";
+import { loadProductivePrompt } from "../productive-prompt";
 import { requireEnv } from "../require-env";
 import { IDLE_TIMEOUT_SECONDS, logResolvedAgent } from "../resolve-agent";
 import { runWithExtraction } from "../run-with-extraction";
@@ -24,12 +26,10 @@ import { runWithExtraction } from "../run-with-extraction";
  * serialise rigid JSON in one turn, and a malformed block self-corrects via
  * same-session retry (≤3×) before anything is posted.
  *
- * Per invariant H the runner emits ONLY commits + output files: the fix commits
- * land on the branch (the workflow pushes them) and `pr_comment.md` — a
- * Markdown summary of what was addressed/deferred — is written to `OUTPUT_DIR`.
- * The workflow pushes the commits and posts that summary as a PR comment. It
- * does NOT flip the PR's draft/ready state — implement-pr only answers review
- * comments; the ready transition belongs to review.
+ * The productive agent publishes fix/recovery commits and proves Product CI, but
+ * feedback publication remains workflow-owned. This runner writes the summary,
+ * replies, and green head SHA to `OUTPUT_DIR`; the workflow revalidates them
+ * before posting. Implement-PR never flips draft/ready state.
  */
 
 const ctx = loadCapabilityContext("implement-pr");
@@ -49,10 +49,12 @@ const result = await runWithExtraction({
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
-  promptFile: path.join(import.meta.dirname, "prompt.md"),
-  // PR_NUMBER augments the shared promptArgs (ISSUE_NUMBER/ISSUE_TITLE/BRANCH) so
-  // the prompt can point the agent at the PR's own review threads.
-  promptArgs: { ...ctx.promptArgs, PR_NUMBER: prNumber },
+  // PR_NUMBER augments the shared prompt args (ISSUE_NUMBER/ISSUE_TITLE/BRANCH)
+  // so the prompt can point the agent at the PR's own review threads.
+  prompt: loadProductivePrompt({
+    promptFile: path.join(import.meta.dirname, "prompt.md"),
+    promptArgs: { ...ctx.promptArgs, PR_NUMBER: prNumber },
+  }),
   extractionPrompt: fs.readFileSync(
     path.join(import.meta.dirname, "extraction.md"),
     "utf8",
@@ -100,6 +102,10 @@ const replies = buildThreadReplies(result.output);
 fs.writeFileSync(
   path.join(ctx.outputDir, "thread_replies.json"),
   JSON.stringify(replies, null, 2),
+);
+fs.writeFileSync(
+  path.join(ctx.outputDir, "implement_pr_head_sha.txt"),
+  `${execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()}\n`,
 );
 
 console.log(

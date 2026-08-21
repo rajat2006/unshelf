@@ -81,14 +81,17 @@ pass cleanly, revert that fix and defer the comment instead.
 ### 3. Commit your changes
 
 Commit the fixes in focused commits with clear messages (e.g.
-`Address review: extract duplicated distance calc`). **Commit only — do not push,
-do not touch PR labels, comments, review threads, or `gh` state.** The workflow
-pushes your commits and posts a summary; your job is the commits and the report.
+`Address review: extract duplicated distance calc`). Do not touch PR labels,
+comments, review state, or threads.
 
 If you addressed nothing (every comment was deferred), make no commits — that is a
 valid outcome, and the summary will explain why.
 
-### 4. Re-check
+### 4. Publish and prove Product CI
+
+<!-- PRODUCT_CI_RECOVERY -->
+
+### 5. Re-check the green head
 
 Re-diff after your commits and confirm your changes actually resolve the comments
 they targeted and introduce nothing new:
@@ -96,6 +99,10 @@ they targeted and introduce nothing new:
 ```
 git diff origin/{{BASE_BRANCH}}...HEAD
 ```
+
+Any commit made during Product CI recovery invalidates the earlier feedback
+record. Re-read the unresolved review threads and regenerate the replies and
+summary against the resulting green head before reporting.
 
 # REPORTING
 

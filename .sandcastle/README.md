@@ -153,6 +153,16 @@ pinned Sandcastle version and Unshelf's provider set:
   provider resolved from the full label set). Each returns the `promptArgs` ready
   to spread into `run()`, so every capability resolves provider + env through this
   seam rather than re-parsing `process.env`.
+- **`product-ci.ts` / `product-ci-github.ts` / `product-ci-cli.ts`** — the shared,
+  fail-closed Product CI boundary. It reads the live PR, selects only the `CI`
+  pull-request run associated with its exact head/base pair, requires the latest
+  attempt's `Product` job to complete successfully, bounds diagnostics and
+  polling, performs/account successful candidate pushes, revalidates reruns, and
+  enforces the two-action recovery budget. The
+  GitHub dependency and polling clock are injectable for deterministic tests.
+- **`productive-prompt.ts` / `product-ci-prompt.md`** — composes the same Product
+  CI publication/recovery contract exactly once into Implement, Implement PRD,
+  Review, and Implement-PR before their final reporting/extraction phase.
 
 Later workflow tickets add each capability as a thin `run()` script + YAML on top
 of these helpers.
@@ -160,18 +170,22 @@ of these helpers.
 ## Capabilities
 
 Each capability is a self-contained directory — a `run()` script + its `prompt.md`
-— driven by one `.github/workflows/agent-*.yml`. The workflow owns every git,
-`gh`, and label mutation; the script only produces commits and/or output files.
+— driven by one `.github/workflows/agent-*.yml`. Workflows own lifecycle and
+publication mutations. Four productive calls have one narrow exception: they may
+plain-push only their current automation branch, create/update only its same-repo
+draft PR, inspect/wait for Product CI, and rerun the current Product CI. They may
+not mutate labels, issues, reviews, comments, threads, child state, ready state,
+merge state, or any other branch.
 
 - **`implement/`** — the core spine (workflow `agent-implement.yml`). Calls
   `run()` directly (no structured output — the *work is the commits*), guards on a
   non-zero commit count, and relies on the built-in `idleTimeoutSeconds` watchdog
-  inside the workflow's 60-min job timeout. Provider resolved from the full label
+  inside the workflow's 120-min job timeout. Provider resolved from the full label
   set via `resolveAgent`.
 - **`write-pr/`** — authors the draft PR's title + body via `runWithRetry`
   (structured output *is* the work), writing flat text files the workflow feeds to
-  `gh pr create --body-file`. Runs after the branch is pushed; reads and
-  summarises, never commits.
+  `gh pr edit --body-file`. Runs after the productive agent has published the
+  draft PR; reads and summarises, never commits.
 - **`explore/`** — the read-only issue investigation capability (workflow
   `agent-explore.yml`). A human applies `agent:explore`; the workflow reads the
   full label set, so a provider pin (`agent:claude` / `agent:codex`, else
@@ -185,9 +199,9 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
 - **`implement-prd/`** — the PRD variant of the spine (workflow
   `agent-implement-prd.yml`), mirroring CVM's incremental lifecycle: **one**
   sub-issue per run on the resumed accumulating branch, with coordinates + provider
-  from `loadPrdImplementContext`. Its job has a 120-minute outer timeout because a
-  complete vertical slice can include implementation, browser verification, and
-  review; the shared idle watchdog still catches a non-responsive agent earlier. A
+  from `loadPrdImplementContext`. Its job has the shared 120-minute outer timeout,
+  which bounds local work, Product CI polling, and at most two recovery actions;
+  the shared idle watchdog still catches a non-responsive agent earlier. A
   **two-phase** capability
   ({@link runWithExtraction}): the produce pass implements the sub-issue passed via
   `SUB_ISSUE_NUMBER` (reasoning in prose, committing its work); the resumed
@@ -197,10 +211,12 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   (legitimately zero commits) from an agent that gave up (also zero commits), so
   the runner fails the run on `blocked` (and on `completed` with no new commits) —
   leaving the sub-issue open and the PRD `agent:blocked` — while `completed`/
-  `already-satisfied` let the workflow close the sub-issue and advance. It never
-  closes a sub-issue the agent asked for help on.
-- **`write-prd-pr/`** — the PRD variant of `write-pr/`, run **only when opening
-  the PR** (the first sub-issue run; later runs reuse the PR). Same `runWithRetry`
+  `already-satisfied` may advance only after the existing draft PR head is green.
+  A first-child `already-satisfied` result without a PR fails closed, and a CI
+  repair commit makes the outcome `completed`. It never closes a sub-issue the
+  agent asked for help on.
+- **`write-prd-pr/`** — the PRD variant of `write-pr/`, run to reconcile the
+  productive agent's draft PR metadata. Same `runWithRetry`
   single-prompt shape, with coordinates + provider from `loadPrdPrContext`; frames
   the body around the **whole PRD** and schema-enforces a single `Closes #<PRD>`
   line — sub-issues are closed by the workflow per-run, not by the PR body.
@@ -209,12 +225,13 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   along both axes, **fixes what it safely can and commits** the fixes, and
   re-reviews; the resumed extraction pass emits the findings as one `<output>`
   block (`extraction.md`), each marked `fixed` or `unresolved`, validated against
-  `reviewOutputSchema` with same-session retry. Per invariant H the runner only
-  commits + writes files: fix commits land on the branch (the workflow pushes
-  them) and a ready-to-POST GitHub *reviews* payload (`review_payload.json` — a
+  `reviewOutputSchema` with same-session retry. The productive call publishes its
+  fixes, obtains green exact-candidate proof, re-reviews after any repair commit,
+  and writes a ready-to-POST GitHub *reviews* payload (`review_payload.json` — a
   summary body plus inline comments for unresolved findings, anchored to the diff
-  via `parseDiffLines`) goes to `OUTPUT_DIR`. The workflow pushes, posts the
-  review, then `gh pr ready`. Uses no external skills registry.
+  via `parseDiffLines`) plus the reviewed head SHA to `OUTPUT_DIR`. The workflow
+  rechecks that head and Product CI immediately before posting the review and
+  again before `gh pr ready`. Uses no external skills registry.
 - **`architecture-review/`** — the scheduled/on-demand codebase sweep (workflow
   `agent-architecture-review.yml`) via `runWithExtraction` — the autonomous,
   GitHub-native analogue of CVM's interactive `/improve-codebase-architecture`.
@@ -246,8 +263,9 @@ Each capability is a self-contained directory — a `run()` script + its `prompt
   touches; the resumed extraction pass emits one `<output>` block
   (`extraction.md`) recording each comment as `addressed` or `deferred` — with the
   addressed thread's `threadId` — validated against `implementPrOutputSchema` with
-  same-session retry. Per invariant H the runner only commits + writes files: fix
-  commits land on the branch, a Markdown summary (`pr_comment.md`) and a
+  same-session retry. The productive call publishes fixes, obtains green
+  exact-candidate proof, refreshes feedback after any repair commit, then writes a
+  Markdown summary (`pr_comment.md`), its green head SHA, and a
   `thread_replies.json` ({threadId, body} per answered thread) go to `OUTPUT_DIR`.
   The workflow pushes the commits, replies on each answered thread — `addressed`
   (the fix) *or* `deferred` (the reason it was left), CVM-style, reply only;

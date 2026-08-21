@@ -2,8 +2,8 @@ name: Agent Implement
 
 # The core spine (spec #52 / #63): applying `agent:implement` to a normal issue
 # runs one autonomous implementation and opens an auto-reviewed DRAFT PR. The
-# agent only produces commits + output files — this workflow owns every git,
-# `gh`, and label mutation.
+# The productive agent may publish its current branch, upsert its own draft PR,
+# and recover Product CI. The workflow retains every lifecycle mutation.
 
 on:
   issues:
@@ -16,7 +16,7 @@ jobs:
   implement:
     if: github.event.label.name == 'agent:implement'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       # Per-issue serialisation that QUEUES rather than cancels — two triggers on
       # the same issue run one after another, never concurrently, and an
@@ -28,6 +28,7 @@ jobs:
       queue: max
     permissions:
       contents: write
+      actions: write
       pull-requests: write
       issues: write
 
@@ -132,17 +133,63 @@ jobs:
             exit 0
           fi
 
-          # Pre-flight: if an open PR already closes this issue, refuse rather than
-          # force-push a second branch and collide on `gh pr create`. Keeps the
-          # one-issue → one-branch → one-PR invariant.
-          existing=$(gh pr list --state open \
-            --search "in:body \"#${ISSUE_NUMBER}\"" \
-            --json url,body \
-            --jq "[.[] | select(.body | test(\"(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b\"))]")
-          if [ "$(echo "$existing" | jq 'length')" -gt 0 ]; then
-            echo "existing_pr_url=$(echo "$existing" | jq -r '.[0].url')" >> "$GITHUB_OUTPUT"
+          slug=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | cut -c1-50 | sed -E 's/^-+|-+$//g')
+          [ -z "$slug" ] && slug="untitled"
+          branch="agent/issue-${ISSUE_NUMBER}-${slug}"
+          echo "branch_name=$branch" >> "$GITHUB_OUTPUT"
+
+          # A blocked retry may resume exactly one automation-owned draft PR for
+          # the deterministic branch/base. Any other existing PR shape is
+          # ambiguous and fails closed; history is never rewritten.
+          candidates=$(gh pr list --head "$branch" --state all \
+            --json number,url,state,isDraft,isCrossRepository,baseRefName,headRefName,body,author)
+          count=$(echo "$candidates" | jq 'length')
+          if [ "$count" -gt 1 ]; then
             echo "proceed=false" >> "$GITHUB_OUTPUT"
             echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+            echo "existing_pr_url=multiple PRs for ${branch}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          refs=""
+          if ! refs=$(gh api "repos/${GH_REPO}/git/matching-refs/heads/${branch}" 2>/dev/null); then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=shape-error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exact_ref=$(echo "$refs" | jq --arg ref "refs/heads/$branch" '[.[] | select(.ref == $ref)] | length')
+
+          if [ "$count" = "1" ]; then
+            valid=$(echo "$candidates" | jq --arg base "$BASE_BRANCH" --arg branch "$branch" --arg issue "$ISSUE_NUMBER" --arg owner "$owner" '
+              .[0] | select(.state == "OPEN" and .isDraft == true and .isCrossRepository == false and .baseRefName == $base and .headRefName == $branch and .author.login == $owner and (.body | test("(?i)(closes|fixes|resolves)\\s+#" + $issue + "\\b")))')
+            if [ -z "$valid" ]; then
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+              echo "existing_pr_url=$(echo "$candidates" | jq -r '.[0].url')" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$exact_ref" != "1" ]; then
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+              echo "existing_pr_url=$(echo "$candidates" | jq -r '.[0].url') (head branch is absent)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            resume_pr=$(echo "$valid" | jq -r '.number')
+            echo "resume_pr=$resume_pr" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$count" = "0" ] && [ "$exact_ref" != "0" ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+            echo "existing_pr_url=remote branch ${branch} exists without its draft PR" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          targeting=$(gh pr list --state open --search "in:body \"#${ISSUE_NUMBER}\"" --json number,url,body \
+            --jq "[.[] | select(.body | test(\"(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b\"))]")
+          unexpected=$(echo "$targeting" | jq --argjson resumed "${resume_pr:-null}" '[.[] | select(.number != $resumed)]')
+          if [ "$(echo "$unexpected" | jq 'length')" != "0" ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "refusal=existing_pr" >> "$GITHUB_OUTPUT"
+            echo "existing_pr_url=$(echo "$unexpected" | jq -r '.[0].url')" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -203,16 +250,7 @@ jobs:
         id: branch
         run: |
           set -euo pipefail
-          # Strip leading/trailing dashes AFTER truncating, so a cut through a
-          # separator can't leave a trailing dash; fall back for empty slugs
-          # (e.g. an all-punctuation title).
-          slug=$(echo "$ISSUE_TITLE" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed -E 's/[^a-z0-9]+/-/g' \
-            | cut -c1-50 \
-            | sed -E 's/^-+|-+$//g')
-          [ -z "$slug" ] && slug="untitled"
-          echo "name=agent/issue-${ISSUE_NUMBER}-${slug}" >> "$GITHUB_OUTPUT"
+          echo "name=${{ steps.gate.outputs.branch_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Create branch
         if: steps.gate.outputs.proceed == 'true'
@@ -222,7 +260,12 @@ jobs:
           set -euo pipefail
           git config user.name "unshelf-agent[bot]"
           git config user.email "unshelf-agent[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+          else
+            git checkout -b "$BRANCH"
+          fi
 
       - name: Setup pnpm
         if: steps.gate.outputs.proceed == 'true'
@@ -274,15 +317,18 @@ jobs:
           AGENT_LABELS: ${{ steps.gate.outputs.labels_json }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
+          # Required productive-call authority: current-branch publication,
+          # draft-PR upsert, Product CI inspection, and Product CI reruns only.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
         run: pnpm --dir .sandcastle exec tsx implement/implement.ts
 
       - name: Push branch
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
-        # Force-push: the branch name is deterministic from the issue number, so
-        # any pre-existing remote ref is an orphan from an earlier run.
-        run: git push --force origin "$BRANCH"
+        # Idempotent confirmation; the productive call already published the
+        # candidate. Plain push preserves retry history and fails on concurrency.
+        run: git push origin "$BRANCH"
 
       - name: Write PR title and description
         if: steps.gate.outputs.proceed == 'true' && success()
@@ -297,7 +343,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: pnpm --dir .sandcastle exec tsx write-pr/write-pr.ts
 
-      - name: Open draft PR
+      - name: Reconcile the agent-owned draft PR
         if: steps.gate.outputs.proceed == 'true' && success()
         id: open_pr
         env:
@@ -312,35 +358,28 @@ jobs:
           GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          matches=$(gh pr list --head "$BRANCH" --state open --json number,isDraft,isCrossRepository,baseRefName)
+          if [ "$(echo "$matches" | jq 'length')" != "1" ]; then
+            echo "Expected exactly one open draft PR for ${BRANCH}; the productive agent must publish it before returning."
+            exit 1
+          fi
+          pr_number=$(echo "$matches" | jq -r --arg base "$BASE_BRANCH" '.[0] | select(.isDraft == true and .isCrossRepository == false and .baseRefName == $base) | .number // empty')
+          [ -n "$pr_number" ] || { echo "The branch PR is ready, cross-repository, or targets the wrong base."; exit 1; }
           pr_title=$(head -c 256 "${RUNNER_TEMP}/pr_title.txt")
-          pr_url=$(gh pr create \
-            --draft \
-            --base "$BASE_BRANCH" \
-            --head "$BRANCH" \
-            --title "$pr_title" \
-            --body-file "${RUNNER_TEMP}/pr_description.txt")
-          echo "pr_number=$(basename "$pr_url")" >> "$GITHUB_OUTPUT"
+          gh pr edit "$pr_number" --title "$pr_title" --body-file "${RUNNER_TEMP}/pr_description.txt"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Propagate the resolved provider label to the PR
+      - name: Final Product CI gate — request review
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
-          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
-        # Provider continuity (spec §C/#64): the review workflow resolves its
-        # provider from the PR's OWN label set, so the PR must carry the label
-        # for whichever provider implemented it — otherwise a later flip of
-        # DEFAULT_PROVIDER would review the branch on the other provider. Pinning
-        # explicitly (agent:claude or agent:codex, not just agent:codex) makes
-        # the PR's provider independent of the default. Added BEFORE agent:review
-        # below so it is already present when the review gate reads the PR
-        # labels. GITHUB_TOKEN is fine here: neither provider label triggers a
-        # downstream workflow (only agent:review does).
-        run: gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL"
+        run: pnpm --dir .sandcastle exec tsx product-ci-cli.ts final-gate --pr "$PR_NUMBER"
 
       - name: Request automated review (add agent:review)
         if: steps.gate.outputs.proceed == 'true' && success()
         env:
           PR_NUMBER: ${{ steps.open_pr.outputs.pr_number }}
+          PROVIDER_LABEL: ${{ steps.provider.outputs.provider_label }}
           # AGENT_PAT so the labeled event triggers the downstream review
           # workflow — a GITHUB_TOKEN-applied label never triggers one. Falls
           # back to GITHUB_TOKEN; a human then re-adds agent:review to fire it.
@@ -348,16 +387,16 @@ jobs:
         run: |
           set -uo pipefail
           if [ -n "${AGENT_PAT:-}" ]; then
-            if GH_TOKEN="$AGENT_PAT" gh pr edit "$PR_NUMBER" --add-label "agent:review"; then
+            if GH_TOKEN="$AGENT_PAT" gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL" --add-label "agent:review"; then
               exit 0
             fi
             echo "AGENT_PAT label add failed; falling back to GITHUB_TOKEN (review will need a manual re-label)."
           fi
-          gh pr edit "$PR_NUMBER" --add-label "agent:review"
+          gh pr edit "$PR_NUMBER" --add-label "$PROVIDER_LABEL" --add-label "agent:review"
 
       - name: Mark blocked on failure
         # `failure()` covers crashes and the idle watchdog (a non-zero tsx exit).
-        # `cancelled()` covers the hard 60-min job `timeout-minutes` breach, which
+        # `cancelled()` covers the hard 120-min job `timeout-minutes` breach, which
         # cancels rather than fails the job — without it, a timed-out run would
         # never reach the blocked path (spec: "any stop … moves the issue to
         # agent:blocked").
