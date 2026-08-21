@@ -178,6 +178,7 @@ jobs:
           tags: ghcr.io/rajat2006/unshelf-web:${{ env.TRACE }}
           build-args: |
             VITE_CLERK_PUBLISHABLE_KEY=${{ env.CHANNEL == 'production' && vars.VITE_CLERK_PUBLISHABLE_KEY_PRODUCTION || vars.VITE_CLERK_PUBLISHABLE_KEY_NONPRODUCTION }}
+            VITE_YOUTUBE_OEMBED_ENABLED=true
           labels: |
             org.opencontainers.image.source=https://github.com/rajat2006/unshelf
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
