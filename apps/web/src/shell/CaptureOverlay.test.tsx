@@ -152,9 +152,8 @@ describe("global Capture", () => {
     expect(screen.getByLabelText("Type")).toHaveTextContent("Video");
     expect(screen.getAllByText("Suggested")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
-    expect(acquireTitle).not.toHaveBeenCalled();
-    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(acquireTitle).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
     await act(async () => {
       resolveTitle("A video title");
@@ -402,9 +401,8 @@ describe("global Capture", () => {
       await act(async () => vi.advanceTimersByTimeAsync(300));
 
       expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
-      expect(acquireTitle).not.toHaveBeenCalled();
-      await act(async () => vi.advanceTimersByTimeAsync(1));
       expect(acquireTitle).toHaveBeenCalledOnce();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
       expect(screen.getByRole("status")).toHaveTextContent(/Type was suggested/i);
       expect(screen.getByLabelText("Title")).toHaveValue("");
     },
@@ -432,6 +430,11 @@ describe("global Capture", () => {
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(signal?.aborted).toBe(true);
     expect(screen.getByRole("status")).toHaveTextContent(/Type was suggested/i);
+    await act(async () => {
+      hung.resolve("Too late");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByLabelText("Title")).toHaveValue("");
   });
 
   it("submits a complete Capture while checking without rewriting the exact Source", async () => {

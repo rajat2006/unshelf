@@ -77,15 +77,15 @@ function CaptureComposer({
   // Source work can settle out of order; only its starting revision may update Capture.
   const sourceRevision = useRef(0);
   const activeInspection = useRef<AbortController | null>(null);
-  const pendingAcquisition = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSettlement = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelActiveInspection = useCallback((): void => {
     activeInspection.current?.abort();
     activeInspection.current = null;
-    if (pendingAcquisition.current !== null) {
-      clearTimeout(pendingAcquisition.current);
-      pendingAcquisition.current = null;
+    if (pendingSettlement.current !== null) {
+      clearTimeout(pendingSettlement.current);
+      pendingSettlement.current = null;
     }
     if (visibleDeadline.current !== null) {
       clearTimeout(visibleDeadline.current);
@@ -126,9 +126,9 @@ function CaptureComposer({
       const settle = (suggestedTitle: boolean) => {
         if (revision !== sourceRevision.current) return;
         activeInspection.current = null;
-        if (pendingAcquisition.current !== null) {
-          clearTimeout(pendingAcquisition.current);
-          pendingAcquisition.current = null;
+        if (pendingSettlement.current !== null) {
+          clearTimeout(pendingSettlement.current);
+          pendingSettlement.current = null;
         }
         if (visibleDeadline.current !== null) {
           clearTimeout(visibleDeadline.current);
@@ -160,22 +160,26 @@ function CaptureComposer({
         settleOnce(false);
       }, 3_000);
 
-      // Let the checking state commit before an owned Title or a disabled lookup
-      // can settle synchronously, so the polite region announces both states.
-      pendingAcquisition.current = setTimeout(() => {
-        pendingAcquisition.current = null;
-        if (revision !== sourceRevision.current) return;
-        if (titleOwned.current) {
-          settleOnce(false);
-          return;
-        }
+      const deferSettlement = (applyResult: () => void) => {
+        pendingSettlement.current = setTimeout(() => {
+          pendingSettlement.current = null;
+          if (revision !== sourceRevision.current || settled) return;
+          applyResult();
+        }, 0);
+      };
 
-        void prepared.acquireTitle(controller.signal).then((acquiredTitle) => {
-          if (
-            revision !== sourceRevision.current ||
-            acquiredTitle === null ||
-            titleOwned.current
-          ) {
+      if (titleOwned.current) {
+        // Let checking commit before this synchronous no-acquisition outcome.
+        deferSettlement(() => settleOnce(false));
+        return;
+      }
+
+      void prepared.acquireTitle(controller.signal).then((acquiredTitle) => {
+        if (revision !== sourceRevision.current || settled) return;
+        // Disabled lookup may resolve immediately; defer only applying its result
+        // so the polite region can announce the checking state first.
+        deferSettlement(() => {
+          if (acquiredTitle === null || titleOwned.current) {
             settleOnce(false);
             return;
           }
@@ -185,7 +189,7 @@ function CaptureComposer({
           setTitleSuggested(true);
           settleOnce(true);
         });
-      }, 0);
+      });
     }, 300);
 
     return () => clearTimeout(debounce);
