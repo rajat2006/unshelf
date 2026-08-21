@@ -5,6 +5,14 @@ const workflow = readFileSync(
   new URL("../../../.github/workflows/publish-candidate.yml", import.meta.url),
   "utf8",
 );
+const productCiWorkflow = readFileSync(
+  new URL("../../../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
+const triggers = workflow.slice(
+  workflow.indexOf("on:\n"),
+  workflow.indexOf("\npermissions:"),
+);
 const dockerBuildInputs = [
   "../../../apps/api/Dockerfile",
   "../../../apps/web/Dockerfile",
@@ -14,18 +22,23 @@ const dockerBuildInputs = [
   .join("\n");
 
 describe("candidate publication workflow", () => {
-  it("publishes only after Product CI through the trusted control plane", () => {
-    expect(workflow).toContain("workflow_run:");
-    expect(workflow).toContain("workflows: [CI]");
-    expect(workflow).toContain("types: [completed]");
-    expect(workflow).toContain("conclusion == 'success'");
-    expect(workflow).toContain(
-      "head_repository.full_name == github.repository",
-    );
+  it("publishes only by explicit manual dispatch after exact Product CI", () => {
+    expect(triggers.match(/^ {2}[a-z_]+:/gm)).toEqual(["  workflow_dispatch:"]);
+    expect(workflow).toContain("source_sha:");
+    expect(workflow).toContain("source_event:");
+    expect(workflow).toContain("head_branch:");
+    expect(workflow).toContain("actions/workflows/ci.yml/runs");
+    expect(workflow).toContain("actions: read");
     expect(workflow).toContain("ref: dev");
     expect(workflow).toContain("prepare-candidate");
     expect(workflow).toContain("finalize-candidate");
     expect(workflow).not.toContain("pull_request_target:");
+  });
+
+  it("does not narrow Product CI while candidate publication is contained", () => {
+    expect(productCiWorkflow).toContain("pull_request:");
+    expect(productCiWorkflow).toContain("branches: [main, dev]");
+    expect(productCiWorkflow).toContain("workflow_dispatch:");
   });
 
   it("publishes separate immutable API and web trace images", () => {
