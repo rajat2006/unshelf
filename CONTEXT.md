@@ -94,7 +94,8 @@ _Avoid_: Bookmark, Link, Resource, Content
 
 **Type**:
 The kind of material an Item is — one of _article_, _video_, _playlist_,
-_course_, _book_, or _other_. Chosen by the User at capture; a label on the Item,
+_course_, _book_, or _other_. Confirmed by the User at Capture, whether entered
+manually or accepted from a Source inspection suggestion; a label on the Item,
 not a separate kind of record.
 _Avoid_: Kind, Category, Format
 
@@ -147,16 +148,25 @@ the Source, is what identifies an Item.
 _Avoid_: Link, URL, Bookmark
 
 **Capture**:
-The act of adding an Item to Unshelf — one uniform manual entry (required title,
-chosen Type, optional Source) landing in the **Library**. v1 has a single capture: no
-metadata is fetched (you type the title), and there is no bulk **import** from
-other tools. Pasting a link and adding an offline book by title are the same
-capture — the link just fills Source, which is stored verbatim and unvalidated.
-Manual Capture creates or reuses the Item immediately; it never waits in recurring
-discovery intake. If a matching Candidate is discovered later, it links to that
-Item while its Discovery remains visible and unresolved as already captured.
+The act of adding an Item to Unshelf — one uniform entry (required title,
+confirmed Type, optional Source) landing in the **Library**. An eligible YouTube
+Source may be inspected to suggest editable values, but the User still confirms
+the current fields explicitly and the Item retains no separate inspection
+metadata. Pasting a link and adding an offline book by title remain the same
+Capture; Source is stored verbatim, and absent or unsuccessful inspection never
+prevents manual completion. Capture creates or reuses the Item immediately; it
+never waits in recurring discovery intake. If a matching Candidate is discovered
+later, it links to that Item while its Discovery remains visible and unresolved as
+already captured.
 _Avoid_: Import, Ingest, Add, Save (Import means a bulk pull from an external
 tool — a deferred sibling of Capture, not a synonym)
+
+**Source inspection**:
+A one-shot, best-effort attempt inside Capture to suggest an Item's title and Type
+from an eligible YouTube video or playlist Source. It is advisory and ephemeral:
+it neither creates an Item nor leaves a durable metadata record, and its partial
+or absent result leaves the same Capture available for the User to complete.
+_Avoid_: Import, Discovery, metadata sync
 
 **Library**:
 The durable, flat home of every Item. Membership is inherent in Item existence
