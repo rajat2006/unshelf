@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Prototype — label-gated preview lifecycles</title>
+    <title>Prototype — choose a preview lifecycle</title>
     <style>
       :root {
-        --ink: #172126;
-        --muted: #617078;
+        --ink: #182126;
+        --muted: #637178;
         --line: #d8e0e3;
-        --paper: #f7f9f8;
-        --card: #fff;
+        --paper: #f6f8f7;
+        --card: #ffffff;
         --accent: #087f5b;
-        --warn: #b45f06;
-        --bad: #b42318;
+        --accent-soft: #e6f4ee;
+        --warn: #9a5a08;
       }
       * {
         box-sizing: border-box;
@@ -23,894 +23,354 @@
         background: var(--paper);
         color: var(--ink);
         font:
-          15px/1.45 ui-sans-serif,
+          16px/1.5 ui-sans-serif,
           system-ui,
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
           sans-serif;
       }
       main {
-        width: min(1180px, calc(100% - 32px));
-        margin: 36px auto 72px;
+        width: min(880px, calc(100% - 32px));
+        margin: 40px auto 72px;
       }
       h1,
       h2,
-      h3,
       p {
         margin-top: 0;
       }
       h1 {
-        font-size: clamp(28px, 4vw, 42px);
-        line-height: 1.08;
+        max-width: 700px;
         margin-bottom: 12px;
+        font-size: clamp(30px, 5vw, 46px);
+        line-height: 1.08;
       }
       h2 {
-        font-size: 20px;
-        margin-bottom: 14px;
-      }
-      h3 {
-        font-size: 15px;
-        margin-bottom: 8px;
+        margin-bottom: 12px;
+        font-size: 21px;
       }
       .eyebrow {
         color: var(--accent);
+        font-size: 12px;
         font-weight: 750;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        font-size: 12px;
       }
-      .lede {
-        max-width: 850px;
-        color: var(--muted);
-        font-size: 17px;
-      }
-      .notice {
-        border-left: 4px solid var(--accent);
-        background: #eaf6f1;
-        padding: 12px 16px;
-        margin: 22px 0;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 1.1fr 0.9fr;
-        gap: 16px;
-        margin: 16px 0;
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 18px;
-        box-shadow: 0 1px 2px rgba(20, 32, 38, 0.04);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-      }
-      th,
-      td {
-        text-align: left;
-        vertical-align: top;
-        padding: 10px;
-        border-bottom: 1px solid var(--line);
-      }
-      th {
-        color: var(--muted);
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-      }
-      tr:last-child td {
-        border-bottom: 0;
-      }
-      button,
-      select {
-        font: inherit;
-      }
-      button {
-        border: 1px solid #bcc8cc;
-        border-radius: 7px;
-        background: #fff;
-        color: var(--ink);
-        padding: 8px 11px;
-        cursor: pointer;
-      }
-      button:hover:not(:disabled) {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-      button.primary {
-        background: var(--accent);
-        color: #fff;
-        border-color: var(--accent);
-      }
-      button.danger {
-        color: var(--bad);
-      }
-      .controls,
-      .tabs,
-      .steps {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-      }
-      .tabs button.active {
-        background: var(--ink);
-        color: #fff;
-        border-color: var(--ink);
-      }
-      .toolbar {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        margin-bottom: 16px;
-        flex-wrap: wrap;
-      }
-      select {
-        border: 1px solid #bcc8cc;
-        border-radius: 7px;
-        padding: 8px 28px 8px 10px;
-        background: #fff;
-      }
-      .state-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-      }
-      .metric {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
-        min-height: 80px;
-      }
-      .metric strong {
-        display: block;
-        font-size: 21px;
-        margin-top: 4px;
-      }
+      .lede,
       .muted {
         color: var(--muted);
       }
-      .good {
-        color: var(--accent);
+      .lede {
+        max-width: 720px;
+        font-size: 18px;
       }
-      .warn {
-        color: var(--warn);
-      }
-      .bad {
-        color: var(--bad);
-      }
-      .pill {
-        display: inline-block;
-        border-radius: 999px;
-        background: #edf1f2;
-        padding: 2px 7px;
-        font-size: 12px;
-        white-space: nowrap;
-      }
-      .pill.good {
-        background: #e2f4ec;
-      }
-      .pill.warn {
-        background: #fff1d8;
-      }
-      .pill.bad {
-        background: #fee9e7;
-      }
-      .pr-list {
-        display: grid;
-        gap: 8px;
-      }
-      .pr {
+      .card {
+        margin-top: 18px;
+        padding: 20px;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 11px;
-        display: grid;
-        grid-template-columns: 72px 1fr auto;
-        gap: 10px;
-        align-items: center;
+        border-radius: 12px;
+        background: var(--card);
       }
-      .pr.selected {
+      .glossary {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      .glossary div {
+        padding: 12px;
+        border-radius: 8px;
+        background: #f0f3f2;
+      }
+      .glossary strong {
+        display: block;
+      }
+      .choices,
+      .situations {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      button {
+        min-height: 68px;
+        padding: 11px;
+        border: 1px solid #bcc8cc;
+        border-radius: 9px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      button:hover,
+      button.active {
+        border-color: var(--accent);
+      }
+      button.active {
         outline: 2px solid var(--accent);
         outline-offset: -2px;
+        background: var(--accent-soft);
       }
-      .pr button {
-        padding: 5px 8px;
+      button strong,
+      button span {
+        display: block;
       }
-      .run {
-        border: 1px dashed #aab9be;
-        border-radius: 8px;
-        padding: 10px;
-        margin-top: 8px;
-      }
-      .log {
-        max-height: 270px;
-        overflow: auto;
-        padding-left: 22px;
-        margin-bottom: 0;
-      }
-      .log li {
-        margin-bottom: 6px;
-      }
-      .scenario {
-        margin-top: 18px;
-      }
-      .scenario-copy {
-        min-height: 64px;
+      button span {
+        margin-top: 3px;
         color: var(--muted);
+        font-size: 13px;
       }
-      .step.done {
-        text-decoration: line-through;
-        opacity: 0.55;
-      }
-      .step.current {
-        border-color: var(--accent);
+      .recommended {
         color: var(--accent);
+        font-weight: 700;
       }
-      code {
-        background: #edf1f2;
-        border-radius: 4px;
-        padding: 1px 4px;
+      .answer {
+        min-height: 210px;
+        border-left: 5px solid var(--accent);
       }
-      @media (max-width: 850px) {
-        .grid {
+      .answer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .answer-grid div {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+      }
+      .answer-grid strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+      .risk {
+        margin: 14px 0 0;
+        color: var(--warn);
+      }
+      .decision {
+        background: var(--accent-soft);
+      }
+      @media (max-width: 700px) {
+        .choices,
+        .situations,
+        .answer-grid,
+        .glossary {
           grid-template-columns: 1fr;
-        }
-        .state-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (max-width: 520px) {
-        .state-grid {
-          grid-template-columns: 1fr;
-        }
-        .pr {
-          grid-template-columns: 58px 1fr;
-        }
-        .pr button {
-          grid-column: 1/-1;
         }
       }
     </style>
   </head>
   <body>
     <main>
-      <p class="eyebrow">Throwaway logic prototype · Wayfinder ticket 506</p>
-      <h1>How much preview automation still feels simple?</h1>
+      <p class="eyebrow">Simplified throwaway prototype</p>
+      <h1>Who should remember to manage previews?</h1>
       <p class="lede">
-        This demo compares two label-gated lifecycles for at most three stable
-        pull-request previews. Push them through capacity, stale runs, failures,
-        and forgotten cleanup; then decide which operational burden is
-        acceptable for one maintainer.
+        A preview is a temporary copy of Unshelf for reviewing a pull request.
+        The only decision here is which actions happen by themselves and which
+        actions you want to trigger manually.
       </p>
-      <div class="notice">
-        <strong>Question being tested:</strong> Is “label drives everything”
-        worth its extra trusted event and reconciliation machinery, or is “label
-        grants eligibility; the maintainer drives every action” safer and
-        simpler despite the chores?
-      </div>
 
       <section class="card">
-        <h2>What each policy promises</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Concern</th>
-              <th>Automatic lifecycle</th>
-              <th>Explicit manual lifecycle</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Event surface</td>
-              <td>
-                Label/unlabel/close events plus every Product CI completion;
-                both label-before-CI and CI-before-label must converge.
-              </td>
-              <td>
-                One manual create/refresh action and one manual teardown action.
-                PR events never mutate Dokploy.
-              </td>
-            </tr>
-            <tr>
-              <td>Capacity</td>
-              <td>
-                A fourth eligible PR waits; successful teardown automatically
-                admits the oldest waiter.
-              </td>
-              <td>
-                A fourth create is refused; the maintainer tears one down and
-                requests creation again.
-              </td>
-            </tr>
-            <tr>
-              <td>Stale work</td>
-              <td>
-                Every run rechecks live label, PR head, CI result, and capacity.
-                Stale work aborts; the newest green head is queued
-                automatically.
-              </td>
-              <td>
-                The same rechecks abort stale work, but the maintainer must
-                request the new head.
-              </td>
-            </tr>
-            <tr>
-              <td>Failure recovery</td>
-              <td>
-                No automatic retry or rollback. The maintainer reruns the failed
-                revision.
-              </td>
-              <td>
-                Same: rerun create/refresh or teardown explicitly; no rollback.
-              </td>
-            </tr>
-            <tr>
-              <td>Cleanup owner</td>
-              <td>
-                Workflow tears down on unlabel/close, reconciles the waiting
-                list, and audits swallowed runtime-cleanup failures.
-              </td>
-              <td>
-                Maintainer tears down resources and retries failed cleanup; a
-                periodic orphan audit catches forgotten work.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="grid">
-        <div class="card">
-          <div class="toolbar">
-            <div>
-              <h2 style="margin-bottom: 3px">Current state</h2>
-              <span class="muted" id="last-change">Ready.</span>
-            </div>
-            <label
-              >Policy
-              <select id="policy">
-                <option value="automatic">Automatic</option>
-                <option value="manual">Explicit manual</option>
-              </select></label
-            >
+        <h2>Four words used below</h2>
+        <div class="glossary">
+          <div><strong>Label</strong>Permission to have a preview.</div>
+          <div>
+            <strong>Create</strong>Start the preview for the first time.
           </div>
-          <div class="state-grid" id="metrics"></div>
-          <h3 style="margin-top: 18px">Pull requests</h3>
-          <div class="pr-list" id="prs"></div>
-          <h3 style="margin-top: 18px">Serialized lifecycle queue</h3>
-          <div id="runs"></div>
-        </div>
-
-        <div class="card">
-          <h2>Free play</h2>
-          <p class="muted">
-            Select a pull request, then fire events in any order. “Finish
-            healthy” performs the final live-state recheck before changing the
-            preview.
-          </p>
-          <div class="controls" id="actions">
-            <button data-action="LABEL">Add preview label</button>
-            <button data-action="PUSH">Push commit</button>
-            <button data-action="CI_PASS">Product CI passes</button>
-            <button data-action="REQUEST">Request create / refresh</button>
-            <button data-action="UNLABEL">Remove label</button>
-            <button data-action="CLOSE">Close PR</button>
-            <button data-action="TEARDOWN">Request teardown</button>
-            <button class="primary" data-action="START">Start next job</button>
-            <button class="primary" data-action="FINISH">Finish healthy</button>
-            <button class="danger" data-action="FAIL">Fail current job</button>
-            <button data-action="RESET">Reset</button>
+          <div><strong>Update</strong>Put the newest approved code on it.</div>
+          <div>
+            <strong>Delete</strong>Remove the preview and free one slot.
           </div>
-          <h3 style="margin-top: 20px">What happened</h3>
-          <ol class="log" id="log"></ol>
         </div>
       </section>
 
-      <section class="card scenario">
-        <h2>Guided walkthroughs</h2>
-        <div class="tabs" id="scenario-tabs"></div>
-        <p class="scenario-copy" id="scenario-copy"></p>
-        <div class="steps" id="scenario-steps"></div>
+      <section class="card">
+        <h2>1. Choose an approach</h2>
+        <div class="choices" id="choices"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. See what happens</h2>
+        <div class="situations" id="situations"></div>
+      </section>
+
+      <section class="card answer" aria-live="polite">
+        <p class="eyebrow" id="selection"></p>
+        <h2 id="outcome-title"></h2>
+        <div class="answer-grid">
+          <div><strong>You do</strong><span id="human-action"></span></div>
+          <div>
+            <strong>The system does</strong><span id="system-action"></span>
+          </div>
+        </div>
+        <p class="risk">
+          <strong>Thing to watch:</strong> <span id="risk"></span>
+        </p>
+      </section>
+
+      <section class="card decision">
+        <h2>The shortest way to decide</h2>
+        <p>
+          If you dislike automatic updates, choose <strong>Balanced</strong>.
+          You decide when a preview is created or updated, but closing the pull
+          request still cleans it up automatically.
+        </p>
+        <p class="muted" style="margin-bottom: 0">
+          Choose Fully automatic only if pressing Update becomes annoying.
+          Choose Fully manual only if you specifically want closed previews to
+          stay online until you delete them yourself.
+        </p>
       </section>
     </main>
 
     <script>
-      // Portable prototype module: pure state creation and transitions, no DOM access.
-      const PreviewLifecycle = (() => {
-        const prs = () =>
-          Object.fromEntries(
-            [101, 102, 103, 104].map((number) => [
-              number,
-              {
-                number,
-                open: true,
-                labelled: false,
-                revision: 1,
-                head: `pr${number}-r1`,
-                ci: "success",
-                ciSha: `pr${number}-r1`,
-                schemaChange: false,
-              },
-            ]),
-          );
-
-        const base = (policy) => ({
-          policy,
-          selectedPr: 101,
-          prs: prs(),
-          resources: {},
-          queue: [],
-          running: null,
-          waiting: [],
-          looseImagePairs: 0,
-          cleanupAlerts: 0,
-          log: [`Started ${policy} lifecycle.`],
-          lastChange: "Ready.",
-        });
-
-        function initial(policy = "automatic", preset = "blank") {
-          const state = base(policy);
-          if (preset === "label-before-ci") {
-            state.prs[101].ci = "pending";
-            state.prs[101].ciSha = null;
-          }
-          if (preset === "capacity") {
-            [101, 102, 103].forEach((n) => {
-              state.prs[n].labelled = true;
-              state.resources[n] = {
-                pr: n,
-                liveSha: state.prs[n].head,
-                status: "healthy",
-              };
-            });
-            state.selectedPr = 104;
-          }
-          if (preset === "stale") {
-            state.prs[101].ci = "pending";
-            state.prs[101].ciSha = null;
-          }
-          return state;
-        }
-
-        const clone = (state) => structuredClone(state);
-        const note = (s, message) => {
-          s.lastChange = message;
-          s.log.unshift(message);
+      // This table is the decision being tested. The page only presents it.
+      const PreviewChoices = (() => {
+        const approaches = {
+          automatic: {
+            name: "Fully automatic",
+            summary: "The label controls everything.",
+          },
+          balanced: {
+            name: "Balanced",
+            summary: "You create and update; cleanup is automatic.",
+            recommended: true,
+          },
+          manual: {
+            name: "Fully manual",
+            summary: "Nothing changes until you ask.",
+          },
         };
-        const authorized = (p) => p.open && p.labelled && !p.schemaChange;
-        const exactGreen = (p) => p.ci === "success" && p.ciSha === p.head;
 
-        function queueDeploy(s, pr, source) {
-          const p = s.prs[pr];
-          if (!authorized(p))
-            return note(
-              s,
-              `PR ${pr}: refused ${source}; it is not an eligible labelled PR.`,
-            );
-          if (!exactGreen(p))
-            return note(
-              s,
-              `PR ${pr}: ${source} waits/refuses because Product CI is not green for ${p.head}.`,
-            );
-          s.waiting = s.waiting.filter((n) => n !== pr);
-          s.queue = s.queue.filter(
-            (run) => !(run.pr === pr && run.kind === "deploy"),
-          );
-          s.queue.push({ kind: "deploy", pr, sha: p.head, source });
-          note(s, `PR ${pr}: queued ${source} for exact green head ${p.head}.`);
-        }
+        const situations = {
+          commit: { name: "New code is ready" },
+          closed: { name: "The pull request closes" },
+          full: { name: "All three slots are full" },
+        };
 
-        function queueDelete(s, pr, source) {
-          s.queue = s.queue.filter(
-            (run) => !(run.pr === pr && run.kind === "deploy"),
-          );
-          s.waiting = s.waiting.filter((n) => n !== pr);
-          if (!s.resources[pr])
-            return note(
-              s,
-              `PR ${pr}: no preview resource exists; teardown is a no-op.`,
-            );
-          if (!s.queue.some((run) => run.pr === pr && run.kind === "delete"))
-            s.queue.push({ kind: "delete", pr, source });
-          note(s, `PR ${pr}: queued teardown from ${source}.`);
-        }
+        const outcomes = {
+          automatic: {
+            commit: {
+              title: "The preview updates by itself.",
+              human: "Nothing.",
+              system: "Checks the new code, then updates the preview.",
+              risk: "More automation has to decide whether an update is still current.",
+            },
+            closed: {
+              title: "The preview is deleted by itself.",
+              human: "Nothing.",
+              system: "Deletes the preview and frees its slot.",
+              risk: "Cleanup failures still need your attention.",
+            },
+            full: {
+              title: "The fourth preview waits.",
+              human:
+                "Nothing unless you want to choose which preview ends first.",
+              system:
+                "Starts the waiting preview when another slot becomes free.",
+              risk: "The waiting behavior is useful, but adds hidden coordination.",
+            },
+          },
+          balanced: {
+            commit: {
+              title: "The current preview stays online until you update it.",
+              human: "Press Update when you want the newest code.",
+              system: "Checks and deploys exactly the version you requested.",
+              risk: "The preview can show older code until you press Update.",
+            },
+            closed: {
+              title: "The preview is deleted by itself.",
+              human: "Nothing.",
+              system: "Deletes the preview and frees its slot.",
+              risk: "Cleanup failures still need your attention.",
+            },
+            full: {
+              title: "A fourth preview is refused for now.",
+              human: "Close or delete one preview, then press Create again.",
+              system: "Never creates more than three previews.",
+              risk: "You must retry the fourth request yourself.",
+            },
+          },
+          manual: {
+            commit: {
+              title: "The current preview stays online until you update it.",
+              human: "Press Update when you want the newest code.",
+              system: "Checks and deploys exactly the version you requested.",
+              risk: "The preview can show older code until you press Update.",
+            },
+            closed: {
+              title: "The closed preview stays online.",
+              human: "Remember to press Delete.",
+              system: "Does nothing until you ask.",
+              risk: "A forgotten preview keeps occupying one of three slots.",
+            },
+            full: {
+              title: "A fourth preview is refused for now.",
+              human: "Delete one preview, then press Create again.",
+              system: "Never creates more than three previews.",
+              risk: "You own both cleanup and the retry.",
+            },
+          },
+        };
 
-        function reconcileCapacity(s) {
-          if (s.policy !== "automatic" || Object.keys(s.resources).length >= 3)
-            return;
-          const candidate = s.waiting.find(
-            (pr) => authorized(s.prs[pr]) && exactGreen(s.prs[pr]),
-          );
-          if (candidate)
-            queueDeploy(s, candidate, "automatic capacity reconciliation");
-        }
-
-        function transition(state, action) {
-          const s = clone(state);
-          const pr = action.pr ?? s.selectedPr;
-          const p = s.prs[pr];
-          if (action.type === "SELECT") {
-            s.selectedPr = pr;
-            note(s, `Selected PR ${pr}.`);
-            return s;
-          }
-          if (action.type === "LABEL") {
-            p.labelled = true;
-            note(s, `PR ${pr}: preview label added; it is now eligible.`);
-            if (s.policy === "automatic") queueDeploy(s, pr, "label event");
-          }
-          if (action.type === "PUSH") {
-            p.revision += 1;
-            p.head = `pr${pr}-r${p.revision}`;
-            p.ci = "pending";
-            p.ciSha = null;
-            note(
-              s,
-              `PR ${pr}: new head ${p.head}; any existing preview stays on its last healthy revision while CI runs.`,
-            );
-          }
-          if (action.type === "CI_PASS") {
-            p.ci = "success";
-            p.ciSha = p.head;
-            note(s, `PR ${pr}: Product CI passed for ${p.head}.`);
-            if (s.policy === "automatic" && p.labelled)
-              queueDeploy(s, pr, "Product CI completion");
-          }
-          if (action.type === "REQUEST")
-            queueDeploy(s, pr, "manual create/refresh request");
-          if (action.type === "UNLABEL") {
-            p.labelled = false;
-            note(s, `PR ${pr}: preview label removed; authority ended.`);
-            if (s.policy === "automatic") queueDelete(s, pr, "unlabel event");
-            else if (s.resources[pr]) {
-              s.cleanupAlerts += 1;
-              note(
-                s,
-                `PR ${pr}: preview remains live until the maintainer requests teardown.`,
-              );
-            }
-          }
-          if (action.type === "CLOSE") {
-            p.open = false;
-            p.labelled = false;
-            note(s, `PR ${pr}: closed; deployment authority ended.`);
-            if (s.policy === "automatic") queueDelete(s, pr, "close event");
-            else if (s.resources[pr]) {
-              s.cleanupAlerts += 1;
-              note(
-                s,
-                `PR ${pr}: closed preview is now an operator-owned cleanup item.`,
-              );
-            }
-          }
-          if (action.type === "TEARDOWN")
-            queueDelete(s, pr, "manual teardown request");
-          if (action.type === "START") {
-            if (s.running)
-              note(
-                s,
-                "A lifecycle job is already running; global serialization prevents another from starting.",
-              );
-            else if (!s.queue.length) note(s, "The lifecycle queue is empty.");
-            else {
-              s.running = s.queue.shift();
-              note(
-                s,
-                `PR ${s.running.pr}: started ${s.running.kind} job${s.running.sha ? ` for ${s.running.sha}` : ""}.`,
-              );
-            }
-          }
-          if (action.type === "FINISH") {
-            if (!s.running) {
-              note(s, "There is no running job to finish.");
-              return s;
-            }
-            const run = s.running;
-            const live = s.prs[run.pr];
-            if (run.kind === "deploy") {
-              if (
-                !authorized(live) ||
-                !exactGreen(live) ||
-                live.head !== run.sha
-              ) {
-                s.looseImagePairs += 1;
-                s.running = null;
-                note(
-                  s,
-                  `PR ${run.pr}: stale job for ${run.sha} aborted before Dokploy mutation; live authority/head/CI no longer match.`,
-                );
-                if (
-                  s.policy === "automatic" &&
-                  authorized(live) &&
-                  exactGreen(live)
-                )
-                  queueDeploy(s, run.pr, "automatic stale-run reconciliation");
-                return s;
-              }
-              if (
-                !s.resources[run.pr] &&
-                Object.keys(s.resources).length >= 3
-              ) {
-                s.running = null;
-                if (s.policy === "automatic") {
-                  if (!s.waiting.includes(run.pr)) s.waiting.push(run.pr);
-                  note(
-                    s,
-                    `PR ${run.pr}: all three slots are occupied; it waits for automatic admission after teardown.`,
-                  );
-                } else
-                  note(
-                    s,
-                    `PR ${run.pr}: create refused because all three slots are occupied; teardown one and request create again.`,
-                  );
-                return s;
-              }
-              s.resources[run.pr] = {
-                pr: run.pr,
-                liveSha: run.sha,
-                status: "healthy",
-              };
-              s.running = null;
-              note(
-                s,
-                `PR ${run.pr}: health passed; ${run.sha} is now the live revision and success marker.`,
-              );
-            } else {
-              delete s.resources[run.pr];
-              s.running = null;
-              s.cleanupAlerts = Math.max(0, s.cleanupAlerts - 1);
-              note(
-                s,
-                `PR ${run.pr}: Dokploy record removed; runtime cleanup still belongs in the periodic orphan audit.`,
-              );
-              reconcileCapacity(s);
-            }
-          }
-          if (action.type === "FAIL") {
-            if (!s.running) {
-              note(s, "There is no running job to fail.");
-              return s;
-            }
-            const run = s.running;
-            s.running = null;
-            if (run.kind === "deploy") {
-              if (!s.resources[run.pr])
-                s.resources[run.pr] = {
-                  pr: run.pr,
-                  liveSha: null,
-                  status: "failed-create",
-                };
-              s.looseImagePairs += 1;
-              note(
-                s,
-                `PR ${run.pr}: deployment failed; no success marker advanced. The resource may occupy a slot until manual retry or teardown.`,
-              );
-            } else {
-              s.cleanupAlerts += 1;
-              note(
-                s,
-                `PR ${run.pr}: teardown failed; the resource remains and needs a manual retry plus orphan audit.`,
-              );
-            }
-          }
-          return s;
-        }
-
-        return { initial, transition };
+        return {
+          approaches,
+          situations,
+          outcome: (approach, situation) => outcomes[approach][situation],
+        };
       })();
 
-      const scenarios = [
-        {
-          id: "ordering",
-          label: "Automatic ordering",
-          policy: "automatic",
-          preset: "label-before-ci",
-          copy: "Label arrives before CI. Watch the workflow wait, then create; a later commit leaves the old healthy preview live until its exact head passes CI.",
-          steps: [
-            ["LABEL", 101, "Add label before CI"],
-            ["CI_PASS", 101, "CI passes: queue create"],
-            ["START", 101, "Start create"],
-            ["FINISH", 101, "Finish healthy"],
-            ["PUSH", 101, "Push a later commit"],
-            ["CI_PASS", 101, "Later CI passes: queue refresh"],
-            ["START", 101, "Start refresh"],
-            ["FINISH", 101, "Finish refreshed preview"],
-          ],
-        },
-        {
-          id: "capacity",
-          label: "Fourth preview",
-          policy: "automatic",
-          preset: "capacity",
-          copy: "Three previews already exist. The fourth labelled PR waits; closing one queues teardown, and successful cleanup automatically admits the waiter.",
-          steps: [
-            ["LABEL", 104, "Label the fourth PR"],
-            ["START", 104, "Start its queued create"],
-            ["FINISH", 104, "Capacity check makes it wait"],
-            ["CLOSE", 101, "Close an active PR"],
-            ["START", 101, "Start automatic teardown"],
-            ["FINISH", 101, "Finish teardown and admit waiter"],
-            ["START", 104, "Start admitted create"],
-            ["FINISH", 104, "Finish fourth preview"],
-          ],
-        },
-        {
-          id: "stale",
-          label: "Stale automatic run",
-          policy: "automatic",
-          preset: "stale",
-          copy: "A deploy starts for a green revision, then the PR moves. The pre-mutation recheck aborts old work; only a later exact CI success can queue the new head.",
-          steps: [
-            ["LABEL", 101, "Add label"],
-            ["CI_PASS", 101, "CI passes and queues create"],
-            ["START", 101, "Start create"],
-            ["PUSH", 101, "Push while it runs"],
-            ["FINISH", 101, "Old job aborts as stale"],
-            ["CI_PASS", 101, "New head passes CI"],
-            ["START", 101, "Start current create"],
-            ["FINISH", 101, "Finish current preview"],
-          ],
-        },
-        {
-          id: "manual",
-          label: "Manual chores",
-          policy: "manual",
-          preset: "blank",
-          copy: "The label only grants authority. Neither a green commit nor closing the PR changes Dokploy; every refresh and teardown needs a deliberate action.",
-          steps: [
-            ["LABEL", 101, "Grant eligibility"],
-            ["REQUEST", 101, "Request create"],
-            ["START", 101, "Start create"],
-            ["FINISH", 101, "Finish create"],
-            ["PUSH", 101, "Push later commit"],
-            ["CI_PASS", 101, "CI passes (no refresh queued)"],
-            ["REQUEST", 101, "Request refresh"],
-            ["START", 101, "Start refresh"],
-            ["FINISH", 101, "Finish refresh"],
-            ["CLOSE", 101, "Close PR (resource remains)"],
-            ["TEARDOWN", 101, "Request teardown"],
-            ["START", 101, "Start teardown"],
-            ["FINISH", 101, "Finish teardown"],
-          ],
-        },
-        {
-          id: "failure",
-          label: "Failure and retry",
-          policy: "manual",
-          preset: "blank",
-          copy: "A first deployment fails after creating remote state. It occupies capacity and advances no success marker; the same exact revision can be requested again.",
-          steps: [
-            ["LABEL", 101, "Grant eligibility"],
-            ["REQUEST", 101, "Request create"],
-            ["START", 101, "Start create"],
-            ["FAIL", 101, "Fail after remote creation"],
-            ["REQUEST", 101, "Retry same revision"],
-            ["START", 101, "Start retry"],
-            ["FINISH", 101, "Finish healthy retry"],
-          ],
-        },
-      ];
+      let selectedApproach = "balanced";
+      let selectedSituation = "commit";
 
-      let state = PreviewLifecycle.initial("automatic");
-      let scenario = null;
-      let stepIndex = 0;
-      const $ = (id) => document.getElementById(id);
+      const choices = document.getElementById("choices");
+      const situations = document.getElementById("situations");
 
       function render() {
-        $("policy").value = state.policy;
-        $("last-change").textContent = state.lastChange;
-        const active = Object.keys(state.resources).length;
-        $("metrics").innerHTML = `
-    <div class="metric"><span class="muted">Dokploy slots</span><strong class="${active === 3 ? "warn" : "good"}">${active} / 3</strong></div>
-    <div class="metric"><span class="muted">Queued + running</span><strong>${state.queue.length + (state.running ? 1 : 0)}</strong></div>
-    <div class="metric"><span class="muted">Waiting for capacity</span><strong class="${state.waiting.length ? "warn" : ""}">${state.waiting.length}</strong></div>
-    <div class="metric"><span class="muted">Cleanup signals</span><strong class="${state.cleanupAlerts + state.looseImagePairs ? "bad" : ""}">${state.cleanupAlerts + state.looseImagePairs}</strong></div>`;
-        $("prs").innerHTML = Object.values(state.prs)
-          .map((p) => {
-            const r = state.resources[p.number];
-            const authority = p.open
-              ? p.labelled
-                ? "labelled"
-                : "unlabelled"
-              : "closed";
-            const live = r ? r.liveSha || r.status : "none";
-            return `<div class="pr ${p.number === state.selectedPr ? "selected" : ""}"><strong>PR ${p.number}</strong><div><span class="pill ${p.labelled && p.open ? "good" : ""}">${authority}</span> <span class="pill ${p.ci === "success" ? "good" : "warn"}">CI ${p.ci}</span><br><small class="muted">head ${p.head} · live ${live}</small></div><button data-select="${p.number}">Select</button></div>`;
-          })
-          .join("");
-        const queue = state.queue
+        choices.innerHTML = Object.entries(PreviewChoices.approaches)
           .map(
-            (r) =>
-              `<div class="run">Queued: <strong>${r.kind}</strong> PR ${r.pr}${r.sha ? ` at <code>${r.sha}</code>` : ""}</div>`,
+            ([id, choice]) => `
+              <button data-approach="${id}" class="${id === selectedApproach ? "active" : ""}">
+                <strong>${choice.name}${choice.recommended ? ' <span class="recommended">Recommended</span>' : ""}</strong>
+                <span>${choice.summary}</span>
+              </button>`,
           )
           .join("");
-        $("runs").innerHTML =
-          (state.running
-            ? `<div class="run"><span class="pill warn">Running</span> <strong>${state.running.kind}</strong> PR ${state.running.pr}${state.running.sha ? ` at <code>${state.running.sha}</code>` : ""}</div>`
-            : "") + queue || '<p class="muted">No lifecycle work queued.</p>';
-        $("log").innerHTML = state.log.map((x) => `<li>${x}</li>`).join("");
-        document
-          .querySelectorAll("[data-select]")
-          .forEach(
-            (b) =>
-              (b.onclick = () =>
-                dispatch({ type: "SELECT", pr: Number(b.dataset.select) })),
-          );
-        renderScenario();
-      }
 
-      function dispatch(action) {
-        state =
-          action.type === "RESET"
-            ? PreviewLifecycle.initial(state.policy)
-            : PreviewLifecycle.transition(state, action);
-        render();
-      }
-
-      function startScenario(id) {
-        scenario = scenarios.find((s) => s.id === id);
-        stepIndex = 0;
-        state = PreviewLifecycle.initial(scenario.policy, scenario.preset);
-        render();
-      }
-
-      function renderScenario() {
-        $("scenario-tabs").innerHTML = scenarios
+        situations.innerHTML = Object.entries(PreviewChoices.situations)
           .map(
-            (s) =>
-              `<button class="${scenario?.id === s.id ? "active" : ""}" data-scenario="${s.id}">${s.label}</button>`,
+            ([id, situation]) => `
+              <button data-situation="${id}" class="${id === selectedSituation ? "active" : ""}">
+                <strong>${situation.name}</strong>
+                <span>Show me what happens</span>
+              </button>`,
           )
           .join("");
-        document
-          .querySelectorAll("[data-scenario]")
-          .forEach(
-            (b) => (b.onclick = () => startScenario(b.dataset.scenario)),
-          );
-        if (!scenario) {
-          $("scenario-copy").textContent =
-            "Choose a walkthrough. Each one resets the model to a known state.";
-          $("scenario-steps").innerHTML = "";
-          return;
-        }
-        $("scenario-copy").textContent = scenario.copy;
-        $("scenario-steps").innerHTML = scenario.steps
-          .map(
-            (step, i) =>
-              `<button class="step ${i < stepIndex ? "done" : i === stepIndex ? "current" : ""}" ${i !== stepIndex ? "disabled" : ""} data-step="${i}">${i + 1}. ${step[2]}</button>`,
-          )
-          .join("");
-        const current = document.querySelector(`[data-step="${stepIndex}"]`);
-        if (current)
-          current.onclick = () => {
-            const [type, pr] = scenario.steps[stepIndex];
-            state = PreviewLifecycle.transition(state, { type, pr });
-            stepIndex += 1;
+
+        const approach = PreviewChoices.approaches[selectedApproach];
+        const situation = PreviewChoices.situations[selectedSituation];
+        const outcome = PreviewChoices.outcome(
+          selectedApproach,
+          selectedSituation,
+        );
+
+        document.getElementById("selection").textContent =
+          `${approach.name} · ${situation.name}`;
+        document.getElementById("outcome-title").textContent = outcome.title;
+        document.getElementById("human-action").textContent = outcome.human;
+        document.getElementById("system-action").textContent = outcome.system;
+        document.getElementById("risk").textContent = outcome.risk;
+
+        document.querySelectorAll("[data-approach]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedApproach = button.dataset.approach;
             render();
-          };
+          });
+        });
+
+        document.querySelectorAll("[data-situation]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedSituation = button.dataset.situation;
+            render();
+          });
+        });
       }
 
-      $("policy").onchange = (e) => {
-        scenario = null;
-        stepIndex = 0;
-        state = PreviewLifecycle.initial(e.target.value);
-        render();
-      };
-      document.querySelectorAll("[data-action]").forEach(
-        (b) =>
-          (b.onclick = () => {
-            scenario = null;
-            stepIndex = 0;
-            dispatch({ type: b.dataset.action });
-          }),
-      );
       render();
     </script>
   </body>
