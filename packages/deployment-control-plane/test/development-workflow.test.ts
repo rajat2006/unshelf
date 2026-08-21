@@ -5,16 +5,16 @@ const workflow = readFileSync(
   new URL("../../../.github/workflows/deploy-development.yml", import.meta.url),
   "utf8",
 );
+const triggers = workflow.slice(
+  workflow.indexOf("on:\n"),
+  workflow.indexOf("\npermissions:"),
+);
 
 describe("hosted development deployment workflow", () => {
-  it("starts only after a successful trusted candidate run for dev", () => {
-    expect(workflow).toContain("workflow_run:");
-    expect(workflow).toContain("workflows: [Publish candidate images]");
-    expect(workflow).toContain("conclusion == 'success'");
-    expect(workflow).toContain("head_branch == 'dev'");
-    expect(workflow).toContain(
-      "head_repository.full_name == github.repository",
-    );
+  it("starts only by explicit manual dispatch for an exact dev SHA", () => {
+    expect(triggers.match(/^ {2}[a-z_]+:/gm)).toEqual(["  workflow_dispatch:"]);
+    expect(workflow).toContain("source_sha:");
+    expect(workflow).toContain("SOURCE_SHA: ${{ inputs.source_sha }}");
     expect(workflow).toContain("ref: dev");
   });
 
@@ -31,7 +31,6 @@ describe("hosted development deployment workflow", () => {
   it("keeps active remote work and only the newest pending target", () => {
     expect(workflow).toContain("group: development-deployment");
     expect(workflow).toContain("cancel-in-progress: false");
-    expect(workflow).toContain("workflows: [Publish candidate images]");
   });
 
   it("hands immutable digests to the trusted CLI under the target lock", () => {
