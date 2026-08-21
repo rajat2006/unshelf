@@ -98,19 +98,20 @@ describe("prepareYouTubeSourceInspection", () => {
   });
 
   it.each([
-    [
-      "https://youtu.be/abc_DEF-123?si=secret#t=20",
-      "https://www.youtube.com/watch?v=abc_DEF-123",
-      "A useful video",
-    ],
-    [
-      "https://youtube.com/playlist?list=0123456789&utm_source=secret#saved",
-      "https://www.youtube.com/playlist?list=0123456789",
-      "A useful playlist",
-    ],
+    {
+      source: "https://youtu.be/abc_DEF-123?si=secret#t=20",
+      canonicalSource: "https://www.youtube.com/watch?v=abc_DEF-123",
+      title: "A useful video",
+    },
+    {
+      source:
+        "https://youtube.com/playlist?list=0123456789&utm_source=secret#saved",
+      canonicalSource: "https://www.youtube.com/playlist?list=0123456789",
+      title: "A useful playlist",
+    },
   ])(
-    "acquires the title for %s using only its canonical identity",
-    async (source, canonicalSource, title) => {
+    "acquires the title for $source using only its canonical identity",
+    async ({ source, canonicalSource, title }) => {
       vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", "true");
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ title, type: "rich", html: "ignored" }), {

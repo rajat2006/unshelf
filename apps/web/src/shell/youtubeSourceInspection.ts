@@ -19,6 +19,8 @@ export function prepareYouTubeSourceInspection(
   source: string,
 ): PreparedYouTubeSourceInspection | null {
   const workingSource = source.trim();
+  // Check the original text first: URL parsing normalizes backslashes and
+  // erases explicit default ports, which would make ineligible Sources pass.
   if (workingSource.includes("\\") || hasExplicitPort(workingSource)) {
     return null;
   }
@@ -100,14 +102,28 @@ export function prepareYouTubeSourceInspection(
 }
 
 function canonicalVideoUrl(identifier: string): string {
-  const url = new URL("https://www.youtube.com/watch");
-  url.searchParams.set("v", identifier);
-  return url.toString();
+  return canonicalYouTubeUrl({ path: "watch", parameter: "v", identifier });
 }
 
 function canonicalPlaylistUrl(identifier: string): string {
-  const url = new URL("https://www.youtube.com/playlist");
-  url.searchParams.set("list", identifier);
+  return canonicalYouTubeUrl({
+    path: "playlist",
+    parameter: "list",
+    identifier,
+  });
+}
+
+function canonicalYouTubeUrl({
+  path,
+  parameter,
+  identifier,
+}: {
+  path: "watch" | "playlist";
+  parameter: "v" | "list";
+  identifier: string;
+}): string {
+  const url = new URL(`https://www.youtube.com/${path}`);
+  url.searchParams.set(parameter, identifier);
   return url.toString();
 }
 
