@@ -3,8 +3,8 @@
 # apps/web; Traefik routes everything except /api to it.
 #
 # Build context is the REPO ROOT (workspace lockfile + packages/shared). Vite
-# inlines VITE_* env at BUILD time, so the Clerk publishable key must be passed
-# as a build arg — it is not a runtime secret (it is the browser-public key).
+# inlines VITE_* env at BUILD time, so browser-public keys and feature choices
+# must be passed as build args rather than runtime container values.
 
 # ── base ──────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS base
@@ -27,6 +27,8 @@ COPY apps/web apps/web
 # Baked into the bundle at build time (see ADR-0009 auth guardrails / clerk-setup).
 ARG VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_YOUTUBE_OEMBED_ENABLED
+ENV VITE_YOUTUBE_OEMBED_ENABLED=$VITE_YOUTUBE_OEMBED_ENABLED
 RUN pnpm --filter @unshelf/web... build
 
 # ── runtime ───────────────────────────────────────────────────────────────────

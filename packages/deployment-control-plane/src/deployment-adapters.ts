@@ -293,8 +293,9 @@ function isExactHttpsOrigin(value: string | undefined): boolean {
   }
 }
 
-// The workflow event may be stale, so it cannot authorize a deployment. Re-read
-// the live dev head and require its exact successful push Product CI run.
+// Dispatch inputs and the workflow's legacy attestation literals cannot
+// authorize a deployment. Re-read the live dev head and require its exact
+// successful push Product CI run.
 async function isApprovedDevelopmentIntent({
   environment,
   intent,

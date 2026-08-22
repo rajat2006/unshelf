@@ -1,9 +1,12 @@
 name: Deploy development
 
 on:
-  workflow_run:
-    workflows: [Publish candidate images]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact current dev commit to deploy
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,10 +20,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'dev' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
     environment: development
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -29,13 +28,13 @@ jobs:
       contents: read
       packages: write
     env:
-      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
       APPROVED_CHANNEL: development
-      APPROVED_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      APPROVED_SOURCE_SHA: ${{ inputs.source_sha }}
       APPROVED_EVENT: workflow_run
-      APPROVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      APPROVED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
-      APPROVED_CANDIDATE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      APPROVED_HEAD_BRANCH: dev
+      APPROVED_HEAD_REPOSITORY: ${{ github.repository }}
+      APPROVED_CANDIDATE_CONCLUSION: success
       DEPLOYMENT_ENVIRONMENT: development
       DOKPLOY_URL: ${{ vars.DOKPLOY_NONPRODUCTION_URL }}
       DOKPLOY_COMPOSE_ID: ${{ vars.DOKPLOY_DEVELOPMENT_COMPOSE_ID }}

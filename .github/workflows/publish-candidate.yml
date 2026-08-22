@@ -1,35 +1,45 @@
 name: Publish candidate images
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit to publish
+        required: true
+        type: string
+      source_event:
+        description: Product CI event that approved the source
+        required: true
+        type: choice
+        options: [push, pull_request]
+      head_branch:
+        description: Branch containing the exact source commit
+        required: true
+        type: string
 
-# Product CI is deliberately secret-free. This trusted default-branch workflow
-# receives package authority only after that run succeeds, and it rejects fork
-# heads before any privileged job starts.
+# Product CI is deliberately secret-free. The trusted preflight rejects stale
+# branch and pull-request heads and requires their exact successful CI run
+# before either package-write job starts.
 permissions:
   contents: read
 
 concurrency:
-  group: candidate-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch }}
+  group: candidate-${{ inputs.source_event }}-${{ inputs.head_branch }}
   cancel-in-progress: true
 
 env:
-  SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-  CHANNEL: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'dev' && 'development' || github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && 'production' || 'preview' }}
-  TRACE: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'dev' && 'development' || github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && 'production' || 'preview' }}-${{ github.event.workflow_run.head_sha }}
+  SOURCE_SHA: ${{ inputs.source_sha }}
+  SOURCE_EVENT: ${{ inputs.source_event }}
+  HEAD_BRANCH: ${{ inputs.head_branch }}
+  CHANNEL: ${{ inputs.source_event == 'push' && inputs.head_branch == 'dev' && 'development' || inputs.source_event == 'push' && inputs.head_branch == 'main' && 'production' || 'preview' }}
+  TRACE: ${{ inputs.source_event == 'push' && inputs.head_branch == 'dev' && 'development' || inputs.source_event == 'push' && inputs.head_branch == 'main' && 'production' || 'preview' }}-${{ inputs.source_sha }}
 
 jobs:
   preflight:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      (github.event.workflow_run.event == 'push' ||
-       github.event.workflow_run.event == 'pull_request')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
       packages: read
 
@@ -68,13 +78,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPROVED_CHANNEL: ${{ env.CHANNEL }}
           APPROVED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
-          APPROVED_EVENT: ${{ github.event.workflow_run.event }}
-          APPROVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          APPROVED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          APPROVED_EVENT: ${{ env.SOURCE_EVENT }}
+          APPROVED_HEAD_BRANCH: ${{ env.HEAD_BRANCH }}
+          APPROVED_HEAD_REPOSITORY: ${{ github.repository }}
         run: >-
           node packages/deployment-control-plane/dist/cli.js prepare-candidate
           --channel "$CHANNEL"
           --source-sha "$SOURCE_SHA"
+
+      - name: Verify exact successful Product CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SOURCE_SHA}&status=completed&per_page=100")"
+          jq -e \
+            --arg sha "$SOURCE_SHA" \
+            --arg event "$SOURCE_EVENT" \
+            --arg branch "$HEAD_BRANCH" \
+            '.workflow_runs | any(.head_sha == $sha and .head_branch == $branch and .event == $event and .conclusion == "success")' \
+            <<< "$runs" > /dev/null
 
   api-image:
     needs: preflight
@@ -169,6 +192,7 @@ jobs:
           tags: ghcr.io/rajat2006/unshelf-web:${{ env.TRACE }}
           build-args: |
             VITE_CLERK_PUBLISHABLE_KEY=${{ env.CHANNEL == 'production' && vars.VITE_CLERK_PUBLISHABLE_KEY_PRODUCTION || vars.VITE_CLERK_PUBLISHABLE_KEY_NONPRODUCTION }}
+            VITE_YOUTUBE_OEMBED_ENABLED=true
           labels: |
             org.opencontainers.image.source=https://github.com/rajat2006/unshelf
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
@@ -217,9 +241,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPROVED_CHANNEL: ${{ env.CHANNEL }}
           APPROVED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
-          APPROVED_EVENT: ${{ github.event.workflow_run.event }}
-          APPROVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          APPROVED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          APPROVED_EVENT: ${{ env.SOURCE_EVENT }}
+          APPROVED_HEAD_BRANCH: ${{ env.HEAD_BRANCH }}
+          APPROVED_HEAD_REPOSITORY: ${{ github.repository }}
           API_DIGEST: ${{ needs.api-image.outputs.digest }}
           WEB_DIGEST: ${{ needs.web-image.outputs.digest }}
         run: >-
