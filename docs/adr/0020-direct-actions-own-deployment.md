@@ -66,6 +66,16 @@ controls rather than database enforcement. The deferred remediation is
 [Split hosted-development database roles](https://github.com/rajat2006/unshelf/issues/290).
 Production must use separate infrastructure and production-only credentials.
 
+Local development also connects directly to that managed non-production
+PostgreSQL service through its VPS TCP 5432 endpoint. The published endpoint and
+password-authenticated access are an intentional development-only exception,
+not an application Compose port or an isolation failure. Hosted API, migration,
+and preview services still use the private database overlay. This accepts that
+the PostgreSQL authentication surface is externally reachable while preserving
+the current low-friction local workflow and disposable-data boundary. A tunnel,
+private network, or narrower network policy remains future hardening only when
+observed need justifies it. Production must not copy the exception.
+
 ## Consequences
 
 - Workflow YAML and small local helpers may validate HTTP/JSON, but channel
@@ -80,5 +90,9 @@ Production must use separate infrastructure and production-only credentials.
 - Dokploy's installed-version behavior and all destructive cleanup remain live
   acceptance gates; API success alone does not prove runtime resources were
   removed.
+- The installed-version gate records and authenticates through development's
+  intentional PostgreSQL endpoint; the endpoint's presence alone is not failed
+  isolation. Application ingress, private-overlay membership, and production
+  database isolation remain separate requirements.
 - ADR-0017 remains accepted because the image, Compose, routing, and managed
   PostgreSQL boundaries it records are unchanged.

@@ -53,6 +53,14 @@ migrate (API digest) ──completed──▶ api (same API digest) ──starte
   `/api` to API port 3001 and `/` to web port 80 on one HTTPS origin.
 - API and migrate additionally join the channel's private database network.
 
+The managed non-production PostgreSQL service is outside application Compose
+and intentionally publishes VPS TCP 5432 for password-authenticated local
+development. Hosted development and preview services do not use that endpoint;
+they resolve the database service over the private overlay. Treat the external
+authentication surface as an accepted development-only exception while the
+local workflow needs it. Do not copy it into production, and do not infer that
+application service ports may be published.
+
 The complete resource environment contains:
 
 | Name | Rule |
@@ -184,6 +192,12 @@ SHA. Manual dispatch follows exactly the same path.
 Development uses `MIGRATION_MODE=apply`. It reuses the existing Compose
 resource, managed PostgreSQL service, private database network, domains, and
 runtime configuration when the live preflight passes.
+
+Local development connects directly to the managed non-production PostgreSQL
+service through the VPS TCP 5432 endpoint with non-production credentials. The
+endpoint is retained for that workflow; do not remove it merely to make the
+managed service appear private-only. Never record its credentials or connection
+string as acceptance evidence.
 
 The schedule is absent during the initial authority switch. Enable the 22:00
 `Asia/Kolkata` schedule only after one manual deployment and an immediate
@@ -351,7 +365,9 @@ versions/digests and use a disposable preview-shaped resource to prove:
    publish;
 4. accepted `compose.create` fields and the returned Compose ID;
 5. complete raw Compose/environment/isolation update behavior;
-6. the private database-network attachment and isolated ingress topology;
+6. the private database-network attachment, isolated application ingress, and
+   password-authenticated local access through the intentional non-production
+   PostgreSQL TCP 5432 endpoint;
 7. exact search projection and last-healthy marker persistence;
 8. two same-host Domain records and trusted HTTPS routing;
 9. correlated deployment-record appearance and terminal states;
@@ -363,6 +379,13 @@ Stop for review on any unsupported field, ambiguous identity, failed isolation,
 untrusted transport, or capacity limit. This compatibility check is disposable
 acceptance evidence, not a new control plane.
 
+The intentional non-production PostgreSQL endpoint is not by itself failed
+isolation. For that gate, record only that the exact managed service retains its
+private overlay, hosted services use the internal service path, and an external
+client cannot authenticate without valid non-production credentials. Do not
+record the username, password, connection string, or raw authentication output.
+Production remains private-only.
+
 ## Replacement cutover
 
 ### 1. Inventory the live non-production foundation
@@ -371,6 +394,8 @@ Record only redacted stable identifiers for:
 
 - the current development Compose resource and domains;
 - the managed PostgreSQL service and service-spec networks;
+- its intentional development-only TCP 5432 publication and redacted
+  authentication-required result;
 - any legacy Compose resource, application-local database, volume, route,
   container, stack, directory, registry entry, or backup configuration;
 - the currently deployed source/digests and health; and
@@ -385,6 +410,12 @@ Rebuild may drop an attachment that Dokploy does not own.
 Prefer the existing development Compose resource, domains, managed PostgreSQL
 service, network, and GitHub Environment. Repair installed-version or network
 drift in place when safe.
+
+Preserve the managed service's TCP 5432 publication while direct local
+development depends on it. Its presence is not drift and does not require
+containment, replacement, a tunnel, or a private-network project. Revisit the
+access path separately only when operational or security evidence justifies the
+additional scope.
 
 If the existing Compose resource cannot satisfy the accepted update, marker,
 routing, or identity contract, create a replacement Compose resource in the
