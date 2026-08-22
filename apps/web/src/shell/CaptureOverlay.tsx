@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ITEM_TYPES, Type } from "@unshelf/shared";
 import { captureItem } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TYPE_LABELS } from "../items/presentation";
+import { prepareYouTubeSourceInspection } from "./youtubeSourceInspection";
 
 interface CaptureOverlayProps {
   isOpen: boolean;
@@ -63,9 +64,143 @@ function CaptureComposer({
   const [title, setTitle] = useState("");
   const [type, setType] = useState<Type | "">("");
   const [source, setSource] = useState("");
+  const [titleSuggested, setTitleSuggested] = useState(false);
+  const [typeSuggested, setTypeSuggested] = useState(false);
+  const [inspectionStatus, setInspectionStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<CaptureErrors>({});
   const [requestFailed, setRequestFailed] = useState(false);
+  const titleOwned = useRef(false);
+  const typeOwned = useRef(false);
+  const titleSuggestion = useRef(false);
+  const typeSuggestion = useRef(false);
+  // Source work can settle out of order; only its starting revision may update Capture.
+  const sourceRevision = useRef(0);
+  const activeInspection = useRef<AbortController | null>(null);
+  const pendingSettlement = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelActiveInspection = useCallback((): void => {
+    activeInspection.current?.abort();
+    activeInspection.current = null;
+    if (pendingSettlement.current !== null) {
+      clearTimeout(pendingSettlement.current);
+      pendingSettlement.current = null;
+    }
+    if (visibleDeadline.current !== null) {
+      clearTimeout(visibleDeadline.current);
+      visibleDeadline.current = null;
+    }
+  }, []);
+
+  const invalidateInspection = useCallback((): void => {
+    sourceRevision.current += 1;
+    cancelActiveInspection();
+  }, [cancelActiveInspection]);
+
+  function clearPriorSuggestions(): void {
+    if (titleSuggestion.current && !titleOwned.current) setTitle("");
+    if (typeSuggestion.current && !typeOwned.current) setType("");
+    titleSuggestion.current = false;
+    typeSuggestion.current = false;
+    setTitleSuggested(false);
+    setTypeSuggested(false);
+  }
+
+  useEffect(() => {
+    if (sourceRevision.current === 0) return;
+    const revision = sourceRevision.current;
+    const debounce = setTimeout(() => {
+      if (revision !== sourceRevision.current) return;
+      const prepared = prepareYouTubeSourceInspection(source);
+      if (prepared === null) return;
+
+      if (!typeOwned.current) {
+        setType(prepared.type);
+        setErrors((current) => ({ ...current, type: undefined }));
+        typeSuggestion.current = true;
+        setTypeSuggested(true);
+      }
+      setInspectionStatus("Checking YouTube details…");
+
+      const settle = (suggestedTitle: boolean) => {
+        if (revision !== sourceRevision.current) return;
+        activeInspection.current = null;
+        if (pendingSettlement.current !== null) {
+          clearTimeout(pendingSettlement.current);
+          pendingSettlement.current = null;
+        }
+        if (visibleDeadline.current !== null) {
+          clearTimeout(visibleDeadline.current);
+          visibleDeadline.current = null;
+        }
+        if (suggestedTitle) {
+          setInspectionStatus("YouTube details were suggested.");
+        } else if (typeSuggestion.current && !typeOwned.current) {
+          setInspectionStatus(
+            titleOwned.current
+              ? `${TYPE_LABELS[prepared.type]} Type was suggested; your Title was kept.`
+              : `${TYPE_LABELS[prepared.type]} Type was suggested; enter Title manually.`,
+          );
+        } else {
+          setInspectionStatus("Your entries were kept.");
+        }
+      };
+
+      const controller = new AbortController();
+      activeInspection.current = controller;
+      let settled = false;
+      const settleOnce = (suggestedTitle: boolean) => {
+        if (settled) return;
+        settled = true;
+        settle(suggestedTitle);
+      };
+      visibleDeadline.current = setTimeout(() => {
+        controller.abort();
+        settleOnce(false);
+      }, 3_000);
+
+      const deferSettlement = (applyResult: () => void) => {
+        pendingSettlement.current = setTimeout(() => {
+          pendingSettlement.current = null;
+          if (revision !== sourceRevision.current || settled) return;
+          applyResult();
+        }, 0);
+      };
+
+      if (titleOwned.current) {
+        // Let checking commit before this synchronous no-acquisition outcome.
+        deferSettlement(() => settleOnce(false));
+        return;
+      }
+
+      void prepared.acquireTitle(controller.signal).then((acquiredTitle) => {
+        if (revision !== sourceRevision.current || settled) return;
+        // Disabled lookup may resolve immediately; defer only applying its result
+        // so the polite region can announce the checking state first.
+        deferSettlement(() => {
+          if (acquiredTitle === null || titleOwned.current) {
+            settleOnce(false);
+            return;
+          }
+          setTitle(acquiredTitle);
+          setErrors((current) => ({ ...current, title: undefined }));
+          titleSuggestion.current = true;
+          setTitleSuggested(true);
+          settleOnce(true);
+        });
+      });
+    }, 300);
+
+    return () => clearTimeout(debounce);
+  }, [source]);
+
+  useEffect(
+    () => () => {
+      invalidateInspection();
+    },
+    [invalidateInspection],
+  );
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -82,6 +217,8 @@ function CaptureComposer({
       return;
     }
 
+    invalidateInspection();
+    setInspectionStatus("");
     setSaving(true);
     setRequestFailed(false);
     try {
@@ -112,20 +249,54 @@ function CaptureComposer({
         onSubmit={(event) => void submit(event)}
         className="grid gap-5"
       >
-        <Field data-invalid={Boolean(errors.title)}>
-          <FieldLabel id="capture-title-label" htmlFor="capture-title">
-            Title
+        <Field>
+          <FieldLabel id="capture-source-label" htmlFor="capture-source">
+            Source
           </FieldLabel>
+          <Input
+            id="capture-source"
+            aria-labelledby="capture-source-label"
+            value={source}
+            onChange={(event) => {
+              invalidateInspection();
+              clearPriorSuggestions();
+              setInspectionStatus("");
+              setSource(event.target.value);
+            }}
+            placeholder="Paste a link, or leave blank for an offline Item"
+            autoFocus
+          />
+          <FieldDescription>
+            Optional; stored exactly as entered.
+          </FieldDescription>
+        </Field>
+
+        <Field data-invalid={Boolean(errors.title)}>
+          <div className="flex items-baseline justify-between gap-3">
+            <FieldLabel id="capture-title-label" htmlFor="capture-title">
+              Title
+            </FieldLabel>
+            {titleSuggested && (
+              <span className="text-xs text-muted-foreground">Suggested</span>
+            )}
+          </div>
           <Input
             ref={titleRef}
             id="capture-title"
             value={title}
             onChange={(event) => {
+              titleOwned.current = true;
+              titleSuggestion.current = false;
+              setTitleSuggested(false);
+              if (activeInspection.current !== null) {
+                sourceRevision.current += 1;
+                cancelActiveInspection();
+                setInspectionStatus("");
+              }
               setTitle(event.target.value);
               setErrors((current) => ({ ...current, title: undefined }));
             }}
             placeholder="What did you find?"
-            autoFocus
             aria-labelledby="capture-title-label"
             aria-invalid={Boolean(errors.title)}
             aria-describedby={errors.title ? "capture-title-error" : undefined}
@@ -136,12 +307,20 @@ function CaptureComposer({
         </Field>
 
         <Field data-invalid={Boolean(errors.type)}>
-          <FieldLabel id="capture-type-label" htmlFor="capture-type">
-            Type
-          </FieldLabel>
+          <div className="flex items-baseline justify-between gap-3">
+            <FieldLabel id="capture-type-label" htmlFor="capture-type">
+              Type
+            </FieldLabel>
+            {typeSuggested && (
+              <span className="text-xs text-muted-foreground">Suggested</span>
+            )}
+          </div>
           <Select
             value={type}
             onValueChange={(value) => {
+              typeOwned.current = true;
+              typeSuggestion.current = false;
+              setTypeSuggested(false);
               setType(value as Type);
               setErrors((current) => ({ ...current, type: undefined }));
             }}
@@ -168,21 +347,13 @@ function CaptureComposer({
           )}
         </Field>
 
-        <Field>
-          <FieldLabel id="capture-source-label" htmlFor="capture-source">
-            Source
-          </FieldLabel>
-          <Input
-            id="capture-source"
-            aria-labelledby="capture-source-label"
-            value={source}
-            onChange={(event) => setSource(event.target.value)}
-            placeholder="Paste a link, or leave blank for an offline Item"
-          />
-          <FieldDescription>
-            Optional; stored exactly as entered.
-          </FieldDescription>
-        </Field>
+        <p
+          role="status"
+          aria-live="polite"
+          className="min-h-5 text-sm text-muted-foreground"
+        >
+          {inspectionStatus}
+        </p>
 
         {requestFailed && (
           <Alert>
