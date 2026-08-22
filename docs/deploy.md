@@ -70,8 +70,8 @@ The complete resource environment contains:
 | `DATABASE_URL` | Opaque internal connection URL; never assemble or print it in workflow logs. |
 | `DATABASE_TIME_ZONE` | PostgreSQL timezone defining Unshelf's server calendar day. |
 | `DATABASE_NETWORK` | Private attachable overlay for the channel's managed PostgreSQL service. |
-| `APP_NAME` | Dokploy-written isolated ingress network name. |
-| `APPLICATION_NAME` | Stable channel/resource identity. |
+| `APP_NAME` | Dokploy-written runtime `appName`; selects the Compose project and isolated ingress network. Never supply or store it in GitHub configuration. |
+| `APPLICATION_NAME` | Unshelf's stable logical channel/resource identity; derived by the workflow and persisted in the Compose environment. |
 | `PUBLIC_ORIGIN` | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
 | `CLERK_SECRET_KEY` | Runtime secret for the matching Clerk instance. |
 | `CLERK_PUBLISHABLE_KEY` | Runtime publishable key for the matching Clerk instance. |
@@ -80,6 +80,9 @@ The complete resource environment contains:
 
 The web publishable key is compiled into each channel-local web image. It is
 not runtime configuration, and images are never promoted between channels.
+Preview `name`, `appName`, and Compose ID live on the Dokploy Compose record;
+the workflow derives or reads them for each run rather than storing dynamic
+identity values in GitHub variables, secrets, repository files, or a ledger.
 
 ## Revision authority and Product CI
 
@@ -158,28 +161,62 @@ APIs are not used.
 Preview operations serialize through one global concurrency group so
 count-and-create is race-free without a lock service.
 
-Use only the immutable pull-request number for resource identity:
+The immutable pull-request number derives the stable logical identity:
 
-- exact Compose name: `unshelf-pr-<number>`;
-- stable application name: `unshelf-pr-<number>`;
+- exact Compose `name`: `unshelf-pr-<number>`;
+- Unshelf `APPLICATION_NAME`: `unshelf-pr-<number>`;
 - stable host: `pr-<number>.<configured preview suffix>`.
 
-Search inside the configured preview environment and client-side exact-match
-the resource name because Dokploy search is substring-based. If the resource is
-absent, count exact `unshelf-pr-<integer>` resources and refuse creation when
-three exist. A new resource requires:
+Dokploy v0.29.14 also owns a distinct runtime identity. Creation supplies the
+logical name as the requested `appName` base, then requires the returned and
+read-back Compose record to contain the same exact `name`, an opaque Compose ID,
+and `appName` equal to `unshelf-pr-<number>-<six-character suffix>`. Dokploy
+writes that stored runtime value into `APP_NAME`; the workflow never supplies,
+reconstructs, updates, or separately persists it. A different returned shape or
+a later read-back mismatch is installed-version drift and stops before deploy.
 
-1. `compose.create`, capturing its returned Compose ID;
+Search inside the configured preview environment because Dokploy filters by
+substring. Client-side exact, case-sensitive matching on Compose `name` decides
+the operation:
+
+- zero exact matches: create after the capacity check;
+- one exact match: refresh it by its returned Compose ID; and
+- more than one exact match: fail as ambiguous and require manual cleanup.
+
+For creation, count records whose exact `name` matches
+`^unshelf-pr-[1-9][0-9]*$` and refuse a fourth. Count records rather than
+distinct pull-request numbers: duplicates, failed creations, and partial
+resources each consume a real slot. The limit does not prevent refreshing one
+of the three existing previews.
+
+A new resource requires:
+
+1. `compose.create` with the exact logical `name` and requested `appName` base,
+   capturing and validating the returned Compose ID and runtime `appName`;
 2. one complete `compose.update` with trusted Compose, environment, isolation,
-   and the digest pair;
-3. one Domain record for `/api` and one for `/`; and
+   `APPLICATION_NAME`, public origin, and the digest pair, omitting `appName`;
+3. Domain reconciliation by Compose ID for the stable host: preserve the exact
+   `/api` and `/` records, create either when missing, and fail without deleting
+   on a duplicate or conflict; and
 4. the same deploy, correlated poll, health, and marker sequence used by the
    stable channels.
 
-A refresh begins with the complete update and reuses the resource and domains.
+A refresh repeats the exact-name lookup, validates the stored runtime
+`appName`, performs the complete update, and applies the same bounded Domain
+reconciliation. Deployment polling uses `deployment.allByCompose` for that
+Compose ID and the exact channel/SHA/run/attempt title; neither name is a
+correlation substitute. A retry can therefore finish missing Domain creation,
+but it never repairs conflicting records or deletes anything automatically.
+
 GitHub Actions is the only preview creator or updater. Deletion and capacity
 recovery are explicit maintainer actions in Dokploy; closing, merging, or
-unlabelling a pull request does not delete anything automatically.
+unlabelling a pull request does not delete anything automatically. Immediately
+before deletion, read the live Compose record and capture its exact logical
+`name`, Compose ID, and runtime `appName`. Select the dashboard resource by
+logical name and ID, then audit Dokploy records and stable host by logical
+identity and audit the Docker project, isolated network, containers, and
+resource directory by the captured runtime `appName`. Never infer the suffix
+after deleting the record.
 
 ## Channel policy
 
@@ -299,8 +336,9 @@ runtime configuration even though the custom control-plane adapter disappears.
 | Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Same project-scoped value, independently stored in preview scope. |
 | Secret | `DOKPLOY_PREVIEW_COMPOSE_ENV` | Preview runtime environment with `MIGRATION_MODE=verify` and the accepted shared database superuser. |
 
-The workflow injects per-preview images, application name, and public origin;
-they do not belong in the aggregate secret.
+The workflow injects per-preview images, logical `APPLICATION_NAME`, and public
+origin; they do not belong in the aggregate secret. Dokploy derives `APP_NAME`
+from its stored runtime `appName`; neither runtime value is GitHub configuration.
 
 ### Production environment populated later
 
@@ -342,9 +380,14 @@ Every retry receives a distinct run-attempt image-pair identity. Production
 reruns follow the stricter preserved-release rules in the production section.
 
 Each run writes an allowlisted summary containing channel, selected SHA,
-API/web digests, Dokploy resource and deployment identity, gate/health outcomes,
-duration, and final state. Never print raw GitHub or Dokploy responses, Compose
-environment, database URLs, tokens, cookies, secrets, or private health bodies.
+API/web digests, gate/health outcomes, duration, and final state. Once a target
+is resolved, also record its exact Compose `name`, Compose ID, runtime `appName`,
+and deployment ID when one exists; a no-op records the first three without
+inventing a deployment. These summaries are evidence, not configuration or an
+identity ledger. The last-healthy marker does not duplicate the names because
+it lives on the Compose record that owns them. Never print raw GitHub or Dokploy
+responses, Compose environment, database URLs, tokens, cookies, secrets, or
+private health bodies.
 
 Public health requires:
 
@@ -363,16 +406,21 @@ versions/digests and use a disposable preview-shaped resource to prove:
 2. the project-scoped API key works only inside its project;
 3. Dokploy's registry credential can pull both private packages but cannot
    publish;
-4. accepted `compose.create` fields and the returned Compose ID;
+4. accepted `compose.create` fields, exact logical `name`, returned Compose ID,
+   six-character-suffixed runtime `appName`, and stable read-back of all three;
 5. complete raw Compose/environment/isolation update behavior;
 6. the private database-network attachment, isolated application ingress, and
    password-authenticated local access through the intentional non-production
    PostgreSQL TCP 5432 endpoint;
-7. exact search projection and last-healthy marker persistence;
-8. two same-host Domain records and trusted HTTPS routing;
-9. correlated deployment-record appearance and terminal states;
+7. exact-name search projection, duplicate ambiguity failure, record-count
+   admission, and last-healthy marker persistence;
+8. bounded reconciliation of two same-host Domain records and trusted HTTPS
+   routing through the runtime `APP_NAME` network;
+9. Compose-ID-plus-title deployment correlation, record appearance, and
+   terminal states;
 10. migration-before-API ordering and external health behavior; and
-11. delete behavior, including a direct audit for leftover stacks, networks,
+11. delete behavior after pre-delete identity capture, including a direct audit
+   by both logical and runtime identities for leftover stacks, networks,
    domains, directories, and containers.
 
 Stop for review on any unsupported field, ambiguous identity, failed isolation,
@@ -457,12 +505,15 @@ leaving two runnable authorities.
 
 1. Create and populate the `preview` GitHub Environment.
 2. Label one eligible same-repository pull request.
-3. Manually create its preview and verify migration equality, domains, HTTPS,
-   API/web health, authentication, and marker evidence.
+3. Manually create its preview and verify exact logical-name lookup, the returned
+   suffixed runtime `appName`, migration equality, domains, HTTPS, API/web health,
+   authentication, and marker evidence.
 4. Refresh it to a newer eligible revision.
-5. Delete it manually in Dokploy.
-6. Verify its resource, routes, containers, stack, and directory are absent
-   while development, managed PostgreSQL, and the database network remain.
+5. Capture the logical `name`, Compose ID, and runtime `appName`, then delete it
+   manually in Dokploy.
+6. Verify by those captured identities that its resource, routes, containers,
+   stack, network, and directory are absent while development, managed
+   PostgreSQL, and the database network remain.
 7. Prove three-preview admission behavior with automated tests; do not create
    three live previews solely to test capacity.
 
@@ -530,7 +581,8 @@ For each channel, record only:
 - channel and exact source SHA;
 - API/web digests;
 - Actions run and attempt;
-- exact non-secret Compose and deployment identities;
+- exact non-secret Compose `name`, Compose ID, runtime `appName`, and deployment
+  ID when a deployment exists;
 - migration ordering and result;
 - API/web/authentication pass/fail;
 - no-op result where applicable;

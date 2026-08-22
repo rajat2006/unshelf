@@ -39,6 +39,25 @@ fourth preview. Preview deletion remains a manual Dokploy operation. Production
 is a no-input manual action for the exact current green `main` head; the latest
 healthy `production` GitHub Deployment is its canonical release record.
 
+On Dokploy v0.29.14 a preview deliberately has two Compose identities. Its exact
+logical `name` and Unshelf `APPLICATION_NAME` are `unshelf-pr-<number>`; they
+own lookup, admission, the public host, and application observability.
+`compose.create` receives that value as the requested `appName` base but returns
+an immutable `unshelf-pr-<number>-<six-character suffix>` runtime `appName` and
+an opaque Compose ID. Dokploy owns that runtime value, writes it as `APP_NAME`,
+and uses it for the Compose project, isolated network, runtime objects, and
+resource directory. The workflow reads both values from the Compose record on
+every run and creates no identity mapping or ledger.
+
+Preview search is scoped to the configured environment and client-side exact
+matches the logical `name`; zero matches creates, one refreshes by Compose ID,
+and more than one fails as ambiguous. Each canonical Compose record consumes
+one of the three slots, including duplicates and partial resources. Domains
+derive from the logical pull-request identity and attach by Compose ID, while
+deployment polling uses that ID plus an exact run title. Manual deletion captures
+the runtime `appName` before removing the Compose record so host cleanup can
+audit the exact Docker project, network, containers, and directory.
+
 The repository authority changes atomically: the direct entry workflows replace
 the contained candidate/development workflows in the same implementation
 change that removes `packages/deployment-control-plane` and its integration
@@ -85,6 +104,9 @@ observed need justifies it. Production must not copy the exception.
   manual recovery option, but no rollback or retention window is promised.
 - Manual preview refresh, capacity recovery, and teardown are accepted operator
   work until observed burden justifies another decision.
+- Dokploy `name` is the stable preview lookup identity; its generated `appName`
+  is runtime truth. Neither is copied into GitHub configuration or a separate
+  persistent mapping.
 - Failed deployment, migration, or health never advances the healthy marker and
   triggers no automatic retry, rollback, cleanup, or notification workflow.
 - Dokploy's installed-version behavior and all destructive cleanup remain live
