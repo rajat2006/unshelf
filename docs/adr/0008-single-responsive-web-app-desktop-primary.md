@@ -27,11 +27,12 @@ and a publishing treadmill for a founder still dogfooding the core loop.
 ## Capture channel: the in-app form only
 
 The capture *channel* that ADR-0007 punted to this decision resolves to the web
-app's own **Add Item** form (title + type + optional Source), reachable on both
-surfaces — no bookmarklet, no extension, no mobile share-sheet. On mobile the User
-accepts the copy → switch → paste friction. This holds ADR-0007's line that
-capture is one uniform manual insert; a channel that pre-fills the Source is an
-additive convenience, not a new flow.
+app's own Source-first **Capture** form (optional Source + required title +
+confirmed Type), reachable on both surfaces — no bookmarklet, no extension, no
+mobile share-sheet. On mobile the User accepts the copy → switch → paste friction.
+An eligible YouTube Source may suggest editable title and Type values inside this
+same form (ADR-0020); that assistance is not another channel or flow, and the User
+still explicitly chooses Add to Library.
 
 ## Online-only
 

@@ -1,5 +1,12 @@
 # Ingestion is one uniform manual capture; no fetch, no import
 
+> **The no-fetch decision is superseded by
+> [ADR-0020](./0020-youtube-only-source-inspection-assists-capture.md).** Capture
+> remains one uniform, explicitly confirmed path with reliable manual and offline
+> use. Eligible YouTube Sources may now provide ephemeral suggestions without
+> becoming Import or durable metadata. The no-bulk-Import decision remains in
+> force.
+>
 > **Exact-Provider-identity dedupe and provenance superseded by [the recurring
 > discovery decision](https://github.com/rajat2006/unshelf/issues/266)
 > (2026-08-08).** Manual Capture remains immediate and Source-only matches still
