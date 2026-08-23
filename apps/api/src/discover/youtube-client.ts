@@ -1,3 +1,5 @@
+import type { SuccessfulDiscoverFetchOutcome } from "./fetch-schedule";
+
 const YOUTUBE_API_ORIGIN = "https://www.googleapis.com/youtube/v3";
 
 export type YouTubeFetch = (url: URL, init?: RequestInit) => Promise<Response>;
@@ -26,7 +28,11 @@ export type ResolveChannelResult =
   { ok: true; channel: YouTubeChannel } | { ok: false; error: YouTubeFailure };
 
 export type FetchChannelVideosResult =
-  | { ok: true; videos: YouTubeVideo[]; outcome?: "complete" | "partial" }
+  | {
+      ok: true;
+      videos: YouTubeVideo[];
+      outcome?: SuccessfulDiscoverFetchOutcome;
+    }
   | { ok: false; error: YouTubeFailure };
 
 export interface YouTubeClient {

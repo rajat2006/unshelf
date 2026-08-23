@@ -76,6 +76,7 @@ describe("scheduled Discover acquisition", () => {
       .send({ url: "https://youtube.com/@scheduled" })
       .expect(200);
 
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     await harness.runDiscoverAcquisitionTick();
 
     expect(fetchChannelVideos).toHaveBeenCalledOnce();
@@ -96,6 +97,10 @@ describe("scheduled Discover acquisition", () => {
         .expect(201);
     }
 
+    await harness.runDiscoverAcquisitionTick();
+    expect(fetchChannelVideos).toHaveBeenCalledOnce();
+
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     await harness.runDiscoverAcquisitionTick();
 
     const workspaces = await Promise.all(
@@ -128,10 +133,11 @@ describe("scheduled Discover acquisition", () => {
   it("preserves one Candidate when the same video is fetched again", async () => {
     const preview = await previewAndFollow("clerk_scheduled_replay");
 
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     await harness.runDiscoverAcquisitionTick();
     const firstWorkspace = await readWorkspace("clerk_scheduled_replay");
 
-    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    currentTime = new Date("2026-08-23T02:00:00.000Z");
     fetchChannelVideos.mockResolvedValueOnce({
       ok: true,
       videos: [{ ...scheduledVideo, title: "Updated shared title" }],
@@ -159,6 +165,7 @@ describe("scheduled Discover acquisition", () => {
     await previewAndFollow("clerk_scheduled_failure");
     const beforeFailure = await readWorkspace("clerk_scheduled_failure");
 
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     await harness.runDiscoverAcquisitionTick();
     const afterFailure = await readWorkspace("clerk_scheduled_failure");
 
@@ -167,6 +174,7 @@ describe("scheduled Discover acquisition", () => {
 
   it("gives concurrent ticks one effective claim owner", async () => {
     await previewAndFollow("clerk_scheduled_race");
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     let finishFetch!: () => void;
     fetchChannelVideos.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -187,6 +195,7 @@ describe("scheduled Discover acquisition", () => {
 
   it("recovers an expired lease without allowing the abandoned owner to publish", async () => {
     await previewAndFollow("clerk_scheduled_recovery");
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     let finishAbandonedFetch!: () => void;
     fetchChannelVideos
       .mockReturnValueOnce(
@@ -202,7 +211,7 @@ describe("scheduled Discover acquisition", () => {
 
     const abandonedTick = harness.runDiscoverAcquisitionTick();
     await vi.waitFor(() => expect(fetchChannelVideos).toHaveBeenCalledTimes(2));
-    currentTime = new Date("2026-08-23T00:00:35.001Z");
+    currentTime = new Date("2026-08-23T01:00:35.001Z");
 
     await harness.runDiscoverAcquisitionTick();
     finishAbandonedFetch();
@@ -231,6 +240,7 @@ describe("scheduled Discover acquisition", () => {
       await previewAndFollow(`clerk_scheduled_limit_${index}`, false);
     }
 
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
     fetchChannelVideos.mockReset();
     const finishFetches: Array<() => void> = [];
     fetchChannelVideos.mockImplementation(

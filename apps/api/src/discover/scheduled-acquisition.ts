@@ -3,6 +3,10 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import { discoverProviderTargets } from "../schema";
 import { candidateRelevanceStart } from "./candidate-relevance";
+import {
+  nextDiscoverFetchAt,
+  type DiscoverFetchOutcome,
+} from "./fetch-schedule";
 import { upsertProviderVideos } from "./upsert-provider-videos";
 import type {
   FetchChannelVideosResult,
@@ -11,7 +15,6 @@ import type {
 } from "./youtube-client";
 
 const CLAIM_LEASE_MILLISECONDS = 35_000;
-const CHANNEL_REFRESH_MILLISECONDS = 60 * 60 * 1_000;
 const CHANNEL_CONCURRENCY = 4;
 
 interface ClaimedTarget extends YouTubeChannel {
@@ -164,14 +167,11 @@ async function publishAcquisition({
     await tx
       .update(discoverProviderTargets)
       .set({
-        nextFetchAt: new Date(
-          completedAt.getTime() + CHANNEL_REFRESH_MILLISECONDS,
-        ),
+        ...releasedClaim({
+          completedAt,
+          outcome: acquired.outcome ?? "complete",
+        }),
         lastFetchedAt: completedAt,
-        lastFetchOutcome: acquired.outcome ?? "complete",
-        claimToken: null,
-        claimExpiresAt: null,
-        updatedAt: completedAt,
       })
       .where(
         and(
@@ -195,19 +195,32 @@ async function recordAcquisitionFailure({
 }): Promise<void> {
   await db
     .update(discoverProviderTargets)
-    .set({
-      nextFetchAt: new Date(
-        completedAt.getTime() + CHANNEL_REFRESH_MILLISECONDS,
-      ),
-      lastFetchOutcome: acquired.error === "throttled" ? "throttled" : "failed",
-      claimToken: null,
-      claimExpiresAt: null,
-      updatedAt: completedAt,
-    })
+    .set(
+      releasedClaim({
+        completedAt,
+        outcome: acquired.error === "throttled" ? "throttled" : "failed",
+      }),
+    )
     .where(
       and(
         eq(discoverProviderTargets.id, target.id),
         eq(discoverProviderTargets.claimToken, target.claimToken),
       ),
     );
+}
+
+function releasedClaim({
+  completedAt,
+  outcome,
+}: {
+  completedAt: Date;
+  outcome: DiscoverFetchOutcome;
+}) {
+  return {
+    nextFetchAt: nextDiscoverFetchAt(completedAt),
+    lastFetchOutcome: outcome,
+    claimToken: null,
+    claimExpiresAt: null,
+    updatedAt: completedAt,
+  };
 }

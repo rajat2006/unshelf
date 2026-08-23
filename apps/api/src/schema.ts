@@ -23,6 +23,7 @@ import {
   Status,
   StatusMode,
 } from "@unshelf/shared";
+import { DISCOVER_FETCH_OUTCOMES } from "./discover/fetch-schedule";
 
 /**
  * The database schema, in TypeScript. `drizzle-kit generate` diffs this against
@@ -83,7 +84,9 @@ export const discoverProviderTargets = pgTable(
       .notNull()
       .defaultNow(),
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
-    lastFetchOutcome: text("last_fetch_outcome"),
+    lastFetchOutcome: text("last_fetch_outcome", {
+      enum: nonEmpty(DISCOVER_FETCH_OUTCOMES),
+    }),
     claimToken: uuid("claim_token"),
     claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -104,7 +107,7 @@ export const discoverProviderTargets = pgTable(
     ),
     check(
       "discover_provider_targets_fetch_outcome_check",
-      sql`${table.lastFetchOutcome} is null or ${table.lastFetchOutcome} in ('complete', 'partial', 'failed', 'throttled')`,
+      sql`${table.lastFetchOutcome} is null or ${table.lastFetchOutcome} in ${enumList(DISCOVER_FETCH_OUTCOMES)}`,
     ),
     check(
       "discover_provider_targets_claim_check",

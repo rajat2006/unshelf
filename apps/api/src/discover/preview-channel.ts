@@ -6,6 +6,7 @@ import type { Database } from "../db";
 import { discoverProviderTargets } from "../schema";
 import { upsertProviderVideos } from "./upsert-provider-videos";
 import type { YouTubeClient, YouTubeFailure } from "./youtube-client";
+import { nextDiscoverFetchAt } from "./fetch-schedule";
 
 export type PreviewChannelResult =
   { ok: true; preview: DiscoverPreview } | { ok: false; error: YouTubeFailure };
@@ -35,6 +36,9 @@ export async function previewChannel({
       title: resolved.channel.title,
       thumbnailUrl: resolved.channel.thumbnailUrl,
       uploadsPlaylistId: resolved.channel.uploadsPlaylistId,
+      nextFetchAt: nextDiscoverFetchAt(now),
+      lastFetchedAt: now,
+      lastFetchOutcome: acquired.outcome ?? "complete",
       updatedAt: now,
     };
     const [target] = await tx
@@ -42,7 +46,6 @@ export async function previewChannel({
       .values({
         provider: "youtube",
         externalId: resolved.channel.externalId,
-        nextFetchAt: now,
         ...channelMetadata,
       })
       .onConflictDoUpdate({

@@ -35,7 +35,10 @@ export async function followChannel({
       .select()
       .from(discoverProviderTargets)
       .where(eq(discoverProviderTargets.id, targetId))
-      .limit(1);
+      .limit(1)
+      // Follow seeding and scheduled fan-out lock the shared target in the same
+      // order so neither transaction can miss the other's committed rows.
+      .for("update");
     if (!target) return { ok: false, error: "not_found" };
 
     const [existing] = await tx
