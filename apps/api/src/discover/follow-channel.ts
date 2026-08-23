@@ -12,6 +12,7 @@ import {
   discoverProviderResults,
   discoverProviderTargets,
 } from "../schema";
+import { candidateRelevanceStart } from "./candidate-relevance";
 
 export type FollowChannelResult =
   | { ok: true; created: boolean; follow: DiscoverFollow }
@@ -56,7 +57,7 @@ export async function followChannel({
       })
       .returning({ id: discoverFollows.id });
 
-    const relevanceStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000);
+    const relevanceStart = candidateRelevanceStart(now);
     const results = await tx
       .select({ id: discoverProviderResults.id })
       .from(discoverProviderResults)

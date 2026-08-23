@@ -174,6 +174,110 @@ describe("Discover channel preview", () => {
     expect(screen.getByLabelText("YouTube channel URL")).toHaveValue("");
   });
 
+  it("disables Follow while confirming and keeps the preview available on failure", async () => {
+    let rejectFollow!: (reason: Error) => void;
+    vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
+    vi.mocked(createDiscoverFollow).mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFollow = reject;
+      }),
+    );
+    renderDiscover();
+    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+    await screen.findByRole("heading", { name: "Quiet Learning" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+
+    expect(screen.getByRole("button", { name: "Following…" })).toBeDisabled();
+    rejectFollow(new Error("follow failed"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "channel could not be followed",
+    );
+    expect(
+      screen.getByRole("button", { name: "Follow channel" }),
+    ).toBeEnabled();
+  });
+
+  it("does not call a successful Follow failed when refreshing its queue fails", async () => {
+    vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
+    vi.mocked(createDiscoverFollow).mockResolvedValue({
+      id: "00000000-0000-0000-0000-000000000040",
+      targetId: preview.targetId,
+      channel: preview.channel,
+    } as DiscoverFollow);
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(emptyWorkspace)
+      .mockRejectedValueOnce(new Error("workspace failed"));
+    renderDiscover();
+    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+    await screen.findByRole("heading", { name: "Quiet Learning" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Discover queue could not be loaded",
+    );
+    expect(
+      screen.queryByText("channel could not be followed", { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Quiet Learning" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores an older workspace response after Follow loads the pending queue", async () => {
+    const follow = {
+      id: "00000000-0000-0000-0000-000000000050",
+      targetId: preview.targetId,
+      channel: preview.channel,
+    } as DiscoverFollow;
+    const workspace = {
+      follows: [follow],
+      candidates: [
+        {
+          id: "00000000-0000-0000-0000-000000000060",
+          state: "pending",
+          video: preview.videos[0],
+        },
+      ],
+    } as DiscoverWorkspace;
+    let resolveInitialWorkspace!: (value: DiscoverWorkspace) => void;
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveInitialWorkspace = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(workspace);
+    vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
+    vi.mocked(createDiscoverFollow).mockResolvedValue(follow);
+    renderDiscover();
+    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+    await screen.findByRole("heading", { name: "Quiet Learning" });
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+    expect(
+      await screen.findByRole("heading", { name: "Pending Candidates" }),
+    ).toBeVisible();
+
+    resolveInitialWorkspace(emptyWorkspace);
+
+    expect(
+      await screen.findByRole("heading", { name: "Pending Candidates" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByLabelText("YouTube channel URL"),
+    ).not.toBeInTheDocument();
+  });
+
   it("announces resolution and presents the latest channel videos", async () => {
     let resolvePreview!: (value: DiscoverPreview) => void;
     vi.mocked(fetchDiscoverPreview).mockReturnValue(

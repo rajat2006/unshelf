@@ -14,6 +14,7 @@ import {
   discoverProviderResults,
   discoverProviderTargets,
 } from "../schema";
+import { candidateRelevanceStart } from "./candidate-relevance";
 
 /** Read one User's active Follows and currently relevant pending Candidates. */
 export async function readDiscoverWorkspace({
@@ -47,7 +48,7 @@ export async function readDiscoverWorkspace({
     )
     .orderBy(discoverProviderTargets.title);
 
-  const relevanceStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000);
+  const relevanceStart = candidateRelevanceStart(now);
   const candidates = await db
     .select({
       id: discoverCandidates.id,

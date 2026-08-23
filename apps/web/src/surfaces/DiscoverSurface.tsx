@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   DiscoverPreview,
   DiscoverPreviewVideo,
@@ -39,17 +39,21 @@ export function DiscoverSurface() {
   const [followStatus, setFollowStatus] = useState<
     "idle" | "loading" | "error"
   >("idle");
+  const workspaceRequestId = useRef(0);
 
   useEffect(() => {
     let active = true;
+    const requestId = ++workspaceRequestId.current;
     void fetchDiscoverWorkspace(user)
       .then((workspace) => {
-        if (!active) return;
+        if (!active || requestId !== workspaceRequestId.current) return;
         setWorkspaceState({ status: "ready", workspace });
         setShowSetup(workspace.follows.length === 0);
       })
       .catch(() => {
-        if (active) setWorkspaceState({ status: "error" });
+        if (active && requestId === workspaceRequestId.current) {
+          setWorkspaceState({ status: "error" });
+        }
       });
     return () => {
       active = false;
@@ -76,17 +80,29 @@ export function DiscoverSurface() {
   };
 
   const follow = async (preview: DiscoverPreview) => {
+    const requestId = ++workspaceRequestId.current;
     setFollowStatus("loading");
     try {
       await createDiscoverFollow(user, { targetId: preview.targetId });
-      const workspace = await fetchDiscoverWorkspace(user);
-      setWorkspaceState({ status: "ready", workspace });
-      setUrl("");
-      setState({ status: "idle" });
-      setShowSetup(false);
-      setFollowStatus("idle");
     } catch {
       setFollowStatus("error");
+      return;
+    }
+
+    setUrl("");
+    setState({ status: "idle" });
+    setShowSetup(false);
+    setFollowStatus("idle");
+    setWorkspaceState({ status: "loading" });
+    try {
+      const workspace = await fetchDiscoverWorkspace(user);
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceState({ status: "ready", workspace });
+      }
+    } catch {
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceState({ status: "error" });
+      }
     }
   };
 
