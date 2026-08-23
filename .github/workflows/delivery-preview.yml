@@ -25,6 +25,7 @@ jobs:
       pull-requests: read
     outputs:
       source_sha: ${{ steps.authority.outputs.source_sha }}
+      trusted_sha: ${{ steps.authority.outputs.trusted_sha }}
       pr_number: ${{ steps.authority.outputs.pr_number }}
       logical_name: ${{ steps.authority.outputs.logical_name }}
     steps:
@@ -43,7 +44,9 @@ jobs:
             any(.labels[]; .name == "deploy:preview")
           ' <<<"$pull" >/dev/null
           source_sha="$(jq -er .head.sha <<<"$pull")"
+          trusted_sha="$(jq -er .base.sha <<<"$pull")"
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${source_sha}&event=pull_request&status=completed&per_page=100")"
           run_ids="$(jq -r --arg sha "$source_sha" '.workflow_runs[] | select(.head_sha == $sha and .event == "pull_request" and .conclusion == "success") | .id' <<<"$runs")"
           approved=false
@@ -52,12 +55,12 @@ jobs:
             if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" --jq '.jobs | any(.name == "Product" and .status == "completed" and .conclusion == "success")' | grep -qx true; then approved=true; break; fi
           done <<<"$run_ids"
           test "$approved" = true
-          changed="$(gh api "repos/${GITHUB_REPOSITORY}/compare/dev...${source_sha}" --paginate --jq '.files[].filename')"
+          changed="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${trusted_sha}...${source_sha}" --paginate --jq '.files[].filename')"
           if grep -Eq '^(apps/api/(drizzle/|src/schema\.ts$|src/migration-(runner|verifier)\.ts$|drizzle\.config\.ts$|package\.json$)|pnpm-lock\.yaml$)' <<<"$changed"; then
             echo 'Preview refused because the pull request changes the shared schema or migration runtime.' >&2
             exit 1
           fi
-          printf 'source_sha=%s\npr_number=%s\nlogical_name=unshelf-pr-%s\n' "$source_sha" "$PR_NUMBER" "$PR_NUMBER" >>"$GITHUB_OUTPUT"
+          printf 'source_sha=%s\ntrusted_sha=%s\npr_number=%s\nlogical_name=unshelf-pr-%s\n' "$source_sha" "$trusted_sha" "$PR_NUMBER" "$PR_NUMBER" >>"$GITHUB_OUTPUT"
 
   inspect:
     needs: authorize
@@ -78,7 +81,9 @@ jobs:
       - id: target
         name: Resolve exact preview identity and admission
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          TRUSTED_SHA: ${{ needs.authorize.outputs.trusted_sha }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
           LOGICAL_NAME: ${{ needs.authorize.outputs.logical_name }}
           DOKPLOY_URL: ${{ vars.DOKPLOY_NONPRODUCTION_URL }}
@@ -94,24 +99,26 @@ jobs:
           grep -qx 'MIGRATION_MODE=verify' <<<"$DOKPLOY_COMPOSE_ENV"
           if grep -Eq '^(API_IMAGE|WEB_IMAGE|PUBLIC_ORIGIN|APPLICATION_NAME|APP_NAME|DATABASE_NETWORK)=' <<<"$DOKPLOY_COMPOSE_ENV"; then exit 1; fi
           public_origin="https://pr-${PR_NUMBER}.${DOMAIN_SUFFIX}"
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${TRUSTED_SHA}" --jq .content | base64 --decode >"$policy"
           records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "environmentId=$ENVIRONMENT_ID" --data-urlencode 'limit=100' "$DOKPLOY_URL/api/compose.search")"
-          projection="$(jq -c '[.. | arrays | .[]? | objects | select(has("composeId") and has("name") and has("appName"))] | unique_by(.composeId)' <<<"$records")"
-          matches="$(jq -c --arg name "$LOGICAL_NAME" '[.[] | select(.name == $name)]' <<<"$projection")"
-          test "$(jq 'length' <<<"$matches")" -le 1
-          canonical_count="$(jq '[.[] | select(.name | test("^unshelf-pr-[1-9][0-9]*$"))] | length' <<<"$projection")"
-          compose_id="$(jq -r '.[0].composeId // ""' <<<"$matches")"
-          runtime_name="$(jq -r '.[0].appName // ""' <<<"$matches")"
-          if test -z "$compose_id"; then test "$canonical_count" -lt 3; else [[ "$runtime_name" =~ ^unshelf-pr-${PR_NUMBER}-[A-Za-z0-9_-]{6}$ ]]; fi
+          # Dokploy owns the suffixed runtime appName, while the exact logical name owns lookup and capacity (ADR-0022).
+          selection="$(jq -n --argjson records "$records" --arg logicalName "$LOGICAL_NAME" --argjson prNumber "$PR_NUMBER" '{records:$records,logicalName:$logicalName,prNumber:$prNumber}' | node "$policy" select-preview)"
+          compose_id="$(jq -r '.composeId // ""' <<<"$selection")"
+          runtime_name="$(jq -r '.runtimeName // ""' <<<"$selection")"
+          description="$(jq -r --arg id "$compose_id" '[.. | objects | select(.composeId? == $id)][0].description // ""' <<<"$records")"
           deploy=true
-          description="$(jq -r '.[0].description // ""' <<<"$matches")"
           live_record="$(if test -n "$compose_id"; then curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$compose_id" "$DOKPLOY_URL/api/compose.one"; else printf '{}'; fi)"
           live_env="$(jq -r '.. | objects | .env? // empty' <<<"$live_record" | head -n1)"
+          live_compose="$(jq -r '.. | objects | .composeFile? // empty' <<<"$live_record" | head -n1)"
+          isolated="$(jq -r '.. | objects | .isolatedDeployment? // empty' <<<"$live_record" | head -n1)"
+          trusted_compose="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${TRUSTED_SHA}" --jq .content | base64 --decode)"
           marker="${description#unshelf:last-healthy }"
           marker_api="$(jq -r '.apiDigest // ""' <<<"$marker" 2>/dev/null || true)"
           marker_web="$(jq -r '.webDigest // ""' <<<"$marker" 2>/dev/null || true)"
-          if test -n "$compose_id" && test "$marker" != "$description" && jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and (.apiDigest | test("^sha256:[0-9a-f]{64}$")) and (.webDigest | test("^sha256:[0-9a-f]{64}$"))' <<<"$marker" >/dev/null && grep -qx "API_IMAGE=ghcr.io/rajat2006/unshelf-api@$marker_api" <<<"$live_env" && grep -qx "WEB_IMAGE=ghcr.io/rajat2006/unshelf-web@$marker_web" <<<"$live_env" && grep -qx 'DATABASE_NETWORK=unshelf-nonprod-db' <<<"$live_env" && grep -qx 'MIGRATION_MODE=verify' <<<"$live_env" && grep -qx "APPLICATION_NAME=$LOGICAL_NAME" <<<"$live_env" && grep -qx "PUBLIC_ORIGIN=$public_origin" <<<"$live_env"; then
+          if test -n "$compose_id" && test "$marker" != "$description" && test "$isolated" = true && test "$live_compose" = "$trusted_compose" && jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and (.apiDigest | test("^sha256:[0-9a-f]{64}$")) and (.webDigest | test("^sha256:[0-9a-f]{64}$"))' <<<"$marker" >/dev/null && grep -qx "API_IMAGE=ghcr.io/rajat2006/unshelf-api@$marker_api" <<<"$live_env" && grep -qx "WEB_IMAGE=ghcr.io/rajat2006/unshelf-web@$marker_web" <<<"$live_env" && grep -qx 'DATABASE_NETWORK=unshelf-nonprod-db' <<<"$live_env" && grep -qx 'MIGRATION_MODE=verify' <<<"$live_env" && grep -qx "APPLICATION_NAME=$LOGICAL_NAME" <<<"$live_env" && grep -qx "PUBLIC_ORIGIN=$public_origin" <<<"$live_env"; then
             api="$(curl --fail --silent --show-error "$public_origin/api/health" || true)"; web="$(curl --fail --silent --show-error "$public_origin/" || true)"
-            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi 'id=.root' <<<"$web"; then deploy=false; fi
+            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then deploy=false; fi
           fi
           printf 'deploy=%s\ncompose_id=%s\nruntime_name=%s\npublic_origin=%s\n' "$deploy" "$compose_id" "$runtime_name" "$public_origin" >>"$GITHUB_OUTPUT"
 
@@ -193,6 +200,7 @@ jobs:
         name: Record a healthy no-op
         env:
           SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          TRUSTED_SHA: ${{ needs.authorize.outputs.trusted_sha }}
           COMPOSE_ID: ${{ needs.inspect.outputs.compose_id }}
           LOGICAL_NAME: ${{ needs.authorize.outputs.logical_name }}
           RUNTIME_NAME: ${{ needs.inspect.outputs.runtime_name }}
@@ -216,36 +224,34 @@ jobs:
           set -euo pipefail
           [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] && [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           public_origin="https://pr-${PR_NUMBER}.${DOMAIN_SUFFIX}"
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${TRUSTED_SHA}" --jq .content | base64 --decode >"$policy"
           records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "environmentId=$ENVIRONMENT_ID" --data-urlencode 'limit=100' "$DOKPLOY_URL/api/compose.search")"
-          projection="$(jq -c '[.. | arrays | .[]? | objects | select(has("composeId") and has("name") and has("appName"))] | unique_by(.composeId)' <<<"$records")"
-          matches="$(jq -c --arg name "$LOGICAL_NAME" '[.[] | select(.name == $name)]' <<<"$projection")"
-          test "$(jq 'length' <<<"$matches")" -le 1
-          compose_id="$(jq -r '.[0].composeId // ""' <<<"$matches")"
+          # Repeat exact lookup under the global preview lock; a substring match cannot authorize mutation (ADR-0022).
+          selection="$(jq -n --argjson records "$records" --arg logicalName "$LOGICAL_NAME" --argjson prNumber "$PR_NUMBER" '{records:$records,logicalName:$logicalName,prNumber:$prNumber}' | node "$policy" select-preview)"
+          compose_id="$(jq -r '.composeId // ""' <<<"$selection")"
           if test -z "$compose_id"; then
-            test "$(jq '[.[] | select(.name | test("^unshelf-pr-[1-9][0-9]*$"))] | length' <<<"$projection")" -lt 3
             create_body="$(jq -n --arg name "$LOGICAL_NAME" --arg environmentId "$ENVIRONMENT_ID" '{name:$name,appName:$name,description:"",environmentId:$environmentId,sourceType:"raw",composeType:"docker-compose",composeFile:"services: {}"}')"
             created="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$create_body" "$DOKPLOY_URL/api/compose.create")"
             compose_id="$(jq -er '.. | objects | .composeId? // empty' <<<"$created" | head -n1)"
           fi
           record="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$compose_id" "$DOKPLOY_URL/api/compose.one")"
+          test "$(jq -r '.result.data.json.composeId // .composeId' <<<"$record")" = "$compose_id"
+          test "$(jq -r '.result.data.json.name // .name' <<<"$record")" = "$LOGICAL_NAME"
           runtime_name="$(jq -er '.. | objects | .appName? // empty' <<<"$record" | head -n1)"
           [[ "$runtime_name" =~ ^unshelf-pr-${PR_NUMBER}-[A-Za-z0-9_-]{6}$ ]]
-          compose_file="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=dev" --jq .content | base64 --decode)"
+          compose_file="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${TRUSTED_SHA}" --jq .content | base64 --decode)"
           env_file="${DOKPLOY_COMPOSE_ENV%$'\n'}"$'\n'"API_IMAGE=ghcr.io/rajat2006/unshelf-api@$API_DIGEST"$'\n'"WEB_IMAGE=ghcr.io/rajat2006/unshelf-web@$WEB_DIGEST"$'\n'"PUBLIC_ORIGIN=$public_origin"$'\n'"APPLICATION_NAME=$LOGICAL_NAME"$'\n'"DATABASE_NETWORK=unshelf-nonprod-db"
           body="$(jq -n --arg composeId "$compose_id" --arg composeFile "$compose_file" --arg env "$env_file" '{composeId:$composeId,composeFile:$composeFile,env:$env,sourceType:"raw",composeType:"docker-compose",isolatedDeployment:true}')"
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$body" "$DOKPLOY_URL/api/compose.update" >/dev/null
           domains="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$compose_id" "$DOKPLOY_URL/api/domain.byComposeId")"
           domain_list="$(jq -c '[.. | arrays | .[]? | objects | select(has("domainId") and has("host"))] | unique_by(.domainId)' <<<"$domains")"
-          for route in 'api:3001:/api' 'web:80:/'; do
-            IFS=: read -r service port path <<<"$route"
-            exact="$(jq --arg host "pr-${PR_NUMBER}.${DOMAIN_SUFFIX}" --arg path "$path" --arg service "$service" --argjson port "$port" '[.[] | select(.host==$host and .path==$path and .serviceName==$service and .port==$port and .https==true)] | length' <<<"$domain_list")"
-            conflicts="$(jq --arg host "pr-${PR_NUMBER}.${DOMAIN_SUFFIX}" --arg path "$path" '[.[] | select(.host==$host and .path==$path)] | length' <<<"$domain_list")"
-            test "$exact" -le 1 && test "$conflicts" -le 1
-            if test "$exact" = 0; then
+          missing="$(jq -n --argjson domains "$domain_list" --arg composeId "$compose_id" --arg host "pr-${PR_NUMBER}.${DOMAIN_SUFFIX}" '{domains:$domains,composeId:$composeId,host:$host}' | node "$policy" reconcile-domains)"
+          while IFS= read -r route; do
+            service="$(jq -r .serviceName <<<"$route")"; port="$(jq -r .port <<<"$route")"; path="$(jq -r .path <<<"$route")"
               domain_body="$(jq -n --arg composeId "$compose_id" --arg host "pr-${PR_NUMBER}.${DOMAIN_SUFFIX}" --arg path "$path" --arg serviceName "$service" --argjson port "$port" '{composeId:$composeId,domainType:"compose",host:$host,path:$path,serviceName:$serviceName,port:$port,https:true,certificateType:"letsencrypt",stripPath:false}')"
               curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$domain_body" "$DOKPLOY_URL/api/domain.create" >/dev/null
-            fi
-          done
+          done < <(jq -c '.[]' <<<"$missing")
           title="preview-pr-$PR_NUMBER:$SOURCE_SHA:run-$GITHUB_RUN_ID-attempt-$GITHUB_RUN_ATTEMPT"; description="channel=preview pr=$PR_NUMBER source=$SOURCE_SHA run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
           deploy_body="$(jq -n --arg composeId "$compose_id" --arg title "$title" --arg description "$description" '{composeId:$composeId,title:$title,description:$description}')"
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$deploy_body" "$DOKPLOY_URL/api/compose.deploy" >/dev/null
@@ -262,7 +268,7 @@ jobs:
           healthy=false
           for _ in $(seq 1 24); do
             api="$(curl --fail --silent --show-error "$public_origin/api/health" || true)"; web="$(curl --fail --silent --show-error "$public_origin/" || true)"
-            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi 'id=.root' <<<"$web"; then healthy=true; break; fi
+            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then healthy=true; break; fi
             sleep 5
           done
           test "$healthy" = true

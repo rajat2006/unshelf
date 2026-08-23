@@ -326,9 +326,10 @@ jobs:
     expect(authorize).toContain("head.repo.full_name == $repository");
     expect(authorize).toContain('name == "deploy:preview"');
     expect(authorize).toContain("migration-(runner|verifier)");
-    expect(inspect).toContain("canonical_count");
-    expect(inspect).toContain("-lt 3");
+    expect(inspect).toContain("delivery-policy.mjs");
+    expect(inspect).toContain("select-preview");
     expect(deploy).toContain("domain.byComposeId");
+    expect(deploy).toContain("reconcile-domains");
     expect(deploy).toContain("domain.create");
     expect(deploy).toContain("unshelf:last-healthy");
     expect(deploy).not.toContain("compose.delete");
