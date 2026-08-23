@@ -79,6 +79,17 @@ function renderTargetDate(onChanged = vi.fn(), targetItem = item) {
   return onChanged;
 }
 
+async function waitForAuthoritativeToday() {
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Loading authoritative Today…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Authoritative Today is unavailable."),
+    ).not.toBeInTheDocument();
+  });
+}
+
 describe("Item Target date editor", () => {
   it("keeps a failed soft date local and offers an explicit retry", async () => {
     const changed = { ...item, targetDate: "2026-09-01" };
@@ -162,7 +173,7 @@ describe("Item Target date editor", () => {
     );
     const onChanged = renderTargetDate();
     const input = screen.getByLabelText("Target date for Practical indexing");
-    await waitFor(() => expect(input).toBeEnabled());
+    await waitForAuthoritativeToday();
 
     input.focus();
     fireEvent.click(input);
@@ -193,7 +204,7 @@ describe("Item Target date editor", () => {
     const onChanged = renderTargetDate();
 
     const input = screen.getByLabelText("Target date for Practical indexing");
-    await waitFor(() => expect(input).toBeEnabled());
+    await waitForAuthoritativeToday();
     input.focus();
     fireEvent.click(input);
     fireEvent.click(screen.getByRole("button", { name: "Today" }));
