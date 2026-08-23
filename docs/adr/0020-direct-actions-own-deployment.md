@@ -39,15 +39,27 @@ fourth preview. Preview deletion remains a manual Dokploy operation. Production
 is a no-input manual action for the exact current green `main` head; the latest
 healthy `production` GitHub Deployment is its canonical release record.
 
-On Dokploy v0.29.14 a preview deliberately has two Compose identities. Its exact
-logical `name` and Unshelf `APPLICATION_NAME` are `unshelf-pr-<number>`; they
-own lookup, admission, the public host, and application observability.
+The accepted installed control-plane baseline is Dokploy v0.30.2. Network
+Management is an officially released feature from v0.30.0 onward, and the exact
+published v0.30.2 image plus the upgraded live dashboard were verified before
+this decision: authenticated `network.all` succeeds and **Docker → Networks →
+Add network** exposes an overlay driver and attachable option. That read-only
+evidence authorizes a fresh installed-version acceptance run; it does not by
+itself authorize creating a network or changing PostgreSQL or Compose.
+
+The v0.29.14 preflight established that a preview has two Compose identities.
+Its exact logical `name` and Unshelf `APPLICATION_NAME` are
+`unshelf-pr-<number>`; they own lookup, admission, the public host, and
+application observability.
 `compose.create` receives that value as the requested `appName` base but returns
 an immutable `unshelf-pr-<number>-<six-character suffix>` runtime `appName` and
 an opaque Compose ID. Dokploy owns that runtime value, writes it as `APP_NAME`,
-and uses it for the Compose project, isolated network, runtime objects, and
-resource directory. The workflow reads both values from the Compose record on
-every run and creates no identity mapping or ledger.
+and uses it for the Compose project, runtime objects, and resource directory.
+The workflow reads both values from the Compose record on every run and creates
+no identity mapping or ledger. Because v0.30 changes Compose network behavior
+and deprecates Isolated Deployment, the complete v0.30.2 acceptance run must
+reverify the returned identity and network projection instead of inheriting the
+partial v0.29.14 result.
 
 Preview search is scoped to the configured environment and client-side exact
 matches the logical `name`; zero matches creates, one refreshes by Compose ID,
@@ -75,6 +87,15 @@ create the attachable overlay `unshelf-nonprod-db`, persist it as PostgreSQL's
 only Swarm network attachment, and remove the shared attachment. Do not replace
 the retained database or add a separate database hostname alias: its generated
 service `appName` remains the host inside the opaque connection URL.
+
+Create that overlay only through the verified v0.30.2 Dokploy surface and
+inspect both the Dokploy record and Docker overlay before touching the retained
+service. Immediately before the PostgreSQL update, re-read its record identity,
+data-volume attachment, generated service identity, credential references, and
+intentional TCP 5432 publication. Only its absolute `networkSwarm` list is an
+authorized change. After redeployment, reverify those invariants and the sole
+overlay attachment before allowing a disposable application fixture to use the
+network.
 
 Development and preview workflows bind the non-secret literal
 `DATABASE_NETWORK=unshelf-nonprod-db` in trusted repository code rather than a
@@ -123,6 +144,9 @@ observed need justifies it. Production must not copy the exception.
 - Dokploy's installed-version behavior and all destructive cleanup remain live
   acceptance gates; API success alone does not prove runtime resources were
   removed.
+- The full eleven-gate compatibility run restarts on v0.30.2. The earlier
+  v0.29.14 partial results are not carried forward because default and
+  per-service networking changed and Isolated Deployment was deprecated.
 - The installed-version gate records and authenticates through development's
   intentional PostgreSQL endpoint; the endpoint's presence alone is not failed
   isolation. Application ingress, private-overlay membership, and production

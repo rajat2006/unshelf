@@ -49,8 +49,10 @@ migrate (API digest) ──completed──▶ api (same API digest) ──starte
 - `web` uses the paired web digest.
 - Application Compose contains no PostgreSQL service, database volume, local
   image build, or host port publication.
-- Dokploy isolated deployment owns ingress. Native Dokploy Domains route
-  `/api` to API port 3001 and `/` to web port 80 on one HTTPS origin.
+- Dokploy owns application ingress. Native Dokploy Domains route `/api` to API
+  port 3001 and `/` to web port 80 on one HTTPS origin. The v0.30.2
+  installed-version gate must prove the exact per-service network projection;
+  do not assume the deprecated Isolated Deployment behavior.
 - API and migrate additionally join the channel's private database network.
 
 The managed non-production PostgreSQL service is outside application Compose
@@ -77,7 +79,7 @@ The complete resource environment contains:
 | `DATABASE_URL` | Opaque internal connection URL; never assemble or print it in workflow logs. |
 | `DATABASE_TIME_ZONE` | PostgreSQL timezone defining Unshelf's server calendar day. |
 | `DATABASE_NETWORK` | Trusted workflow literal selecting the channel's private attachable overlay; development and preview use `unshelf-nonprod-db`. |
-| `APP_NAME` | Dokploy-written runtime `appName`; selects the Compose project and isolated ingress network. Never supply or store it in GitHub configuration. |
+| `APP_NAME` | Dokploy-written runtime `appName`; selects the Compose project and runtime objects. Never supply or store it in GitHub configuration. |
 | `APPLICATION_NAME` | Unshelf's stable logical channel/resource identity; derived by the workflow and persisted in the Compose environment. |
 | `PUBLIC_ORIGIN` | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
 | `CLERK_SECRET_KEY` | Runtime secret for the matching Clerk instance. |
@@ -177,13 +179,16 @@ The immutable pull-request number derives the stable logical identity:
 - Unshelf `APPLICATION_NAME`: `unshelf-pr-<number>`;
 - stable host: `pr-<number>.<configured preview suffix>`.
 
-Dokploy v0.29.14 also owns a distinct runtime identity. Creation supplies the
-logical name as the requested `appName` base, then requires the returned and
-read-back Compose record to contain the same exact `name`, an opaque Compose ID,
-and `appName` equal to `unshelf-pr-<number>-<six-character suffix>`. Dokploy
-writes that stored runtime value into `APP_NAME`; the workflow never supplies,
-reconstructs, updates, or separately persists it. A different returned shape or
-a later read-back mismatch is installed-version drift and stops before deploy.
+The v0.29.14 preflight observed a distinct Dokploy-owned runtime identity.
+Creation supplies the logical name as the requested `appName` base, then
+requires the returned and read-back Compose record to contain the same exact
+`name`, an opaque Compose ID, and `appName` equal to
+`unshelf-pr-<number>-<six-character suffix>`. Dokploy writes that stored runtime
+value into `APP_NAME`; the workflow never supplies, reconstructs, updates, or
+separately persists it. A different returned shape or a later read-back
+mismatch is installed-version drift and stops before deploy.
+The complete v0.30.2 gate must reverify this shape; the partial v0.29.14 result
+is evidence to test, not a result to carry forward.
 
 Search inside the configured preview environment because Dokploy filters by
 substring. Client-side exact, case-sensitive matching on Compose `name` decides
@@ -203,7 +208,8 @@ A new resource requires:
 
 1. `compose.create` with the exact logical `name` and requested `appName` base,
    capturing and validating the returned Compose ID and runtime `appName`;
-2. one complete `compose.update` with trusted Compose, environment, isolation,
+2. one complete `compose.update` with trusted Compose, environment, the
+   accepted v0.30.2 network configuration,
    `APPLICATION_NAME`, `DATABASE_NETWORK=unshelf-nonprod-db`, public origin, and
    the digest pair, omitting `appName`;
 3. Domain reconciliation by Compose ID for the stable host: preserve the exact
@@ -225,7 +231,7 @@ unlabelling a pull request does not delete anything automatically. Immediately
 before deletion, read the live Compose record and capture its exact logical
 `name`, Compose ID, and runtime `appName`. Select the dashboard resource by
 logical name and ID, then audit Dokploy records and stable host by logical
-identity and audit the Docker project, isolated network, containers, and
+identity and audit the Docker project, application networks, containers, and
 resource directory by the captured runtime `appName`. Never infer the suffix
 after deleting the record.
 
@@ -413,8 +419,16 @@ finished.
 
 ## Installed-version compatibility gate
 
+The accepted control-plane baseline is exact Dokploy v0.30.2. The completed
+read-only capability preflight proved that the running build serves build and
+Docker-dashboard assets byte-for-byte matching the published feature-bearing
+image, authenticated `network.all` succeeds, and **Docker → Networks → Add
+network** offers `overlay` plus `Attachable`. It did not create a network and
+does not satisfy any of the eleven gates below.
+
 Before the authority switch, record the live Dokploy, Traefik, and Docker
-versions/digests and use a disposable preview-shaped resource to prove:
+versions/digests and rerun the entire sequence from the beginning with a
+disposable preview-shaped resource to prove:
 
 1. the Dokploy API origin is trusted HTTPS and rejects ambiguous URL forms;
 2. the project-scoped API key works only inside its project;
@@ -422,11 +436,13 @@ versions/digests and use a disposable preview-shaped resource to prove:
    publish;
 4. accepted `compose.create` fields, exact logical `name`, returned Compose ID,
    six-character-suffixed runtime `appName`, and stable read-back of all three;
-5. complete raw Compose/environment/isolation update behavior;
+5. complete raw Compose/environment and v0.30.2 per-service network update
+   behavior;
 6. installed `network.create` and `postgres.update` support, read-back of the
    dedicated `unshelf-nonprod-db` attachment as PostgreSQL's only Swarm network,
-   persistence across an ordinary PostgreSQL redeploy, isolated application
-   ingress, and password-authenticated local access through the intentional
+   persistence across an ordinary PostgreSQL redeploy, application ingress
+   isolation from the private database overlay and shared platform network, and
+   password-authenticated local access through the intentional
    non-production PostgreSQL TCP 5432 endpoint;
 7. exact-name search projection, duplicate ambiguity failure, record-count
    admission, and last-healthy marker persistence;
@@ -443,11 +459,14 @@ Stop for review on any unsupported field, ambiguous identity, failed isolation,
 untrusted transport, or capacity limit. This compatibility check is disposable
 acceptance evidence, not a new control plane.
 
-The installed v0.29.14 image lacks the Networks page present in its source tag.
-Use the trusted API only after a sanitized capability preflight. If it cannot
-create the attachable overlay or persist the absolute PostgreSQL
-`networkSwarm` attachment, stop without changing the Compose fixture. Do not
-substitute a manual Docker network or service update.
+Do not resume at the v0.29.14 stopping point or carry forward partial results.
+Dokploy v0.30 changes default and per-service network attachment and deprecates
+Isolated Deployment, so identity, complete-update, ingress, routing, and cleanup
+behavior all require fresh evidence. If the trusted v0.30.2 surface cannot
+create and inspect the attachable overlay or persist and reapply the absolute
+PostgreSQL `networkSwarm` attachment, stop without changing the Compose fixture.
+Do not substitute a manual Docker network or service update or adapt the
+fixture around an unsupported field.
 
 The intentional non-production PostgreSQL endpoint is not by itself failed
 isolation. For that gate, record only that the exact managed service retains its
@@ -486,15 +505,21 @@ disposable application deploy:
 1. prove the installed API accepts the pinned network and PostgreSQL update
    fields without exposing raw responses;
 2. create the `unshelf-nonprod-db` overlay through Dokploy with overlay driver
-   and `attachable: true`;
-3. persist an absolute PostgreSQL `networkSwarm` list containing only that
-   target, with no alias, while preserving the intentional published port;
-4. redeploy PostgreSQL normally and verify the saved configuration plus service
-   spec still contain exactly that network;
-5. prove authenticated local TCP 5432 access still works and invalid
+   and `attachable: true`, then inspect both its Dokploy record and Docker
+   overlay;
+3. immediately re-read the retained PostgreSQL record, data-volume attachment,
+   generated service identity, credential references, and intentional TCP 5432
+   publication;
+4. persist an absolute PostgreSQL `networkSwarm` list containing only that
+   target, with no alias, while preserving every item from the preceding
+   snapshot;
+5. redeploy PostgreSQL normally and verify the saved configuration and service
+   spec contain exactly that network while all preservation invariants remain;
+6. prove authenticated local TCP 5432 access still works and invalid
    authentication is rejected; and
-6. only then set the disposable development/preview Compose environment to
-   `DATABASE_NETWORK=unshelf-nonprod-db` and continue the compatibility gate.
+7. only then set the disposable development/preview Compose environment to
+   `DATABASE_NETWORK=unshelf-nonprod-db` and restart the eleven-gate
+   compatibility run at gate 1.
 
 If any mutation or read-back differs, stop and leave the application fixture
 unchanged. Never rebuild or replace the retained database merely to repair its
