@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototype — choose a preview lifecycle</title>
+    <style>
+      :root {
+        --ink: #182126;
+        --muted: #637178;
+        --line: #d8e0e3;
+        --paper: #f6f8f7;
+        --card: #ffffff;
+        --accent: #087f5b;
+        --accent-soft: #e6f4ee;
+        --warn: #9a5a08;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.5 ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      main {
+        width: min(880px, calc(100% - 32px));
+        margin: 40px auto 72px;
+      }
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        max-width: 700px;
+        margin-bottom: 12px;
+        font-size: clamp(30px, 5vw, 46px);
+        line-height: 1.08;
+      }
+      h2 {
+        margin-bottom: 12px;
+        font-size: 21px;
+      }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .lede,
+      .muted {
+        color: var(--muted);
+      }
+      .lede {
+        max-width: 720px;
+        font-size: 18px;
+      }
+      .card {
+        margin-top: 18px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--card);
+      }
+      .glossary {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      .glossary div {
+        padding: 12px;
+        border-radius: 8px;
+        background: #f0f3f2;
+      }
+      .glossary strong {
+        display: block;
+      }
+      .choices,
+      .situations {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      button {
+        min-height: 68px;
+        padding: 11px;
+        border: 1px solid #bcc8cc;
+        border-radius: 9px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      button:hover,
+      button.active {
+        border-color: var(--accent);
+      }
+      button.active {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+        background: var(--accent-soft);
+      }
+      button strong,
+      button span {
+        display: block;
+      }
+      button span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .recommended {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .answer {
+        min-height: 210px;
+        border-left: 5px solid var(--accent);
+      }
+      .answer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .answer-grid div {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+      }
+      .answer-grid strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+      .risk {
+        margin: 14px 0 0;
+        color: var(--warn);
+      }
+      .decision {
+        background: var(--accent-soft);
+      }
+      @media (max-width: 700px) {
+        .choices,
+        .situations,
+        .answer-grid,
+        .glossary {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Simplified throwaway prototype</p>
+      <h1>Who should remember to manage previews?</h1>
+      <p class="lede">
+        A preview is a temporary copy of Unshelf for reviewing a pull request.
+        The only decision here is which actions happen by themselves and which
+        actions you want to trigger manually.
+      </p>
+
+      <section class="card">
+        <h2>Four words used below</h2>
+        <div class="glossary">
+          <div><strong>Label</strong>Permission to have a preview.</div>
+          <div>
+            <strong>Create</strong>Start the preview for the first time.
+          </div>
+          <div><strong>Update</strong>Put the newest approved code on it.</div>
+          <div>
+            <strong>Delete</strong>Remove the preview and free one slot.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>1. Choose an approach</h2>
+        <div class="choices" id="choices"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. See what happens</h2>
+        <div class="situations" id="situations"></div>
+      </section>
+
+      <section class="card answer" aria-live="polite">
+        <p class="eyebrow" id="selection"></p>
+        <h2 id="outcome-title"></h2>
+        <div class="answer-grid">
+          <div><strong>You do</strong><span id="human-action"></span></div>
+          <div>
+            <strong>The system does</strong><span id="system-action"></span>
+          </div>
+        </div>
+        <p class="risk">
+          <strong>Thing to watch:</strong> <span id="risk"></span>
+        </p>
+      </section>
+
+      <section class="card decision">
+        <p class="eyebrow">Verdict · accepted for now</p>
+        <h2>Start fully manual</h2>
+        <p>
+          The label gives permission for a preview. You explicitly press
+          <strong>Create</strong>, <strong>Update</strong>, or
+          <strong>Delete</strong>. This needs the least setup now because pull
+          request events do not have to manage previews automatically.
+        </p>
+        <p class="muted" style="margin-bottom: 0">
+          The maintainer must remember to delete closed previews. Automatic
+          cleanup or updates can be added later only if that manual work becomes
+          a real burden.
+        </p>
+      </section>
+    </main>
+
+    <script>
+      // This table is the decision being tested. The page only presents it.
+      const PreviewChoices = (() => {
+        const approaches = {
+          automatic: {
+            name: "Fully automatic",
+            summary: "The label controls everything.",
+          },
+          balanced: {
+            name: "Balanced",
+            summary: "You create and update; cleanup is automatic.",
+          },
+          manual: {
+            name: "Fully manual",
+            summary: "Nothing changes until you ask.",
+            recommended: true,
+          },
+        };
+
+        const situations = {
+          commit: { name: "New code is ready" },
+          closed: { name: "The pull request closes" },
+          full: { name: "All three slots are full" },
+        };
+
+        const outcomes = {
+          automatic: {
+            commit: {
+              title: "The preview updates by itself.",
+              human: "Nothing.",
+              system: "Checks the new code, then updates the preview.",
+              risk: "More automation has to decide whether an update is still current.",
+            },
+            closed: {
+              title: "The preview is deleted by itself.",
+              human: "Nothing.",
+              system: "Deletes the preview and frees its slot.",
+              risk: "Cleanup failures still need your attention.",
+            },
+            full: {
+              title: "The fourth preview waits.",
+              human:
+                "Nothing unless you want to choose which preview ends first.",
+              system:
+                "Starts the waiting preview when another slot becomes free.",
+              risk: "The waiting behavior is useful, but adds hidden coordination.",
+            },
+          },
+          balanced: {
+            commit: {
+              title: "The current preview stays online until you update it.",
+              human: "Press Update when you want the newest code.",
+              system: "Checks and deploys exactly the version you requested.",
+              risk: "The preview can show older code until you press Update.",
+            },
+            closed: {
+              title: "The preview is deleted by itself.",
+              human: "Nothing.",
+              system: "Deletes the preview and frees its slot.",
+              risk: "Cleanup failures still need your attention.",
+            },
+            full: {
+              title: "A fourth preview is refused for now.",
+              human: "Close or delete one preview, then press Create again.",
+              system: "Never creates more than three previews.",
+              risk: "You must retry the fourth request yourself.",
+            },
+          },
+          manual: {
+            commit: {
+              title: "The current preview stays online until you update it.",
+              human: "Press Update when you want the newest code.",
+              system: "Checks and deploys exactly the version you requested.",
+              risk: "The preview can show older code until you press Update.",
+            },
+            closed: {
+              title: "The closed preview stays online.",
+              human: "Remember to press Delete.",
+              system: "Does nothing until you ask.",
+              risk: "A forgotten preview keeps occupying one of three slots.",
+            },
+            full: {
+              title: "A fourth preview is refused for now.",
+              human: "Delete one preview, then press Create again.",
+              system: "Never creates more than three previews.",
+              risk: "You own both cleanup and the retry.",
+            },
+          },
+        };
+
+        return {
+          approaches,
+          situations,
+          outcome: (approach, situation) => outcomes[approach][situation],
+        };
+      })();
+
+      let selectedApproach = "manual";
+      let selectedSituation = "commit";
+
+      const choices = document.getElementById("choices");
+      const situations = document.getElementById("situations");
+
+      function render() {
+        choices.innerHTML = Object.entries(PreviewChoices.approaches)
+          .map(
+            ([id, choice]) => `
+              <button data-approach="${id}" class="${id === selectedApproach ? "active" : ""}">
+                <strong>${choice.name}${choice.recommended ? ' <span class="recommended">Selected for now</span>' : ""}</strong>
+                <span>${choice.summary}</span>
+              </button>`,
+          )
+          .join("");
+
+        situations.innerHTML = Object.entries(PreviewChoices.situations)
+          .map(
+            ([id, situation]) => `
+              <button data-situation="${id}" class="${id === selectedSituation ? "active" : ""}">
+                <strong>${situation.name}</strong>
+                <span>Show me what happens</span>
+              </button>`,
+          )
+          .join("");
+
+        const approach = PreviewChoices.approaches[selectedApproach];
+        const situation = PreviewChoices.situations[selectedSituation];
+        const outcome = PreviewChoices.outcome(
+          selectedApproach,
+          selectedSituation,
+        );
+
+        document.getElementById("selection").textContent =
+          `${approach.name} · ${situation.name}`;
+        document.getElementById("outcome-title").textContent = outcome.title;
+        document.getElementById("human-action").textContent = outcome.human;
+        document.getElementById("system-action").textContent = outcome.system;
+        document.getElementById("risk").textContent = outcome.risk;
+
+        document.querySelectorAll("[data-approach]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedApproach = button.dataset.approach;
+            render();
+          });
+        });
+
+        document.querySelectorAll("[data-situation]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedSituation = button.dataset.situation;
+            render();
+          });
+        });
+      }
+
+      render();
+    </script>
+  </body>
+</html>
