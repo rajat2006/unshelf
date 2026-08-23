@@ -80,7 +80,6 @@ export function DiscoverSurface() {
   };
 
   const follow = async (preview: DiscoverPreview) => {
-    const requestId = ++workspaceRequestId.current;
     setFollowStatus("loading");
     try {
       await createDiscoverFollow(user, { targetId: preview.targetId });
@@ -89,6 +88,7 @@ export function DiscoverSurface() {
       return;
     }
 
+    const requestId = ++workspaceRequestId.current;
     setUrl("");
     setState({ status: "idle" });
     setShowSetup(false);

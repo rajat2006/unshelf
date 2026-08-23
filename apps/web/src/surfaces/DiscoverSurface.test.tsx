@@ -176,6 +176,12 @@ describe("Discover channel preview", () => {
 
   it("disables Follow while confirming and keeps the preview available on failure", async () => {
     let rejectFollow!: (reason: Error) => void;
+    let resolveWorkspace!: (value: DiscoverWorkspace) => void;
+    vi.mocked(fetchDiscoverWorkspace).mockReturnValue(
+      new Promise((resolve) => {
+        resolveWorkspace = resolve;
+      }),
+    );
     vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
     vi.mocked(createDiscoverFollow).mockReturnValue(
       new Promise((_resolve, reject) => {
@@ -196,9 +202,13 @@ describe("Discover channel preview", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "channel could not be followed",
     );
+    resolveWorkspace(emptyWorkspace);
     expect(
-      screen.getByRole("button", { name: "Follow channel" }),
+      await screen.findByRole("button", { name: "Follow channel" }),
     ).toBeEnabled();
+    expect(
+      screen.queryByText("Loading your Discover queue…"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not call a successful Follow failed when refreshing its queue fails", async () => {
