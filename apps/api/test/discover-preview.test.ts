@@ -143,13 +143,21 @@ describe("POST /api/discover/preview", () => {
   });
 
   it.each([
-    ["invalid_url", 400, "invalid_channel_url"],
-    ["not_found", 404, "channel_not_found"],
-    ["throttled", 429, "youtube_throttled"],
-    ["temporary_failure", 503, "youtube_unavailable"],
+    {
+      error: "invalid_url",
+      status: 400,
+      publicError: "invalid_channel_url",
+    },
+    { error: "not_found", status: 404, publicError: "channel_not_found" },
+    { error: "throttled", status: 429, publicError: "youtube_throttled" },
+    {
+      error: "temporary_failure",
+      status: 503,
+      publicError: "youtube_unavailable",
+    },
   ] as const)(
-    "maps %s without exposing Provider details",
-    async (error, status, publicError) => {
+    "maps $error without exposing Provider details",
+    async ({ error, status, publicError }) => {
       resolveChannel.mockResolvedValue({
         ok: false,
         error,

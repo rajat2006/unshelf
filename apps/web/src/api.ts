@@ -157,6 +157,16 @@ export class DiscoverCandidateDecisionError extends Error {
   }
 }
 
+function toDiscoverCandidateDecisionError(
+  error: unknown,
+): DiscoverCandidateDecisionError {
+  return new DiscoverCandidateDecisionError(
+    error instanceof ApiResponseError && error.status === 409
+      ? "conflict"
+      : "temporary",
+  );
+}
+
 /** Keep one pending Candidate using only User-confirmed Library fields. */
 export async function keepDiscoverCandidate(
   user: CurrentUser,
@@ -176,11 +186,7 @@ export async function keepDiscoverCandidate(
       },
     );
   } catch (error) {
-    throw new DiscoverCandidateDecisionError(
-      error instanceof ApiResponseError && error.status === 409
-        ? "conflict"
-        : "temporary",
-    );
+    throw toDiscoverCandidateDecisionError(error);
   }
 }
 
@@ -200,11 +206,7 @@ export async function rejectDiscoverCandidate(
       },
     );
   } catch (error) {
-    throw new DiscoverCandidateDecisionError(
-      error instanceof ApiResponseError && error.status === 409
-        ? "conflict"
-        : "temporary",
-    );
+    throw toDiscoverCandidateDecisionError(error);
   }
 }
 

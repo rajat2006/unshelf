@@ -19,6 +19,8 @@ export async function findOrCreateProviderItem({
   type: Type;
   source: string;
 }): Promise<ItemId> {
+  // Serialize the first mapping claim so concurrent Capture and Keep requests
+  // cannot both create an Item before the identity mapping becomes visible.
   await tx.execute(sql`
     select pg_advisory_xact_lock(
       hashtextextended(

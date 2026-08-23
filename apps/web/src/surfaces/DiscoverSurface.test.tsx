@@ -174,10 +174,9 @@ describe("Discover channel preview", () => {
     renderDiscover();
 
     expect(await screen.findByText(/Already in Library/)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Captured lesson" })).toHaveAttribute(
-      "href",
-      "/items/00000000-0000-0000-0000-000000000130",
-    );
+    expect(
+      screen.getByRole("link", { name: "Captured lesson" }),
+    ).toHaveAttribute("href", "/items/00000000-0000-0000-0000-000000000130");
   });
 
   it("opens Keep with defaults and focuses invalid Title", async () => {
@@ -200,13 +199,15 @@ describe("Discover channel preview", () => {
       name: "Keep Candidate",
     });
     expect(within(dialog).getByLabelText("Title")).toHaveValue("Newest lesson");
-    expect(within(dialog).getByRole("combobox", { name: "Type" })).toHaveTextContent(
-      "Video",
-    );
+    expect(
+      within(dialog).getByRole("combobox", { name: "Type" }),
+    ).toHaveTextContent("Video");
     fireEvent.change(within(dialog).getByLabelText("Title"), {
       target: { value: "" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Keep in Library" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Keep in Library" }),
+    );
     expect(await within(dialog).findByText("Enter a title.")).toBeVisible();
     expect(within(dialog).getByLabelText("Title")).toHaveFocus();
     expect(keepDiscoverCandidate).not.toHaveBeenCalled();
@@ -240,7 +241,9 @@ describe("Discover channel preview", () => {
     });
     fireEvent.click(within(dialog).getByRole("combobox", { name: "Type" }));
     fireEvent.click(await screen.findByRole("option", { name: "Course" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Keep in Library" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Keep in Library" }),
+    );
 
     await waitFor(() =>
       expect(keepDiscoverCandidate).toHaveBeenCalledWith(auth.user, {
@@ -249,7 +252,9 @@ describe("Discover channel preview", () => {
         type: Type.Course,
       }),
     );
-    expect(screen.queryByRole("article", { name: "Newest lesson" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Newest lesson" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a Candidate actionable through Reject errors and reports conflicts", async () => {
@@ -280,16 +285,24 @@ describe("Discover channel preview", () => {
     });
 
     fireEvent.click(rejectButton);
-    expect(screen.getByRole("button", { name: "Rejecting Newest lesson…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Rejecting Newest lesson…" }),
+    ).toBeDisabled();
     failReject(new Error("temporary"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "could not be resolved",
     );
-    expect(screen.getByRole("article", { name: "Newest lesson" })).toBeVisible();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reject Newest lesson" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reject Newest lesson" }),
+    );
     await waitFor(() =>
-      expect(screen.queryByRole("article", { name: "Newest lesson" })).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole("article", { name: "Newest lesson" }),
+      ).not.toBeInTheDocument(),
     );
 
     vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
@@ -297,12 +310,13 @@ describe("Discover channel preview", () => {
       new DiscoverCandidateDecisionError("conflict"),
     );
     renderDiscover();
-    fireEvent.click(await screen.findByRole("button", { name: "Keep Newest lesson" }));
     fireEvent.click(
-      within(await screen.findByRole("dialog", { name: "Keep Candidate" })).getByRole(
-        "button",
-        { name: "Keep in Library" },
-      ),
+      await screen.findByRole("button", { name: "Keep Newest lesson" }),
+    );
+    fireEvent.click(
+      within(
+        await screen.findByRole("dialog", { name: "Keep Candidate" }),
+      ).getByRole("button", { name: "Keep in Library" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "already resolved another way",
@@ -788,20 +802,23 @@ describe("Discover channel preview", () => {
   });
 
   it.each([
-    ["not_found", "could not be found"],
-    ["throttled", "limiting requests"],
-    ["temporary", "could not provide this preview"],
-  ] as const)("presents an actionable %s failure", async (kind, message) => {
-    vi.mocked(fetchDiscoverPreview).mockRejectedValue(
-      new DiscoverPreviewError(kind),
-    );
-    renderDiscover();
-    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
-      target: { value: "https://youtube.com/@quietlearning" },
-    });
+    { kind: "not_found", message: "could not be found" },
+    { kind: "throttled", message: "limiting requests" },
+    { kind: "temporary", message: "could not provide this preview" },
+  ] as const)(
+    "presents an actionable $kind failure",
+    async ({ kind, message }) => {
+      vi.mocked(fetchDiscoverPreview).mockRejectedValue(
+        new DiscoverPreviewError(kind),
+      );
+      renderDiscover();
+      fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+        target: { value: "https://youtube.com/@quietlearning" },
+      });
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+      fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
-  });
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    },
+  );
 });

@@ -26,6 +26,8 @@ export async function rejectCandidate({
   now: Date;
 }): Promise<RejectCandidateResult> {
   const result = await db.transaction(async (tx) => {
+    // Lock before reading state so opposing Keep and Reject requests cannot both
+    // observe a pending Candidate and apply different terminal decisions.
     const rows = await tx
       .select({ state: discoverCandidates.state })
       .from(discoverCandidates)
@@ -46,7 +48,11 @@ export async function rejectCandidate({
     if (candidate.state === CandidateState.Pending) {
       await tx
         .update(discoverCandidates)
-        .set({ state: CandidateState.Rejected, rejectedAt: now, updatedAt: now })
+        .set({
+          state: CandidateState.Rejected,
+          rejectedAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(discoverCandidates.id, candidateId),

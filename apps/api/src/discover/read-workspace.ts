@@ -74,6 +74,38 @@ function toDiscoverCandidate(candidate: CandidateRow): DiscoverCandidate {
   };
 }
 
+function selectDiscoverCandidateRows(db: Database) {
+  return db
+    .select(CANDIDATE_PROJECTION)
+    .from(discoverCandidates)
+    .innerJoin(
+      discoverProviderResults,
+      eq(discoverCandidates.resultId, discoverProviderResults.id),
+    )
+    .innerJoin(
+      discoverProviderTargets,
+      eq(discoverProviderResults.targetId, discoverProviderTargets.id),
+    )
+    .leftJoin(
+      itemProviderIdentities,
+      and(
+        eq(itemProviderIdentities.userId, discoverCandidates.userId),
+        eq(itemProviderIdentities.provider, discoverProviderResults.provider),
+        eq(
+          itemProviderIdentities.externalId,
+          discoverProviderResults.externalId,
+        ),
+      ),
+    )
+    .leftJoin(
+      items,
+      and(
+        eq(items.id, itemProviderIdentities.itemId),
+        eq(items.userId, itemProviderIdentities.userId),
+      ),
+    );
+}
+
 /** Read one User's active Follows and currently relevant pending Candidates. */
 export async function readDiscoverWorkspace({
   db,
@@ -113,40 +145,12 @@ export async function readDiscoverWorkspace({
   }
 
   const relevanceStart = candidateRelevanceStart(now);
-  const candidates = await db
-    .select(CANDIDATE_PROJECTION)
-    .from(discoverCandidates)
-    .innerJoin(
-      discoverProviderResults,
-      eq(discoverCandidates.resultId, discoverProviderResults.id),
-    )
-    .innerJoin(
-      discoverProviderTargets,
-      eq(discoverProviderResults.targetId, discoverProviderTargets.id),
-    )
+  const candidates = await selectDiscoverCandidateRows(db)
     .innerJoin(
       discoverFollows,
       and(
         eq(discoverFollows.targetId, discoverProviderTargets.id),
         eq(discoverFollows.userId, discoverCandidates.userId),
-      ),
-    )
-    .leftJoin(
-      itemProviderIdentities,
-      and(
-        eq(itemProviderIdentities.userId, discoverCandidates.userId),
-        eq(itemProviderIdentities.provider, discoverProviderResults.provider),
-        eq(
-          itemProviderIdentities.externalId,
-          discoverProviderResults.externalId,
-        ),
-      ),
-    )
-    .leftJoin(
-      items,
-      and(
-        eq(items.id, itemProviderIdentities.itemId),
-        eq(items.userId, itemProviderIdentities.userId),
       ),
     )
     .where(
@@ -186,35 +190,7 @@ export async function readDiscoverCandidate({
   userId: UserId;
   candidateId: DiscoverCandidateId;
 }): Promise<DiscoverCandidate | null> {
-  const rows = await db
-    .select(CANDIDATE_PROJECTION)
-    .from(discoverCandidates)
-    .innerJoin(
-      discoverProviderResults,
-      eq(discoverCandidates.resultId, discoverProviderResults.id),
-    )
-    .innerJoin(
-      discoverProviderTargets,
-      eq(discoverProviderResults.targetId, discoverProviderTargets.id),
-    )
-    .leftJoin(
-      itemProviderIdentities,
-      and(
-        eq(itemProviderIdentities.userId, discoverCandidates.userId),
-        eq(itemProviderIdentities.provider, discoverProviderResults.provider),
-        eq(
-          itemProviderIdentities.externalId,
-          discoverProviderResults.externalId,
-        ),
-      ),
-    )
-    .leftJoin(
-      items,
-      and(
-        eq(items.id, itemProviderIdentities.itemId),
-        eq(items.userId, itemProviderIdentities.userId),
-      ),
-    )
+  const rows = await selectDiscoverCandidateRows(db)
     .where(
       and(
         eq(discoverCandidates.id, candidateId),

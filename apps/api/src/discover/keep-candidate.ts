@@ -31,6 +31,8 @@ export async function keepCandidate({
   now: Date;
 }): Promise<KeepCandidateResult> {
   const result = await db.transaction(async (tx) => {
+    // Lock before reading state so opposing Keep and Reject requests cannot both
+    // observe a pending Candidate and apply different terminal decisions.
     const rows = await tx
       .select({
         state: discoverCandidates.state,

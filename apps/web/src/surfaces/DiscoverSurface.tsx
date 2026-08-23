@@ -66,7 +66,9 @@ type WorkspaceState =
 export function DiscoverSurface() {
   const user = useCurrentUser();
   const [url, setUrl] = useState("");
-  const [state, setState] = useState<PreviewState>({ status: "idle" });
+  const [previewState, setPreviewState] = useState<PreviewState>({
+    status: "idle",
+  });
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
     status: "loading",
   });
@@ -112,15 +114,15 @@ export function DiscoverSurface() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!url.trim()) {
-      setState({ status: "error", failure: "invalid" });
+      setPreviewState({ status: "error", failure: "invalid" });
       return;
     }
-    setState({ status: "loading" });
+    setPreviewState({ status: "loading" });
     try {
       const preview = await fetchDiscoverPreview(user, url);
-      setState({ status: "ready", preview });
+      setPreviewState({ status: "ready", preview });
     } catch (error) {
-      setState({
+      setPreviewState({
         status: "error",
         failure:
           error instanceof DiscoverPreviewError ? error.kind : "temporary",
@@ -139,7 +141,7 @@ export function DiscoverSurface() {
 
     const requestId = ++workspaceRequestId.current;
     setUrl("");
-    setState({ status: "idle" });
+    setPreviewState({ status: "idle" });
     setShowSetup(false);
     setFollowStatus("idle");
     setSelectedFollowId(null);
@@ -158,7 +160,7 @@ export function DiscoverSurface() {
 
   const beginAnotherFollow = () => {
     setUrl("");
-    setState({ status: "idle" });
+    setPreviewState({ status: "idle" });
     setFollowStatus("idle");
     setShowSetup(true);
   };
@@ -292,27 +294,27 @@ export function DiscoverSurface() {
               links are not supported.
             </FieldDescription>
           </Field>
-          <Button type="submit" disabled={state.status === "loading"}>
-            {state.status === "loading"
+          <Button type="submit" disabled={previewState.status === "loading"}>
+            {previewState.status === "loading"
               ? "Resolving channel…"
               : "Preview channel"}
           </Button>
         </form>
       )}
 
-      {showSetup && state.status === "loading" && (
+      {showSetup && previewState.status === "loading" && (
         <p role="status" className="m-0 text-sm text-muted-foreground">
           Resolving channel and gathering its latest videos…
         </p>
       )}
-      {showSetup && state.status === "error" && (
-        <PreviewFailure failure={state.failure} />
+      {showSetup && previewState.status === "error" && (
+        <PreviewFailure failure={previewState.failure} />
       )}
-      {showSetup && state.status === "ready" && (
+      {showSetup && previewState.status === "ready" && (
         <ChannelPreview
-          preview={state.preview}
+          preview={previewState.preview}
           followStatus={followStatus}
-          onFollow={() => void follow(state.preview)}
+          onFollow={() => void follow(previewState.preview)}
         />
       )}
       {followStatus === "error" && (
@@ -426,7 +428,7 @@ function ChannelPreview({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {preview.videos.map((video) => (
-            <VideoCard key={video.externalId} video={video} />
+            <VideoCardLayout key={video.externalId} video={video} />
           ))}
         </div>
       )}
@@ -491,9 +493,7 @@ function CandidateQueue({
         className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4 lg:grid-cols-[minmax(14rem,20rem)_1fr] lg:items-start"
       >
         <Field>
-          <FieldLabel htmlFor="candidate-channel">
-            Candidate channel
-          </FieldLabel>
+          <FieldLabel htmlFor="candidate-channel">Candidate channel</FieldLabel>
           <Select
             disabled={filtering}
             value={selectedFollowId ?? "all"}
@@ -607,10 +607,6 @@ function workspaceWithoutFollow(
   };
 }
 
-function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
-  return <VideoCardLayout video={video} />;
-}
-
 function VideoCardLayout({
   video,
   children,
@@ -711,37 +707,37 @@ function CandidateCard({
 
   return (
     <VideoCardLayout video={video}>
-        {candidate.libraryItem && (
-          <p className="m-0 text-sm font-medium text-primary">
-            Already in Library ·{" "}
-            <a className="underline" href={`/items/${candidate.libraryItem.id}`}>
-              {candidate.libraryItem.title}
-            </a>
-          </p>
-        )}
-        <CandidateActionAlert state={candidateActionState} action="Candidate" />
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="compact"
-            onClick={() => {
-              setCandidateActionState("idle");
-              setKeepOpen(true);
-            }}
-          >
-            Keep {video.title}
-          </Button>
-          <Button
-            type="button"
-            size="compact"
-            variant="secondary"
-            loading={candidateActionState === "rejecting"}
-            loadingLabel={`Rejecting ${video.title}…`}
-            onClick={() => void reject()}
-          >
-            Reject {video.title}
-          </Button>
-        </div>
+      {candidate.libraryItem && (
+        <p className="m-0 text-sm font-medium text-primary">
+          Already in Library ·{" "}
+          <a className="underline" href={`/items/${candidate.libraryItem.id}`}>
+            {candidate.libraryItem.title}
+          </a>
+        </p>
+      )}
+      <CandidateActionAlert state={candidateActionState} action="Candidate" />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="compact"
+          onClick={() => {
+            setCandidateActionState("idle");
+            setKeepOpen(true);
+          }}
+        >
+          Keep {video.title}
+        </Button>
+        <Button
+          type="button"
+          size="compact"
+          variant="secondary"
+          loading={candidateActionState === "rejecting"}
+          loadingLabel={`Rejecting ${video.title}…`}
+          onClick={() => void reject()}
+        >
+          Reject {video.title}
+        </Button>
+      </div>
       <Dialog open={keepOpen} onOpenChange={setKeepOpen}>
         <DialogContent aria-describedby={`keep-description-${candidate.id}`}>
           <DialogHeader>
@@ -766,13 +762,18 @@ function CandidateCard({
               {titleError && <FieldError>Enter a title.</FieldError>}
             </Field>
             <Field>
-              <FieldLabel htmlFor={`keep-type-${candidate.id}`}>Type</FieldLabel>
+              <FieldLabel htmlFor={`keep-type-${candidate.id}`}>
+                Type
+              </FieldLabel>
               <Select
                 value={type}
                 disabled={candidateActionState === "keeping"}
                 onValueChange={(value) => setType(value as Type)}
               >
-                <SelectTrigger id={`keep-type-${candidate.id}`} aria-label="Type">
+                <SelectTrigger
+                  id={`keep-type-${candidate.id}`}
+                  aria-label="Type"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

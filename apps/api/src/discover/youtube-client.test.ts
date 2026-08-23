@@ -14,18 +14,22 @@ function jsonResponse(
 
 describe("YouTube client", () => {
   it.each([
-    [
-      "https://www.youtube.com/channel/UC1234567890123456789012",
-      "id",
-      "UC1234567890123456789012",
-    ],
-    ["http://youtube.com/@quietlearning/", "forHandle", "@quietlearning"],
-    [
-      "https://m.youtube.com/@quietlearning/videos",
-      "forHandle",
-      "@quietlearning",
-    ],
-  ])("resolves %s to the immutable channel", async (url, key, value) => {
+    {
+      url: "https://www.youtube.com/channel/UC1234567890123456789012",
+      key: "id",
+      value: "UC1234567890123456789012",
+    },
+    {
+      url: "http://youtube.com/@quietlearning/",
+      key: "forHandle",
+      value: "@quietlearning",
+    },
+    {
+      url: "https://m.youtube.com/@quietlearning/videos",
+      key: "forHandle",
+      value: "@quietlearning",
+    },
+  ])("resolves $url to the immutable channel", async ({ url, key, value }) => {
     const fetch = vi.fn<YouTubeFetch>().mockResolvedValue(
       jsonResponse({
         items: [

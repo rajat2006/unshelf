@@ -1,4 +1,5 @@
 import type { SuccessfulDiscoverFetchOutcome } from "./fetch-schedule";
+import { candidateRelevanceStart } from "./candidate-relevance";
 
 const YOUTUBE_API_ORIGIN = "https://www.googleapis.com/youtube/v3";
 
@@ -183,9 +184,7 @@ async function fetchChannelVideosOnce({
   let incompleteMetadataCount = 0;
   let missingMetadataCount = 0;
   let skippedCount = 0;
-  const relevanceStart = new Date(
-    now().getTime() - 30 * 24 * 60 * 60 * 1_000,
-  ).toISOString();
+  const relevanceStart = candidateRelevanceStart(now()).toISOString();
   let pageToken: string | null = null;
   const seenPageTokens = new Set<string>();
   while (true) {
