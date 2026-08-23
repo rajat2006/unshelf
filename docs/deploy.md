@@ -1,14 +1,40 @@
 # Deploy Unshelf through Dokploy
 
-This is the operator runbook for the architecture recorded by
-[ADR-0017](adr/0017-ci-images-and-managed-postgresql.md). GitHub Actions builds
-private API and web images; Dokploy deploys one immutable digest pair and owns
-same-origin HTTPS routing. PostgreSQL 18 is managed outside application Compose.
+This is the operator runbook for the deployment boundary recorded by
+[ADR-0017](adr/0017-ci-images-and-managed-postgresql.md) and the direct workflow
+authority recorded by [ADR-0022](adr/0022-direct-actions-own-deployment.md).
 
-## Deployment contract
+It describes the accepted replacement and its cutover.
 
-[`docker-compose.yml`](../docker-compose.yml) is one parameterized contract for
-preview, development, and production. It contains only:
+## Operational contract
+
+GitHub Actions is the only image publisher and deployment orchestrator. Dokploy
+owns raw Compose resources, domains, deployment history, private image pulls,
+and the running projection. Managed PostgreSQL lives outside application
+Compose.
+
+There are exactly three deployment entry workflows:
+
+| Channel | Trigger | Selected revision | Dokploy target |
+| --- | --- | --- | --- |
+| Development | 22:00 `Asia/Kolkata` daily or manual dispatch | Exact current `dev` head | One configured stable Compose resource |
+| Preview | Manual dispatch with a pull-request number | Exact current head of an authorized pull request | Stable `unshelf-pr-<number>` Compose resource, at most three |
+| Production | Manual dispatch with no inputs | Exact current `main` head | One configured stable Compose resource |
+
+The workflows contain channel policy directly. Small repository-local helpers
+may validate HTTP and JSON or keep YAML readable, but there is no generic
+dispatcher, candidate object, custom control plane, persistent ledger, or
+hidden state machine.
+
+The system does not provide automatic rollback, down migration, cross-channel
+image promotion, automatic GHCR cleanup, a bounded rollback window, release
+versions, automatic preview refresh or deletion, a separate
+deployment-notification workflow, or a zero-downtime guarantee.
+
+## Runtime boundary
+
+[`docker-compose.yml`](../docker-compose.yml) is the one trusted service graph
+for every channel:
 
 ```text
 migrate (API digest) ──completed──▶ api (same API digest) ──started──▶ web
@@ -16,323 +42,597 @@ migrate (API digest) ──completed──▶ api (same API digest) ──starte
           └──── private DB network ───┘
 ```
 
-Dokploy isolated deployment adds all three services to the resource-specific
-ingress network. Only `migrate` and `api` additionally join the external
-`DATABASE_NETWORK`; `web` has no database path. No service publishes a host
-port. Dokploy Domains creates the routers, redirect, TLS, and certificate
-labels. The repository retains only
-`traefik.docker.network=${APP_NAME}` so the installed Dokploy version routes a
-multihomed API over the isolated ingress network rather than the database
-network.
+- `migrate` and `api` use the same full API digest.
+- `api` cannot start until `migrate` exits successfully.
+- `web` uses the paired web digest.
+- Application Compose contains no PostgreSQL service, database volume, local
+  image build, or host port publication.
+- Dokploy owns application ingress. Native Dokploy Domains route `/api` to API
+  port 3001 and `/` to web port 80 on one HTTPS origin. Read back the exact
+  per-service network projection after configuration; do not assume the
+  deprecated Isolated Deployment behavior. Retain
+  `traefik.docker.network=${APP_NAME}` so Traefik selects the Dokploy-owned
+  application ingress network rather than a private database network.
+- API and migrate additionally join the channel's private database network.
 
-The required resource environment is:
+The managed non-production PostgreSQL service is outside application Compose
+and intentionally publishes VPS TCP 5432 for password-authenticated local
+development. Hosted development and preview services do not use that endpoint;
+they resolve the database service over the dedicated attachable overlay
+`unshelf-nonprod-db`. PostgreSQL's only Swarm attachment is that overlay; it is
+not attached to the shared `dokploy-network`. Treat the external authentication
+surface as an accepted development-only exception while the local workflow
+needs it. Do not copy it into production, and do not infer that application
+service ports may be published.
 
-| Variable | Consumer | Rule |
-| --- | --- | --- |
-| `API_IMAGE` | migrate, api | Full `ghcr.io/rajat2006/unshelf-api@sha256:…` reference. |
-| `WEB_IMAGE` | web | Full `ghcr.io/rajat2006/unshelf-web@sha256:…` reference. |
-| `DATABASE_URL` | migrate, api | Opaque internal connection URL; never assemble or print it in Compose or automation. |
-| `DATABASE_TIME_ZONE` | migrate, api | PostgreSQL timezone name (for example `UTC` or `America/Los_Angeles`) defining Unshelf's server calendar day. |
-| `DATABASE_NETWORK` | migrate, api | Private attachable overlay used by non-production PostgreSQL. |
-| `APP_NAME` | routed services | Written by Dokploy; selects the isolated ingress network. |
-| `APPLICATION_NAME` | migrate, api | Non-secret stable deployment identifier. |
-| `PUBLIC_ORIGIN` | api | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
-| `CLERK_SECRET_KEY` | api | Matching Clerk instance secret. |
-| `CLERK_PUBLISHABLE_KEY` | api | Matching Clerk publishable key. |
-| `MIGRATION_MODE` | migrate | `apply` for development/production/schema previews; `verify` for ordinary previews. |
-| `LOG_LEVEL` | migrate, api | Optional; defaults to `info`. |
+The retained PostgreSQL record's generated `appName` remains the internal host
+inside the opaque `DATABASE_URL`. There is no additional network alias. Normal
+PostgreSQL deploys reapply the Dokploy-stored attachment; a manually applied
+`docker service update --network-add` is not part of the contract.
 
-The web publishable key is compiled into each environment-specific web image.
-There is no frontend build argument at runtime and no artifact promotion between
-channels.
+The complete resource environment contains:
 
-## Installed-version gate
-
-A redacted inventory was recorded on 2026-08-01 against Dokploy v0.29.13,
-Traefik v3.6.7, Docker 28.5.0, and a 2-vCPU/8-GB Ubuntu 24.04 VPS. Treat that as
-a baseline, not a requirement: a server provisioned later runs newer components,
-and newer is not by itself a fault. Record the installed versions, then prove
-each behaviour this design depends on rather than assuming the recorded ones
-still hold:
-
-- raw Compose create/update/deploy semantics and project-scoped authorization;
-- isolated deployment creates an external network named by `APP_NAME`, adds all
-  services, and connects Traefik;
-- Dokploy Domains can create two records on one generated host;
-- managed PostgreSQL accepts a custom attachable overlay and no external port
-  (attach over SSH if the build omits the network UI — see step 5);
-- a project-scoped API key cannot reach another project;
-- private registry credentials are pull-only; and
-- generated hosts still receive trusted HTTPS certificates and HTTP redirects.
-
-Stop for review on any behaviour that fails, and on host capacity or Swarm state
-that cannot carry the three channels.
-
-Never capture raw Dokploy responses, environment dumps, connection strings, API
-keys, cookies, or bearer tokens as evidence.
-
-## Control-plane transport
-
-`Deploy development` refuses to act unless `DOKPLOY_URL` is an exact HTTPS
-origin: scheme `https:`, and no trailing slash, path, query, or fragment. The
-non-production API key travels in a request header on every call, so cleartext
-would expose it on the wire. A fresh Dokploy answers on `http://<host>:3000` and
-cannot be used until its own panel serves HTTPS.
-
-Where no domain is available, a wildcard-DNS host such as `<ip>.sslip.io`
-resolves to the server by construction. That also satisfies Dokploy's stated
-requirement that a name already point at the server before its domain is
-created, which a freshly created DNS record does not. Configure it under
-Settings → Web Server: `Host`, the `HTTPS` toggle, `Certificate` set to Let's
-Encrypt, and the Let's Encrypt notification email.
-
-Save once and wait. Roughly five or six failed issuance attempts block the
-address for 24 hours, so re-saving to force a retry makes recovery slower rather
-than faster. A plain HTTPS read of the panel is the safe way to poll.
-
-## Non-production foundation
-
-Provision with a non-owner Dokploy identity that can access only the
-non-production project. Production resources, credentials, database networks,
-and data are out of scope.
-
-Capture nothing inside the repository tree: the Dokploy API key, `DATABASE_URL`,
-and the Clerk secret belong in the `development` GitHub environment and in a
-private file outside the checkout.
-
-1. Give the Dokploy panel a trusted HTTPS address, per **Control-plane
-   transport** above. Nothing else can run until this holds.
-2. Record the installed versions and prove the behaviours in the gate above.
-3. Create a non-production project and a non-owner API identity scoped to it.
-   Prove that identity cannot reach a production project.
-4. Configure Dokploy with one machine-account classic PAT carrying
-   `read:packages` only. Prove authenticated pulls of both private packages,
-   anonymous denial, and inability to publish.
-5. Create a managed PostgreSQL 18 service and leave the external port unset.
-   Attach it to a dedicated private, attachable overlay network — see the note
-   below if this Dokploy build omits the network UI.
-
-   The target state is three distinct roles: owner/migration, application, and
-   verification. The application role must not create schemas or roles; the
-   verification role needs only connection, schema usage, and migration-ledger
-   reads (`drizzle.__drizzle_migrations`).
-
-   > **Hosted development runs the single Dokploy superuser instead, from
-   > 2026-08-08.** Dokploy's managed PostgreSQL form creates exactly one user,
-   > so the split needs SQL run by hand afterwards. That was judged not worth
-   > the cost for a channel holding throwaway data; `DATABASE_URL` therefore
-   > carries the Dokploy-created superuser. Tracked in #290.
-   >
-   > **Production must not copy this.** Create the full split before
-   > provisioning production (#282), because there `DATABASE_URL` reaches real
-   > user data and a compromised API container running as superuser can drop
-   > the schema or create roles.
-
-   > **Do the network attachment over SSH, recorded 2026-08-08.** On
-   > `dokploy/dokploy:v0.29.14` (`sha256:57771f6e…`) the network management UI
-   > is absent from the published image even though the v0.29.14 source tag
-   > contains it: `/dashboard/networks` returns 404, and the container's
-   > `.next/server/pages/dashboard/` holds `swarm.js` but no `networks.js`.
-   >
-   > This does not block the design. A Dokploy-managed database is a Swarm
-   > service, so attach it with Docker directly:
-   >
-   > ```
-   > docker network create --driver overlay --attachable unshelf-nonprod-db
-   > docker service ls | grep postgres:18
-   > docker service update --network-add unshelf-nonprod-db <service-name>
-   > ```
-   >
-   > Use the service **name**. Dokploy names it like `unshelf-dbdev-xxxxxx`,
-   > and its container name contains no `postgres` — filtering on `postgres`
-   > finds Dokploy's own metadata database (`postgres:16`) instead.
-   >
-   > Verify both networks are in the **service spec**, not just the running
-   > container, so the attachment survives a restart:
-   > `docker service inspect <service-name> --format
-   > '{{range .Spec.TaskTemplate.Networks}}{{.Target}} {{end}}'`
-   >
-   > **Drift risk:** Dokploy owns the service spec. Pressing Rebuild in the UI
-   > recreates the service from Dokploy's definition and drops the manual
-   > network, after which `migrate` and `api` cannot resolve the database
-   > host. Re-run the `service update` to recover. Re-test the UI on a later
-   > image; once it ships, attach through Dokploy so it owns the attachment.
-6. Create one raw Compose resource with isolated deployment enabled. Load the
-   committed Compose text and set the required environment without printing it.
-   Before any Compose update, validate the pair through the trusted control
-   plane: `pnpm deployment:control validate-image-pair --api-image "$API_IMAGE" --web-image "$WEB_IMAGE"`.
-7. Generate one hostname. Reuse the bare hostname for two native Domain records:
-   `api`, path `/api`, port 3001, no strip; and `web`, path `/`, port 80, no
-   strip. Enable HTTPS and the installed certificate resolver. Set
-   `PUBLIC_ORIGIN` to the exact `https://<generated-host>` origin.
-8. Set a Product-CI-approved development API/web digest pair and
-   `MIGRATION_MODE=apply`, then deploy. The migration must exit successfully
-   before API and web start.
-9. Complete every acceptance check below.
-
-### What the first hosted-development deploy got wrong
-
-Every item below cost a failed run on 2026-08-08. None is a code defect; all are
-easy to repeat.
-
-**`DOKPLOY_DEVELOPMENT_COMPOSE_ID` is the `composeId`, not the app name.**
-Dokploy displays the generated app name (`unshelf-devcompose-hqfs9h`) far more
-prominently than the identifier its API accepts (`dq-mC-mH0t2q6VsD4457f`).
-Read the real one rather than copying from the page heading:
-
-```
-curl -s -H "x-api-key: $KEY" \
-  "$DOKPLOY_URL/api/compose.one?composeId=<id>" | jq .composeId
-```
-
-**The scoped member needs Create Services.** `compose.update` is guarded by
-`checkServicePermissionAndAccess(ctx, composeId, { service: ["create"] })`,
-which maps to the `canCreateServices` flag. Without it every read returns 200
-and the update is refused, surfacing as `dokploy-failure`. Dokploy's
-open-source tier has no narrower verb — separate update and create permissions
-are part of Enterprise custom roles — so this grant is wider than we want: the
-key can create services anywhere it has project access. Note it for #282.
-
-**`DATABASE_URL` must use the database's service name as the host.** Dokploy
-shows a localhost-style internal URL on the database page; that host is
-meaningless from another container. Use the Postgres service's `appName`
-(`unshelf-dbdev-siqt3l`). A malformed URL is worse than a wrong one — `pg`
-falls back to `localhost:5432` and reports `ECONNREFUSED 127.0.0.1`, which
-looks like a networking fault rather than a parsing one.
-
-**Clerk development instances need no domain configuration.** Origin validation
-applies to production instances only, and a development instance's domain
-cannot be changed. There is nothing to add for a `pk_test_` key. This becomes
-real for #282, where `pk_live_` keys require a domain we control — a generated
-sslip.io host cannot be verified.
-
-**A failed deploy cannot be retried in place.** The correlation embeds
-`GITHUB_RUN_ID`, so re-running a failed run reuses a correlation already
-recorded against a failed deployment and the control plane refuses to start a
-second one. Re-running the publish workflow fails too, with
-`duplicate-trace-identity`, because candidates are immutable per source SHA.
-**A new deploy requires a new commit on `dev`.** This is both guards working as
-designed; it is not a defect.
-
-### Cutover from a legacy stack
-
-A server that already carries an earlier Unshelf deployment needs three
-additional steps. A freshly provisioned server has none of this state and must
-skip them.
-
-- Before provisioning, inventory the existing non-production project, its
-  database service, the legacy Compose resource, its Compose-local database
-  volume, domains, registry entries, and backup schedule. Record only stable
-  redacted identifiers. Reconfigure an existing database service to PostgreSQL 18
-  in step 5 instead of creating one.
-- **Do not remove the legacy resource** or its database volume before every
-  acceptance check passes and the replacement target is resolved exactly.
-- Only then, after explicit irreversible confirmation, stop and remove the legacy
-  Compose resource and its application-local database volume. Recheck the exact
-  target immediately before deletion. Do not delete the managed database service,
-  the replacement Compose resource, shared Dokploy/Traefik state, or unrelated
-  volumes.
-
-The application-local database discarded that way contains no data requiring
-migration. That authorization applies only to one proven cutover; it is not a
-general database-deletion procedure.
-
-## Migration modes
-
-The same API image owns both modes:
-
-- `apply` runs committed Drizzle migrations transactionally. A failure prevents
-  API startup and is fixed forward; there are no down-migrations.
-- `verify` compares every committed migration timestamp and SHA-256 hash with
-  `drizzle.__drizzle_migrations` using SELECT only. Missing, extra, rewritten,
-  or unapplied history fails closed and performs no DDL.
-
-The PostgreSQL 18 integration test executes `apply`, verifies API/database
-health, then executes `verify` as a role without DDL permission and confirms the
-schema shape is unchanged.
-
-## Routing, authentication, and cutover acceptance
-
-All checks must pass against the generated development host:
-
-| Check | Required result |
+| Name | Rule |
 | --- | --- |
-| HTTPS | A normal client trusts the certificate for `/` and `/api/health`. |
-| Cleartext | HTTP redirects to the same HTTPS host; no application response is served over cleartext. |
-| Same origin | `/` serves the Unshelf HTML shell and `/api/health` returns `status: ok` and `db: up`. |
-| Topology | Only API/migrate join the non-production DB overlay; all services join isolated ingress; no ports are published. |
-| Migration gate | `migrate` exits 0 before API/web; API and migrate report the exact same image digest. |
-| Clerk positive | Google sign-in returns to the configured origin and a protected API call succeeds. |
-| Clerk negative | A token minted for another generated origin is rejected with 401 and no token detail is logged. |
-| Refresh | Token refresh plus hard reload retains a usable session without a redirect loop. |
-| Changed host | Changing the generated host fails closed until `PUBLIC_ORIGIN` and Clerk configuration are deliberately updated. |
-| Cookie/URL hygiene | Cookies are Secure; callback/final URLs and history contain no session token. |
-| Credential hygiene | Deployment output and bounded app/Traefik logs contain no bearer token, cookie, database URL, Clerk secret, or GHCR credential. |
-| Authority | Non-production automation cannot access production; Dokploy can pull but cannot publish packages. |
+| `API_IMAGE` | Full `ghcr.io/rajat2006/unshelf-api@sha256:…` reference supplied by the workflow. |
+| `WEB_IMAGE` | Full `ghcr.io/rajat2006/unshelf-web@sha256:…` reference supplied by the workflow. |
+| `DATABASE_URL` | Opaque internal connection URL; never assemble or print it in workflow logs. |
+| `DATABASE_TIME_ZONE` | PostgreSQL timezone defining Unshelf's server calendar day. |
+| `DATABASE_NETWORK` | Trusted workflow literal selecting the channel's private attachable overlay; development and preview use `unshelf-nonprod-db`. |
+| `APP_NAME` | Dokploy-written runtime `appName`; selects the Compose project and runtime objects. Never supply or store it in GitHub configuration. |
+| `APPLICATION_NAME` | Unshelf's stable logical channel/resource identity; derived by the workflow and persisted in the Compose environment. |
+| `PUBLIC_ORIGIN` | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
+| `CLERK_SECRET_KEY` | Runtime secret for the matching Clerk instance. |
+| `CLERK_PUBLISHABLE_KEY` | Runtime publishable key for the matching Clerk instance. |
+| `MIGRATION_MODE` | `apply` for development and production; `verify` for previews. |
+| `LOG_LEVEL` | Optional; defaults to `info`. |
 
-Record only pass/fail, source SHA, API/web digests, sanitized states, and
-durations. A real deployment record is required before the ticket's live
-acceptance can be closed.
+The web publishable key is compiled into each channel-local web image. It is
+not runtime configuration, and images are never promoted between channels.
+Preview `name`, `appName`, and Compose ID live on the Dokploy Compose record;
+the workflow derives or reads them for each run rather than storing dynamic
+identity values in GitHub variables, secrets, repository files, or a ledger.
+The non-production database network is different: its fixed, non-secret name is
+deliberate repository policy, bound visibly by both trusted workflows.
 
-## Continuous hosted-development reconciliation
+## Revision authority and Product CI
 
-`Deploy development` is a trusted `workflow_run` consumer of `Publish candidate
-images`. It accepts only a successful same-repository `dev` candidate run and
-then independently verifies that the requested SHA is still the current `dev`
-head and has an exact successful push run of Product CI. The deployment job uses
-only the `development` GitHub environment.
+Each workflow acquires its target concurrency group before selecting authority.
+Active remote work is never cancelled (`cancel-in-progress: false`).
 
-Configure that environment with these values. The non-production Dokploy API
-key must be the restricted identity proven during the hosted-development
-cutover; do not reuse an owner or production key.
+The workflow resolves the live branch or pull request itself; a dispatch input
+never supplies a deployment SHA. It then requires a completed, successful
+`Product` job from `ci.yml` for exactly that SHA and the required event:
 
-| Kind | Name | Value |
+- development: a `push` run for the exact `dev` SHA;
+- preview: a `pull_request` run for the exact pull-request head SHA;
+- production: a `push` run for the exact `main` SHA.
+
+There is no last-green fallback. Once the workflow has selected and authorized
+the revision, it pins that SHA for the attempt and does not re-read the ref,
+pull-request head, or label after image building. A later change is handled by
+a later manual or scheduled deployment.
+
+Build jobs receive only `contents: read`, GHCR write authority, and non-secret
+build configuration. They do not receive Dokploy, database, Clerk-secret, or
+runtime environment credentials. A preview deploy job receives only trusted
+workflow configuration and the two digest outputs; it never checks out or
+executes pull-request material.
+
+## Image identity
+
+An authorized non-no-op attempt builds fresh API and web images in parallel
+from the same full source SHA. Both tags include:
+
+- channel;
+- full source SHA;
+- GitHub Actions run ID; and
+- run attempt.
+
+Preview tags also include the pull-request number. The two returned digests are
+passed directly to the deploy job and validated as immutable SHA-256 digests.
+Dokploy receives only `image@sha256:<digest>` references. There is no digest
+rediscovery, mutable channel/success/failure tag, duplicate-tag rejection, or
+cross-channel promotion.
+
+Every pushed version remains in GHCR, including failed, cancelled, partial,
+superseded, replaced-preview, and deleted-preview attempts. Registry
+accumulation is accepted and is not a rollback promise.
+
+## Direct Dokploy protocol
+
+### Existing development or production resource
+
+After authorization and CI, resolve the configured target exactly and read its
+non-secret last-healthy marker. If the marker names the selected SHA and both
+external probes are currently healthy, finish as an explicit no-op before
+building images.
+
+For a non-no-op attempt:
+
+1. Build and pass the coherent API/web digest pair.
+2. Call `compose.update` once with the complete trusted Compose configuration,
+   runtime environment, `DATABASE_NETWORK=unshelf-nonprod-db` for development,
+   and both immutable references.
+3. Call `compose.deploy` once with a unique title containing channel, full SHA,
+   run ID, and run attempt.
+4. Poll only `deployment.allByCompose` for that exact title. Allow up to ten
+   minutes for the record to appear and reach a terminal state.
+5. After Dokploy reports `done`, poll public health for up to two minutes at
+   five-second intervals.
+6. Only after health passes, update the non-secret last-healthy description
+   marker with channel, SHA, both digests, run/attempt, and Dokploy deployment
+   identity.
+
+Fail on an ambiguous record, `error`, `cancelled`, timeout, or failed health.
+The organization-wide Dokploy queue, cancellation, staging, and route-promotion
+APIs are not used.
+
+### New or existing preview resource
+
+Preview operations serialize through one global concurrency group so
+count-and-create is race-free without a lock service.
+
+The immutable pull-request number derives the stable logical identity:
+
+- exact Compose `name`: `unshelf-pr-<number>`;
+- Unshelf `APPLICATION_NAME`: `unshelf-pr-<number>`;
+- stable host: `pr-<number>.<configured preview suffix>`.
+
+Installed-version acceptance established a distinct Dokploy-owned runtime
+identity. Creation supplies the logical name as the requested `appName` base,
+then
+requires the returned and read-back Compose record to contain the same exact
+`name`, an opaque Compose ID, and `appName` equal to
+`unshelf-pr-<number>-<six-character suffix>`. Dokploy writes that stored runtime
+value into `APP_NAME`; the workflow never supplies, reconstructs, updates, or
+separately persists it. A different returned shape or a later read-back
+mismatch is installed-version drift and stops before deploy.
+
+Search inside the configured preview environment because Dokploy filters by
+substring. Client-side exact, case-sensitive matching on Compose `name` decides
+the operation:
+
+- zero exact matches: create after the capacity check;
+- one exact match: refresh it by its returned Compose ID; and
+- more than one exact match: fail as ambiguous and require manual cleanup.
+
+For creation, count records whose exact `name` matches
+`^unshelf-pr-[1-9][0-9]*$` and refuse a fourth. Count records rather than
+distinct pull-request numbers: duplicates, failed creations, and partial
+resources each consume a real slot. The limit does not prevent refreshing one
+of the three existing previews.
+
+A new resource requires:
+
+1. `compose.create` with the exact logical `name` and requested `appName` base,
+   capturing and validating the returned Compose ID and runtime `appName`;
+2. one complete `compose.update` with trusted Compose, environment, the
+   accepted v0.30.2 network configuration,
+   `APPLICATION_NAME`, `DATABASE_NETWORK=unshelf-nonprod-db`, public origin, and
+   the digest pair, omitting `appName`;
+3. Domain reconciliation by Compose ID for the stable host: preserve the exact
+   `/api` and `/` records, create either when missing, and fail without deleting
+   on a duplicate or conflict; and
+4. the same deploy, correlated poll, health, and marker sequence used by the
+   stable channels.
+
+A refresh repeats the exact-name lookup, validates the stored runtime
+`appName`, performs the complete update, and applies the same bounded Domain
+reconciliation. Deployment polling uses `deployment.allByCompose` for that
+Compose ID and the exact channel/SHA/run/attempt title; neither name is a
+correlation substitute. A retry can therefore finish missing Domain creation,
+but it never repairs conflicting records or deletes anything automatically.
+
+GitHub Actions is the only preview creator or updater. Deletion and capacity
+recovery are explicit maintainer actions in Dokploy; closing, merging, or
+unlabelling a pull request does not delete anything automatically. Immediately
+before deletion, read the live Compose record and capture its exact logical
+`name`, Compose ID, and runtime `appName`. Select the dashboard resource by
+logical name and ID, then audit Dokploy records and stable host by logical
+identity and audit the Docker project, application networks, containers, and
+resource directory by the captured runtime `appName`. Never infer the suffix
+after deleting the record.
+
+## Channel policy
+
+### Development
+
+Development uses one fixed concurrency group. A delayed scheduled run still
+resolves the current `dev` head when it starts; it does not deploy a stale event
+SHA. Manual dispatch follows exactly the same path.
+
+Development uses `MIGRATION_MODE=apply`. It reuses the existing Compose
+resource, managed PostgreSQL service, private database network, domains, and
+runtime configuration when the live read-back passes.
+
+Local development connects directly to the managed non-production PostgreSQL
+service through the VPS TCP 5432 endpoint with non-production credentials. The
+endpoint is retained for that workflow; do not remove it merely to make the
+managed service appear private-only. Never record its credentials or connection
+string as acceptance evidence.
+
+The schedule is absent during the initial authority switch. Enable the 22:00
+`Asia/Kolkata` schedule only after one manual deployment and an immediate
+same-revision healthy no-op pass. Observe one scheduled deployment or no-op
+before declaring development rollout complete.
+
+### Preview
+
+The manual preview workflow accepts only a pull-request number and requires:
+
+- an open, non-draft, same-repository pull request into `dev`;
+- the `deploy:preview` label;
+- exact successful Product CI for its current head; and
+- no changes to API schema definitions, committed migrations, migration
+  runner/verifier behavior, Drizzle configuration, or relevant
+  migration-runtime dependency versions compared with current `dev`.
+
+An eligible preview uses `MIGRATION_MODE=verify`; its migration step must find
+exact ordered equality with the canonical development migration ledger.
+Schema-affecting work receives a hosted preview only after its migration reaches
+`dev`, development applies it, and the pull-request branch incorporates it.
+
+Development and preview temporarily use the same managed non-production
+database and the same database superuser. This means `verify` prevents the
+migration command from applying schema changes but database grants do not stop
+preview application code from issuing DDL or destructive SQL. A same-repository
+label, exact CI, conservative path refusal, and manual dispatch reduce exposure;
+they do not make the database read-only. Treat non-production data as
+disposable. The deferred remediation is
+[Split hosted-development database roles](https://github.com/rajat2006/unshelf/issues/290).
+
+A development migration does not stop or recreate active previews. Existing
+previews continue best-effort with no compatibility guarantee after the shared
+schema advances.
+
+### Production
+
+Production has no pre-existing Dokploy foundation. Provision it last in a
+separate Dokploy project with a distinct managed PostgreSQL service, network,
+Compose resource, domains, registry access, API identity, database credentials,
+Clerk Production instance, and GitHub secrets. It must not reuse the accepted
+non-production superuser credential.
+
+The production workflow is `workflow_dispatch` only and accepts no inputs. The
+first attempt must run for `main`, resolve the current `main` head, and require
+exact successful push Product CI. Manual dispatch itself is approval; the
+GitHub Environment has no additional reviewer gate.
+
+The full source SHA is the release identity. A release exists only after
+Dokploy completes and external health passes. The successful workflow creates a
+GitHub Deployment for environment `production` containing the full SHA, API/web
+digests, Actions run/attempt, and Dokploy deployment reference. The latest
+successful such Deployment is the canonical release record; Dokploy remains
+literal runtime truth.
+
+A built-in rerun preserves the original production SHA. Refuse it if a newer
+production release has succeeded or that SHA is no longer part of `main`. A new
+dispatch targets the then-current `main` head.
+
+Production provisioning and acceptance do not block removal of the prior
+development-only deployment machinery. Backup implementation and recovery
+drills remain an independent effort.
+
+## GitHub Actions configuration
+
+Use separate `development`, `preview`, and `production` GitHub Environments.
+Do not expose one environment's stored configuration to another channel job,
+even where non-production values happen to be equal.
+
+### Repository variables retained
+
+| Name | Consumer |
+| --- | --- |
+| `VITE_CLERK_PUBLISHABLE_KEY_NONPRODUCTION` | Development and preview web builds. |
+| `VITE_CLERK_PUBLISHABLE_KEY_PRODUCTION` | Production web builds. |
+
+`GITHUB_TOKEN` is generated by Actions and is not a stored secret.
+
+### Development environment retained
+
+| Kind | Name | Rule |
 | --- | --- | --- |
-| Variable | `DOKPLOY_NONPRODUCTION_URL` | Exact HTTPS base URL of the Dokploy instance. |
-| Variable | `DOKPLOY_DEVELOPMENT_COMPOSE_ID` | Stable identifier of the proven hosted-development Compose resource. |
-| Variable | `DEVELOPMENT_PUBLIC_ORIGIN` | Exact generated HTTPS origin, with no trailing slash. |
+| Variable | `DOKPLOY_NONPRODUCTION_URL` | Exact HTTPS Dokploy origin. |
+| Variable | `DOKPLOY_DEVELOPMENT_COMPOSE_ID` | Stable ID of the accepted development Compose resource. |
+| Variable | `DEVELOPMENT_PUBLIC_ORIGIN` | Exact development HTTPS origin. |
 | Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Non-owner identity restricted to the non-production project. |
-| Secret | `DOKPLOY_DEVELOPMENT_COMPOSE_ENV` | Complete newline-delimited runtime environment except `API_IMAGE`, `WEB_IMAGE`, and `PUBLIC_ORIGIN`; those are bound by the control plane. |
+| Secret | `DOKPLOY_DEVELOPMENT_COMPOSE_ENV` | Complete sensitive development runtime environment except workflow-bound images, public origin, and `DATABASE_NETWORK`. |
 
-The workflow has one `development-deployment` concurrency group with
-`cancel-in-progress: false`. GitHub replaces an obsolete pending run with the
-newest pending `dev` SHA, while an active run continues following its already
-started Dokploy attempt. Candidate publication remains independently
-cancelable.
+Retain the aggregate Compose-environment secret initially. Its contents remain
+runtime configuration even though the custom control-plane adapter disappears.
+Remove any stored `DATABASE_NETWORK` line from it when the trusted workflow
+begins binding the accepted literal.
 
-Under that lock, the control plane:
+### Preview environment created
 
-1. revalidates current `dev`, Product CI, the private GHCR trace pair, and both
-   immutable digests;
-2. converges the trusted raw Compose text and the exact environment-specific
-   digest pair;
-3. submits `development:<full source SHA>:run-<Actions run id>` as both the safe
-   correlation key and Dokploy deployment title;
-4. follows matching queue and deployment records, failing closed when either
-   source contains more than one match or no record appears within ten minutes;
-5. treats `error` and `cancelled` as terminal fix-forward failures and never
-   calls a Dokploy cancellation endpoint;
-6. independently requires `/api/health` to return `status: ok` and `db: up` and
-   `/` to return the Unshelf HTML shell; and
-7. moves both `development` GHCR tags to the healthy immutable pair only after
-   those checks pass, verifies both resolved digests, and retries the pair up to
-   three times to repair a transient single-tag failure.
+| Kind | Name | Rule |
+| --- | --- | --- |
+| Variable | `DOKPLOY_NONPRODUCTION_URL` | Same non-production Dokploy origin, stored in preview scope. |
+| Variable | `DOKPLOY_PREVIEW_ENV_ID` | Fixed Dokploy environment in which preview resources are searched and created. |
+| Variable | `DOKPLOY_PREVIEW_DOMAIN_SUFFIX` | Trusted suffix used to derive `pr-<number>` hosts. |
+| Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Same project-scoped value, independently stored in preview scope. |
+| Secret | `DOKPLOY_PREVIEW_COMPOSE_ENV` | Sensitive preview runtime environment with `MIGRATION_MODE=verify` and the accepted shared database superuser, excluding `DATABASE_NETWORK`. |
 
-The CLI prints one allowlisted JSON result containing only channel, SHA,
-digests, deployment identifier, state, and duration. Adapter failures are
-generic and never include raw Dokploy, database, registry, or health response
-data. Keep Dokploy's built-in deployment-failure email enabled for the Compose
-resource; GitHub Actions is the record for stale intent, registry, control-plane,
-and external-health failures. Recovery is a corrected commit or configuration
-followed by a normal retry—never rollback or down-migration.
+The workflow injects per-preview images, logical `APPLICATION_NAME`, and public
+origin; it also injects the trusted `unshelf-nonprod-db` network literal. These
+values do not belong in the aggregate secret. Dokploy derives `APP_NAME` from
+its stored runtime `appName`; neither runtime value is GitHub configuration.
 
-Before enabling the workflow, prove with the restricted key that a production
-project/resource request returns `403`, and confirm the environment contains no
-production variable or secret. Then push one harmless commit to `dev` and record
-only the Actions run, source SHA, API/web digests, correlated deployment ID,
-migration-before-API ordering, external health results, final moving-tag
-digests, and durations. Do not close the rollout ticket without that live
-evidence.
+### Production environment populated later
+
+| Kind | Name | Rule |
+| --- | --- | --- |
+| Variable | `DOKPLOY_PRODUCTION_URL` | Exact HTTPS production Dokploy origin. |
+| Variable | `DOKPLOY_PRODUCTION_COMPOSE_ID` | Stable production Compose ID. |
+| Variable | `PRODUCTION_PUBLIC_ORIGIN` | Exact production HTTPS origin. |
+| Secret | `DOKPLOY_PRODUCTION_API_KEY` | Production-only project identity. |
+| Secret | `DOKPLOY_PRODUCTION_COMPOSE_ENV` | Complete production runtime environment with `MIGRATION_MODE=apply` and production-only database credentials. |
+
+Unrelated Sandcastle, Daily Project Digest, backup-monitoring, and agent secrets
+or variables are not deployment-retirement targets. Delete a deployment setting
+only after the replacement workflow demonstrably has no reference to it.
+
+## Failure, retry, and evidence
+
+Authority gates and workflows detect failures automatically. Every failed
+authority/CI gate, build, Dokploy call, terminal deployment, timeout, migration,
+or health probe fails the Actions run visibly. Operators retain control of
+retry, rollback, repair, cancellation, and cleanup decisions. Failure:
+
+- never advances the last-healthy marker;
+- never retries automatically;
+- never rolls back application or database state;
+- never runs a down migration;
+- never cancels remote work;
+- never tears down a preview;
+- never deletes an image; and
+- never triggers a separate notification workflow.
+
+A failed refresh may leave a preview degraded. A partially created preview
+remains visible for manual retry or deletion. Recovery is another authorized
+deployment, a built-in rerun where its identity remains valid, or a fix-forward
+change.
+
+Development and preview may retry through another manual action or a built-in
+rerun. Retry the same SHA while it remains the authorized current revision;
+otherwise a fresh manual action selects the then-current authorized revision.
+Every retry receives a distinct run-attempt image-pair identity. Production
+reruns follow the stricter preserved-release rules in the production section.
+
+If an Actions run is interrupted after remote work begins, inspect the exact
+Dokploy Compose resource and correlated deployment and wait for remote work to
+settle before retrying. Do not cancel or adopt outstanding work automatically.
+A one-off Docker extraction checksum failure permits a normal retry with the
+same exact digests. If the checksum failure recurs, stop for diagnosis; image
+removal, Docker restart, host repair, or substituting one image in the pair
+requires reproducible evidence and a separate manual decision.
+
+Each run writes an allowlisted summary containing channel, selected SHA,
+API/web digests, gate/health outcomes, duration, and final state. Once a target
+is resolved, also record its exact Compose `name`, Compose ID, runtime `appName`,
+and deployment ID when one exists; a no-op records the first three without
+inventing a deployment. These summaries are evidence, not configuration or an
+identity ledger. The last-healthy marker does not duplicate the names because
+it lives on the Compose record that owns them. Never print raw GitHub or Dokploy
+responses, Compose environment, database URLs, tokens, cookies, secrets, or
+private health bodies.
+
+Public health requires:
+
+- API: HTTP 200 with JSON `status: ok` and `db: up`;
+- web: HTTP 200 serving the Unshelf HTML application shell at `/`.
+
+Dokploy `done` is not application health. It only means its deployment command
+finished.
+
+## Pre-cutover read-back
+
+The accepted control-plane baseline is exact Dokploy v0.30.2, and the retained
+PostgreSQL service has already been moved through the supported Dokploy surface
+to the dedicated attachable `unshelf-nonprod-db` overlay. Do not repeat the
+discarded eleven-gate compatibility exercise.
+
+Before the authority switch, independently re-read the exact installed Dokploy,
+Docker, and Traefik versions; the retained PostgreSQL record, PostgreSQL 18
+image, volume, generated identity, credential references, TCP 5432 publication,
+and sole overlay attachment; the development Compose resource, Domains, runtime
+identity, deployed revision/digests, and health; the orphan inventory; and the
+unused-local-image-cleanup setting. Record only redacted, stable identifiers.
+
+Stop for review on an unsupported field, ambiguous identity, changed retained
+database invariant, failed isolation, untrusted transport, or capacity limit.
+Do not substitute manual Docker network or service mutation. The intentional
+non-production PostgreSQL endpoint is not by itself failed isolation: hosted
+services must use the internal overlay path, invalid external authentication
+must fail, and production remains private-only.
+
+## Replacement cutover
+
+### 1. Inventory the live non-production foundation
+
+Record only redacted stable identifiers for:
+
+- the current development Compose resource and domains;
+- the managed PostgreSQL service and service-spec networks;
+- its intentional development-only TCP 5432 publication and redacted
+  authentication-required result;
+- any legacy Compose resource, application-local database, volume, route,
+  container, stack, directory, registry entry, or backup configuration;
+- the currently deployed source/digests and health; and
+- the current Dokploy unused-image-cleanup setting.
+
+The accepted baseline has the retained PostgreSQL service attached only to the
+Dokploy-owned attachable overlay `unshelf-nonprod-db`. Treat any missing,
+additional, or changed attachment as drift and stop before application cutover.
+
+### 2. Reuse or repair development
+
+Prefer the existing development Compose resource, domains, managed PostgreSQL
+service, and GitHub Environment. Before any application deploy, confirm that
+the retained database record, PostgreSQL 18 image, named volume and mount,
+generated service identity, credential references, internal port, intentional
+TCP 5432 publication, and sole `unshelf-nonprod-db` attachment still match the
+accepted baseline. Confirm authenticated local access works and invalid
+authentication is rejected without recording credentials or raw output.
+
+If any read-back differs, stop and leave the application resource unchanged.
+Never rebuild or replace the retained database merely to repair deployment.
+
+Preserve the managed service's TCP 5432 publication while direct local
+development depends on it. Its presence is not drift and does not require
+containment, replacement, a tunnel, or a private-network project. Revisit the
+access path separately only when operational or security evidence justifies the
+additional scope.
+
+If the existing Compose resource cannot satisfy the accepted update, marker,
+routing, or identity contract, create a replacement Compose resource in the
+same non-production project and attach it to the existing managed database
+foundation. Re-resolve and read back the exact target before any change. Do not
+rebuild or delete the managed database merely because the Compose resource is
+incompatible.
+
+### 3. Switch repository authority atomically
+
+In one implementation change:
+
+- add the direct development (manual-only initially), preview, and production
+  entry workflows;
+- delete `.github/workflows/publish-candidate.yml` and
+  `.github/workflows/deploy-development.yml`;
+- delete `packages/deployment-control-plane`;
+- remove its root scripts/filters, TypeScript globs, lockfile importer, and
+  shared lint-contract expectations; and
+- retain `docker-compose.yml`, Dockerfiles, Caddyfile, runtime Compose tests,
+  and the still-required GitHub configuration.
+
+Do not keep the old workflows as a fallback. Failure after the authority switch
+is fixed forward; source history remains available for investigation without
+leaving two runnable authorities.
+
+### 4. Accept development and enable its schedule
+
+1. Manually deploy the exact current green `dev` head.
+2. Require coherent digests, migration success, Dokploy completion, public API
+   and web health, same-origin Clerk login, a protected API call, and the
+   last-healthy marker.
+3. Confirm credential/log hygiene and that non-production automation cannot
+   reach production.
+4. Immediately rerun the same revision and prove a healthy no-op.
+5. Add the 22:00 `Asia/Kolkata` schedule.
+6. Observe one scheduled deployment or no-op.
+
+### 5. Accept preview
+
+1. Create and populate the `preview` GitHub Environment.
+2. Label one eligible same-repository pull request.
+3. Manually create its preview and verify exact logical-name lookup, the returned
+   suffixed runtime `appName`, migration equality, domains, HTTPS, API/web health,
+   authentication, and marker evidence.
+4. Refresh it to a newer eligible revision.
+5. Capture the logical `name`, Compose ID, and runtime `appName`, then delete it
+   manually in Dokploy.
+6. Verify by those captured identities that its resource, routes, containers,
+   stack, network, and directory are absent while development, managed
+   PostgreSQL, and the database network remain.
+7. Prove three-preview admission behavior with automated tests; do not create
+   three live previews solely to test capacity.
+
+### 6. Remove proven orphans and enable local image cleanup
+
+Only after the replacement development/preview targets pass acceptance:
+
+**Do not remove the legacy resource** or any associated application-local
+database volume until replacement health passes and the exact deletion target
+has been resolved and re-read.
+
+1. resolve every deletion target by exact stable identifier;
+2. recheck it immediately before deletion;
+3. remove only obsolete Compose resources, routes, containers, stacks,
+   directories, application-local databases/volumes, and unused credentials;
+4. directly audit the host because a successful Dokploy delete response does
+   not prove runtime cleanup;
+5. preserve the managed PostgreSQL service, accepted Compose resource,
+   database network, domains, shared Dokploy/Traefik state, and unrelated
+   resources;
+6. leave all GHCR versions untouched;
+7. enable Dokploy's built-in unused-local-image cleanup; and
+8. observe one cleanup cycle and prove active digest-pinned images remain.
+
+Record every irreversible removal and the evidence that distinguished the
+orphan from retained state.
+
+### 7. Provision and accept production last
+
+Provision the isolated production foundation from scratch. Its first manual
+deployment must pass exact-current-`main` Product CI, migration, Dokploy
+completion, API/web and authentication checks, credential-isolation checks,
+the last-healthy marker, and the successful GitHub Deployment record.
+
+Production acceptance is not a prerequisite for closing the old
+development-only authority. Do not close the independent backup/recovery work
+as part of this deployment replacement.
+
+### 8. Retire superseded tracker work
+
+The replacement backlog must:
+
+- close
+  [Wayfinder: specify Dokploy CD for development, previews, and production](https://github.com/rajat2006/unshelf/issues/239)
+  as a completed historical map whose decisions were later reopened;
+- close
+  [Continuously deliver development, PR previews, and production through Dokploy](https://github.com/rajat2006/unshelf/issues/268)
+  and its remaining execution tickets as superseded, linking the replacement
+  map and PRD;
+- state that hosted development was genuinely deployed and that remaining live
+  acceptance/cleanup moved to the replacement;
+- keep
+  [Split hosted-development database roles](https://github.com/rajat2006/unshelf/issues/290)
+  open and broaden it to cover previews; and
+- leave
+  [Stand up R2 backups and recovery before the first non-founder user](https://github.com/rajat2006/unshelf/issues/40)
+  untouched.
+
+Legacy research/artifact PRs and the stale control-plane correction PR were
+closed without merging with supersession comments. The current redesign's
+[research/prototype PR](https://github.com/rajat2006/unshelf/pull/514) remains
+open until its review surface is no longer useful.
+
+## Testing and browser-automation boundary
+
+Automated tests observe the development, preview, and production workflow
+interfaces and the retained resolved-Compose and PostgreSQL migration
+interfaces. Small helpers use fake GitHub and Dokploy adapters where necessary;
+live acceptance uses workflow conclusions, independent API read-back, runtime
+topology, and external health probes.
+
+No automated or live test may read or depend on repository Playwright
+configuration, `.playwright-cli` state, saved sessions, snapshots, screenshots,
+traces, or generated browser artifacts. Do not add Playwright infrastructure
+for deployment acceptance. A temporary authenticated browser session may
+perform a UI-only configuration step when supported APIs and CLIs cannot, but
+the session, click result, and screenshots are neither test inputs nor
+acceptance evidence. Independently read back the resulting configuration.
+
+## Live acceptance record
+
+For each channel, record only:
+
+- installed platform versions/digests;
+- channel and exact source SHA;
+- API/web digests;
+- Actions run and attempt;
+- exact non-secret Compose `name`, Compose ID, runtime `appName`, and deployment
+  ID when a deployment exists;
+- migration ordering and result;
+- API/web/authentication pass/fail;
+- no-op result where applicable;
+- cleanup targets and post-delete audit result; and
+- durations and final state.
+
+Never record raw environments, connection strings, keys, tokens, cookies,
+private response bodies, or sensitive incident logs in issues or Actions
+summaries.
 
 ## Logs and incident evidence
 
@@ -368,3 +668,5 @@ docker compose -f docker-compose.yml logs \
 
 Treat `unshelf-predeploy.log` as sensitive incident evidence: restrict access,
 inspect it for credentials before sharing, and remove it when no longer needed.
+Prefer the allowlisted Actions summary and Dokploy's correlated deployment
+record for ordinary diagnosis.
