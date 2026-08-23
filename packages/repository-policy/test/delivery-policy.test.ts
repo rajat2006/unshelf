@@ -51,6 +51,31 @@ describe("direct delivery policy", () => {
     }
   });
 
+  it("refreshes one exact preview at capacity and ignores substring collisions", () => {
+    const result = runPolicy("select-preview", {
+      logicalName: "unshelf-pr-44",
+      prNumber: 44,
+      records: {
+        items: [
+          { composeId: "near", name: "unshelf-pr-440" },
+          { composeId: "one", name: "unshelf-pr-1" },
+          { composeId: "two", name: "unshelf-pr-2" },
+          {
+            composeId: "exact",
+            name: "unshelf-pr-44",
+            appName: "unshelf-pr-44-abcdef",
+          },
+        ],
+      },
+    });
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      action: "refresh",
+      composeId: "exact",
+      runtimeName: "unshelf-pr-44-abcdef",
+    });
+  });
+
   it("returns only missing exact domains and rejects an occupied route", () => {
     const input = {
       composeId: "compose-44",
@@ -89,5 +114,31 @@ describe("direct delivery policy", () => {
       ],
     });
     expect(conflict.status).not.toBe(0);
+  });
+
+  it("reconciles neither, either, and both domains and refuses duplicates", () => {
+    const base = { composeId: "compose-44", host: "pr-44.preview.example.com" };
+    const api = {
+      domainId: "api",
+      ...base,
+      path: "/api",
+      serviceName: "api",
+      port: 3001,
+      https: true,
+    };
+    const web = {
+      domainId: "web",
+      ...base,
+      path: "/",
+      serviceName: "web",
+      port: 80,
+      https: true,
+    };
+    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [] }).stdout)).toHaveLength(2);
+    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [web] }).stdout)).toEqual([
+      { path: "/api", port: 3001, serviceName: "api" },
+    ]);
+    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [api, web] }).stdout)).toEqual([]);
+    expect(runPolicy("reconcile-domains", { ...base, domains: [api, { ...api, domainId: "duplicate" }] }).status).not.toBe(0);
   });
 });
