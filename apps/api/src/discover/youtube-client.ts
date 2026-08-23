@@ -32,8 +32,24 @@ export type FetchChannelVideosResult =
       ok: true;
       videos: YouTubeVideo[];
       outcome?: SuccessfulDiscoverFetchOutcome;
+      skippedCount?: number;
+      retryCount?: number;
     }
-  | { ok: false; error: YouTubeFailure };
+  | { ok: false; error: YouTubeFailure; retryCount?: number };
+
+interface RetryPolicy {
+  budgetMilliseconds: number;
+  minDelayMilliseconds: number;
+  maxDelayMilliseconds: number;
+  randomize: boolean;
+}
+
+const DEFAULT_RETRY_POLICY: RetryPolicy = {
+  budgetMilliseconds: 30_000,
+  minDelayMilliseconds: 250,
+  maxDelayMilliseconds: 2_000,
+  randomize: true,
+};
 
 export interface YouTubeClient {
   resolveChannel(input: { url: string }): Promise<ResolveChannelResult>;
@@ -54,66 +70,182 @@ export const unavailableYouTubeClient: YouTubeClient = {
 export function createYouTubeClient({
   apiKey,
   fetch,
+  now = () => new Date(),
+  retry = DEFAULT_RETRY_POLICY,
 }: {
   apiKey: string;
   fetch: YouTubeFetch;
+  now?: () => Date;
+  retry?: RetryPolicy;
 }): YouTubeClient {
   return {
     resolveChannel: async ({ url }) => {
       const target = parseChannelUrl(url);
       if (!target) return { ok: false, error: "invalid_url" };
 
-      const response = await requestYouTube({
-        apiKey,
-        fetch,
-        resource: "channels",
-        query: { part: "id,snippet,contentDetails", ...target },
-      });
-      if (!response.ok) return response;
-      const channel = readChannel(response.body);
-      return channel
-        ? { ok: true, channel }
-        : { ok: false, error: "not_found" };
-    },
-    fetchChannelVideos: async ({ channel }) => {
-      const playlistResponse = await requestYouTube({
-        apiKey,
-        fetch,
-        resource: "playlistItems",
-        query: {
-          part: "snippet,contentDetails",
-          playlistId: channel.uploadsPlaylistId,
-          maxResults: "50",
+      const acquired = await runWithRetry({
+        retry,
+        operation: async (signal) => {
+          const body = await requestYouTube({
+            apiKey,
+            fetch,
+            resource: "channels",
+            query: { part: "id,snippet,contentDetails", ...target },
+            signal,
+            currentTime: now(),
+          });
+          const items = objectArrayProperty(body, "items");
+          if (items === null || items.length > 1) {
+            throw new StableProviderFailure("temporary_failure");
+          }
+          if (items.length === 0) {
+            throw new StableProviderFailure("not_found");
+          }
+          const channel = readChannel(body);
+          if (!channel) throw new StableProviderFailure("temporary_failure");
+          return channel;
         },
       });
-      if (!playlistResponse.ok) return playlistResponse;
-      const videoIds = readPlaylistVideoIds(playlistResponse.body);
-      if (!videoIds) return { ok: false, error: "temporary_failure" };
-      if (videoIds.length === 0) return { ok: true, videos: [] };
+      return acquired.ok
+        ? { ok: true, channel: acquired.value }
+        : { ok: false, error: acquired.error };
+    },
+    fetchChannelVideos: async ({ channel }) => {
+      const acquired = await runWithRetry({
+        retry,
+        operation: (signal, attempt) =>
+          fetchChannelVideosOnce({
+            apiKey,
+            fetch,
+            channel,
+            now,
+            signal,
+            retryMissingMetadata: attempt < 2,
+          }),
+      });
+      if (!acquired.ok) {
+        return {
+          ok: false,
+          error: acquired.error,
+          ...(acquired.retryCount === 0
+            ? {}
+            : { retryCount: acquired.retryCount }),
+        };
+      }
+      return {
+        ...acquired.value,
+        ...(acquired.retryCount === 0
+          ? {}
+          : { retryCount: acquired.retryCount }),
+      };
+    },
+  };
+}
 
-      const videosResponse = await requestYouTube({
+async function fetchChannelVideosOnce({
+  apiKey,
+  fetch,
+  channel,
+  now,
+  signal,
+  retryMissingMetadata,
+}: {
+  apiKey: string;
+  fetch: YouTubeFetch;
+  channel: YouTubeChannel;
+  now: () => Date;
+  signal: AbortSignal;
+  retryMissingMetadata: boolean;
+}): Promise<Extract<FetchChannelVideosResult, { ok: true }>> {
+  const videos: YouTubeVideo[] = [];
+  const seenVideoIds = new Set<string>();
+  let incompleteMetadataCount = 0;
+  let skippedCount = 0;
+  const relevanceStart = new Date(
+    now().getTime() - 30 * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  let pageToken: string | null = null;
+  const seenPageTokens = new Set<string>();
+  while (true) {
+    const playlistBody = await requestYouTube({
+      apiKey,
+      fetch,
+      resource: "playlistItems",
+      query: {
+        part: "snippet,contentDetails",
+        playlistId: channel.uploadsPlaylistId,
+        maxResults: "50",
+        ...(pageToken === null ? {} : { pageToken }),
+      },
+      signal,
+      currentTime: now(),
+    });
+    const playlistPage = readPlaylistPage(playlistBody);
+    if (!playlistPage) {
+      throw new StableProviderFailure("temporary_failure");
+    }
+    const newVideoIds = playlistPage.videoIds.filter((videoId) => {
+      if (seenVideoIds.has(videoId)) return false;
+      seenVideoIds.add(videoId);
+      return true;
+    });
+    if (newVideoIds.length > 0) {
+      const videosBody = await requestYouTube({
         apiKey,
         fetch,
         resource: "videos",
         query: {
-          part: "snippet,contentDetails",
-          id: videoIds.join(","),
+          part: "snippet,contentDetails,status,liveStreamingDetails,player",
+          id: newVideoIds.join(","),
+          maxWidth: "1920",
         },
+        signal,
+        currentTime: now(),
       });
-      if (!videosResponse.ok) return videosResponse;
-      const videos = readVideos(videosResponse.body, channel.externalId);
-      return videos
-        ? {
-            ok: true,
-            videos: videos
-              .sort((left, right) =>
-                right.publishedAt.localeCompare(left.publishedAt),
-              )
-              .slice(0, 10),
-          }
-        : { ok: false, error: "temporary_failure" };
-    },
-  };
+      const pageVideos = readVideos(
+        videosBody,
+        channel.externalId,
+        newVideoIds,
+      );
+      if (!pageVideos) {
+        throw new StableProviderFailure("temporary_failure");
+      }
+      if (pageVideos.missingMetadataCount > 0 && retryMissingMetadata) {
+        throw new RetryableProviderFailure({
+          error: "temporary_failure",
+          retryAfterMilliseconds: null,
+        });
+      }
+      videos.push(...pageVideos.videos);
+      incompleteMetadataCount += pageVideos.incompleteMetadataCount;
+      skippedCount += pageVideos.skippedCount;
+    }
+    const coversCandidateWindow = playlistPage.oldestPublishedAt
+      ? playlistPage.oldestPublishedAt < relevanceStart
+      : false;
+    if (
+      playlistPage.nextPageToken === null ||
+      (coversCandidateWindow && videos.length >= 10)
+    ) {
+      return {
+        ok: true,
+        videos: videos.sort((left, right) =>
+          right.publishedAt.localeCompare(left.publishedAt),
+        ),
+        ...(incompleteMetadataCount === 0
+          ? {}
+          : {
+              outcome: "partial" as const,
+            }),
+        ...(skippedCount === 0 ? {} : { skippedCount }),
+      };
+    }
+    if (seenPageTokens.has(playlistPage.nextPageToken)) {
+      throw new StableProviderFailure("temporary_failure");
+    }
+    seenPageTokens.add(playlistPage.nextPageToken);
+    pageToken = playlistPage.nextPageToken;
+  }
 }
 
 function parseChannelUrl(
@@ -160,14 +292,16 @@ async function requestYouTube({
   fetch,
   resource,
   query,
+  signal,
+  currentTime,
 }: {
   apiKey: string;
   fetch: YouTubeFetch;
   resource: string;
   query: Record<string, string>;
-}): Promise<
-  { ok: true; body: unknown } | { ok: false; error: YouTubeFailure }
-> {
+  signal: AbortSignal;
+  currentTime: Date;
+}): Promise<unknown> {
   const url = new URL(`${YOUTUBE_API_ORIGIN}/${resource}`);
   for (const [key, value] of Object.entries(query)) {
     url.searchParams.set(key, value);
@@ -175,17 +309,185 @@ async function requestYouTube({
   try {
     const response = await fetch(url, {
       headers: { "x-goog-api-key": apiKey },
+      signal,
     });
     if (!response.ok) {
-      return {
-        ok: false,
-        error: response.status === 429 ? "throttled" : "temporary_failure",
-      };
+      if (
+        response.status === 408 ||
+        response.status === 429 ||
+        response.status >= 500
+      ) {
+        throw new RetryableProviderFailure({
+          error: response.status === 429 ? "throttled" : "temporary_failure",
+          retryAfterMilliseconds: retryAfterMilliseconds(
+            response.headers,
+            currentTime,
+          ),
+        });
+      }
+      throw new StableProviderFailure(
+        response.status === 404 ? "not_found" : "temporary_failure",
+      );
     }
-    return { ok: true, body: await response.json() };
-  } catch {
-    return { ok: false, error: "temporary_failure" };
+    try {
+      return await response.json();
+    } catch {
+      throw new StableProviderFailure("temporary_failure");
+    }
+  } catch (error) {
+    if (error instanceof ProviderFailure) throw error;
+    throw new RetryableProviderFailure({
+      error: "temporary_failure",
+      retryAfterMilliseconds: null,
+    });
   }
+}
+
+class ProviderFailure extends Error {
+  readonly error: Exclude<YouTubeFailure, "invalid_url">;
+
+  constructor(error: Exclude<YouTubeFailure, "invalid_url">) {
+    super(error);
+    this.name = "ProviderFailure";
+    this.error = error;
+  }
+}
+
+class StableProviderFailure extends ProviderFailure {}
+
+class RetryableProviderFailure extends ProviderFailure {
+  readonly retryAfterMilliseconds: number | null;
+
+  constructor({
+    error,
+    retryAfterMilliseconds,
+  }: {
+    error: "throttled" | "temporary_failure";
+    retryAfterMilliseconds: number | null;
+  }) {
+    super(error);
+    this.retryAfterMilliseconds = retryAfterMilliseconds;
+  }
+}
+
+async function runWithRetry<T>({
+  retry,
+  operation,
+}: {
+  retry: RetryPolicy;
+  operation: (signal: AbortSignal, attempt: number) => Promise<T>;
+}): Promise<
+  | { ok: true; value: T; retryCount: number }
+  | {
+      ok: false;
+      error: Exclude<YouTubeFailure, "invalid_url">;
+      retryCount: number;
+    }
+> {
+  const controller = new AbortController();
+  const budgetTimer = setTimeout(
+    () =>
+      controller.abort(
+        new DOMException("Provider budget expired", "TimeoutError"),
+      ),
+    retry.budgetMilliseconds,
+  );
+  let retryCount = 0;
+  let lastRetryableFailure: RetryableProviderFailure | null = null;
+  try {
+    for (let attempt = 0; attempt <= 2; attempt += 1) {
+      try {
+        return {
+          ok: true,
+          value: await operation(controller.signal, attempt),
+          retryCount: attempt,
+        };
+      } catch (error) {
+        if (error instanceof StableProviderFailure) {
+          return { ok: false, error: error.error, retryCount: attempt };
+        }
+        const retryable =
+          error instanceof RetryableProviderFailure
+            ? error
+            : new RetryableProviderFailure({
+                error: "temporary_failure",
+                retryAfterMilliseconds: null,
+              });
+        retryCount = attempt;
+        lastRetryableFailure = retryable;
+        if (attempt === 2 || controller.signal.aborted) {
+          return {
+            ok: false,
+            error: retryable.error,
+            retryCount: attempt,
+          };
+        }
+        const exponentialDelay = Math.min(
+          retry.maxDelayMilliseconds,
+          retry.minDelayMilliseconds * 2 ** attempt,
+        );
+        const fallbackDelay = retry.randomize
+          ? exponentialDelay * (0.5 + Math.random() / 2)
+          : exponentialDelay;
+        // Waiting until YouTube's Retry-After avoids spending the next attempt
+        // while the same throttle is known to remain active; the shared budget
+        // still aborts an excessive Provider delay.
+        await delay(
+          Math.max(fallbackDelay, retryable.retryAfterMilliseconds ?? 0),
+          controller.signal,
+        );
+      }
+    }
+    throw new Error("unreachable retry state");
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        lastRetryableFailure?.error ??
+        (error instanceof RetryableProviderFailure
+          ? error.error
+          : "temporary_failure"),
+      retryCount,
+    };
+  } finally {
+    clearTimeout(budgetTimer);
+  }
+}
+
+function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const finish = (): void => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    const abort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Provider budget expired"),
+      );
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function retryAfterMilliseconds(
+  headers: Headers,
+  currentTime: Date,
+): number | null {
+  const value = headers.get("retry-after");
+  if (value === null) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(0, date - currentTime.getTime());
 }
 
 function readChannel(body: unknown): YouTubeChannel | null {
@@ -209,54 +511,141 @@ function readChannel(body: unknown): YouTubeChannel | null {
   };
 }
 
-function readPlaylistVideoIds(body: unknown): string[] | null {
+function readPlaylistPage(body: unknown): {
+  videoIds: string[];
+  oldestPublishedAt: string | null;
+  nextPageToken: string | null;
+} | null {
   const items = objectArrayProperty(body, "items");
   if (!items) return null;
   const videoIds: string[] = [];
+  const seenVideoIds = new Set<string>();
+  let oldestPublishedAt: string | null = null;
   for (const item of items) {
     const videoId = stringProperty(
       recordProperty(item, "contentDetails"),
       "videoId",
     );
-    if (!videoId) return null;
-    videoIds.push(videoId);
+    const publishedAt = stringProperty(
+      recordProperty(item, "snippet"),
+      "publishedAt",
+    );
+    if (!videoId || !publishedAt || Number.isNaN(Date.parse(publishedAt))) {
+      return null;
+    }
+    if (!seenVideoIds.has(videoId)) {
+      seenVideoIds.add(videoId);
+      videoIds.push(videoId);
+    }
+    if (oldestPublishedAt === null || publishedAt < oldestPublishedAt) {
+      oldestPublishedAt = new Date(publishedAt).toISOString();
+    }
   }
-  return videoIds;
+  return {
+    videoIds,
+    oldestPublishedAt,
+    nextPageToken: stringProperty(body, "nextPageToken"),
+  };
 }
 
 function readVideos(
   body: unknown,
   expectedChannelId: string,
-): YouTubeVideo[] | null {
+  requestedVideoIds: readonly string[],
+): {
+  videos: YouTubeVideo[];
+  incompleteMetadataCount: number;
+  missingMetadataCount: number;
+  skippedCount: number;
+} | null {
   const items = objectArrayProperty(body, "items");
   if (!items) return null;
   const videos: YouTubeVideo[] = [];
+  const returnedVideoIds = new Set<string>();
+  let incompleteMetadataCount = 0;
+  let skippedCount = 0;
   for (const item of items) {
-    const video = readVideo(item, expectedChannelId);
-    if (video) videos.push(video);
+    const externalId = stringProperty(item, "id");
+    if (
+      externalId === null ||
+      !requestedVideoIds.includes(externalId) ||
+      returnedVideoIds.has(externalId)
+    ) {
+      continue;
+    }
+    returnedVideoIds.add(externalId);
+    const candidate = readVideo(item, expectedChannelId);
+    if (candidate.kind === "accepted") videos.push(candidate.video);
+    if (candidate.kind !== "accepted") skippedCount += 1;
+    if (candidate.kind === "invalid") incompleteMetadataCount += 1;
   }
-  return videos;
+  const missingCount = requestedVideoIds.filter(
+    (videoId) => !returnedVideoIds.has(videoId),
+  ).length;
+  incompleteMetadataCount += missingCount;
+  skippedCount += missingCount;
+  return {
+    videos,
+    incompleteMetadataCount,
+    missingMetadataCount: missingCount,
+    skippedCount,
+  };
 }
 
 function readVideo(
   item: unknown,
   expectedChannelId: string,
-): YouTubeVideo | null {
+):
+  | { kind: "accepted"; video: YouTubeVideo }
+  | { kind: "ineligible" | "invalid" } {
   const snippet = recordProperty(item, "snippet");
   const contentDetails = recordProperty(item, "contentDetails");
+  const status = recordProperty(item, "status");
+  const player = recordProperty(item, "player");
+  const liveStreamingDetails = recordProperty(item, "liveStreamingDetails");
   const externalId = stringProperty(item, "id");
   const title = stringProperty(snippet, "title");
   const publishedAt = stringProperty(snippet, "publishedAt");
   const channelId = stringProperty(snippet, "channelId");
+  const liveBroadcastContent = stringProperty(snippet, "liveBroadcastContent");
   const duration = parseDuration(stringProperty(contentDetails, "duration"));
+  const privacyStatus = stringProperty(status, "privacyStatus");
+  const uploadStatus = stringProperty(status, "uploadStatus");
+  const embeddable = booleanProperty(status, "embeddable");
+  const publishedTime =
+    publishedAt === null ? Number.NaN : Date.parse(publishedAt);
+  const shortLandscape =
+    duration !== null &&
+    duration <= 180 &&
+    positiveNumberProperty(player, "embedWidth") !== null &&
+    positiveNumberProperty(player, "embedHeight") !== null &&
+    positiveNumberProperty(player, "embedWidth")! >
+      positiveNumberProperty(player, "embedHeight")!;
+  const upcoming =
+    liveBroadcastContent === "upcoming" ||
+    (stringProperty(liveStreamingDetails, "scheduledStartTime") !== null &&
+      stringProperty(liveStreamingDetails, "actualStartTime") === null);
   if (
     !externalId ||
     !title ||
-    !publishedAt ||
+    !Number.isFinite(publishedTime) ||
     channelId !== expectedChannelId ||
-    duration === null
+    duration === null ||
+    liveBroadcastContent === null ||
+    privacyStatus === null ||
+    uploadStatus === null ||
+    embeddable === null
   ) {
-    return null;
+    return { kind: "invalid" };
+  }
+  if (
+    privacyStatus !== "public" ||
+    uploadStatus !== "processed" ||
+    embeddable !== true ||
+    upcoming ||
+    (duration <= 180 && !shortLandscape)
+  ) {
+    return { kind: "ineligible" };
   }
   const thumbnails = recordProperty(snippet, "thumbnails");
   const thumbnail =
@@ -266,12 +655,15 @@ function readVideo(
     recordProperty(thumbnails, "medium") ??
     recordProperty(thumbnails, "default");
   return {
-    externalId,
-    title,
-    thumbnailUrl: stringProperty(thumbnail, "url"),
-    publishedAt: new Date(publishedAt).toISOString(),
-    durationSeconds: duration,
-    source: `https://www.youtube.com/watch?v=${externalId}`,
+    kind: "accepted",
+    video: {
+      externalId,
+      title,
+      thumbnailUrl: stringProperty(thumbnail, "url"),
+      publishedAt: new Date(publishedTime).toISOString(),
+      durationSeconds: duration,
+      source: `https://www.youtube.com/watch?v=${externalId}`,
+    },
   };
 }
 
@@ -313,4 +705,25 @@ function stringProperty(value: unknown, property: string): string | null {
   return typeof propertyValue === "string" && propertyValue.length > 0
     ? propertyValue
     : null;
+}
+
+function booleanProperty(value: unknown, property: string): boolean | null {
+  if (!isRecord(value)) return null;
+  const propertyValue = value[property];
+  return typeof propertyValue === "boolean" ? propertyValue : null;
+}
+
+function positiveNumberProperty(
+  value: unknown,
+  property: string,
+): number | null {
+  if (!isRecord(value)) return null;
+  const propertyValue = value[property];
+  const number =
+    typeof propertyValue === "number"
+      ? propertyValue
+      : typeof propertyValue === "string" && /^[1-9]\d*$/.test(propertyValue)
+        ? Number(propertyValue)
+        : Number.NaN;
+  return Number.isFinite(number) && number > 0 ? number : null;
 }

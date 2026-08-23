@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DiscoverProviderTargetId } from "@unshelf/shared";
 import type { Database } from "../db";
+import type { Logger } from "../logging";
 import { discoverProviderTargets } from "../schema";
 import { candidateRelevanceStart } from "./candidate-relevance";
 import {
@@ -33,10 +34,12 @@ export function createDiscoverAcquisitionTick({
   db,
   youtubeClient,
   now,
+  logger,
 }: {
   db: Database;
   youtubeClient: YouTubeClient;
   now: () => Date;
+  logger: Logger;
 }): DiscoverAcquisitionTick {
   return async () => {
     await Promise.all(
@@ -59,12 +62,33 @@ export function createDiscoverAcquisitionTick({
               acquired,
               completedAt,
             });
+            logger.info({
+              event: "unshelf.discover.acquisition.completed",
+              msg: "Discover channel acquisition completed",
+              targetId: target.id,
+              outcome: acquired.outcome ?? "complete",
+              durationMilliseconds: completedAt.getTime() - claimedAt.getTime(),
+              acceptedCount: acquired.videos.length,
+              skippedCount: acquired.skippedCount ?? 0,
+              retryCount: acquired.retryCount ?? 0,
+            });
           } else {
             await recordAcquisitionFailure({
               db,
               target,
               acquired,
               completedAt,
+            });
+            logger.warn({
+              event: "unshelf.discover.acquisition.completed",
+              msg: "Discover channel acquisition completed",
+              targetId: target.id,
+              outcome: acquired.error === "throttled" ? "throttled" : "failed",
+              errorClass: acquired.error,
+              durationMilliseconds: completedAt.getTime() - claimedAt.getTime(),
+              acceptedCount: 0,
+              skippedCount: 0,
+              retryCount: acquired.retryCount ?? 0,
             });
           }
         }

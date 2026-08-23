@@ -165,6 +165,31 @@ describe("scheduled Discover acquisition", () => {
       { external_id: "older-video" },
       { external_id: "scheduled-video" },
     ]);
+
+    currentTime = new Date("2026-08-23T02:00:00.000Z");
+    fetchChannelVideos.mockResolvedValueOnce({
+      ok: true,
+      videos: [
+        scheduledVideo,
+        {
+          ...scheduledVideo,
+          externalId: "recovered-metadata",
+          source: "https://www.youtube.com/watch?v=recovered-metadata",
+        },
+      ],
+    });
+    await harness.runDiscoverAcquisitionTick();
+
+    expect(
+      (await readWorkspace("clerk_scheduled_partial")).candidates
+        .map(({ video }) => video.externalId)
+        .sort(),
+    ).toEqual(["recovered-metadata", "scheduled-video"]);
+    expect(
+      await harness.pool.query<{ last_fetch_outcome: string }>(
+        `select last_fetch_outcome from discover_provider_targets`,
+      ),
+    ).toMatchObject({ rows: [{ last_fetch_outcome: "complete" }] });
   });
 
   it("preserves one Candidate when the same video is fetched again", async () => {
@@ -300,6 +325,101 @@ describe("scheduled Discover acquisition", () => {
     expect(afterFailure).toEqual(beforeFailure);
   });
 
+  it("records one bounded acquisition outcome without User or Provider request data", async () => {
+    const preview = await previewAndFollow("clerk_scheduled_logging");
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+
+    await harness.runDiscoverAcquisitionTick();
+
+    const acquisitionRecord = harness.logger.records.find(
+      ({ event, targetId }) =>
+        event === "unshelf.discover.acquisition.completed" &&
+        targetId === preview.targetId,
+    );
+    expect(acquisitionRecord).toEqual({
+      level: "info",
+      event: "unshelf.discover.acquisition.completed",
+      msg: "Discover channel acquisition completed",
+      targetId: preview.targetId,
+      outcome: "complete",
+      durationMilliseconds: 0,
+      acceptedCount: 1,
+      skippedCount: 0,
+      retryCount: 0,
+    });
+    expect(JSON.stringify(acquisitionRecord)).not.toContain("clerk_scheduled");
+    expect(JSON.stringify(acquisitionRecord)).not.toContain("youtube.com");
+  });
+
+  it("preserves private decisions through throttling and recovers on a later schedule", async () => {
+    fetchChannelVideos.mockReset();
+    fetchChannelVideos
+      .mockResolvedValueOnce({ ok: true, videos: [scheduledVideo] })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: "throttled",
+        retryCount: 2,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        videos: [
+          scheduledVideo,
+          {
+            ...scheduledVideo,
+            externalId: "recovered-video",
+            title: "Available after throttling",
+            source: "https://www.youtube.com/watch?v=recovered-video",
+          },
+        ],
+      });
+    await previewAndFollow("clerk_scheduled_throttled");
+    const beforeThrottle = await readWorkspace("clerk_scheduled_throttled");
+    await request(app)
+      .post(
+        `/api/discover/candidates/${beforeThrottle.candidates[0].id}/reject`,
+      )
+      .set(TEST_USER_HEADER, "clerk_scheduled_throttled")
+      .send({})
+      .expect(200);
+
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    await harness.runDiscoverAcquisitionTick();
+    expect(
+      (await readWorkspace("clerk_scheduled_throttled")).candidates,
+    ).toEqual([]);
+    expect(await readDecisionAndOutcome()).toEqual({
+      state: "rejected",
+      rejectedAt: new Date("2026-08-23T00:00:00.000Z"),
+      outcome: "throttled",
+    });
+
+    currentTime = new Date("2026-08-23T02:00:00.000Z");
+    await harness.runDiscoverAcquisitionTick();
+
+    expect(
+      (await readWorkspace("clerk_scheduled_throttled")).candidates.map(
+        ({ video }) => video.externalId,
+      ),
+    ).toEqual(["recovered-video"]);
+    expect(await readDecisionAndOutcome()).toEqual({
+      state: "rejected",
+      rejectedAt: new Date("2026-08-23T00:00:00.000Z"),
+      outcome: "complete",
+    });
+    const throttledLog = harness.logger.records.find(
+      (record) =>
+        record.event === "unshelf.discover.acquisition.completed" &&
+        record.outcome === "throttled",
+    );
+    expect(throttledLog).toMatchObject({
+      level: "warn",
+      errorClass: "throttled",
+      acceptedCount: 0,
+      skippedCount: 0,
+      retryCount: 2,
+    });
+  });
+
   it("gives concurrent ticks one effective claim owner", async () => {
     await previewAndFollow("clerk_scheduled_race");
     currentTime = new Date("2026-08-23T01:00:00.000Z");
@@ -414,4 +534,30 @@ async function readWorkspace(user: string): Promise<DiscoverWorkspace> {
     .set(TEST_USER_HEADER, user)
     .expect(200);
   return response.body as DiscoverWorkspace;
+}
+
+async function readDecisionAndOutcome(): Promise<{
+  state: string;
+  rejectedAt: Date | null;
+  outcome: string | null;
+}> {
+  const result = await harness.pool.query<{
+    state: string;
+    rejected_at: Date | null;
+    last_fetch_outcome: string | null;
+  }>(`
+    select candidate.state,
+           candidate.rejected_at,
+           target.last_fetch_outcome
+    from discover_candidates candidate
+    join discover_provider_results result on result.id = candidate.result_id
+    join discover_provider_targets target on target.id = result.target_id
+    where result.external_id = 'scheduled-video'
+  `);
+  const row = result.rows[0];
+  return {
+    state: row.state,
+    rejectedAt: row.rejected_at,
+    outcome: row.last_fetch_outcome,
+  };
 }

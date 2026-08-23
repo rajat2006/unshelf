@@ -237,6 +237,7 @@ function runningTestApp({
     db,
     youtubeClient,
     now,
+    logger,
   });
 
   return {

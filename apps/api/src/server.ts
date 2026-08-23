@@ -84,7 +84,7 @@ await superviseApiProcess({
       now,
     });
     const scheduler = createDiscoverScheduler({
-      tick: createDiscoverAcquisitionTick({ db, youtubeClient, now }),
+      tick: createDiscoverAcquisitionTick({ db, youtubeClient, now, logger }),
       logger,
     });
 
