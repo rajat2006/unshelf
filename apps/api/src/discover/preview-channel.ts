@@ -48,6 +48,8 @@ export async function previewChannel({
         lastFetchedAt: now,
         lastFetchOutcome: acquired.outcome ?? "complete",
       })
+      // An existing target's schedule belongs to scheduled acquisition. A
+      // later preview must not postpone fan-out or rewrite its fetch outcome.
       .onConflictDoUpdate({
         target: [
           discoverProviderTargets.provider,

@@ -10,6 +10,7 @@ import type { Database } from "../db";
 import { findOrCreateProviderItem } from "../items/provider-identities";
 import { getItem } from "../items/repository";
 import { discoverCandidates, discoverProviderResults } from "../schema";
+import { candidateDecisionTransition } from "./candidate-decision";
 import { readDiscoverCandidate } from "./read-workspace";
 
 export type KeepCandidateResult =
@@ -55,7 +56,11 @@ export async function keepCandidate({
     if (!candidate) {
       return { ok: false as const, error: "candidate_not_found" as const };
     }
-    if (candidate.state === CandidateState.Rejected) {
+    const transition = candidateDecisionTransition({
+      current: candidate.state,
+      requested: CandidateState.Kept,
+    });
+    if (transition === "conflict") {
       return { ok: false as const, error: "candidate_conflict" as const };
     }
 
@@ -70,7 +75,7 @@ export async function keepCandidate({
       type: input.type,
       source: candidate.source,
     });
-    if (candidate.state === CandidateState.Pending) {
+    if (transition === "apply") {
       await tx
         .update(discoverCandidates)
         .set({ state: CandidateState.Kept, keptAt: now, updatedAt: now })

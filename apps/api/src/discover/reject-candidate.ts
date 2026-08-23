@@ -7,6 +7,7 @@ import {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { discoverCandidates } from "../schema";
+import { candidateDecisionTransition } from "./candidate-decision";
 import { readDiscoverCandidate } from "./read-workspace";
 
 export type RejectCandidateResult =
@@ -42,10 +43,14 @@ export async function rejectCandidate({
     if (!candidate) {
       return { ok: false as const, error: "candidate_not_found" as const };
     }
-    if (candidate.state === CandidateState.Kept) {
+    const transition = candidateDecisionTransition({
+      current: candidate.state,
+      requested: CandidateState.Rejected,
+    });
+    if (transition === "conflict") {
       return { ok: false as const, error: "candidate_conflict" as const };
     }
-    if (candidate.state === CandidateState.Pending) {
+    if (transition === "apply") {
       await tx
         .update(discoverCandidates)
         .set({
