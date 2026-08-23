@@ -1,0 +1,198 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { inspectWorkflow } from "../src/workflow-contract";
+
+const workflowsDirectory = new URL(
+  "../../../.github/workflows/",
+  import.meta.url,
+);
+
+function inspectRepositoryWorkflow(name: string) {
+  return inspectWorkflow(
+    readFileSync(new URL(name, workflowsDirectory), "utf8"),
+  );
+}
+
+describe("deployment workflow contract inspection", () => {
+  it("normalizes the workflow policy fields used by deployment contract tests", () => {
+    const workflow = inspectWorkflow(`
+name: Example deployment
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Release identity
+        required: true
+        type: choice
+        options: [preview, production]
+  schedule:
+    - cron: "0 16 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: deployment-\${{ inputs.release }}
+  cancel-in-progress: false
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - env:
+          UNPRIVILEGED_VALUE: \${{ vars.PUBLIC_VALUE }}
+        run: build
+  deploy:
+    needs: build
+    environment:
+      name: \${{ inputs.release }}
+      url: \${{ vars.PUBLIC_ORIGIN }}
+    permissions:
+      contents: read
+    env:
+      DEPLOYMENT_KEY: \${{ secrets.DEPLOYMENT_KEY }}
+    steps:
+      - run: deploy
+`);
+
+    expect(workflow.triggers).toEqual({
+      schedule: {
+        branches: [],
+        inputs: {},
+        schedules: [{ cron: "0 16 * * *" }],
+        types: [],
+      },
+      workflow_dispatch: {
+        branches: [],
+        inputs: {
+          release: {
+            description: "Release identity",
+            options: ["preview", "production"],
+            required: true,
+            type: "choice",
+          },
+        },
+        schedules: [],
+        types: [],
+      },
+    });
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(workflow.concurrency).toEqual({
+      cancelInProgress: false,
+      group: "deployment-${{ inputs.release }}",
+    });
+    expect(workflow.secretReferences).toEqual(["DEPLOYMENT_KEY"]);
+    expect(workflow.jobs).toEqual({
+      build: {
+        environment: undefined,
+        needs: [],
+        permissions: { contents: "read", packages: "write" },
+        secretReferences: [],
+      },
+      deploy: {
+        environment: "${{ inputs.release }}",
+        needs: ["build"],
+        permissions: { contents: "read" },
+        secretReferences: ["DEPLOYMENT_KEY"],
+      },
+    });
+  });
+
+  it("keeps Product CI unprivileged and available for every pull request", () => {
+    const workflow = inspectRepositoryWorkflow("ci.yml");
+
+    expect(Object.keys(workflow.triggers).sort()).toEqual([
+      "pull_request",
+      "push",
+      "workflow_dispatch",
+    ]);
+    expect(workflow.triggers.pull_request?.branches).toEqual([]);
+    expect(workflow.triggers.push?.branches).toEqual(["main", "dev"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(workflow.secretReferences).toEqual([]);
+    expect(workflow.jobs.product).toMatchObject({
+      environment: undefined,
+      needs: [],
+      secretReferences: [],
+    });
+  });
+
+  it("keeps contained candidate publication manual and outside environments", () => {
+    const workflow = inspectRepositoryWorkflow("publish-candidate.yml");
+
+    expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
+    expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({
+      head_branch: {
+        description: "Branch containing the exact source commit",
+        required: true,
+        type: "string",
+      },
+      source_event: {
+        description: "Product CI event that approved the source",
+        options: ["push", "pull_request"],
+        required: true,
+        type: "choice",
+      },
+      source_sha: {
+        description: "Exact source commit to publish",
+        required: true,
+        type: "string",
+      },
+    });
+    expect(workflow.concurrency).toEqual({
+      cancelInProgress: true,
+      group: "candidate-${{ inputs.source_event }}-${{ inputs.head_branch }}",
+    });
+    expect(workflow.jobs["api-image"]).toMatchObject({
+      environment: undefined,
+      needs: ["preflight"],
+      permissions: { contents: "read", packages: "write" },
+    });
+    expect(workflow.jobs["web-image"]).toMatchObject({
+      environment: undefined,
+      needs: ["preflight"],
+      permissions: { contents: "read", packages: "write" },
+    });
+    expect(workflow.jobs.candidate).toMatchObject({
+      environment: undefined,
+      needs: ["api-image", "web-image"],
+      permissions: { contents: "read", packages: "read" },
+    });
+    expect(
+      Object.values(workflow.jobs).map(({ environment }) => environment),
+    ).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it("keeps contained development authority in its locked environment", () => {
+    const workflow = inspectRepositoryWorkflow("deploy-development.yml");
+
+    expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
+    expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({
+      source_sha: {
+        description: "Exact current dev commit to deploy",
+        required: true,
+        type: "string",
+      },
+    });
+    expect(workflow.concurrency).toEqual({
+      cancelInProgress: false,
+      group: "development-deployment",
+    });
+    expect(workflow.jobs.deploy).toEqual({
+      environment: "development",
+      needs: [],
+      permissions: {
+        actions: "read",
+        contents: "read",
+        packages: "write",
+      },
+      secretReferences: [
+        "DOKPLOY_DEVELOPMENT_COMPOSE_ENV",
+        "DOKPLOY_NONPRODUCTION_API_KEY",
+        "GITHUB_TOKEN",
+      ],
+    });
+    expect(workflow.secretReferences).not.toContain(
+      "DOKPLOY_PRODUCTION_API_KEY",
+    );
+  });
+});
