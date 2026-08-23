@@ -29,16 +29,19 @@ export async function previewChannel({
   if (!acquired.ok) return acquired;
 
   return db.transaction(async (tx) => {
+    const channelMetadata = {
+      canonicalUrl: resolved.channel.canonicalUrl,
+      title: resolved.channel.title,
+      thumbnailUrl: resolved.channel.thumbnailUrl,
+      uploadsPlaylistId: resolved.channel.uploadsPlaylistId,
+      updatedAt: now,
+    };
     const [target] = await tx
       .insert(discoverProviderTargets)
       .values({
         provider: "youtube",
         externalId: resolved.channel.externalId,
-        canonicalUrl: resolved.channel.canonicalUrl,
-        title: resolved.channel.title,
-        thumbnailUrl: resolved.channel.thumbnailUrl,
-        uploadsPlaylistId: resolved.channel.uploadsPlaylistId,
-        updatedAt: now,
+        ...channelMetadata,
       })
       .onConflictDoUpdate({
         target: [
@@ -46,11 +49,7 @@ export async function previewChannel({
           discoverProviderTargets.externalId,
         ],
         set: {
-          canonicalUrl: resolved.channel.canonicalUrl,
-          title: resolved.channel.title,
-          thumbnailUrl: resolved.channel.thumbnailUrl,
-          uploadsPlaylistId: resolved.channel.uploadsPlaylistId,
-          updatedAt: now,
+          ...channelMetadata,
         },
       })
       .returning({ id: discoverProviderTargets.id });
