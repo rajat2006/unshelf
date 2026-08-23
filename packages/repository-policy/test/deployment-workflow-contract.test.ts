@@ -101,6 +101,7 @@ jobs:
         inheritsSecrets: false,
         needs: [],
         permissions: { contents: "read", packages: "write" },
+        runCommands: ["build"],
         secretReferences: [],
         usesSecretsContext: false,
       },
@@ -111,6 +112,7 @@ jobs:
         inheritsSecrets: false,
         needs: ["build"],
         permissions: { contents: "read" },
+        runCommands: ["deploy"],
         secretReferences: ["DEPLOYMENT_KEY", "SECOND_KEY"],
         usesSecretsContext: true,
       },
@@ -134,6 +136,7 @@ jobs:
       inheritsSecrets: true,
       needs: [],
       permissions: undefined,
+      runCommands: [],
       secretReferences: [],
       usesSecretsContext: false,
     });
@@ -187,147 +190,186 @@ jobs:
     });
   });
 
-  it("keeps contained candidate publication manual and outside environments", () => {
-    const workflow = inspectRepositoryWorkflow("publish-candidate.yml");
+  it.each([
+    [
+      "delivery-development.yml",
+      "development-delivery",
+      {},
+      "development",
+      { actions: "read", contents: "read" },
+    ],
+    [
+      "delivery-preview.yml",
+      "preview-delivery",
+      {
+        pr_number: {
+          description: "Pull request number",
+          required: true,
+          type: "number",
+        },
+      },
+      "preview",
+      { actions: "read", contents: "read", "pull-requests": "read" },
+    ],
+    [
+      "delivery-production.yml",
+      "production-delivery",
+      {},
+      "production",
+      { actions: "read", contents: "read", deployments: "read" },
+    ],
+  ])(
+    "keeps %s channel policy direct, manual, serialized, and least privileged",
+    (name, concurrencyGroup, inputs, environment, authorizePermissions) => {
+      const workflow = inspectRepositoryWorkflow(name);
 
-    expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
-    expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({
-      head_branch: {
-        description: "Branch containing the exact source commit",
-        required: true,
-        type: "string",
-      },
-      source_event: {
-        description: "Product CI event that approved the source",
-        options: ["push", "pull_request"],
-        required: true,
-        type: "choice",
-      },
-      source_sha: {
-        description: "Exact source commit to publish",
-        required: true,
-        type: "string",
-      },
-    });
-    expect(workflow.concurrency).toEqual({
-      cancelInProgress: true,
-      group: "candidate-${{ inputs.source_event }}-${{ inputs.head_branch }}",
-    });
-    expect(workflow.jobs.preflight).toMatchObject({
-      checkouts: [
-        {
-          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-          persistCredentials: false,
-          ref: "dev",
-        },
-      ],
-      environment: undefined,
-      inheritsSecrets: false,
-      needs: [],
-      permissions: {
-        actions: "read",
-        contents: "read",
-        packages: "read",
-      },
-    });
-    expect(workflow.jobs["api-image"]).toMatchObject({
-      checkouts: [
-        {
-          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-          persistCredentials: false,
-          ref: "${{ env.SOURCE_SHA }}",
-        },
-      ],
-      environment: undefined,
-      inheritsSecrets: false,
-      needs: ["preflight"],
-      permissions: { contents: "read", packages: "write" },
-    });
-    expect(workflow.jobs["web-image"]).toMatchObject({
-      checkouts: [
-        {
-          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-          persistCredentials: false,
-          ref: "${{ env.SOURCE_SHA }}",
-        },
-      ],
-      environment: undefined,
-      inheritsSecrets: false,
-      needs: ["preflight"],
-      permissions: { contents: "read", packages: "write" },
-    });
-    expect(workflow.jobs.candidate).toMatchObject({
-      checkouts: [
-        {
-          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-          persistCredentials: false,
-          ref: "dev",
-        },
-      ],
-      environment: undefined,
-      inheritsSecrets: false,
-      needs: ["api-image", "web-image"],
-      permissions: { contents: "read", packages: "read" },
-    });
-    expect(
-      Object.values(workflow.jobs).map(({ environment }) => environment),
-    ).toEqual([undefined, undefined, undefined, undefined]);
-    expect(
-      Object.values(workflow.jobs).map(
-        ({ secretReferences }) => secretReferences,
-      ),
-    ).toEqual([
-      ["GITHUB_TOKEN"],
-      ["GITHUB_TOKEN"],
-      ["GITHUB_TOKEN"],
-      ["GITHUB_TOKEN"],
-    ]);
-    expect(workflow.inheritsSecrets).toBe(false);
-    expect(workflow.usesSecretsContext).toBe(true);
-    expect(workflow.hasUnresolvedSecretReferences).toBe(false);
-  });
+      expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
+      expect(workflow.triggers.workflow_dispatch?.inputs).toEqual(inputs);
+      expect(workflow.concurrency).toEqual({
+        cancelInProgress: false,
+        group: concurrencyGroup,
+      });
+      expect(workflow.permissions).toEqual({ contents: "read" });
+      expect(workflow.jobs.authorize).toMatchObject({
+        checkouts: [],
+        environment: undefined,
+        inheritsSecrets: false,
+        needs: [],
+        permissions: authorizePermissions,
+        secretReferences: ["GITHUB_TOKEN"],
+      });
+      expect(workflow.jobs.inspect).toMatchObject({
+        checkouts: [],
+        environment,
+        inheritsSecrets: false,
+        needs: ["authorize"],
+        permissions: { contents: "read" },
+      });
+      for (const imageJob of ["api-image", "web-image"]) {
+        expect(workflow.jobs[imageJob]).toMatchObject({
+          environment: undefined,
+          inheritsSecrets: false,
+          needs: ["inspect"],
+          permissions: { contents: "read", packages: "write" },
+          secretReferences: ["GITHUB_TOKEN"],
+        });
+      }
+      expect(workflow.jobs.deploy).toMatchObject({
+        environment,
+        inheritsSecrets: false,
+        needs: ["authorize", "inspect", "api-image", "web-image"],
+      });
+      expect(workflow.inheritsSecrets).toBe(false);
+      expect(workflow.hasUnresolvedSecretReferences).toBe(false);
+    },
+  );
 
-  it("keeps contained development authority in its locked environment", () => {
-    const workflow = inspectRepositoryWorkflow("deploy-development.yml");
+  it("keeps each channel's environment authority isolated", () => {
+    const development = inspectRepositoryWorkflow("delivery-development.yml");
+    const preview = inspectRepositoryWorkflow("delivery-preview.yml");
+    const production = inspectRepositoryWorkflow("delivery-production.yml");
 
-    expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
-    expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({
-      source_sha: {
-        description: "Exact current dev commit to deploy",
-        required: true,
-        type: "string",
-      },
-    });
-    expect(workflow.concurrency).toEqual({
-      cancelInProgress: false,
-      group: "development-deployment",
-    });
-    expect(workflow.jobs.deploy).toEqual({
-      checkouts: [
-        {
-          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
-          persistCredentials: false,
-          ref: "dev",
-        },
-      ],
-      environment: "development",
-      inheritsSecrets: false,
-      needs: [],
-      permissions: {
-        actions: "read",
-        contents: "read",
-        packages: "write",
-      },
-      secretReferences: [
+    expect(development.secretReferences).toEqual(
+      expect.arrayContaining([
         "DOKPLOY_DEVELOPMENT_COMPOSE_ENV",
         "DOKPLOY_NONPRODUCTION_API_KEY",
-        "GITHUB_TOKEN",
-      ],
-      hasUnresolvedSecretReferences: false,
-      usesSecretsContext: true,
-    });
-    expect(workflow.secretReferences).not.toContain(
+      ]),
+    );
+    expect(development.secretReferences).not.toContain(
       "DOKPLOY_PRODUCTION_API_KEY",
     );
+    expect(preview.secretReferences).toEqual(
+      expect.arrayContaining([
+        "DOKPLOY_PREVIEW_COMPOSE_ENV",
+        "DOKPLOY_NONPRODUCTION_API_KEY",
+      ]),
+    );
+    expect(preview.secretReferences).not.toContain(
+      "DOKPLOY_PRODUCTION_API_KEY",
+    );
+    expect(production.secretReferences).toEqual(
+      expect.arrayContaining([
+        "DOKPLOY_PRODUCTION_API_KEY",
+        "DOKPLOY_PRODUCTION_COMPOSE_ENV",
+      ]),
+    );
+    expect(production.secretReferences).not.toContain(
+      "DOKPLOY_NONPRODUCTION_API_KEY",
+    );
+  });
+
+  it("requires exact Product CI before every channel can build", () => {
+    for (const name of [
+      "delivery-development.yml",
+      "delivery-preview.yml",
+      "delivery-production.yml",
+    ]) {
+      const authorize = inspectRepositoryWorkflow(name).jobs.authorize;
+      const policy = authorize?.runCommands.join("\n") ?? "";
+
+      expect(policy).toContain("actions/workflows/ci.yml/runs");
+      expect(policy).toContain('.name == "Product"');
+      expect(policy).toContain('.conclusion == "success"');
+      expect(policy).not.toContain("last green");
+    }
+  });
+
+  it("keeps preview authorization, schema refusal, identity, capacity, and domains visible", () => {
+    const workflow = inspectRepositoryWorkflow("delivery-preview.yml");
+    const authorize = workflow.jobs.authorize?.runCommands.join("\n") ?? "";
+    const inspect = workflow.jobs.inspect?.runCommands.join("\n") ?? "";
+    const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
+
+    expect(authorize).toContain('.state == "open"');
+    expect(authorize).toContain(".draft == false");
+    expect(authorize).toContain('.base.ref == "dev"');
+    expect(authorize).toContain("head.repo.full_name == $repository");
+    expect(authorize).toContain('name == "deploy:preview"');
+    expect(authorize).toContain("migration-(runner|verifier)");
+    expect(inspect).toContain("canonical_count");
+    expect(inspect).toContain("-lt 3");
+    expect(deploy).toContain("domain.byComposeId");
+    expect(deploy).toContain("domain.create");
+    expect(deploy).toContain("unshelf:last-healthy");
+    expect(deploy).not.toContain("compose.delete");
+  });
+
+  it("keeps production rerun and durable release policy visible", () => {
+    const workflow = inspectRepositoryWorkflow("delivery-production.yml");
+    const authorize = workflow.jobs.authorize?.runCommands.join("\n") ?? "";
+    const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
+
+    expect(authorize).toContain("GITHUB_RUN_ATTEMPT");
+    expect(authorize).toContain("compare/${source_sha}...${main_sha}");
+    expect(authorize).toContain("deployments?environment=production");
+    expect(deploy).toContain("deployments?sha=${SOURCE_SHA}");
+    expect(deploy).toContain("/statuses");
+    expect(deploy).toContain("state=success");
+  });
+
+  it("does not automate recovery or destructive lifecycle operations", () => {
+    const commands = [
+      "delivery-development.yml",
+      "delivery-preview.yml",
+      "delivery-production.yml",
+    ]
+      .flatMap((name) =>
+        Object.values(inspectRepositoryWorkflow(name).jobs).flatMap(
+          ({ runCommands }) => runCommands,
+        ),
+      )
+      .join("\n");
+
+    for (const forbidden of [
+      "compose.delete",
+      "deployment.cancel",
+      "docker system prune",
+      "docker image rm",
+      "packages/delete-package-version",
+      "rollback",
+      "down migration",
+    ]) {
+      expect(commands).not.toContain(forbidden);
+    }
   });
 });

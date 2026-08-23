@@ -36,6 +36,7 @@ export type WorkflowJob = {
   inheritsSecrets: boolean;
   needs: string[];
   permissions?: WorkflowPermissions;
+  runCommands: string[];
   secretReferences: string[];
   usesSecretsContext: boolean;
 };
@@ -210,9 +211,32 @@ function parseJob({
     inheritsSecrets: job.secrets === "inherit",
     needs: parseNeeds(job.needs, name),
     permissions: parsePermissions(job.permissions),
+    runCommands: parseRunCommands(job.steps, name),
     secretReferences: findSecretReferences(job),
     usesSecretsContext: referencesSecretsContext(job),
   };
+}
+
+function parseRunCommands(value: unknown, jobName: string): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  return requireArray(value, `workflow.jobs.${jobName}.steps`).flatMap(
+    (value, index) => {
+      const step = requireRecord(
+        value,
+        `workflow.jobs.${jobName}.steps[${index}]`,
+      );
+      return step.run === undefined
+        ? []
+        : [
+            requireString(
+              step.run,
+              `workflow.jobs.${jobName}.steps[${index}].run`,
+            ),
+          ];
+    },
+  );
 }
 
 function parseCheckouts(
