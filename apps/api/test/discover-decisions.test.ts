@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -6,6 +14,8 @@ import {
   Type,
   type DiscoverPreview,
   type DiscoverWorkspace,
+  type Item,
+  type KeepDiscoverCandidateResult,
 } from "@unshelf/shared";
 import type { YouTubeClient } from "../src/discover/youtube-client";
 import { findOrCreateProviderItem } from "../src/items/provider-identities";
@@ -76,6 +86,41 @@ async function followCandidate(clerkUserId: string) {
     .get("/api/discover")
     .set(TEST_USER_HEADER, clerkUserId);
   return (workspace.body as DiscoverWorkspace).candidates[0];
+}
+
+const capture = (clerkUserId: string, body: object) =>
+  request(app).post("/api/items").set(TEST_USER_HEADER, clerkUserId).send(body);
+
+function useExactIdentityVideo({
+  channelExternalId,
+  videoExternalId,
+}: {
+  channelExternalId: string;
+  videoExternalId: string;
+}) {
+  resolveChannel.mockResolvedValueOnce({
+    ok: true,
+    channel: {
+      externalId: channelExternalId,
+      title: "Exact Identity School",
+      thumbnailUrl: null,
+      canonicalUrl: `https://www.youtube.com/channel/${channelExternalId}`,
+      uploadsPlaylistId: `UU_${channelExternalId}`,
+    },
+  });
+  fetchChannelVideos.mockResolvedValueOnce({
+    ok: true,
+    videos: [
+      {
+        externalId: videoExternalId,
+        title: "Exact identity video",
+        thumbnailUrl: null,
+        publishedAt: "2026-08-22T12:00:00.000Z",
+        durationSeconds: 601,
+        source: `https://www.youtube.com/watch?v=${videoExternalId}`,
+      },
+    ],
+  });
 }
 
 describe("Discover Candidate decisions", () => {
@@ -157,6 +202,62 @@ describe("Discover Candidate decisions", () => {
       type: Type.Video,
       source: "manual-source",
     });
+    expect(library.body).toHaveLength(1);
+  });
+
+  it("shows a Capture-first Candidate as Already in Library without resolving it", async () => {
+    const user = "clerk_capture_before_discovery";
+    const captured = (
+      await capture(user, {
+        title: "My manual title",
+        type: Type.Course,
+        source: "https://youtu.be/cap_DEF-123?t=45",
+      })
+    ).body as Item;
+    useExactIdentityVideo({
+      channelExternalId: "UC_capture_first",
+      videoExternalId: "cap_DEF-123",
+    });
+
+    const candidate = await followCandidate(user);
+
+    expect(candidate).toMatchObject({
+      state: "pending",
+      libraryItem: { id: captured.id, title: "My manual title" },
+    });
+  });
+
+  it("reuses a Keep-first Item during later manual Capture", async () => {
+    const user = "clerk_keep_before_capture";
+    useExactIdentityVideo({
+      channelExternalId: "UC_keep_first",
+      videoExternalId: "keep_DEF123",
+    });
+    const candidate = await followCandidate(user);
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Kept title", type: Type.Video });
+
+    const captured = await capture(user, {
+      title: "Manual replacement",
+      type: Type.Book,
+      source: "https://m.youtube.com/watch?v=keep_DEF123&feature=share",
+    });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+    const keptBody = kept.body as KeepDiscoverCandidateResult;
+    const capturedBody = captured.body as Item;
+
+    expect(captured.status).toBe(201);
+    expect(capturedBody).toMatchObject({
+      id: keptBody.item.id,
+      title: "Kept title",
+      type: Type.Video,
+      source: "https://www.youtube.com/watch?v=keep_DEF123",
+    });
+    expect(capturedBody).not.toHaveProperty("parts");
     expect(library.body).toHaveLength(1);
   });
 
