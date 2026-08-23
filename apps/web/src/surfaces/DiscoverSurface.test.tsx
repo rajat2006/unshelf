@@ -88,6 +88,13 @@ function renderDiscover() {
   );
 }
 
+async function openFollowManagement() {
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage Follows" }),
+  );
+  return screen.findByRole("dialog", { name: "Manage Follows" });
+}
+
 const emptyWorkspace: DiscoverWorkspace = { follows: [], candidates: [] };
 
 const secondPreview: DiscoverPreview = {
@@ -340,7 +347,7 @@ describe("Discover channel preview", () => {
     resolveWorkspace({ follows: [follow], candidates: [] });
 
     expect(
-      await screen.findByRole("heading", { name: "Pending Candidates" }),
+      await screen.findByRole("heading", { name: "All Follows" }),
     ).toBeVisible();
     expect(
       screen.getByText("No pending Candidates", { exact: false }),
@@ -389,7 +396,7 @@ describe("Discover channel preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Pending Candidates" }),
+      await screen.findByRole("heading", { name: "All Follows" }),
     ).toBeVisible();
     expect(
       screen.getByRole("article", { name: "Newest lesson" }),
@@ -504,20 +511,20 @@ describe("Discover channel preview", () => {
     await screen.findByRole("heading", { name: "Quiet Learning" });
     fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
     expect(
-      await screen.findByRole("heading", { name: "Pending Candidates" }),
+      await screen.findByRole("heading", { name: "All Follows" }),
     ).toBeVisible();
 
     resolveInitialWorkspace(emptyWorkspace);
 
     expect(
-      await screen.findByRole("heading", { name: "Pending Candidates" }),
+      await screen.findByRole("heading", { name: "All Follows" }),
     ).toBeVisible();
     expect(
       screen.queryByLabelText("YouTube channel URL"),
     ).not.toBeInTheDocument();
   });
 
-  it("filters one combined queue by Follow with an accessible keyboard selector", async () => {
+  it("filters one combined queue with the accepted compact Follow rail", async () => {
     vi.mocked(fetchDiscoverWorkspace)
       .mockResolvedValueOnce(severalFollowsWorkspace)
       .mockResolvedValueOnce({
@@ -526,10 +533,10 @@ describe("Discover channel preview", () => {
       });
     renderDiscover();
 
-    const selector = await screen.findByRole("combobox", {
-      name: "Candidate channel",
+    const allFollowsFilter = await screen.findByRole("button", {
+      name: "All Follows",
     });
-    expect(selector).toHaveTextContent("All followed channels");
+    expect(allFollowsFilter).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("article", { name: "Systems newest" }),
     ).toBeVisible();
@@ -537,13 +544,11 @@ describe("Discover channel preview", () => {
       screen.getByRole("article", { name: "Newest lesson" }),
     ).toBeVisible();
 
-    selector.focus();
-    fireEvent.keyDown(selector, { key: "ArrowDown" });
-    const systemsOption = await screen.findByRole("option", {
+    const systemsFilter = await screen.findByRole("button", {
       name: "Systems School",
     });
-    systemsOption.focus();
-    fireEvent.keyDown(systemsOption, { key: "Enter" });
+    systemsFilter.focus();
+    fireEvent.click(systemsFilter);
 
     await waitFor(() =>
       expect(fetchDiscoverWorkspace).toHaveBeenLastCalledWith(
@@ -557,18 +562,28 @@ describe("Discover channel preview", () => {
     expect(
       screen.queryByRole("article", { name: "Newest lesson" }),
     ).not.toBeInTheDocument();
+    expect(allFollowsFilter).toHaveTextContent("2");
+    expect(systemsFilter).toHaveTextContent("1");
     expect(
-      screen.getByRole("button", { name: "Unfollow Quiet Learning" }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Quiet Learning" }),
+    ).toHaveTextContent("1");
     expect(
-      screen.getByRole("button", { name: "Unfollow Systems School" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("region", { name: "Follow management" }),
-    ).toHaveClass("lg:grid-cols-[minmax(14rem,20rem)_1fr]");
-    expect(screen.getByRole("list", { name: "Followed channels" })).toHaveClass(
-      "sm:grid-cols-2",
+      screen.getByRole("complementary", { name: "Follow management" }),
+    ).toHaveClass("lg:h-full");
+    expect(screen.getByTestId("follow-filter-list")).toHaveClass(
+      "lg:overflow-y-auto",
     );
+    const management = await openFollowManagement();
+    expect(
+      within(management).getByRole("button", {
+        name: "Unfollow Quiet Learning",
+      }),
+    ).toBeVisible();
+    expect(
+      within(management).getByRole("button", {
+        name: "Unfollow Systems School",
+      }),
+    ).toBeVisible();
   });
 
   it("preserves the combined queue when a channel filter fails and retries it", async () => {
@@ -585,15 +600,12 @@ describe("Discover channel preview", () => {
         candidates: [severalFollowsWorkspace.candidates[1]],
       });
     renderDiscover();
-    const selector = await screen.findByRole("combobox", {
-      name: "Candidate channel",
+    const quietFilter = await screen.findByRole("button", {
+      name: "Quiet Learning",
     });
-    fireEvent.click(selector);
-    fireEvent.click(
-      await screen.findByRole("option", { name: "Quiet Learning" }),
-    );
+    fireEvent.click(quietFilter);
 
-    expect(selector).toBeDisabled();
+    expect(quietFilter).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent(
       "Filtering pending Candidates",
     );
@@ -645,12 +657,12 @@ describe("Discover channel preview", () => {
     vi.mocked(createDiscoverFollow).mockResolvedValue(quietFollow);
     renderDiscover();
 
+    const management = await openFollowManagement();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Unfollow Quiet Learning" }),
+      within(management).getByRole("button", {
+        name: "Unfollow Quiet Learning",
+      }),
     );
-    expect(
-      screen.getByRole("button", { name: "Unfollowing Quiet Learning…" }),
-    ).toBeDisabled();
 
     expect(await screen.findByLabelText("YouTube channel URL")).toBeVisible();
     expect(unfollowDiscoverChannel).toHaveBeenCalledWith(
@@ -684,16 +696,25 @@ describe("Discover channel preview", () => {
     );
     renderDiscover();
 
+    const management = await openFollowManagement();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Unfollow Systems School" }),
+      within(management).getByRole("button", {
+        name: "Unfollow Systems School",
+      }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Systems School could not be Unfollowed",
     );
+    const reopenedManagement = await openFollowManagement();
     expect(
-      screen.getByRole("button", { name: "Unfollow Systems School" }),
+      within(reopenedManagement).getByRole("button", {
+        name: "Unfollow Systems School",
+      }),
     ).toBeEnabled();
+    fireEvent.click(
+      within(reopenedManagement).getByRole("button", { name: "Close" }),
+    );
     expect(
       screen.getByRole("article", { name: "Systems newest" }),
     ).toBeVisible();
@@ -711,19 +732,30 @@ describe("Discover channel preview", () => {
     vi.mocked(unfollowDiscoverChannel).mockResolvedValue();
     renderDiscover();
 
+    const management = await openFollowManagement();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Unfollow Systems School" }),
+      within(management).getByRole("button", {
+        name: "Unfollow Systems School",
+      }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "remaining Discover queue could not be refreshed",
     );
+    const remainingManagement = await openFollowManagement();
     expect(
-      screen.getByRole("button", { name: "Unfollow Quiet Learning" }),
+      within(remainingManagement).getByRole("button", {
+        name: "Unfollow Quiet Learning",
+      }),
     ).toBeEnabled();
     expect(
-      screen.queryByRole("button", { name: "Unfollow Systems School" }),
+      within(remainingManagement).queryByRole("button", {
+        name: "Unfollow Systems School",
+      }),
     ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(remainingManagement).getByRole("button", { name: "Close" }),
+    );
     expect(
       screen.getByRole("article", { name: "Newest lesson" }),
     ).toBeVisible();
@@ -742,8 +774,11 @@ describe("Discover channel preview", () => {
         }),
       ).not.toBeInTheDocument(),
     );
+    const finalManagement = await openFollowManagement();
     expect(
-      await screen.findByRole("button", { name: "Unfollow Quiet Learning" }),
+      within(finalManagement).getByRole("button", {
+        name: "Unfollow Quiet Learning",
+      }),
     ).toBeEnabled();
   });
 

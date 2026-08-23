@@ -5,6 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { Plus, Settings2, Video } from "lucide-react";
 import {
   ITEM_TYPES,
   Type,
@@ -78,6 +79,9 @@ export function DiscoverSurface() {
   >("idle");
   const [selectedFollowId, setSelectedFollowId] =
     useState<DiscoverFollowId | null>(null);
+  const [candidateCounts, setCandidateCounts] = useState<
+    Record<DiscoverFollowId, number>
+  >({});
   const [unfollowingFollowId, setUnfollowingFollowId] =
     useState<DiscoverFollowId | null>(null);
   const [unfollowError, setUnfollowError] = useState<string | null>(null);
@@ -99,6 +103,7 @@ export function DiscoverSurface() {
       .then((workspace) => {
         if (!active || requestId !== workspaceRequestId.current) return;
         setWorkspaceState({ status: "ready", workspace });
+        setCandidateCounts(candidateCountsForWorkspace(workspace));
         setShowSetup(workspace.follows.length === 0);
       })
       .catch(() => {
@@ -150,6 +155,7 @@ export function DiscoverSurface() {
       const workspace = await fetchDiscoverWorkspace(user);
       if (requestId === workspaceRequestId.current) {
         setWorkspaceState({ status: "ready", workspace });
+        setCandidateCounts(candidateCountsForWorkspace(workspace));
       }
     } catch {
       if (requestId === workspaceRequestId.current) {
@@ -199,6 +205,9 @@ export function DiscoverSurface() {
       );
       if (requestId === workspaceRequestId.current) {
         setWorkspaceState({ status: "ready", workspace });
+        if (followId === null) {
+          setCandidateCounts(candidateCountsForWorkspace(workspace));
+        }
         setShowSetup(workspace.follows.length === 0);
         setWorkspaceRefreshStatus("idle");
       }
@@ -231,12 +240,30 @@ export function DiscoverSurface() {
       setWorkspaceState({ status: "ready", workspace });
       setShowSetup(workspace.follows.length === 0);
     }
+    setCandidateCounts((current) => {
+      const next = { ...current };
+      delete next[follow.id];
+      return next;
+    });
     setUnfollowingFollowId(null);
     setSelectedFollowId(nextSelectedFollowId);
     await reconcileWorkspace(nextSelectedFollowId);
   };
 
-  const removeResolvedCandidate = (candidateId: DiscoverCandidate["id"]) => {
+  const removeResolvedCandidate = (candidate: DiscoverCandidate) => {
+    const matchingFollow =
+      workspaceState.status === "ready"
+        ? workspaceState.workspace.follows.find(
+            (follow) =>
+              follow.channel.externalId === candidate.video.channelExternalId,
+          )
+        : undefined;
+    if (matchingFollow) {
+      setCandidateCounts((current) => ({
+        ...current,
+        [matchingFollow.id]: Math.max(0, (current[matchingFollow.id] ?? 0) - 1),
+      }));
+    }
     setWorkspaceState((current) =>
       current.status === "ready"
         ? {
@@ -244,84 +271,63 @@ export function DiscoverSurface() {
             workspace: {
               ...current.workspace,
               candidates: current.workspace.candidates.filter(
-                (candidate) => candidate.id !== candidateId,
+                (currentCandidate) => currentCandidate.id !== candidate.id,
               ),
             },
           }
         : current,
     );
   };
+  const hasFollows =
+    workspaceState.status === "ready" &&
+    workspaceState.workspace.follows.length > 0;
+  const setup = (
+    <ChannelSetup
+      url={url}
+      previewState={previewState}
+      followStatus={followStatus}
+      onUrlChange={setUrl}
+      onSubmit={submit}
+      onFollow={(preview) => void follow(preview)}
+    />
+  );
 
   return (
     <section
-      className="mx-auto grid w-full max-w-6xl gap-6"
+      className="discover-surface mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-4 overflow-hidden"
       aria-labelledby="discover-heading"
     >
-      <header className="grid gap-2 border-b pb-6">
-        <p className="m-0 text-xs font-semibold tracking-[0.12em] text-primary uppercase">
-          Trusted channels
-        </p>
+      <header className="shrink-0 space-y-1">
         <h1
           id="discover-heading"
-          className="m-0 font-serif text-4xl leading-tight font-semibold tracking-tight sm:text-5xl"
+          className="m-0 font-serif text-3xl leading-tight font-semibold tracking-tight"
         >
           Discover
         </h1>
-        <p className="m-0 max-w-2xl text-base leading-relaxed text-muted-foreground">
-          Preview a public YouTube channel before you choose to Follow it.
+        <p className="m-0 max-w-2xl text-sm text-muted-foreground">
+          A calm intake of current videos from public YouTube channels you
+          Follow.
         </p>
       </header>
 
-      {showSetup && (
-        <form
-          className="grid max-w-3xl gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
-          onSubmit={(event) => void submit(event)}
-        >
-          <Field>
-            <FieldLabel htmlFor="discover-channel-url">
-              YouTube channel URL
-            </FieldLabel>
-            <Input
-              id="discover-channel-url"
-              type="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://youtube.com/@channel"
-              autoComplete="url"
-            />
-            <FieldDescription>
-              Use a channel ID or @handle URL. Playlists, videos, /user, and /c
-              links are not supported.
-            </FieldDescription>
-          </Field>
-          <Button type="submit" disabled={previewState.status === "loading"}>
-            {previewState.status === "loading"
-              ? "Resolving channel…"
-              : "Preview channel"}
-          </Button>
-        </form>
-      )}
-
-      {showSetup && previewState.status === "loading" && (
-        <p role="status" className="m-0 text-sm text-muted-foreground">
-          Resolving channel and gathering its latest videos…
-        </p>
-      )}
-      {showSetup && previewState.status === "error" && (
-        <PreviewFailure failure={previewState.failure} />
-      )}
-      {showSetup && previewState.status === "ready" && (
-        <ChannelPreview
-          preview={previewState.preview}
-          followStatus={followStatus}
-          onFollow={() => void follow(previewState.preview)}
-        />
-      )}
-      {followStatus === "error" && (
-        <Alert className="max-w-3xl p-4">
-          This channel could not be followed. Try again.
-        </Alert>
-      )}
+      {showSetup && !hasFollows && setup}
+      <Dialog
+        open={showSetup && hasFollows}
+        onOpenChange={(open) => {
+          if (!open) setShowSetup(false);
+        }}
+      >
+        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Follow a public YouTube channel</DialogTitle>
+            <DialogDescription>
+              Preview recent videos before adding this channel to your combined
+              intake.
+            </DialogDescription>
+          </DialogHeader>
+          {setup}
+        </DialogContent>
+      </Dialog>
       {workspaceState.status === "loading" && (
         <p className="m-0 text-sm text-muted-foreground">
           Loading your Discover queue…
@@ -354,6 +360,7 @@ export function DiscoverSurface() {
         workspaceState.workspace.follows.length > 0 && (
           <CandidateQueue
             workspace={workspaceState.workspace}
+            candidateCounts={candidateCounts}
             selectedFollowId={selectedFollowId}
             unfollowingFollowId={unfollowingFollowId}
             unfollowError={unfollowError}
@@ -367,6 +374,74 @@ export function DiscoverSurface() {
           />
         )}
     </section>
+  );
+}
+
+function ChannelSetup({
+  url,
+  previewState,
+  followStatus,
+  onUrlChange,
+  onSubmit,
+  onFollow,
+}: {
+  url: string;
+  previewState: PreviewState;
+  followStatus: "idle" | "loading" | "error";
+  onUrlChange: (url: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onFollow: (preview: DiscoverPreview) => void;
+}) {
+  return (
+    <div className="grid gap-4">
+      <form
+        className="grid gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
+        onSubmit={(event) => void onSubmit(event)}
+      >
+        <Field>
+          <FieldLabel htmlFor="discover-channel-url">
+            YouTube channel URL
+          </FieldLabel>
+          <Input
+            id="discover-channel-url"
+            type="url"
+            value={url}
+            onChange={(event) => onUrlChange(event.target.value)}
+            placeholder="https://youtube.com/@channel"
+            autoComplete="url"
+          />
+          <FieldDescription>
+            Use a channel ID or @handle URL. Playlists, videos, /user, and /c
+            links are not supported.
+          </FieldDescription>
+        </Field>
+        <Button type="submit" disabled={previewState.status === "loading"}>
+          {previewState.status === "loading"
+            ? "Resolving channel…"
+            : "Preview channel"}
+        </Button>
+      </form>
+      {previewState.status === "loading" && (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Resolving channel and gathering its latest videos…
+        </p>
+      )}
+      {previewState.status === "error" && (
+        <PreviewFailure failure={previewState.failure} />
+      )}
+      {previewState.status === "ready" && (
+        <ChannelPreview
+          preview={previewState.preview}
+          followStatus={followStatus}
+          onFollow={() => onFollow(previewState.preview)}
+        />
+      )}
+      {followStatus === "error" && (
+        <Alert className="p-4">
+          This channel could not be followed. Try again.
+        </Alert>
+      )}
+    </div>
   );
 }
 
@@ -447,6 +522,7 @@ function ChannelPreview({
 
 function CandidateQueue({
   workspace,
+  candidateCounts,
   selectedFollowId,
   unfollowingFollowId,
   unfollowError,
@@ -459,6 +535,7 @@ function CandidateQueue({
   onCandidateResolved,
 }: {
   workspace: DiscoverWorkspace;
+  candidateCounts: Record<DiscoverFollowId, number>;
   selectedFollowId: DiscoverFollowId | null;
   unfollowingFollowId: DiscoverFollowId | null;
   unfollowError: string | null;
@@ -468,127 +545,255 @@ function CandidateQueue({
   onSelectFollow: (followId: DiscoverFollowId | null) => void;
   onRetryFilter: () => void;
   onUnfollow: (follow: DiscoverFollow) => void;
-  onCandidateResolved: (candidateId: DiscoverCandidate["id"]) => void;
+  onCandidateResolved: (candidate: DiscoverCandidate) => void;
 }) {
+  const [managementOpen, setManagementOpen] = useState(false);
+  const selectedFollow = workspace.follows.find(
+    (follow) => follow.id === selectedFollowId,
+  );
+  const allCandidateCount = workspace.follows.reduce(
+    (total, follow) => total + (candidateCounts[follow.id] ?? 0),
+    0,
+  );
+
   return (
-    <section className="grid gap-4" aria-labelledby="candidate-queue-heading">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Your intake
-          </p>
-          <h2
-            id="candidate-queue-heading"
-            className="m-0 font-serif text-2xl font-semibold"
-          >
-            Pending Candidates
-          </h2>
-        </div>
-        <Button type="button" variant="secondary" onClick={onFollowAnother}>
-          Follow another
-        </Button>
-      </div>
-      <section
+    <section
+      data-testid="discover-workspace"
+      className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-1 lg:gap-5"
+      aria-labelledby="candidate-queue-heading"
+    >
+      <aside
         aria-label="Follow management"
-        className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4 lg:grid-cols-[minmax(14rem,20rem)_1fr] lg:items-start"
+        className="flex min-h-0 min-w-0 flex-col rounded-[var(--radius-panel)] border bg-quiet-panel p-3 lg:h-full"
       >
-        <Field>
-          <FieldLabel htmlFor="candidate-channel">Candidate channel</FieldLabel>
-          <Select
-            disabled={filtering}
-            value={selectedFollowId ?? "all"}
-            onValueChange={(value) =>
-              onSelectFollow(
-                value === "all" ? null : (value as DiscoverFollowId),
-              )
-            }
+        <div className="flex shrink-0 items-center justify-between gap-2 px-1 pb-3">
+          <div>
+            <h2 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+              Filter by Follow
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              One combined queue by default
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="icon-compact"
+            aria-label="Follow another"
+            onClick={onFollowAnother}
           >
-            <SelectTrigger
-              id="candidate-channel"
-              aria-label="Candidate channel"
-              className="w-full"
+            <Plus aria-hidden="true" />
+          </Button>
+        </div>
+        <div
+          data-testid="follow-filter-list"
+          className="flex min-h-0 min-w-0 gap-2 overflow-x-auto pb-1 lg:flex-1 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:pr-1"
+        >
+          <FollowFilterButton
+            active={selectedFollowId === null}
+            count={allCandidateCount}
+            label="All Follows"
+            meta="Everything that arrived"
+            disabled={filtering}
+            onClick={() => onSelectFollow(null)}
+          />
+          {workspace.follows.map((follow) => (
+            <FollowFilterButton
+              key={follow.id}
+              active={selectedFollowId === follow.id}
+              count={candidateCounts[follow.id] ?? 0}
+              label={follow.channel.title}
+              meta="Public channel · Active"
+              disabled={filtering}
+              onClick={() => onSelectFollow(follow.id)}
+            />
+          ))}
+        </div>
+        <Button
+          type="button"
+          className="mt-3 w-full justify-between"
+          variant="quiet"
+          aria-label="Manage Follows"
+          onClick={() => setManagementOpen(true)}
+        >
+          <span className="flex items-center gap-2">
+            <Settings2 aria-hidden="true" /> Manage Follows
+          </span>
+          <span className="rounded-full border px-2 py-0.5 text-xs">
+            {workspace.follows.length}
+          </span>
+        </Button>
+      </aside>
+
+      <section className="flex min-h-0 min-w-0 flex-col">
+        <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3 border-b pb-3">
+          <div>
+            <p className="m-0 text-xs font-semibold tracking-wider text-primary uppercase">
+              Candidate intake
+            </p>
+            <h2
+              id="candidate-queue-heading"
+              className="mt-1 font-serif text-2xl font-semibold"
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All followed channels</SelectItem>
-              {workspace.follows.map((follow) => (
-                <SelectItem key={follow.id} value={follow.id}>
-                  {follow.channel.title}
-                </SelectItem>
+              {selectedFollow?.channel.title ?? "All Follows"}
+            </h2>
+            <p className="m-0 text-sm text-muted-foreground">
+              {workspace.candidates.length} to decide · Keep creates or links a
+              Library Item
+            </p>
+          </div>
+        </div>
+        <div
+          role="region"
+          aria-label="Candidate feed"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-20"
+        >
+          {filtering && (
+            <p role="status" className="mb-3 text-sm text-muted-foreground">
+              Filtering pending Candidates…
+            </p>
+          )}
+          {filterFailed && (
+            <Alert className="mb-3 flex flex-wrap items-center justify-between gap-2 p-4">
+              <span>The channel filter could not be loaded.</span>
+              <Button
+                type="button"
+                size="compact"
+                variant="secondary"
+                onClick={onRetryFilter}
+              >
+                Retry channel filter
+              </Button>
+            </Alert>
+          )}
+          {unfollowError && <Alert className="mb-3 p-4">{unfollowError}</Alert>}
+          {workspace.candidates.length === 0 ? (
+            <p className="m-0 rounded-[var(--radius-panel)] border border-dashed bg-card p-8 text-center text-muted-foreground">
+              No pending Candidates from your followed channels.
+            </p>
+          ) : (
+            <div className="grid auto-rows-max gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {workspace.candidates.map((candidate) => (
+                <CandidateCard
+                  key={candidate.id}
+                  candidate={candidate}
+                  onResolved={() => onCandidateResolved(candidate)}
+                />
               ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <div className="grid gap-2">
-          <p className="m-0 text-sm font-medium">Followed channels</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <Dialog open={managementOpen} onOpenChange={setManagementOpen}>
+        <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage Follows</DialogTitle>
+            <DialogDescription>
+              Review channel identity or stop future intake. Existing Library
+              data is preserved.
+            </DialogDescription>
+          </DialogHeader>
           <ul
             aria-label="Followed channels"
-            className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2"
+            className="m-0 grid list-none gap-3 p-0"
           >
             {workspace.follows.map((follow) => (
               <li
                 key={follow.id}
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] bg-muted/50 px-3 py-2"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border p-3"
               >
-                <a
-                  className="min-w-0 truncate text-sm font-medium hover:underline"
-                  href={follow.channel.canonicalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {follow.channel.title}
-                </a>
+                <div className="min-w-0">
+                  <a
+                    className="block truncate font-medium hover:underline"
+                    href={follow.channel.canonicalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {follow.channel.title}
+                  </a>
+                  <p className="truncate text-xs text-muted-foreground">
+                    Public channel · Active
+                  </p>
+                </div>
                 <Button
                   type="button"
                   size="compact"
                   variant="quiet-destructive"
                   loading={unfollowingFollowId === follow.id}
                   loadingLabel={`Unfollowing ${follow.channel.title}…`}
-                  onClick={() => onUnfollow(follow)}
+                  onClick={() => {
+                    setManagementOpen(false);
+                    onUnfollow(follow);
+                  }}
                 >
                   Unfollow {follow.channel.title}
                 </Button>
               </li>
             ))}
           </ul>
-        </div>
-      </section>
-      {filtering && (
-        <p role="status" className="m-0 text-sm text-muted-foreground">
-          Filtering pending Candidates…
-        </p>
-      )}
-      {filterFailed && (
-        <Alert className="flex flex-wrap items-center justify-between gap-2 p-4">
-          <span>The channel filter could not be loaded.</span>
-          <Button
-            type="button"
-            size="compact"
-            variant="secondary"
-            onClick={onRetryFilter}
-          >
-            Retry channel filter
-          </Button>
-        </Alert>
-      )}
-      {unfollowError && <Alert className="p-4">{unfollowError}</Alert>}
-      {workspace.candidates.length === 0 ? (
-        <p className="m-0 rounded-[var(--radius-panel)] border bg-card p-5 text-muted-foreground">
-          No pending Candidates from your followed channels.
-        </p>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {workspace.candidates.map((candidate) => (
-            <CandidateCard
-              key={candidate.id}
-              candidate={candidate}
-              onResolved={() => onCandidateResolved(candidate.id)}
-            />
-          ))}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </section>
+  );
+}
+
+function FollowFilterButton({
+  active,
+  count,
+  label,
+  meta,
+  disabled,
+  onClick,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  meta: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      className={`h-auto min-w-60 justify-start rounded-lg border px-3 py-3 text-left transition-colors lg:w-full lg:min-w-0 ${
+        active
+          ? "border-primary/50 bg-accent text-accent-foreground"
+          : "border-transparent bg-card hover:border-border hover:bg-accent/60"
+      }`}
+      aria-label={label}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="flex items-start gap-2">
+        <Video
+          className="mt-0.5 size-4 shrink-0 text-primary"
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">{label}</span>
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            {meta}
+          </span>
+        </span>
+        <span className="rounded-full border px-2 py-0.5 text-xs">{count}</span>
+      </span>
+    </Button>
+  );
+}
+
+function candidateCountsForWorkspace(
+  workspace: DiscoverWorkspace,
+): Record<DiscoverFollowId, number> {
+  return Object.fromEntries(
+    workspace.follows.map((follow) => [
+      follow.id,
+      workspace.candidates.filter(
+        (candidate) =>
+          candidate.video.channelExternalId === follow.channel.externalId,
+      ).length,
+    ]),
   );
 }
 
@@ -610,46 +815,74 @@ function workspaceWithoutFollow(
 function VideoCardLayout({
   video,
   children,
+  compact = false,
 }: {
   video: DiscoverPreviewVideo;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   return (
     <article
       aria-label={video.title}
-      className="grid overflow-hidden rounded-[var(--radius-panel)] border bg-card"
+      className="flex min-w-0 flex-col overflow-hidden rounded-[var(--radius-panel)] border bg-card"
     >
       {video.thumbnailUrl ? (
         <img
-          className="aspect-video w-full object-cover"
+          className={
+            compact
+              ? "aspect-[16/6] w-full object-cover"
+              : "aspect-video w-full object-cover"
+          }
           src={video.thumbnailUrl}
           alt={video.title}
         />
       ) : (
-        <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
-          No thumbnail
+        <div
+          className={`grid place-items-center bg-muted text-muted-foreground ${compact ? "aspect-[16/6]" : "aspect-video"}`}
+        >
+          {compact ? (
+            <Video className="size-8 opacity-50" aria-hidden="true" />
+          ) : (
+            <span className="text-sm">No thumbnail</span>
+          )}
         </div>
       )}
-      <div className="grid content-start gap-2 p-4">
+      <div className={`flex flex-1 flex-col ${compact ? "p-3" : "p-4"}`}>
+        {compact && (
+          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-primary/40 bg-accent px-2 py-0.5 text-accent-foreground">
+              new
+            </span>
+            <span className="truncate">{video.channelTitle}</span>
+          </div>
+        )}
         <a
-          className="font-serif text-lg font-semibold hover:underline"
+          className={
+            compact
+              ? "line-clamp-2 min-h-10 text-sm leading-snug font-semibold hover:underline"
+              : "font-serif text-lg font-semibold hover:underline"
+          }
           href={video.source}
           target="_blank"
           rel="noreferrer"
         >
           {video.title}
         </a>
-        <p className="m-0 text-sm text-muted-foreground">
-          {video.channelTitle}
-        </p>
-        <p className="m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+        {!compact && (
+          <p className="m-0 mt-2 text-sm text-muted-foreground">
+            {video.channelTitle}
+          </p>
+        )}
+        <p
+          className={`m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground ${compact ? "mt-1" : "mt-2"}`}
+        >
           <time dateTime={video.publishedAt}>
             {formatPublishedAt(video.publishedAt)}
           </time>
           <span aria-hidden="true">·</span>
           <span>{formatDuration(video.durationSeconds)}</span>
         </p>
-        {children}
+        <div className={compact ? "mt-auto pt-3" : "mt-3"}>{children}</div>
       </div>
     </article>
   );
@@ -706,7 +939,7 @@ function CandidateCard({
   };
 
   return (
-    <VideoCardLayout video={video}>
+    <VideoCardLayout video={video} compact>
       {candidate.libraryItem && (
         <p className="m-0 text-sm font-medium text-primary">
           Already in Library ·{" "}
@@ -720,22 +953,28 @@ function CandidateCard({
         <Button
           type="button"
           size="compact"
+          variant="quiet"
+          aria-label={
+            candidateActionState === "rejecting"
+              ? `Rejecting ${video.title}…`
+              : `Reject ${video.title}`
+          }
+          loading={candidateActionState === "rejecting"}
+          loadingLabel="Rejecting…"
+          onClick={() => void reject()}
+        >
+          Reject
+        </Button>
+        <Button
+          type="button"
+          size="compact"
+          aria-label={`Keep ${video.title}`}
           onClick={() => {
             setCandidateActionState("idle");
             setKeepOpen(true);
           }}
         >
-          Keep {video.title}
-        </Button>
-        <Button
-          type="button"
-          size="compact"
-          variant="secondary"
-          loading={candidateActionState === "rejecting"}
-          loadingLabel={`Rejecting ${video.title}…`}
-          onClick={() => void reject()}
-        >
-          Reject {video.title}
+          Keep
         </Button>
       </div>
       <Dialog open={keepOpen} onOpenChange={setKeepOpen}>
