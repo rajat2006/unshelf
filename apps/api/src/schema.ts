@@ -290,6 +290,34 @@ export const items = pgTable(
   ],
 );
 
+/** Library-owned link from one exact Provider identity to one owned Item. */
+export const itemProviderIdentities = pgTable(
+  "item_provider_identities",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.provider, table.externalId] }),
+    foreignKey({
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+      name: "item_provider_identities_item_owner_fk",
+    }),
+    check(
+      "item_provider_identities_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+  ],
+);
+
 /** One User-owned Daily Focus for each canonical server calendar date. */
 export const dailyFocuses = pgTable(
   "daily_focuses",

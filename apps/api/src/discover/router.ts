@@ -1,17 +1,23 @@
 import { Router, type RequestHandler, type Response } from "express";
 import {
   createDiscoverFollowRequestSchema,
+  discoverCandidateIdSchema,
   discoverFollowIdSchema,
   discoverPreviewRequestSchema,
   discoverWorkspaceQuerySchema,
+  keepDiscoverCandidateRequestSchema,
+  rejectDiscoverCandidateRequestSchema,
 } from "@unshelf/shared/validation";
 import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
 import { previewChannel } from "./preview-channel";
 import type { YouTubeClient, YouTubeFailure } from "./youtube-client";
 import { followChannel } from "./follow-channel";
-import { readDiscoverWorkspace } from "./read-workspace";
+import { readDiscoverCandidate, readDiscoverWorkspace } from "./read-workspace";
 import { unfollowChannel } from "./unfollow-channel";
+import { keepCandidate } from "./keep-candidate";
+import { getItem } from "../items/repository";
+import { rejectCandidate } from "./reject-candidate";
 
 /** Mount the authenticated Discover HTTP interface at `/api/discover`. */
 export function createDiscoverRouter({
@@ -85,6 +91,68 @@ export function createDiscoverRouter({
         return;
       }
       res.status(204).send();
+    },
+  );
+  router.post(
+    "/candidates/:candidateId/keep",
+    validateRequest(
+      {
+        params: { candidateId: discoverCandidateIdSchema },
+        body: keepDiscoverCandidateRequestSchema,
+      },
+      "invalid_discover_candidate_keep",
+    ),
+    async (req, res) => {
+      const candidateId = res.locals.validated.params.candidateId;
+      const result = await keepCandidate({
+        db,
+        userId: req.user!.id,
+        candidateId,
+        input: res.locals.validated.body,
+        now: now(),
+      });
+      if (!result.ok) {
+        const status = result.error === "candidate_not_found" ? 404 : 409;
+        res.status(status).json({ error: result.error });
+        return;
+      }
+      const item = await getItem(db, req.user!.id, result.itemId);
+      const candidate = await readDiscoverCandidate({
+        db,
+        userId: req.user!.id,
+        candidateId,
+      });
+      res.json({ candidate, item });
+    },
+  );
+  router.post(
+    "/candidates/:candidateId/reject",
+    validateRequest(
+      {
+        params: { candidateId: discoverCandidateIdSchema },
+        body: rejectDiscoverCandidateRequestSchema,
+      },
+      "invalid_discover_candidate_reject",
+    ),
+    async (req, res) => {
+      const candidateId = res.locals.validated.params.candidateId;
+      const result = await rejectCandidate({
+        db,
+        userId: req.user!.id,
+        candidateId,
+        now: now(),
+      });
+      if (!result.ok) {
+        const status = result.error === "candidate_not_found" ? 404 : 409;
+        res.status(status).json({ error: result.error });
+        return;
+      }
+      const candidate = await readDiscoverCandidate({
+        db,
+        userId: req.user!.id,
+        candidateId,
+      });
+      res.json(candidate);
     },
   );
   router.post(

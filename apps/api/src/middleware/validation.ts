@@ -43,6 +43,8 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_discover_preview",
   "invalid_discover_follow",
   "invalid_discover_workspace",
+  "invalid_discover_candidate_keep",
+  "invalid_discover_candidate_reject",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];

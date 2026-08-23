@@ -16,13 +16,17 @@ import type {
   DiscoverProviderTargetId,
   DiscoverWorkspace,
 } from "@unshelf/shared";
+import { CandidateState, Type } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import {
   createDiscoverFollow,
+  DiscoverCandidateDecisionError,
   DiscoverPreviewError,
   fetchDiscoverPreview,
   fetchDiscoverWorkspace,
+  keepDiscoverCandidate,
+  rejectDiscoverCandidate,
   unfollowDiscoverChannel,
 } from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
@@ -33,6 +37,8 @@ vi.mock("../api", async (importOriginal) => ({
   fetchDiscoverPreview: vi.fn(),
   fetchDiscoverWorkspace: vi.fn(),
   unfollowDiscoverChannel: vi.fn(),
+  keepDiscoverCandidate: vi.fn(),
+  rejectDiscoverCandidate: vi.fn(),
 }));
 
 const auth: ApplicationAuth = {
@@ -146,9 +152,162 @@ afterEach(() => {
   vi.mocked(createDiscoverFollow).mockReset();
   vi.mocked(fetchDiscoverWorkspace).mockReset();
   vi.mocked(unfollowDiscoverChannel).mockReset();
+  vi.mocked(keepDiscoverCandidate).mockReset();
+  vi.mocked(rejectDiscoverCandidate).mockReset();
 });
 
 describe("Discover channel preview", () => {
+  it("shows the Library identity badge and Item link", async () => {
+    const workspace = {
+      follows: [quietFollow],
+      candidates: [
+        {
+          ...severalFollowsWorkspace.candidates[1],
+          libraryItem: {
+            id: "00000000-0000-0000-0000-000000000130",
+            title: "Captured lesson",
+          },
+        },
+      ],
+    } as DiscoverWorkspace;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
+    renderDiscover();
+
+    expect(await screen.findByText(/Already in Library/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Captured lesson" })).toHaveAttribute(
+      "href",
+      "/items/00000000-0000-0000-0000-000000000130",
+    );
+  });
+
+  it("opens Keep with defaults and focuses invalid Title", async () => {
+    const workspace = {
+      follows: [quietFollow],
+      candidates: [
+        {
+          ...severalFollowsWorkspace.candidates[1],
+          libraryItem: null,
+        },
+      ],
+    } as DiscoverWorkspace;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Keep Newest lesson" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Keep Candidate",
+    });
+    expect(within(dialog).getByLabelText("Title")).toHaveValue("Newest lesson");
+    expect(within(dialog).getByRole("combobox", { name: "Type" })).toHaveTextContent(
+      "Video",
+    );
+    fireEvent.change(within(dialog).getByLabelText("Title"), {
+      target: { value: "" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep in Library" }));
+    expect(await within(dialog).findByText("Enter a title.")).toBeVisible();
+    expect(within(dialog).getByLabelText("Title")).toHaveFocus();
+    expect(keepDiscoverCandidate).not.toHaveBeenCalled();
+  });
+
+  it("Keeps an edited title and Type then removes the resolved Candidate", async () => {
+    const workspace = {
+      follows: [quietFollow],
+      candidates: [
+        {
+          ...severalFollowsWorkspace.candidates[1],
+          libraryItem: null,
+        },
+      ],
+    } as DiscoverWorkspace;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
+    vi.mocked(keepDiscoverCandidate).mockResolvedValue({
+      candidate: workspace.candidates[0],
+      item: { title: "Confirmed lesson", type: Type.Course },
+    } as Awaited<ReturnType<typeof keepDiscoverCandidate>>);
+    renderDiscover();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Keep Newest lesson" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Keep Candidate",
+    });
+
+    fireEvent.change(within(dialog).getByLabelText("Title"), {
+      target: { value: "Confirmed lesson" },
+    });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Type" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Course" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep in Library" }));
+
+    await waitFor(() =>
+      expect(keepDiscoverCandidate).toHaveBeenCalledWith(auth.user, {
+        candidateId: workspace.candidates[0].id,
+        title: "Confirmed lesson",
+        type: Type.Course,
+      }),
+    );
+    expect(screen.queryByRole("article", { name: "Newest lesson" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a Candidate actionable through Reject errors and reports conflicts", async () => {
+    const workspace = {
+      follows: [quietFollow],
+      candidates: [
+        {
+          ...severalFollowsWorkspace.candidates[1],
+          libraryItem: null,
+        },
+      ],
+    } as DiscoverWorkspace;
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
+    let failReject!: (reason: Error) => void;
+    vi.mocked(rejectDiscoverCandidate)
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          failReject = reject;
+        }),
+      )
+      .mockResolvedValueOnce({
+        ...workspace.candidates[0],
+        state: CandidateState.Rejected,
+      });
+    renderDiscover();
+    const rejectButton = await screen.findByRole("button", {
+      name: "Reject Newest lesson",
+    });
+
+    fireEvent.click(rejectButton);
+    expect(screen.getByRole("button", { name: "Rejecting Newest lesson…" })).toBeDisabled();
+    failReject(new Error("temporary"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "could not be resolved",
+    );
+    expect(screen.getByRole("article", { name: "Newest lesson" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject Newest lesson" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("article", { name: "Newest lesson" })).not.toBeInTheDocument(),
+    );
+
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(workspace);
+    vi.mocked(keepDiscoverCandidate).mockRejectedValue(
+      new DiscoverCandidateDecisionError("conflict"),
+    );
+    renderDiscover();
+    fireEvent.click(await screen.findByRole("button", { name: "Keep Newest lesson" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Keep Candidate" })).getByRole(
+        "button",
+        { name: "Keep in Library" },
+      ),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "already resolved another way",
+    );
+  });
   it("loads an existing pending queue and explains when it is empty", async () => {
     const follow = {
       id: "00000000-0000-0000-0000-000000000030",

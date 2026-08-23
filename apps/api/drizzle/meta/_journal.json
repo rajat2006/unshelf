@@ -134,6 +134,13 @@
       "when": 1787480628240,
       "tag": "0018_neat_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787487932392,
+      "tag": "0019_nosy_warpath",
+      "breakpoints": true
     }
   ]
 }

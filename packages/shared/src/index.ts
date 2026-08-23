@@ -151,6 +151,12 @@ export interface DiscoverCandidate {
   id: DiscoverCandidateId;
   state: CandidateState;
   video: DiscoverPreviewVideo;
+  libraryItem: Pick<Item, "id" | "title"> | null;
+}
+
+export interface KeepDiscoverCandidateResult {
+  candidate: DiscoverCandidate;
+  item: Item;
 }
 
 export interface DiscoverWorkspace {
@@ -197,6 +203,7 @@ export type {
   DiscoverPreviewRequest,
   CreateDiscoverFollowRequest,
   DiscoverWorkspaceQuery,
+  KeepDiscoverCandidateRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */

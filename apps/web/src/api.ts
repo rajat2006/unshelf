@@ -15,7 +15,11 @@ import type {
   CreateDiscoverFollowRequest,
   DiscoverFollow,
   DiscoverFollowId,
+  DiscoverCandidate,
+  DiscoverCandidateId,
   DiscoverWorkspace,
+  KeepDiscoverCandidateRequest,
+  KeepDiscoverCandidateResult,
   Item,
   ItemDetail,
   ItemId,
@@ -145,6 +149,63 @@ export async function unfollowDiscoverChannel(
   await authenticatedRequest(user, `/api/discover/follows/${followId}`, {
     method: "DELETE",
   });
+}
+
+export class DiscoverCandidateDecisionError extends Error {
+  constructor(readonly kind: "conflict" | "temporary") {
+    super(`discover Candidate decision failed: ${kind}`);
+  }
+}
+
+/** Keep one pending Candidate using only User-confirmed Library fields. */
+export async function keepDiscoverCandidate(
+  user: CurrentUser,
+  input: KeepDiscoverCandidateRequest & {
+    candidateId: DiscoverCandidateId;
+  },
+): Promise<KeepDiscoverCandidateResult> {
+  const { candidateId, ...body } = input;
+  try {
+    return await requestJson<KeepDiscoverCandidateResult>(
+      user,
+      `/api/discover/candidates/${candidateId}/keep`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch (error) {
+    throw new DiscoverCandidateDecisionError(
+      error instanceof ApiResponseError && error.status === 409
+        ? "conflict"
+        : "temporary",
+    );
+  }
+}
+
+/** Reject one pending Candidate without crossing into the Library. */
+export async function rejectDiscoverCandidate(
+  user: CurrentUser,
+  candidateId: DiscoverCandidateId,
+): Promise<DiscoverCandidate> {
+  try {
+    return await requestJson<DiscoverCandidate>(
+      user,
+      `/api/discover/candidates/${candidateId}/reject`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+  } catch (error) {
+    throw new DiscoverCandidateDecisionError(
+      error instanceof ApiResponseError && error.status === 409
+        ? "conflict"
+        : "temporary",
+    );
+  }
 }
 
 /** Fetch All — every Item belonging to the current User. */

@@ -1,0 +1,301 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import request from "supertest";
+import type { Express } from "express";
+import {
+  Type,
+  type DiscoverPreview,
+  type DiscoverWorkspace,
+} from "@unshelf/shared";
+import type { YouTubeClient } from "../src/discover/youtube-client";
+import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+
+let harness: TestApp;
+let app: Express;
+
+const resolveChannel = vi.fn<YouTubeClient["resolveChannel"]>();
+const fetchChannelVideos = vi.fn<YouTubeClient["fetchChannelVideos"]>();
+const youtubeClient: YouTubeClient = {
+  resolveChannel: (input) => resolveChannel(input),
+  fetchChannelVideos: (input) => fetchChannelVideos(input),
+};
+
+beforeAll(async () => {
+  harness = await startTestApp({
+    youtubeClient,
+    now: () => new Date("2026-08-23T12:00:00.000Z"),
+  });
+  app = harness.app;
+});
+
+beforeEach(() => {
+  resolveChannel.mockReset();
+  fetchChannelVideos.mockReset();
+  resolveChannel.mockResolvedValue({
+    ok: true,
+    channel: {
+      externalId: "UC_decisions",
+      title: "Decision School",
+      thumbnailUrl: null,
+      canonicalUrl: "https://www.youtube.com/channel/UC_decisions",
+      uploadsPlaylistId: "UU_decisions",
+    },
+  });
+  fetchChannelVideos.mockResolvedValue({
+    ok: true,
+    videos: [
+      {
+        externalId: "decision-video",
+        title: "Provider title",
+        thumbnailUrl: null,
+        publishedAt: "2026-08-22T12:00:00.000Z",
+        durationSeconds: 601,
+        source: "https://www.youtube.com/watch?v=decision-video",
+      },
+    ],
+  });
+});
+
+afterAll(async () => {
+  await harness?.stop();
+});
+
+async function followCandidate(clerkUserId: string) {
+  const preview = await request(app)
+    .post("/api/discover/preview")
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ url: "https://youtube.com/@decisions" });
+  const previewBody = preview.body as DiscoverPreview;
+  await request(app)
+    .post("/api/discover/follows")
+    .set(TEST_USER_HEADER, clerkUserId)
+    .send({ targetId: previewBody.targetId });
+  const workspace = await request(app)
+    .get("/api/discover")
+    .set(TEST_USER_HEADER, clerkUserId);
+  return (workspace.body as DiscoverWorkspace).candidates[0];
+}
+
+describe("Discover Candidate decisions", () => {
+  it("Keeps a pending Candidate with confirmed fields and canonical identity", async () => {
+    const user = "clerk_keep_candidate";
+    const candidate = await followCandidate(user);
+
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "My learning title", type: Type.Course });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+
+    expect(kept.status).toBe(200);
+    expect(kept.body).toMatchObject({
+      candidate: { id: candidate.id, state: "kept" },
+      item: {
+        title: "My learning title",
+        type: Type.Course,
+        source: "https://www.youtube.com/watch?v=decision-video",
+      },
+    });
+    expect(library.body).toHaveLength(1);
+    expect((workspace.body as DiscoverWorkspace).candidates).toEqual([]);
+
+    const identity = await harness.pool.query(
+      `SELECT provider, external_id, item_id, user_id
+       FROM item_provider_identities
+       WHERE external_id = 'decision-video'`,
+    );
+    expect(identity.rows).toHaveLength(1);
+    expect(identity.rows[0]).toMatchObject({ provider: "youtube" });
+  });
+
+  it("derives Already in Library from identity and reuses the owned Item", async () => {
+    const user = "clerk_reuse_candidate";
+    const candidate = await followCandidate(user);
+    const seeded = await harness.pool.query<{ id: string }>(
+      `INSERT INTO items (user_id, title, type, source)
+       SELECT id, 'Existing Library title', 'video', 'manual-source'
+       FROM users WHERE clerk_user_id = $1
+       RETURNING id`,
+      [user],
+    );
+    await harness.pool.query(
+      `INSERT INTO item_provider_identities
+         (user_id, provider, external_id, item_id)
+       SELECT id, 'youtube', 'decision-video', $2
+       FROM users WHERE clerk_user_id = $1`,
+      [user, seeded.rows[0].id],
+    );
+
+    const beforeKeep = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Ignored replacement", type: Type.Book });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+
+    expect((beforeKeep.body as DiscoverWorkspace).candidates[0]).toMatchObject({
+      libraryItem: {
+        id: seeded.rows[0].id,
+        title: "Existing Library title",
+      },
+    });
+    expect(kept.status).toBe(200);
+    expect(kept.body.item).toMatchObject({
+      id: seeded.rows[0].id,
+      title: "Existing Library title",
+      type: Type.Video,
+      source: "manual-source",
+    });
+    expect(library.body).toHaveLength(1);
+  });
+
+  it("Rejects only the owned Candidate and enforces terminal decisions", async () => {
+    const user = "clerk_reject_candidate";
+    const candidate = await followCandidate(user);
+
+    const foreign = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/reject`)
+      .set(TEST_USER_HEADER, "clerk_reject_intruder")
+      .send({});
+    const rejected = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/reject`)
+      .set(TEST_USER_HEADER, user)
+      .send({});
+    const replayed = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/reject`)
+      .set(TEST_USER_HEADER, user)
+      .send({});
+    const opposite = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Too late", type: Type.Video });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+
+    expect(foreign.status).toBe(404);
+    expect(rejected.status).toBe(200);
+    expect(rejected.body).toMatchObject({
+      id: candidate.id,
+      state: "rejected",
+      video: { externalId: "decision-video" },
+      libraryItem: null,
+    });
+    expect(replayed.status).toBe(200);
+    expect(replayed.body).toEqual(rejected.body);
+    expect(opposite.status).toBe(409);
+    expect(library.body).toEqual([]);
+    expect((workspace.body as DiscoverWorkspace).candidates).toEqual([]);
+  });
+
+  it("rejects malformed decision input before changing a Candidate", async () => {
+    const user = "clerk_invalid_candidate_decision";
+    const candidate = await followCandidate(user);
+
+    expect(
+      (
+        await request(app)
+          .post(`/api/discover/candidates/${candidate.id}/keep`)
+          .set(TEST_USER_HEADER, user)
+          .send({
+            title: "Valid",
+            type: Type.Video,
+            source: "client-must-not-control-this",
+          })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(app)
+          .post(`/api/discover/candidates/${candidate.id}/reject`)
+          .set(TEST_USER_HEADER, user)
+          .send({ reason: "not-supported" })
+      ).status,
+    ).toBe(400);
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+    expect((workspace.body as DiscoverWorkspace).candidates).toHaveLength(1);
+  });
+
+  it("serializes concurrent Keep replays into one Item and rejects the opposite decision", async () => {
+    const user = "clerk_concurrent_keep";
+    const candidate = await followCandidate(user);
+
+    const responses = await Promise.all([
+      request(app)
+        .post(`/api/discover/candidates/${candidate.id}/keep`)
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "First confirmation", type: Type.Video }),
+      request(app)
+        .post(`/api/discover/candidates/${candidate.id}/keep`)
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Concurrent confirmation", type: Type.Book }),
+    ]);
+    const opposite = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/reject`)
+      .set(TEST_USER_HEADER, user)
+      .send({});
+    const persisted = await harness.pool.query<{
+      item_count: string;
+      identity_count: string;
+      state: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM items WHERE user_id = users.id) AS item_count,
+         (SELECT count(*) FROM item_provider_identities
+          WHERE user_id = users.id) AS identity_count,
+         (SELECT state FROM discover_candidates
+          WHERE user_id = users.id AND id = $2) AS state
+       FROM users WHERE clerk_user_id = $1`,
+      [user, candidate.id],
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(responses[0].body.item.id).toBe(responses[1].body.item.id);
+    expect(opposite.status).toBe(409);
+    expect(persisted.rows[0]).toEqual({
+      item_count: "1",
+      identity_count: "1",
+      state: "kept",
+    });
+  });
+
+  it("enforces composite Item ownership on Library identity mappings", async () => {
+    await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, "clerk_identity_owner");
+    await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, "clerk_identity_intruder");
+    const item = await harness.pool.query<{ id: string }>(
+      `INSERT INTO items (user_id, title, type)
+       SELECT id, 'Owned item', 'video' FROM users WHERE clerk_user_id = $1
+       RETURNING id`,
+      ["clerk_identity_owner"],
+    );
+
+    await expect(
+      harness.pool.query(
+        `INSERT INTO item_provider_identities
+           (user_id, provider, external_id, item_id)
+         SELECT id, 'youtube', 'foreign-identity', $2
+         FROM users WHERE clerk_user_id = $1`,
+        ["clerk_identity_intruder", item.rows[0].id],
+      ),
+    ).rejects.toMatchObject({
+      constraint: "item_provider_identities_item_owner_fk",
+    });
+  });
+});

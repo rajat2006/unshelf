@@ -1,14 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type {
-  DiscoverFollow,
-  DiscoverFollowId,
-  DiscoverPreview,
-  DiscoverPreviewVideo,
-  DiscoverWorkspace,
+import {
+  ITEM_TYPES,
+  Type,
+  type DiscoverCandidate,
+  type DiscoverFollow,
+  type DiscoverFollowId,
+  type DiscoverPreview,
+  type DiscoverPreviewVideo,
+  type DiscoverWorkspace,
 } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,14 +33,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DiscoverCandidateDecisionError,
   DiscoverPreviewError,
   createDiscoverFollow,
   fetchDiscoverPreview,
   fetchDiscoverWorkspace,
+  keepDiscoverCandidate,
+  rejectDiscoverCandidate,
   unfollowDiscoverChannel,
   type DiscoverPreviewFailure,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
+import { TYPE_LABELS } from "../items/presentation";
 
 type PreviewState =
   | { status: "idle" }
@@ -209,6 +228,22 @@ export function DiscoverSurface() {
     await reconcileWorkspace(nextSelectedFollowId);
   };
 
+  const removeResolvedCandidate = (candidateId: DiscoverCandidate["id"]) => {
+    setWorkspaceState((current) =>
+      current.status === "ready"
+        ? {
+            status: "ready",
+            workspace: {
+              ...current.workspace,
+              candidates: current.workspace.candidates.filter(
+                (candidate) => candidate.id !== candidateId,
+              ),
+            },
+          }
+        : current,
+    );
+  };
+
   return (
     <section
       className="mx-auto grid w-full max-w-6xl gap-6"
@@ -320,6 +355,7 @@ export function DiscoverSurface() {
             onSelectFollow={(followId) => void selectFollow(followId)}
             onRetryFilter={() => void selectFollow(failedFilterId)}
             onUnfollow={(follow) => void unfollow(follow)}
+            onCandidateResolved={removeResolvedCandidate}
           />
         )}
     </section>
@@ -412,6 +448,7 @@ function CandidateQueue({
   onSelectFollow,
   onRetryFilter,
   onUnfollow,
+  onCandidateResolved,
 }: {
   workspace: DiscoverWorkspace;
   selectedFollowId: DiscoverFollowId | null;
@@ -423,6 +460,7 @@ function CandidateQueue({
   onSelectFollow: (followId: DiscoverFollowId | null) => void;
   onRetryFilter: () => void;
   onUnfollow: (follow: DiscoverFollow) => void;
+  onCandidateResolved: (candidateId: DiscoverCandidate["id"]) => void;
 }) {
   return (
     <section className="grid gap-4" aria-labelledby="candidate-queue-heading">
@@ -536,7 +574,11 @@ function CandidateQueue({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {workspace.candidates.map((candidate) => (
-            <VideoCard key={candidate.id} video={candidate.video} />
+            <CandidateCard
+              key={candidate.id}
+              candidate={candidate}
+              onResolved={() => onCandidateResolved(candidate.id)}
+            />
           ))}
         </div>
       )}
@@ -596,6 +638,201 @@ function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
           <span>{formatDuration(video.durationSeconds)}</span>
         </p>
       </div>
+    </article>
+  );
+}
+
+function CandidateCard({
+  candidate,
+  onResolved,
+}: {
+  candidate: DiscoverCandidate;
+  onResolved: () => void;
+}) {
+  const user = useCurrentUser();
+  const video = candidate.video;
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [keepOpen, setKeepOpen] = useState(false);
+  const [title, setTitle] = useState(video.title);
+  const [type, setType] = useState<Type>(Type.Video);
+  const [titleError, setTitleError] = useState(false);
+  const [decision, setDecision] = useState<
+    "idle" | "keeping" | "rejecting" | "conflict" | "error"
+  >("idle");
+
+  const keep = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!title.trim()) {
+      setTitleError(true);
+      titleRef.current?.focus();
+      return;
+    }
+    setTitleError(false);
+    setDecision("keeping");
+    try {
+      await keepDiscoverCandidate(user, {
+        candidateId: candidate.id,
+        title,
+        type,
+      });
+      setKeepOpen(false);
+      onResolved();
+    } catch (error) {
+      setDecision(
+        error instanceof DiscoverCandidateDecisionError &&
+          error.kind === "conflict"
+          ? "conflict"
+          : "error",
+      );
+    }
+  };
+
+  const reject = async () => {
+    setDecision("rejecting");
+    try {
+      await rejectDiscoverCandidate(user, candidate.id);
+      onResolved();
+    } catch (error) {
+      setDecision(
+        error instanceof DiscoverCandidateDecisionError &&
+          error.kind === "conflict"
+          ? "conflict"
+          : "error",
+      );
+    }
+  };
+
+  return (
+    <article aria-label={video.title} className="grid overflow-hidden rounded-[var(--radius-panel)] border bg-card">
+      {video.thumbnailUrl ? (
+        <img
+          className="aspect-video w-full object-cover"
+          src={video.thumbnailUrl}
+          alt={video.title}
+        />
+      ) : (
+        <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
+          No thumbnail
+        </div>
+      )}
+      <div className="grid content-start gap-2 p-4">
+        <a
+          className="font-serif text-lg font-semibold hover:underline"
+          href={video.source}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {video.title}
+        </a>
+        <p className="m-0 text-sm text-muted-foreground">
+          {video.channelTitle}
+        </p>
+        <p className="m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+          <time dateTime={video.publishedAt}>
+            {formatPublishedAt(video.publishedAt)}
+          </time>
+          <span aria-hidden="true">·</span>
+          <span>{formatDuration(video.durationSeconds)}</span>
+        </p>
+        {candidate.libraryItem && (
+          <p className="m-0 text-sm font-medium text-primary">
+            Already in Library ·{" "}
+            <a className="underline" href={`/items/${candidate.libraryItem.id}`}>
+              {candidate.libraryItem.title}
+            </a>
+          </p>
+        )}
+        {(decision === "conflict" || decision === "error") && (
+          <Alert>
+            {decision === "conflict"
+              ? "This Candidate was already resolved another way."
+              : "The Candidate could not be resolved. Try again."}
+          </Alert>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="compact"
+            onClick={() => {
+              setDecision("idle");
+              setKeepOpen(true);
+            }}
+          >
+            Keep {video.title}
+          </Button>
+          <Button
+            type="button"
+            size="compact"
+            variant="secondary"
+            loading={decision === "rejecting"}
+            loadingLabel={`Rejecting ${video.title}…`}
+            onClick={() => void reject()}
+          >
+            Reject {video.title}
+          </Button>
+        </div>
+      </div>
+      <Dialog open={keepOpen} onOpenChange={setKeepOpen}>
+        <DialogContent aria-describedby={`keep-description-${candidate.id}`}>
+          <DialogHeader>
+            <DialogTitle>Keep Candidate</DialogTitle>
+            <DialogDescription id={`keep-description-${candidate.id}`}>
+              Confirm how this video should appear in your Library.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-4" onSubmit={(event) => void keep(event)}>
+            <Field>
+              <FieldLabel htmlFor={`keep-title-${candidate.id}`}>
+                Title
+              </FieldLabel>
+              <Input
+                ref={titleRef}
+                id={`keep-title-${candidate.id}`}
+                value={title}
+                aria-invalid={titleError}
+                disabled={decision === "keeping"}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+              {titleError && <FieldError>Enter a title.</FieldError>}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`keep-type-${candidate.id}`}>Type</FieldLabel>
+              <Select
+                value={type}
+                disabled={decision === "keeping"}
+                onValueChange={(value) => setType(value as Type)}
+              >
+                <SelectTrigger id={`keep-type-${candidate.id}`} aria-label="Type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ITEM_TYPES.map((itemType) => (
+                    <SelectItem key={itemType} value={itemType}>
+                      {TYPE_LABELS[itemType]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            {(decision === "conflict" || decision === "error") && (
+              <Alert>
+                {decision === "conflict"
+                  ? "This Candidate was already resolved another way."
+                  : "Keep could not be completed. Try again."}
+              </Alert>
+            )}
+            <div>
+              <Button
+                type="submit"
+                loading={decision === "keeping"}
+                loadingLabel="Keeping Candidate…"
+              >
+                Keep in Library
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }
