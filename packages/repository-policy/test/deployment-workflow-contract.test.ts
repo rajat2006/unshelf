@@ -97,18 +97,22 @@ jobs:
           },
         ],
         environment: undefined,
+        hasUnresolvedSecretReferences: false,
         inheritsSecrets: false,
         needs: [],
         permissions: { contents: "read", packages: "write" },
         secretReferences: [],
+        usesSecretsContext: false,
       },
       deploy: {
         checkouts: [],
         environment: "${{ inputs.release }}",
+        hasUnresolvedSecretReferences: false,
         inheritsSecrets: false,
         needs: ["build"],
         permissions: { contents: "read" },
         secretReferences: ["DEPLOYMENT_KEY", "SECOND_KEY"],
+        usesSecretsContext: true,
       },
     });
   });
@@ -126,11 +130,32 @@ jobs:
     expect(workflow.jobs.delegate).toEqual({
       checkouts: [],
       environment: undefined,
+      hasUnresolvedSecretReferences: false,
       inheritsSecrets: true,
       needs: [],
       permissions: undefined,
       secretReferences: [],
+      usesSecretsContext: false,
     });
+  });
+
+  it("reports whole and dynamic secret-context authority", () => {
+    const workflow = inspectWorkflow(`
+on: workflow_dispatch
+jobs:
+  inspect:
+    env:
+      ALL_SECRETS: \${{ toJSON(secrets) }}
+      SELECTED_SECRET: \${{ secrets[inputs.secret_name] }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: inspect
+`);
+
+    expect(workflow.usesSecretsContext).toBe(true);
+    expect(workflow.jobs.inspect?.usesSecretsContext).toBe(true);
+    expect(workflow.hasUnresolvedSecretReferences).toBe(true);
+    expect(workflow.jobs.inspect?.hasUnresolvedSecretReferences).toBe(true);
   });
 
   it("keeps Product CI unprivileged and available for every pull request", () => {
@@ -145,6 +170,8 @@ jobs:
     expect(workflow.triggers.push?.branches).toEqual(["main", "dev"]);
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(workflow.secretReferences).toEqual([]);
+    expect(workflow.hasUnresolvedSecretReferences).toBe(false);
+    expect(workflow.usesSecretsContext).toBe(false);
     expect(workflow.jobs.product).toMatchObject({
       checkouts: [
         {
@@ -256,6 +283,8 @@ jobs:
       ["GITHUB_TOKEN"],
     ]);
     expect(workflow.inheritsSecrets).toBe(false);
+    expect(workflow.usesSecretsContext).toBe(true);
+    expect(workflow.hasUnresolvedSecretReferences).toBe(false);
   });
 
   it("keeps contained development authority in its locked environment", () => {
@@ -294,6 +323,8 @@ jobs:
         "DOKPLOY_NONPRODUCTION_API_KEY",
         "GITHUB_TOKEN",
       ],
+      hasUnresolvedSecretReferences: false,
+      usesSecretsContext: true,
     });
     expect(workflow.secretReferences).not.toContain(
       "DOKPLOY_PRODUCTION_API_KEY",

@@ -32,19 +32,23 @@ export type WorkflowJob = {
     ref?: string;
   }>;
   environment?: string;
+  hasUnresolvedSecretReferences: boolean;
   inheritsSecrets: boolean;
   needs: string[];
   permissions?: WorkflowPermissions;
   secretReferences: string[];
+  usesSecretsContext: boolean;
 };
 
 export type WorkflowContract = {
   concurrency?: WorkflowConcurrency;
+  hasUnresolvedSecretReferences: boolean;
   inheritsSecrets: boolean;
   jobs: Record<string, WorkflowJob>;
   permissions?: WorkflowPermissions;
   secretReferences: string[];
   triggers: Record<string, WorkflowTrigger>;
+  usesSecretsContext: boolean;
 };
 
 export function inspectWorkflow(source: string): WorkflowContract {
@@ -60,6 +64,7 @@ export function inspectWorkflow(source: string): WorkflowContract {
 
   return {
     concurrency: parseConcurrency(workflow.concurrency),
+    hasUnresolvedSecretReferences: findUnresolvedSecretReferences(workflow),
     inheritsSecrets: Object.values(parsedJobs).some(
       ({ inheritsSecrets }) => inheritsSecrets,
     ),
@@ -67,6 +72,7 @@ export function inspectWorkflow(source: string): WorkflowContract {
     permissions: parsePermissions(workflow.permissions),
     secretReferences: findSecretReferences(workflow),
     triggers: parseTriggers(workflow.on),
+    usesSecretsContext: referencesSecretsContext(workflow),
   };
 }
 
@@ -200,10 +206,12 @@ function parseJob({
   return {
     checkouts: parseCheckouts(job.steps, name),
     environment: parseEnvironment(job.environment, name),
+    hasUnresolvedSecretReferences: findUnresolvedSecretReferences(job),
     inheritsSecrets: job.secrets === "inherit",
     needs: parseNeeds(job.needs, name),
     permissions: parsePermissions(job.permissions),
     secretReferences: findSecretReferences(job),
+    usesSecretsContext: referencesSecretsContext(job),
   };
 }
 
@@ -342,9 +350,7 @@ function parseConcurrency(value: unknown): WorkflowConcurrency | undefined {
 function findSecretReferences(value: unknown): string[] {
   const references = new Set<string>();
   visitStrings(value, (text) => {
-    for (const match of text.matchAll(
-      /\bsecrets(?:\.([A-Za-z_][A-Za-z0-9_]*)|\s*\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\])/g,
-    )) {
+    for (const match of text.matchAll(namedSecretReferencePattern)) {
       const name = match[1] ?? match[2];
       if (name !== undefined) {
         references.add(name);
@@ -352,6 +358,35 @@ function findSecretReferences(value: unknown): string[] {
     }
   });
   return [...references].sort();
+}
+
+const namedSecretReferencePattern =
+  /\bsecrets(?:\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)|\s*\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\])/g;
+
+function findUnresolvedSecretReferences(value: unknown): boolean {
+  let hasUnresolvedReferences = false;
+  visitStrings(value, (text) => {
+    for (const expression of text.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+      const withoutNamedReferences = (expression[1] ?? "").replace(
+        namedSecretReferencePattern,
+        "",
+      );
+      if (/\bsecrets\b/.test(withoutNamedReferences)) {
+        hasUnresolvedReferences = true;
+      }
+    }
+  });
+  return hasUnresolvedReferences;
+}
+
+function referencesSecretsContext(value: unknown): boolean {
+  let referencesSecrets = false;
+  visitStrings(value, (text) => {
+    if (/\$\{\{[\s\S]*?\bsecrets\b[\s\S]*?\}\}/.test(text)) {
+      referencesSecrets = true;
+    }
+  });
+  return referencesSecrets;
 }
 
 function visitStrings(value: unknown, visit: (value: string) => void): void {
