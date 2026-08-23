@@ -526,6 +526,54 @@ describe("Discover channel preview", () => {
     ).toBeVisible();
   });
 
+  it("keeps the remaining queue available when Unfollow reconciliation fails", async () => {
+    const remainingWorkspace = {
+      follows: [quietFollow],
+      candidates: [severalFollowsWorkspace.candidates[1]],
+    };
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(severalFollowsWorkspace)
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce(remainingWorkspace);
+    vi.mocked(unfollowDiscoverChannel).mockResolvedValue();
+    renderDiscover();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Unfollow Systems School" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "remaining Discover queue could not be refreshed",
+    );
+    expect(
+      screen.getByRole("button", { name: "Unfollow Quiet Learning" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Unfollow Systems School" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("article", { name: "Systems newest" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry Discover queue" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("remaining Discover queue could not be refreshed", {
+          exact: false,
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Unfollow Quiet Learning" }),
+    ).toBeEnabled();
+  });
+
   it("announces resolution and presents the latest channel videos", async () => {
     let resolvePreview!: (value: DiscoverPreview) => void;
     vi.mocked(fetchDiscoverPreview).mockReturnValue(

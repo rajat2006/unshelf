@@ -54,6 +54,9 @@ export function DiscoverSurface() {
   const [unfollowingFollowId, setUnfollowingFollowId] =
     useState<DiscoverFollowId | null>(null);
   const [unfollowError, setUnfollowError] = useState<string | null>(null);
+  const [workspaceRefreshStatus, setWorkspaceRefreshStatus] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
   const [filtering, setFiltering] = useState(false);
   const [filterFailed, setFilterFailed] = useState(false);
   const [failedFilterId, setFailedFilterId] = useState<DiscoverFollowId | null>(
@@ -159,7 +162,29 @@ export function DiscoverSurface() {
     }
   };
 
+  const reconcileWorkspace = async (followId: DiscoverFollowId | null) => {
+    const requestId = ++workspaceRequestId.current;
+    setWorkspaceRefreshStatus("loading");
+    try {
+      const workspace = await fetchDiscoverWorkspace(
+        user,
+        followId ?? undefined,
+      );
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceState({ status: "ready", workspace });
+        setShowSetup(workspace.follows.length === 0);
+        setWorkspaceRefreshStatus("idle");
+      }
+    } catch {
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceRefreshStatus("error");
+      }
+    }
+  };
+
   const unfollow = async (follow: DiscoverFollow) => {
+    const visibleWorkspace =
+      workspaceState.status === "ready" ? workspaceState.workspace : null;
     setUnfollowingFollowId(follow.id);
     setUnfollowError(null);
     try {
@@ -172,21 +197,16 @@ export function DiscoverSurface() {
       return;
     }
 
-    const requestId = ++workspaceRequestId.current;
-    setUnfollowingFollowId(null);
-    setSelectedFollowId(null);
-    setWorkspaceState({ status: "loading" });
-    try {
-      const workspace = await fetchDiscoverWorkspace(user);
-      if (requestId === workspaceRequestId.current) {
-        setWorkspaceState({ status: "ready", workspace });
-        setShowSetup(workspace.follows.length === 0);
-      }
-    } catch {
-      if (requestId === workspaceRequestId.current) {
-        setWorkspaceState({ status: "error" });
-      }
+    const nextSelectedFollowId =
+      selectedFollowId === follow.id ? null : selectedFollowId;
+    if (visibleWorkspace) {
+      const workspace = workspaceWithoutFollow(visibleWorkspace, follow);
+      setWorkspaceState({ status: "ready", workspace });
+      setShowSetup(workspace.follows.length === 0);
     }
+    setUnfollowingFollowId(null);
+    setSelectedFollowId(nextSelectedFollowId);
+    await reconcileWorkspace(nextSelectedFollowId);
   };
 
   return (
@@ -267,6 +287,24 @@ export function DiscoverSurface() {
       {workspaceState.status === "error" && (
         <Alert className="max-w-3xl p-4">
           Your Discover queue could not be loaded. Try again shortly.
+        </Alert>
+      )}
+      {workspaceRefreshStatus === "loading" && (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Refreshing the remaining Discover queue…
+        </p>
+      )}
+      {workspaceRefreshStatus === "error" && (
+        <Alert className="flex max-w-3xl flex-wrap items-center justify-between gap-2 p-4">
+          <span>The remaining Discover queue could not be refreshed.</span>
+          <Button
+            type="button"
+            size="compact"
+            variant="secondary"
+            onClick={() => void reconcileWorkspace(selectedFollowId)}
+          >
+            Retry Discover queue
+          </Button>
         </Alert>
       )}
       {workspaceState.status === "ready" &&
@@ -408,10 +446,10 @@ function CandidateQueue({
         aria-label="Follow management"
         className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4 lg:grid-cols-[minmax(14rem,20rem)_1fr] lg:items-start"
       >
-        <div className="grid gap-2">
-          <label htmlFor="candidate-channel" className="text-sm font-medium">
+        <Field>
+          <FieldLabel htmlFor="candidate-channel">
             Candidate channel
-          </label>
+          </FieldLabel>
           <Select
             disabled={filtering}
             value={selectedFollowId ?? "all"}
@@ -437,7 +475,7 @@ function CandidateQueue({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
         <div className="grid gap-2">
           <p className="m-0 text-sm font-medium">Followed channels</p>
           <ul
@@ -504,6 +542,21 @@ function CandidateQueue({
       )}
     </section>
   );
+}
+
+function workspaceWithoutFollow(
+  workspace: DiscoverWorkspace,
+  follow: DiscoverFollow,
+): DiscoverWorkspace {
+  return {
+    follows: workspace.follows.filter(
+      (currentFollow) => currentFollow.id !== follow.id,
+    ),
+    candidates: workspace.candidates.filter(
+      (candidate) =>
+        candidate.video.channelExternalId !== follow.channel.externalId,
+    ),
+  };
 }
 
 function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
