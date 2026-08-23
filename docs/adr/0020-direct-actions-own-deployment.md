@@ -67,13 +67,24 @@ Preview follows development. A new, separately provisioned production
 foundation follows preview and does not block retirement of development-only
 machinery.
 
-Reuse the live development Compose resource, domains, managed PostgreSQL
-service, and network when their preflight passes. Repair version-sensitive
-configuration in place; if the Compose resource is incompatible, replace only
-that resource while preserving the managed database foundation. Delete only
-inventoried orphans after replacement health. Existing GHCR versions remain
-untouched, and Dokploy's built-in unused-local-image cleanup owns VPS image
-pruning.
+Reuse the live development Compose resource, domains, and managed PostgreSQL
+service when their preflight passes. The live database's sole attachment,
+`dokploy-network`, is Dokploy's shared platform overlay and is not the accepted
+environment-specific database boundary. Through Dokploy-owned configuration,
+create the attachable overlay `unshelf-nonprod-db`, persist it as PostgreSQL's
+only Swarm network attachment, and remove the shared attachment. Do not replace
+the retained database or add a separate database hostname alias: its generated
+service `appName` remains the host inside the opaque connection URL.
+
+Development and preview workflows bind the non-secret literal
+`DATABASE_NETWORK=unshelf-nonprod-db` in trusted repository code rather than a
+GitHub variable, aggregate secret, runtime discovery, or identity ledger. If the
+installed Dokploy API cannot persist and reapply the network configuration,
+cutover stops rather than falling back to a manual Docker mutation. If the
+Compose resource is incompatible, replace only that resource while preserving
+the managed database foundation. Delete only inventoried orphans after
+replacement health. Existing GHCR versions remain untouched, and Dokploy's
+built-in unused-local-image cleanup owns VPS image pruning.
 
 As a temporary accepted exception, development and preview share the existing
 non-production database superuser. `MIGRATION_MODE=verify` prevents the preview
@@ -116,5 +127,11 @@ observed need justifies it. Production must not copy the exception.
   intentional PostgreSQL endpoint; the endpoint's presence alone is not failed
   isolation. Application ingress, private-overlay membership, and production
   database isolation remain separate requirements.
+- Ordinary PostgreSQL deploys reapply the Dokploy-stored
+  `unshelf-nonprod-db` attachment. Deleting the overlay or PostgreSQL record is a
+  separate reprovisioning event and requires restoring that explicit contract.
+- Local development keeps the published TCP 5432 path while hosted development
+  and previews use only the dedicated overlay. Production must use its own
+  dedicated overlay and remains private-only.
 - ADR-0017 remains accepted because the image, Compose, routing, and managed
   PostgreSQL boundaries it records are unchanged.

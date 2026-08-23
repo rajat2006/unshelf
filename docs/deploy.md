@@ -56,10 +56,17 @@ migrate (API digest) ──completed──▶ api (same API digest) ──starte
 The managed non-production PostgreSQL service is outside application Compose
 and intentionally publishes VPS TCP 5432 for password-authenticated local
 development. Hosted development and preview services do not use that endpoint;
-they resolve the database service over the private overlay. Treat the external
-authentication surface as an accepted development-only exception while the
-local workflow needs it. Do not copy it into production, and do not infer that
-application service ports may be published.
+they resolve the database service over the dedicated attachable overlay
+`unshelf-nonprod-db`. PostgreSQL's only Swarm attachment is that overlay; it is
+not attached to the shared `dokploy-network`. Treat the external authentication
+surface as an accepted development-only exception while the local workflow
+needs it. Do not copy it into production, and do not infer that application
+service ports may be published.
+
+The retained PostgreSQL record's generated `appName` remains the internal host
+inside the opaque `DATABASE_URL`. There is no additional network alias. Normal
+PostgreSQL deploys reapply the Dokploy-stored attachment; a manually applied
+`docker service update --network-add` is not part of the contract.
 
 The complete resource environment contains:
 
@@ -69,7 +76,7 @@ The complete resource environment contains:
 | `WEB_IMAGE` | Full `ghcr.io/rajat2006/unshelf-web@sha256:…` reference supplied by the workflow. |
 | `DATABASE_URL` | Opaque internal connection URL; never assemble or print it in workflow logs. |
 | `DATABASE_TIME_ZONE` | PostgreSQL timezone defining Unshelf's server calendar day. |
-| `DATABASE_NETWORK` | Private attachable overlay for the channel's managed PostgreSQL service. |
+| `DATABASE_NETWORK` | Trusted workflow literal selecting the channel's private attachable overlay; development and preview use `unshelf-nonprod-db`. |
 | `APP_NAME` | Dokploy-written runtime `appName`; selects the Compose project and isolated ingress network. Never supply or store it in GitHub configuration. |
 | `APPLICATION_NAME` | Unshelf's stable logical channel/resource identity; derived by the workflow and persisted in the Compose environment. |
 | `PUBLIC_ORIGIN` | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
@@ -83,6 +90,8 @@ not runtime configuration, and images are never promoted between channels.
 Preview `name`, `appName`, and Compose ID live on the Dokploy Compose record;
 the workflow derives or reads them for each run rather than storing dynamic
 identity values in GitHub variables, secrets, repository files, or a ledger.
+The non-production database network is different: its fixed, non-secret name is
+deliberate repository policy, bound visibly by both trusted workflows.
 
 ## Revision authority and Product CI
 
@@ -141,7 +150,8 @@ For a non-no-op attempt:
 
 1. Build and pass the coherent API/web digest pair.
 2. Call `compose.update` once with the complete trusted Compose configuration,
-   runtime environment, and both immutable references.
+   runtime environment, `DATABASE_NETWORK=unshelf-nonprod-db` for development,
+   and both immutable references.
 3. Call `compose.deploy` once with a unique title containing channel, full SHA,
    run ID, and run attempt.
 4. Poll only `deployment.allByCompose` for that exact title. Allow up to ten
@@ -194,7 +204,8 @@ A new resource requires:
 1. `compose.create` with the exact logical `name` and requested `appName` base,
    capturing and validating the returned Compose ID and runtime `appName`;
 2. one complete `compose.update` with trusted Compose, environment, isolation,
-   `APPLICATION_NAME`, public origin, and the digest pair, omitting `appName`;
+   `APPLICATION_NAME`, `DATABASE_NETWORK=unshelf-nonprod-db`, public origin, and
+   the digest pair, omitting `appName`;
 3. Domain reconciliation by Compose ID for the stable host: preserve the exact
    `/api` and `/` records, create either when missing, and fail without deleting
    on a duplicate or conflict; and
@@ -321,10 +332,12 @@ even where non-production values happen to be equal.
 | Variable | `DOKPLOY_DEVELOPMENT_COMPOSE_ID` | Stable ID of the accepted development Compose resource. |
 | Variable | `DEVELOPMENT_PUBLIC_ORIGIN` | Exact development HTTPS origin. |
 | Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Non-owner identity restricted to the non-production project. |
-| Secret | `DOKPLOY_DEVELOPMENT_COMPOSE_ENV` | Complete development runtime environment except workflow-bound images and public origin. |
+| Secret | `DOKPLOY_DEVELOPMENT_COMPOSE_ENV` | Complete sensitive development runtime environment except workflow-bound images, public origin, and `DATABASE_NETWORK`. |
 
 Retain the aggregate Compose-environment secret initially. Its contents remain
 runtime configuration even though the custom control-plane adapter disappears.
+Remove any stored `DATABASE_NETWORK` line from it when the trusted workflow
+begins binding the accepted literal.
 
 ### Preview environment created
 
@@ -334,11 +347,12 @@ runtime configuration even though the custom control-plane adapter disappears.
 | Variable | `DOKPLOY_PREVIEW_ENV_ID` | Fixed Dokploy environment in which preview resources are searched and created. |
 | Variable | `DOKPLOY_PREVIEW_DOMAIN_SUFFIX` | Trusted suffix used to derive `pr-<number>` hosts. |
 | Secret | `DOKPLOY_NONPRODUCTION_API_KEY` | Same project-scoped value, independently stored in preview scope. |
-| Secret | `DOKPLOY_PREVIEW_COMPOSE_ENV` | Preview runtime environment with `MIGRATION_MODE=verify` and the accepted shared database superuser. |
+| Secret | `DOKPLOY_PREVIEW_COMPOSE_ENV` | Sensitive preview runtime environment with `MIGRATION_MODE=verify` and the accepted shared database superuser, excluding `DATABASE_NETWORK`. |
 
 The workflow injects per-preview images, logical `APPLICATION_NAME`, and public
-origin; they do not belong in the aggregate secret. Dokploy derives `APP_NAME`
-from its stored runtime `appName`; neither runtime value is GitHub configuration.
+origin; it also injects the trusted `unshelf-nonprod-db` network literal. These
+values do not belong in the aggregate secret. Dokploy derives `APP_NAME` from
+its stored runtime `appName`; neither runtime value is GitHub configuration.
 
 ### Production environment populated later
 
@@ -409,9 +423,11 @@ versions/digests and use a disposable preview-shaped resource to prove:
 4. accepted `compose.create` fields, exact logical `name`, returned Compose ID,
    six-character-suffixed runtime `appName`, and stable read-back of all three;
 5. complete raw Compose/environment/isolation update behavior;
-6. the private database-network attachment, isolated application ingress, and
-   password-authenticated local access through the intentional non-production
-   PostgreSQL TCP 5432 endpoint;
+6. installed `network.create` and `postgres.update` support, read-back of the
+   dedicated `unshelf-nonprod-db` attachment as PostgreSQL's only Swarm network,
+   persistence across an ordinary PostgreSQL redeploy, isolated application
+   ingress, and password-authenticated local access through the intentional
+   non-production PostgreSQL TCP 5432 endpoint;
 7. exact-name search projection, duplicate ambiguity failure, record-count
    admission, and last-healthy marker persistence;
 8. bounded reconciliation of two same-host Domain records and trusted HTTPS
@@ -426,6 +442,12 @@ versions/digests and use a disposable preview-shaped resource to prove:
 Stop for review on any unsupported field, ambiguous identity, failed isolation,
 untrusted transport, or capacity limit. This compatibility check is disposable
 acceptance evidence, not a new control plane.
+
+The installed v0.29.14 image lacks the Networks page present in its source tag.
+Use the trusted API only after a sanitized capability preflight. If it cannot
+create the attachable overlay or persist the absolute PostgreSQL
+`networkSwarm` attachment, stop without changing the Compose fixture. Do not
+substitute a manual Docker network or service update.
 
 The intentional non-production PostgreSQL endpoint is not by itself failed
 isolation. For that gate, record only that the exact managed service retains its
@@ -449,15 +471,34 @@ Record only redacted stable identifiers for:
 - the currently deployed source/digests and health; and
 - the current Dokploy unused-image-cleanup setting.
 
-The non-production database overlay was historically attached manually. Verify
-it in the PostgreSQL service spec, not just a running container. A Dokploy
-Rebuild may drop an attachment that Dokploy does not own.
+Read-only inspection on 2026-08-23 found the retained PostgreSQL service on the
+attachable overlay `dokploy-network`, shared by three Swarm services. The
+configured application overlay `unshelf-dbdev` did not exist. Treat that as
+network-boundary drift: changing Compose to the shared network may clear the
+immediate error but does not satisfy the environment-specific private boundary.
 
 ### 2. Reuse or repair development
 
 Prefer the existing development Compose resource, domains, managed PostgreSQL
-service, network, and GitHub Environment. Repair installed-version or network
-drift in place when safe.
+service, and GitHub Environment. Repair the network boundary before any
+disposable application deploy:
+
+1. prove the installed API accepts the pinned network and PostgreSQL update
+   fields without exposing raw responses;
+2. create the `unshelf-nonprod-db` overlay through Dokploy with overlay driver
+   and `attachable: true`;
+3. persist an absolute PostgreSQL `networkSwarm` list containing only that
+   target, with no alias, while preserving the intentional published port;
+4. redeploy PostgreSQL normally and verify the saved configuration plus service
+   spec still contain exactly that network;
+5. prove authenticated local TCP 5432 access still works and invalid
+   authentication is rejected; and
+6. only then set the disposable development/preview Compose environment to
+   `DATABASE_NETWORK=unshelf-nonprod-db` and continue the compatibility gate.
+
+If any mutation or read-back differs, stop and leave the application fixture
+unchanged. Never rebuild or replace the retained database merely to repair its
+network attachment.
 
 Preserve the managed service's TCP 5432 publication while direct local
 development depends on it. Its presence is not drift and does not require
