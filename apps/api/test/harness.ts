@@ -25,6 +25,10 @@ import {
   unavailableYouTubeClient,
   type YouTubeClient,
 } from "../src/discover/youtube-client";
+import {
+  createDiscoverAcquisitionTick,
+  type DiscoverAcquisitionTick,
+} from "../src/discover/scheduled-acquisition";
 
 /**
  * The committed migration folder, resolved from this file rather than the
@@ -57,6 +61,7 @@ export interface TestApp {
   app: Express;
   pool: Pool;
   logger: CollectingLogger;
+  runDiscoverAcquisitionTick: DiscoverAcquisitionTick;
   stop: () => Promise<void>;
 }
 
@@ -228,11 +233,17 @@ function runningTestApp({
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
   const app = createApp(db, [auth], { logger, youtubeClient, now });
+  const runDiscoverAcquisitionTick = createDiscoverAcquisitionTick({
+    db,
+    youtubeClient,
+    now,
+  });
 
   return {
     app,
     pool: db.$client,
     logger,
+    runDiscoverAcquisitionTick,
     stop: async () => {
       await db.$client.end();
       await container.stop();

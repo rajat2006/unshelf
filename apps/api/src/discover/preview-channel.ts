@@ -3,7 +3,8 @@ import type {
   DiscoverProviderTargetId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
-import { discoverProviderResults, discoverProviderTargets } from "../schema";
+import { discoverProviderTargets } from "../schema";
+import { upsertProviderVideos } from "./upsert-provider-videos";
 import type { YouTubeClient, YouTubeFailure } from "./youtube-client";
 
 export type PreviewChannelResult =
@@ -41,6 +42,7 @@ export async function previewChannel({
       .values({
         provider: "youtube",
         externalId: resolved.channel.externalId,
+        nextFetchAt: now,
         ...channelMetadata,
       })
       .onConflictDoUpdate({
@@ -54,34 +56,12 @@ export async function previewChannel({
       })
       .returning({ id: discoverProviderTargets.id });
 
-    for (const video of acquired.videos) {
-      const metadata = {
-        source: video.source,
-        title: video.title,
-        thumbnailUrl: video.thumbnailUrl,
-        publishedAt: new Date(video.publishedAt),
-        durationSeconds: video.durationSeconds,
-        updatedAt: now,
-      };
-      await tx
-        .insert(discoverProviderResults)
-        .values({
-          targetId: target.id,
-          provider: "youtube",
-          externalId: video.externalId,
-          ...metadata,
-        })
-        .onConflictDoUpdate({
-          target: [
-            discoverProviderResults.provider,
-            discoverProviderResults.externalId,
-          ],
-          set: {
-            targetId: target.id,
-            ...metadata,
-          },
-        });
-    }
+    await upsertProviderVideos({
+      tx,
+      targetId: target.id,
+      videos: acquired.videos,
+      updatedAt: now,
+    });
 
     return {
       ok: true,

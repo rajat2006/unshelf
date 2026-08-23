@@ -79,6 +79,13 @@ export const discoverProviderTargets = pgTable(
     title: text("title").notNull(),
     thumbnailUrl: text("thumbnail_url"),
     uploadsPlaylistId: text("uploads_playlist_id").notNull(),
+    nextFetchAt: timestamp("next_fetch_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    lastFetchOutcome: text("last_fetch_outcome"),
+    claimToken: uuid("claim_token"),
+    claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -94,6 +101,19 @@ export const discoverProviderTargets = pgTable(
     check(
       "discover_provider_targets_provider_check",
       sql`${table.provider} = 'youtube'`,
+    ),
+    check(
+      "discover_provider_targets_fetch_outcome_check",
+      sql`${table.lastFetchOutcome} is null or ${table.lastFetchOutcome} in ('complete', 'partial', 'failed', 'throttled')`,
+    ),
+    check(
+      "discover_provider_targets_claim_check",
+      sql`(${table.claimToken} is null and ${table.claimExpiresAt} is null)
+        or (${table.claimToken} is not null and ${table.claimExpiresAt} is not null)`,
+    ),
+    index("discover_provider_targets_due_idx").on(
+      table.nextFetchAt,
+      table.claimExpiresAt,
     ),
   ],
 );

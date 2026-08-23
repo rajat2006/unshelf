@@ -26,7 +26,8 @@ export type ResolveChannelResult =
   { ok: true; channel: YouTubeChannel } | { ok: false; error: YouTubeFailure };
 
 export type FetchChannelVideosResult =
-  { ok: true; videos: YouTubeVideo[] } | { ok: false; error: YouTubeFailure };
+  | { ok: true; videos: YouTubeVideo[]; outcome?: "complete" | "partial" }
+  | { ok: false; error: YouTubeFailure };
 
 export interface YouTubeClient {
   resolveChannel(input: { url: string }): Promise<ResolveChannelResult>;

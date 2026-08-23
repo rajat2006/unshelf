@@ -5,6 +5,8 @@ import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
 import { createYouTubeClient } from "./discover/youtube-client";
+import { createDiscoverAcquisitionTick } from "./discover/scheduled-acquisition";
+import { createDiscoverScheduler } from "./discover/scheduler";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;
@@ -70,16 +72,22 @@ await superviseApiProcess({
 
     // The API process no longer touches the schema (#104, ADR-0015). Migrations
     // run as a one-shot step gated ahead of this service in the deploy path.
+    const youtubeClient = createYouTubeClient({
+      apiKey: youtubeApiKey,
+      fetch,
+    });
+    const now = () => new Date();
     const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
-      youtubeClient: createYouTubeClient({
-        apiKey: youtubeApiKey,
-        fetch,
-      }),
-      now: () => new Date(),
+      youtubeClient,
+      now,
+    });
+    const scheduler = createDiscoverScheduler({
+      tick: createDiscoverAcquisitionTick({ db, youtubeClient, now }),
+      logger,
     });
 
-    return startApiServer(app, port, logger);
+    return startApiServer(app, port, logger, { scheduler });
   },
 });
