@@ -13,9 +13,7 @@ const objects = (value) => {
 function selectPreview(input) {
   const expectedName = `unshelf-pr-${input.prNumber}`;
   if (input.logicalName !== expectedName) fail("invalid logical preview name");
-  const records = objects(input.records).filter(
-    (record) => typeof record.composeId === "string" && typeof record.name === "string",
-  );
+  const records = objects(input.records).filter((record) => typeof record.name === "string");
   const exact = records.filter((record) => record.name === input.logicalName);
   if (exact.length > 1) fail("ambiguous exact preview identity");
   if (exact.length === 0) {
@@ -24,7 +22,10 @@ function selectPreview(input) {
     return { action: "create" };
   }
   const record = exact[0];
-  if (!new RegExp(`^${expectedName}-[A-Za-z0-9_-]{6}$`).test(record.appName ?? "")) {
+  if (
+    typeof record.composeId !== "string" ||
+    !new RegExp(`^${expectedName}-[A-Za-z0-9_-]{6}$`).test(record.appName ?? "")
+  ) {
     fail("invalid runtime preview identity");
   }
   return { action: "refresh", composeId: record.composeId, runtimeName: record.appName };

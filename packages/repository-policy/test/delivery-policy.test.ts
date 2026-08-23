@@ -27,10 +27,7 @@ describe("direct delivery policy", () => {
       logicalName: "unshelf-pr-44",
       prNumber: 44,
       records: {
-        items: [1, 2, 3].map((number) => ({
-          composeId: String(number),
-          name: `unshelf-pr-${number}`,
-        })),
+        items: [1, 2, 3].map((number) => ({ name: `unshelf-pr-${number}` })),
       },
     });
     expect(refused.status).not.toBe(0);
@@ -43,6 +40,7 @@ describe("direct delivery policy", () => {
         { composeId: "two", name: "unshelf-pr-44", appName: "unshelf-pr-44-ghijkl" },
       ],
       [{ composeId: "one", name: "unshelf-pr-44" }],
+      [{ name: "unshelf-pr-44", appName: "unshelf-pr-44-abcdef" }],
     ]) {
       const result = runPolicy("select-preview", {
         logicalName: "unshelf-pr-44",

@@ -13,6 +13,10 @@ function inspectRepositoryWorkflow(name: string) {
   );
 }
 
+function readRepositoryWorkflow(name: string) {
+  return readFileSync(new URL(name, workflowsDirectory), "utf8");
+}
+
 describe("deployment workflow contract inspection", () => {
   it("normalizes the workflow policy fields used by deployment contract tests", () => {
     const workflow = inspectWorkflow(`
@@ -333,6 +337,9 @@ jobs:
     expect(deploy).toContain("domain.create");
     expect(deploy).toContain("unshelf:last-healthy");
     expect(deploy).not.toContain("compose.delete");
+    expect(readRepositoryWorkflow("delivery-preview.yml")).toMatch(
+      /name: Create or refresh the exact preview[\s\S]*?env:[\s\S]*?TRUSTED_SHA: \$\{\{ needs\.authorize\.outputs\.trusted_sha \}\}/,
+    );
   });
 
   it("keeps production rerun and durable release policy visible", () => {
