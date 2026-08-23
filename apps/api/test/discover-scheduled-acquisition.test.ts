@@ -130,6 +130,41 @@ describe("scheduled Discover acquisition", () => {
     );
   });
 
+  it("does not let a later preview postpone due Candidate fan-out", async () => {
+    await previewAndFollow("clerk_scheduled_existing_follower");
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    fetchChannelVideos.mockResolvedValueOnce({
+      ok: true,
+      videos: [
+        {
+          ...scheduledVideo,
+          externalId: "preview-shared-video",
+          title: "Shared by another preview",
+          publishedAt: "2026-08-22T13:00:00.000Z",
+          source: "https://www.youtube.com/watch?v=preview-shared-video",
+        },
+      ],
+    });
+
+    await request(app)
+      .post("/api/discover/preview")
+      .set(TEST_USER_HEADER, "clerk_scheduled_preview_only")
+      .send({ url: "https://youtube.com/@scheduled" })
+      .expect(200);
+
+    expect(
+      (await readWorkspace("clerk_scheduled_existing_follower")).candidates,
+    ).toEqual([]);
+    await harness.runDiscoverAcquisitionTick();
+
+    expect(fetchChannelVideos).toHaveBeenCalledTimes(3);
+    expect(
+      (await readWorkspace("clerk_scheduled_existing_follower")).candidates.map(
+        ({ video }) => video.externalId,
+      ),
+    ).toEqual(["preview-shared-video", "scheduled-video"]);
+  });
+
   it("publishes a partial result while keeping older videos out of Candidate intake", async () => {
     await previewAndFollow("clerk_scheduled_partial");
     currentTime = new Date("2026-08-23T01:00:00.000Z");

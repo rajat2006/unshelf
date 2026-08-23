@@ -36,9 +36,6 @@ export async function previewChannel({
       title: resolved.channel.title,
       thumbnailUrl: resolved.channel.thumbnailUrl,
       uploadsPlaylistId: resolved.channel.uploadsPlaylistId,
-      nextFetchAt: nextDiscoverFetchAt(now),
-      lastFetchedAt: now,
-      lastFetchOutcome: acquired.outcome ?? "complete",
       updatedAt: now,
     };
     const [target] = await tx
@@ -47,6 +44,9 @@ export async function previewChannel({
         provider: "youtube",
         externalId: resolved.channel.externalId,
         ...channelMetadata,
+        nextFetchAt: nextDiscoverFetchAt(now),
+        lastFetchedAt: now,
+        lastFetchOutcome: acquired.outcome ?? "complete",
       })
       .onConflictDoUpdate({
         target: [
