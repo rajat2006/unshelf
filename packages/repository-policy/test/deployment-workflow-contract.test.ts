@@ -155,6 +155,7 @@ jobs:
       environment: undefined,
       inheritsSecrets: false,
       needs: [],
+      permissions: undefined,
       secretReferences: [],
     });
   });
@@ -185,6 +186,23 @@ jobs:
       cancelInProgress: true,
       group: "candidate-${{ inputs.source_event }}-${{ inputs.head_branch }}",
     });
+    expect(workflow.jobs.preflight).toMatchObject({
+      checkouts: [
+        {
+          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          persistCredentials: false,
+          ref: "dev",
+        },
+      ],
+      environment: undefined,
+      inheritsSecrets: false,
+      needs: [],
+      permissions: {
+        actions: "read",
+        contents: "read",
+        packages: "read",
+      },
+    });
     expect(workflow.jobs["api-image"]).toMatchObject({
       checkouts: [
         {
@@ -212,7 +230,15 @@ jobs:
       permissions: { contents: "read", packages: "write" },
     });
     expect(workflow.jobs.candidate).toMatchObject({
+      checkouts: [
+        {
+          action: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          persistCredentials: false,
+          ref: "dev",
+        },
+      ],
       environment: undefined,
+      inheritsSecrets: false,
       needs: ["api-image", "web-image"],
       permissions: { contents: "read", packages: "read" },
     });
