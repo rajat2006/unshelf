@@ -117,8 +117,15 @@
     {
       "idx": 16,
       "version": "7",
+      "when": 1786898198962,
+      "tag": "0016_fresh_scream",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
       "when": 1787494269659,
-      "tag": "0016_oval_joystick",
+      "tag": "0017_safe_discover_upgrade",
       "breakpoints": true
     }
   ]
