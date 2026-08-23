@@ -253,5 +253,5 @@ jobs:
         run: |
           started="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .run_started_at)"
           duration="$(( $(date +%s) - $(date -d "$started" +%s) ))s"
-          final_state="${{ needs.deploy.result }}"
+          final_state=success; [[ "$GATES" == *failure* ]] && final_state=failure; [[ "$GATES" == *cancelled* ]] && final_state=cancelled
           printf '### Development final evidence\n\n- Channel: development\n- Final state: `%s`\n- Selected SHA: `%s`\n- Digests: API `%s`, web `%s`\n- Gates/health: `%s`\n- Duration: `%s`\n- Compose: `%s` (`%s`, runtime `%s`)\n' "$final_state" "${SOURCE_SHA:-unavailable}" "${API_DIGEST:-not-built}" "${WEB_DIGEST:-not-built}" "$GATES" "$duration" "${COMPOSE_NAME:-unresolved}" "${COMPOSE_ID:-unresolved}" "${RUNTIME_NAME:-unresolved}" >>"$GITHUB_STEP_SUMMARY"
