@@ -66,6 +66,78 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+/** Current shared public metadata for one immutable YouTube channel identity. */
+export const discoverProviderTargets = pgTable(
+  "discover_provider_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    title: text("title").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    uploadsPlaylistId: text("uploads_playlist_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_provider_targets_identity_unique").on(
+      table.provider,
+      table.externalId,
+    ),
+    check(
+      "discover_provider_targets_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+  ],
+);
+
+/** Current shared public metadata for one exact YouTube video identity. */
+export const discoverProviderResults = pgTable(
+  "discover_provider_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetId: uuid("target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    source: text("source").notNull(),
+    title: text("title").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_provider_results_identity_unique").on(
+      table.provider,
+      table.externalId,
+    ),
+    index("discover_provider_results_target_published_idx").on(
+      table.targetId,
+      table.publishedAt,
+    ),
+    check(
+      "discover_provider_results_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+    check(
+      "discover_provider_results_duration_check",
+      sql`${table.durationSeconds} >= 0`,
+    ),
+  ],
+);
+
 /**
  * The Item spine (ADR-0003): one table for every Type, scoped to a User. All is
  * not a table — it is the query "every item where user_id = me", so this is the

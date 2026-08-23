@@ -51,6 +51,7 @@ function resolveDeploymentCompose(): ResolvedCompose {
         APPLICATION_NAME: "unshelf-development",
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
+        YOUTUBE_API_KEY: "test-youtube-api-key",
         MIGRATION_MODE: "apply",
       },
     },
@@ -119,6 +120,7 @@ describe("deployment Compose contract", () => {
       LOG_LEVEL: "info",
       PORT: "3001",
       PUBLIC_ORIGIN: "https://generated.example.com",
+      YOUTUBE_API_KEY: "test-youtube-api-key",
     });
     expect(services.web?.environment).toBeUndefined();
   });

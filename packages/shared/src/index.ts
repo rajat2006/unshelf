@@ -93,6 +93,36 @@ export type DailyFocusId = string & {
   readonly [identifierBrand]: "DailyFocusId";
 };
 
+export type DiscoverProviderTargetId = string & {
+  readonly [identifierBrand]: "DiscoverProviderTargetId";
+};
+
+/** Shared public YouTube channel facts returned by a transient preview. */
+export interface DiscoverPreviewChannel {
+  externalId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  canonicalUrl: string;
+}
+
+/** Shared public YouTube video facts used by preview and later Candidate cards. */
+export interface DiscoverPreviewVideo {
+  externalId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  publishedAt: string;
+  durationSeconds: number;
+  source: string;
+  channelExternalId: string;
+  channelTitle: string;
+}
+
+export interface DiscoverPreview {
+  targetId: DiscoverProviderTargetId;
+  channel: DiscoverPreviewChannel;
+  videos: DiscoverPreviewVideo[];
+}
+
 /** The authenticated database calendar document used for Today-dependent UI. */
 export interface ServerCalendar {
   /** Canonical calendar date in the explicitly configured database timezone. */
@@ -129,6 +159,7 @@ export type {
   AddDailyFocusItemRequest,
   DailyPlanningQuery,
   SuppressDailyPlanningItemRequest,
+  DiscoverPreviewRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */

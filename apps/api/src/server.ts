@@ -4,6 +4,7 @@ import { createClerkAuth } from "./middleware/auth";
 import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
+import { createYouTubeClient } from "./discover/youtube-client";
 
 let logger: Logger;
 let logConfigurationFailure: unknown;
@@ -21,6 +22,7 @@ try {
 const diagnosticSecrets = [
   process.env.DATABASE_URL,
   process.env.CLERK_SECRET_KEY,
+  process.env.YOUTUBE_API_KEY,
 ].filter((value): value is string => value !== undefined);
 
 const runtime: ProcessRuntime = {
@@ -58,6 +60,10 @@ await superviseApiProcess({
     if (publicOrigin === undefined) {
       throw new Error("PUBLIC_ORIGIN is required");
     }
+    const youtubeApiKey = process.env.YOUTUBE_API_KEY;
+    if (!youtubeApiKey) {
+      throw new Error("YOUTUBE_API_KEY is required");
+    }
 
     const port = Number(process.env.PORT ?? 3001);
     const db = createDatabase(databaseConfig);
@@ -67,6 +73,11 @@ await superviseApiProcess({
     const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
+      youtubeClient: createYouTubeClient({
+        apiKey: youtubeApiKey,
+        fetch,
+      }),
+      now: () => new Date(),
     });
 
     return startApiServer(app, port, logger);

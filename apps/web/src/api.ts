@@ -10,6 +10,8 @@ import type {
   DailyFocus,
   DailyPlanning,
   DailyPlanningQuery,
+  DiscoverPreview,
+  DiscoverPreviewRequest,
   Item,
   ItemDetail,
   ItemId,
@@ -66,8 +68,46 @@ async function authenticatedRequest(
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...init, headers });
-  if (!response.ok) throw new Error(`api responded ${response.status}`);
+  if (!response.ok) throw new ApiResponseError(response.status);
   return response;
+}
+
+class ApiResponseError extends Error {
+  constructor(readonly status: number) {
+    super(`api responded ${status}`);
+  }
+}
+
+export type DiscoverPreviewFailure =
+  "invalid" | "not_found" | "throttled" | "temporary";
+
+export class DiscoverPreviewError extends Error {
+  constructor(readonly kind: DiscoverPreviewFailure) {
+    super(`discover preview failed: ${kind}`);
+  }
+}
+
+/** Resolve one public YouTube channel into an ephemeral review experience. */
+export async function fetchDiscoverPreview(
+  user: CurrentUser,
+  url: string,
+): Promise<DiscoverPreview> {
+  const body: DiscoverPreviewRequest = { url };
+  try {
+    return await requestJson<DiscoverPreview>(user, "/api/discover/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (!(error instanceof ApiResponseError)) {
+      throw new DiscoverPreviewError("temporary");
+    }
+    if (error.status === 400) throw new DiscoverPreviewError("invalid");
+    if (error.status === 404) throw new DiscoverPreviewError("not_found");
+    if (error.status === 429) throw new DiscoverPreviewError("throttled");
+    throw new DiscoverPreviewError("temporary");
+  }
 }
 
 /** Fetch All — every Item belonging to the current User. */

@@ -21,6 +21,10 @@ import {
   createCollectingLogger,
   type CollectingLogger,
 } from "../src/logging/testing";
+import {
+  unavailableYouTubeClient,
+  type YouTubeClient,
+} from "../src/discover/youtube-client";
 
 /**
  * The committed migration folder, resolved from this file rather than the
@@ -133,7 +137,14 @@ export async function seedLegacyLearningPlanFixture(
 export async function startTestApp({
   identify = identifyFromTestHeader,
   timeZone = "UTC",
-}: { identify?: Identify; timeZone?: string } = {}): Promise<TestApp> {
+  youtubeClient = unavailableYouTubeClient,
+  now = () => new Date("2026-08-23T00:00:00.000Z"),
+}: {
+  identify?: Identify;
+  timeZone?: string;
+  youtubeClient?: YouTubeClient;
+  now?: () => Date;
+} = {}): Promise<TestApp> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:16-alpine",
   ).start();
@@ -143,7 +154,7 @@ export async function startTestApp({
   });
   await migrateTestDatabase(db);
 
-  return runningTestApp({ container, db, identify });
+  return runningTestApp({ container, db, identify, youtubeClient, now });
 }
 
 /**
@@ -181,7 +192,13 @@ export async function startTestAppWithLegacyFixture(
   );
   await seedLegacyDatabase(db);
   await applyMigrationFiles(db, migrations.slice(learningPlanMigrationIndex));
-  return runningTestApp({ container, db, identify });
+  return runningTestApp({
+    container,
+    db,
+    identify,
+    youtubeClient: unavailableYouTubeClient,
+    now: () => new Date("2026-08-23T00:00:00.000Z"),
+  });
 }
 
 async function applyMigrationFiles(
@@ -199,14 +216,18 @@ function runningTestApp({
   container,
   db,
   identify,
+  youtubeClient,
+  now,
 }: {
   container: StartedPostgreSqlContainer;
   db: DatabaseWithClient;
   identify: Identify;
+  youtubeClient: YouTubeClient;
+  now: () => Date;
 }): TestApp {
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
-  const app = createApp(db, [auth], { logger });
+  const app = createApp(db, [auth], { logger, youtubeClient, now });
 
   return {
     app,

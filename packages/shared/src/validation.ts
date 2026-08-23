@@ -69,6 +69,10 @@ export const suppressDailyPlanningItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
 
+export const discoverPreviewRequestSchema = z.strictObject({
+  url: z.string().trim().min(1),
+});
+
 export const createPartsRequestSchema = z.strictObject({
   titles: z
     .array(z.string())
@@ -153,6 +157,9 @@ export type AddDailyFocusItemRequest = z.infer<
 export type DailyPlanningQuery = z.infer<typeof dailyPlanningQuerySchema>;
 export type SuppressDailyPlanningItemRequest = z.infer<
   typeof suppressDailyPlanningItemRequestSchema
+>;
+export type DiscoverPreviewRequest = z.infer<
+  typeof discoverPreviewRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;
