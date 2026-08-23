@@ -2,16 +2,18 @@ import { and, eq } from "drizzle-orm";
 import {
   CandidateState,
   type DiscoverCandidateId,
-  type ItemId,
+  type KeepDiscoverCandidateResult,
   type KeepDiscoverCandidateRequest,
   type UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { findOrCreateProviderItem } from "../items/provider-identities";
+import { getItem } from "../items/repository";
 import { discoverCandidates, discoverProviderResults } from "../schema";
+import { readDiscoverCandidate } from "./read-workspace";
 
 export type KeepCandidateResult =
-  | { ok: true; itemId: ItemId }
+  | { ok: true; response: KeepDiscoverCandidateResult }
   | { ok: false; error: "candidate_not_found" | "candidate_conflict" };
 
 /** Resolve one owned pending Candidate through the Library identity boundary. */
@@ -28,11 +30,10 @@ export async function keepCandidate({
   input: KeepDiscoverCandidateRequest;
   now: Date;
 }): Promise<KeepCandidateResult> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const rows = await tx
       .select({
         state: discoverCandidates.state,
-        provider: discoverProviderResults.provider,
         externalId: discoverProviderResults.externalId,
         source: discoverProviderResults.source,
       })
@@ -49,16 +50,20 @@ export async function keepCandidate({
       )
       .for("update");
     const candidate = rows[0];
-    if (!candidate) return { ok: false, error: "candidate_not_found" };
+    if (!candidate) {
+      return { ok: false as const, error: "candidate_not_found" as const };
+    }
     if (candidate.state === CandidateState.Rejected) {
-      return { ok: false, error: "candidate_conflict" };
+      return { ok: false as const, error: "candidate_conflict" as const };
     }
 
     const itemId = await findOrCreateProviderItem({
       tx,
       userId,
-      provider: candidate.provider,
-      externalId: candidate.externalId,
+      identity: {
+        provider: "youtube",
+        externalId: candidate.externalId,
+      },
       title: input.title,
       type: input.type,
       source: candidate.source,
@@ -74,6 +79,15 @@ export async function keepCandidate({
           ),
         );
     }
-    return { ok: true, itemId };
+    return { ok: true as const, itemId };
   });
+  if (!result.ok) return result;
+  const [candidate, item] = await Promise.all([
+    readDiscoverCandidate({ db, userId, candidateId }),
+    getItem(db, userId, result.itemId),
+  ]);
+  if (!candidate || !item) {
+    throw new Error("kept Candidate response is unavailable");
+  }
+  return { ok: true, response: { candidate, item } };
 }

@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
+import { drizzle } from "drizzle-orm/node-postgres";
 import {
   Type,
   type DiscoverPreview,
   type DiscoverWorkspace,
 } from "@unshelf/shared";
 import type { YouTubeClient } from "../src/discover/youtube-client";
+import { findOrCreateProviderItem } from "../src/items/provider-identities";
+import * as schema from "../src/schema";
 import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 
 let harness: TestApp;
@@ -297,5 +300,42 @@ describe("Discover Candidate decisions", () => {
     ).rejects.toMatchObject({
       constraint: "item_provider_identities_item_owner_fk",
     });
+  });
+
+  it("serializes competing Library claims for one Provider identity", async () => {
+    const user = "clerk_identity_race";
+    await request(app).get("/api/items").set(TEST_USER_HEADER, user);
+    const owner = await harness.pool.query<{ id: string }>(
+      "SELECT id FROM users WHERE clerk_user_id = $1",
+      [user],
+    );
+    const db = drizzle(harness.pool, { schema });
+    const userId = owner.rows[0].id as Parameters<
+      typeof findOrCreateProviderItem
+    >[0]["userId"];
+
+    const itemIds = await Promise.all(
+      ["First claim", "Concurrent claim"].map((title) =>
+        db.transaction((tx) =>
+          findOrCreateProviderItem({
+            tx,
+            userId,
+            identity: { provider: "youtube", externalId: "raced-video" },
+            title,
+            type: Type.Video,
+            source: "https://www.youtube.com/watch?v=raced-video",
+          }),
+        ),
+      ),
+    );
+    const persisted = await harness.pool.query<{ item_count: string }>(
+      `SELECT count(DISTINCT item_id) AS item_count
+       FROM item_provider_identities
+       WHERE user_id = $1 AND provider = 'youtube' AND external_id = $2`,
+      [userId, "raced-video"],
+    );
+
+    expect(itemIds[0]).toBe(itemIds[1]);
+    expect(persisted.rows[0].item_count).toBe("1");
   });
 });

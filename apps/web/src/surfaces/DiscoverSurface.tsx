@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   ITEM_TYPES,
   Type,
@@ -602,6 +608,16 @@ function workspaceWithoutFollow(
 }
 
 function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
+  return <VideoCardLayout video={video} />;
+}
+
+function VideoCardLayout({
+  video,
+  children,
+}: {
+  video: DiscoverPreviewVideo;
+  children?: ReactNode;
+}) {
   return (
     <article
       aria-label={video.title}
@@ -637,6 +653,7 @@ function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
           <span aria-hidden="true">·</span>
           <span>{formatDuration(video.durationSeconds)}</span>
         </p>
+        {children}
       </div>
     </article>
   );
@@ -656,7 +673,7 @@ function CandidateCard({
   const [title, setTitle] = useState(video.title);
   const [type, setType] = useState<Type>(Type.Video);
   const [titleError, setTitleError] = useState(false);
-  const [decision, setDecision] = useState<
+  const [candidateActionState, setCandidateActionState] = useState<
     "idle" | "keeping" | "rejecting" | "conflict" | "error"
   >("idle");
 
@@ -668,7 +685,7 @@ function CandidateCard({
       return;
     }
     setTitleError(false);
-    setDecision("keeping");
+    setCandidateActionState("keeping");
     try {
       await keepDiscoverCandidate(user, {
         candidateId: candidate.id,
@@ -678,62 +695,22 @@ function CandidateCard({
       setKeepOpen(false);
       onResolved();
     } catch (error) {
-      setDecision(
-        error instanceof DiscoverCandidateDecisionError &&
-          error.kind === "conflict"
-          ? "conflict"
-          : "error",
-      );
+      setCandidateActionState(candidateActionFailure(error));
     }
   };
 
   const reject = async () => {
-    setDecision("rejecting");
+    setCandidateActionState("rejecting");
     try {
       await rejectDiscoverCandidate(user, candidate.id);
       onResolved();
     } catch (error) {
-      setDecision(
-        error instanceof DiscoverCandidateDecisionError &&
-          error.kind === "conflict"
-          ? "conflict"
-          : "error",
-      );
+      setCandidateActionState(candidateActionFailure(error));
     }
   };
 
   return (
-    <article aria-label={video.title} className="grid overflow-hidden rounded-[var(--radius-panel)] border bg-card">
-      {video.thumbnailUrl ? (
-        <img
-          className="aspect-video w-full object-cover"
-          src={video.thumbnailUrl}
-          alt={video.title}
-        />
-      ) : (
-        <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
-          No thumbnail
-        </div>
-      )}
-      <div className="grid content-start gap-2 p-4">
-        <a
-          className="font-serif text-lg font-semibold hover:underline"
-          href={video.source}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {video.title}
-        </a>
-        <p className="m-0 text-sm text-muted-foreground">
-          {video.channelTitle}
-        </p>
-        <p className="m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-          <time dateTime={video.publishedAt}>
-            {formatPublishedAt(video.publishedAt)}
-          </time>
-          <span aria-hidden="true">·</span>
-          <span>{formatDuration(video.durationSeconds)}</span>
-        </p>
+    <VideoCardLayout video={video}>
         {candidate.libraryItem && (
           <p className="m-0 text-sm font-medium text-primary">
             Already in Library ·{" "}
@@ -742,19 +719,13 @@ function CandidateCard({
             </a>
           </p>
         )}
-        {(decision === "conflict" || decision === "error") && (
-          <Alert>
-            {decision === "conflict"
-              ? "This Candidate was already resolved another way."
-              : "The Candidate could not be resolved. Try again."}
-          </Alert>
-        )}
+        <CandidateActionAlert state={candidateActionState} action="Candidate" />
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             size="compact"
             onClick={() => {
-              setDecision("idle");
+              setCandidateActionState("idle");
               setKeepOpen(true);
             }}
           >
@@ -764,14 +735,13 @@ function CandidateCard({
             type="button"
             size="compact"
             variant="secondary"
-            loading={decision === "rejecting"}
+            loading={candidateActionState === "rejecting"}
             loadingLabel={`Rejecting ${video.title}…`}
             onClick={() => void reject()}
           >
             Reject {video.title}
           </Button>
         </div>
-      </div>
       <Dialog open={keepOpen} onOpenChange={setKeepOpen}>
         <DialogContent aria-describedby={`keep-description-${candidate.id}`}>
           <DialogHeader>
@@ -790,7 +760,7 @@ function CandidateCard({
                 id={`keep-title-${candidate.id}`}
                 value={title}
                 aria-invalid={titleError}
-                disabled={decision === "keeping"}
+                disabled={candidateActionState === "keeping"}
                 onChange={(event) => setTitle(event.target.value)}
               />
               {titleError && <FieldError>Enter a title.</FieldError>}
@@ -799,7 +769,7 @@ function CandidateCard({
               <FieldLabel htmlFor={`keep-type-${candidate.id}`}>Type</FieldLabel>
               <Select
                 value={type}
-                disabled={decision === "keeping"}
+                disabled={candidateActionState === "keeping"}
                 onValueChange={(value) => setType(value as Type)}
               >
                 <SelectTrigger id={`keep-type-${candidate.id}`} aria-label="Type">
@@ -814,17 +784,11 @@ function CandidateCard({
                 </SelectContent>
               </Select>
             </Field>
-            {(decision === "conflict" || decision === "error") && (
-              <Alert>
-                {decision === "conflict"
-                  ? "This Candidate was already resolved another way."
-                  : "Keep could not be completed. Try again."}
-              </Alert>
-            )}
+            <CandidateActionAlert state={candidateActionState} action="Keep" />
             <div>
               <Button
                 type="submit"
-                loading={decision === "keeping"}
+                loading={candidateActionState === "keeping"}
                 loadingLabel="Keeping Candidate…"
               >
                 Keep in Library
@@ -833,7 +797,35 @@ function CandidateCard({
           </form>
         </DialogContent>
       </Dialog>
-    </article>
+    </VideoCardLayout>
+  );
+}
+
+type CandidateActionFailure = "conflict" | "error";
+
+function candidateActionFailure(error: unknown): CandidateActionFailure {
+  return error instanceof DiscoverCandidateDecisionError &&
+    error.kind === "conflict"
+    ? "conflict"
+    : "error";
+}
+
+function CandidateActionAlert({
+  state,
+  action,
+}: {
+  state: "idle" | "keeping" | "rejecting" | CandidateActionFailure;
+  action: "Candidate" | "Keep";
+}) {
+  if (state !== "conflict" && state !== "error") return null;
+  return (
+    <Alert>
+      {state === "conflict"
+        ? "This Candidate was already resolved another way."
+        : action === "Keep"
+          ? "Keep could not be completed. Try again."
+          : "The Candidate could not be resolved. Try again."}
+    </Alert>
   );
 }
 

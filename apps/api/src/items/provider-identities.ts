@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { ItemId, Type, UserId } from "@unshelf/shared";
 import type { DatabaseTransaction } from "../db";
 import { itemProviderIdentities, items } from "../schema";
@@ -7,28 +7,38 @@ import { itemProviderIdentities, items } from "../schema";
 export async function findOrCreateProviderItem({
   tx,
   userId,
-  provider,
-  externalId,
+  identity,
   title,
   type,
   source,
 }: {
   tx: DatabaseTransaction;
   userId: UserId;
-  provider: string;
-  externalId: string;
+  identity: { provider: "youtube"; externalId: string };
   title: string;
   type: Type;
   source: string;
 }): Promise<ItemId> {
+  await tx.execute(sql`
+    select pg_advisory_xact_lock(
+      hashtextextended(
+        jsonb_build_array(
+          ${userId}::text,
+          ${identity.provider}::text,
+          ${identity.externalId}::text
+        )::text,
+        0
+      )
+    )
+  `);
   const existing = await tx
     .select({ itemId: itemProviderIdentities.itemId })
     .from(itemProviderIdentities)
     .where(
       and(
         eq(itemProviderIdentities.userId, userId),
-        eq(itemProviderIdentities.provider, provider),
-        eq(itemProviderIdentities.externalId, externalId),
+        eq(itemProviderIdentities.provider, identity.provider),
+        eq(itemProviderIdentities.externalId, identity.externalId),
       ),
     )
     .limit(1);
@@ -41,8 +51,8 @@ export async function findOrCreateProviderItem({
   const itemId = created[0].id as ItemId;
   await tx.insert(itemProviderIdentities).values({
     userId,
-    provider,
-    externalId,
+    provider: identity.provider,
+    externalId: identity.externalId,
     itemId,
   });
   return itemId;

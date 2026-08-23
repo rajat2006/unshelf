@@ -2,13 +2,15 @@ import { and, eq } from "drizzle-orm";
 import {
   CandidateState,
   type DiscoverCandidateId,
+  type DiscoverCandidate,
   type UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { discoverCandidates } from "../schema";
+import { readDiscoverCandidate } from "./read-workspace";
 
 export type RejectCandidateResult =
-  | { ok: true }
+  | { ok: true; response: DiscoverCandidate }
   | { ok: false; error: "candidate_not_found" | "candidate_conflict" };
 
 /** Resolve one owned pending Candidate without crossing into the Library. */
@@ -23,7 +25,7 @@ export async function rejectCandidate({
   candidateId: DiscoverCandidateId;
   now: Date;
 }): Promise<RejectCandidateResult> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const rows = await tx
       .select({ state: discoverCandidates.state })
       .from(discoverCandidates)
@@ -35,9 +37,11 @@ export async function rejectCandidate({
       )
       .for("update");
     const candidate = rows[0];
-    if (!candidate) return { ok: false, error: "candidate_not_found" };
+    if (!candidate) {
+      return { ok: false as const, error: "candidate_not_found" as const };
+    }
     if (candidate.state === CandidateState.Kept) {
-      return { ok: false, error: "candidate_conflict" };
+      return { ok: false as const, error: "candidate_conflict" as const };
     }
     if (candidate.state === CandidateState.Pending) {
       await tx
@@ -50,6 +54,10 @@ export async function rejectCandidate({
           ),
         );
     }
-    return { ok: true };
+    return { ok: true as const };
   });
+  if (!result.ok) return result;
+  const candidate = await readDiscoverCandidate({ db, userId, candidateId });
+  if (!candidate) throw new Error("rejected Candidate response is unavailable");
+  return { ok: true, response: candidate };
 }

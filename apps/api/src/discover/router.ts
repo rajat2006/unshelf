@@ -13,10 +13,9 @@ import { validateRequest } from "../middleware/validation";
 import { previewChannel } from "./preview-channel";
 import type { YouTubeClient, YouTubeFailure } from "./youtube-client";
 import { followChannel } from "./follow-channel";
-import { readDiscoverCandidate, readDiscoverWorkspace } from "./read-workspace";
+import { readDiscoverWorkspace } from "./read-workspace";
 import { unfollowChannel } from "./unfollow-channel";
 import { keepCandidate } from "./keep-candidate";
-import { getItem } from "../items/repository";
 import { rejectCandidate } from "./reject-candidate";
 
 /** Mount the authenticated Discover HTTP interface at `/api/discover`. */
@@ -116,13 +115,7 @@ export function createDiscoverRouter({
         res.status(status).json({ error: result.error });
         return;
       }
-      const item = await getItem(db, req.user!.id, result.itemId);
-      const candidate = await readDiscoverCandidate({
-        db,
-        userId: req.user!.id,
-        candidateId,
-      });
-      res.json({ candidate, item });
+      res.json(result.response);
     },
   );
   router.post(
@@ -147,12 +140,7 @@ export function createDiscoverRouter({
         res.status(status).json({ error: result.error });
         return;
       }
-      const candidate = await readDiscoverCandidate({
-        db,
-        userId: req.user!.id,
-        candidateId,
-      });
-      res.json(candidate);
+      res.json(result.response);
     },
   );
   router.post(
