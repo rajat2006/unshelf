@@ -55,6 +55,13 @@ export function createDiscoverAcquisitionTick({
             channel: target,
           });
           const completedAt = now();
+          const acquisitionLog = {
+            event: "unshelf.discover.acquisition.completed",
+            msg: "Discover channel acquisition completed",
+            targetId: target.id,
+            durationMilliseconds: completedAt.getTime() - claimedAt.getTime(),
+            retryCount: acquired.retryCount ?? 0,
+          };
           if (acquired.ok) {
             await publishAcquisition({
               db,
@@ -63,14 +70,10 @@ export function createDiscoverAcquisitionTick({
               completedAt,
             });
             logger.info({
-              event: "unshelf.discover.acquisition.completed",
-              msg: "Discover channel acquisition completed",
-              targetId: target.id,
+              ...acquisitionLog,
               outcome: acquired.outcome ?? "complete",
-              durationMilliseconds: completedAt.getTime() - claimedAt.getTime(),
               acceptedCount: acquired.videos.length,
               skippedCount: acquired.skippedCount ?? 0,
-              retryCount: acquired.retryCount ?? 0,
             });
           } else {
             await recordAcquisitionFailure({
@@ -80,15 +83,11 @@ export function createDiscoverAcquisitionTick({
               completedAt,
             });
             logger.warn({
-              event: "unshelf.discover.acquisition.completed",
-              msg: "Discover channel acquisition completed",
-              targetId: target.id,
+              ...acquisitionLog,
               outcome: acquired.error === "throttled" ? "throttled" : "failed",
               errorClass: acquired.error,
-              durationMilliseconds: completedAt.getTime() - claimedAt.getTime(),
               acceptedCount: 0,
               skippedCount: 0,
-              retryCount: acquired.retryCount ?? 0,
             });
           }
         }

@@ -37,6 +37,11 @@ export type FetchChannelVideosResult =
     }
   | { ok: false; error: YouTubeFailure; retryCount?: number };
 
+type FetchChannelVideosAttempt = Extract<
+  FetchChannelVideosResult,
+  { ok: true }
+> & { missingMetadataCount: number };
+
 interface RetryPolicy {
   budgetMilliseconds: number;
   minDelayMilliseconds: number;
@@ -111,19 +116,39 @@ export function createYouTubeClient({
         : { ok: false, error: acquired.error };
     },
     fetchChannelVideos: async ({ channel }) => {
+      let retainedPartial: FetchChannelVideosAttempt | null = null;
       const acquired = await runWithRetry({
         retry,
-        operation: (signal, attempt) =>
-          fetchChannelVideosOnce({
+        operation: async (signal, attempt) => {
+          const attemptResult = await fetchChannelVideosOnce({
             apiKey,
             fetch,
             channel,
             now,
             signal,
-            retryMissingMetadata: attempt < 2,
-          }),
+          });
+          if (attemptResult.outcome === "partial") {
+            retainedPartial = mergePartialAttempts(
+              retainedPartial,
+              attemptResult,
+            );
+          }
+          if (attemptResult.missingMetadataCount > 0 && attempt < 2) {
+            throw new RetryableProviderFailure({
+              error: "temporary_failure",
+              retryAfterMilliseconds: null,
+            });
+          }
+          return attemptResult;
+        },
       });
       if (!acquired.ok) {
+        if (retainedPartial !== null) {
+          return withRetryCount(
+            publicFetchResult(retainedPartial),
+            acquired.retryCount,
+          );
+        }
         return {
           ok: false,
           error: acquired.error,
@@ -132,12 +157,10 @@ export function createYouTubeClient({
             : { retryCount: acquired.retryCount }),
         };
       }
-      return {
-        ...acquired.value,
-        ...(acquired.retryCount === 0
-          ? {}
-          : { retryCount: acquired.retryCount }),
-      };
+      return withRetryCount(
+        publicFetchResult(acquired.value),
+        acquired.retryCount,
+      );
     },
   };
 }
@@ -148,18 +171,17 @@ async function fetchChannelVideosOnce({
   channel,
   now,
   signal,
-  retryMissingMetadata,
 }: {
   apiKey: string;
   fetch: YouTubeFetch;
   channel: YouTubeChannel;
   now: () => Date;
   signal: AbortSignal;
-  retryMissingMetadata: boolean;
-}): Promise<Extract<FetchChannelVideosResult, { ok: true }>> {
+}): Promise<FetchChannelVideosAttempt> {
   const videos: YouTubeVideo[] = [];
   const seenVideoIds = new Set<string>();
   let incompleteMetadataCount = 0;
+  let missingMetadataCount = 0;
   let skippedCount = 0;
   const relevanceStart = new Date(
     now().getTime() - 30 * 24 * 60 * 60 * 1_000,
@@ -184,6 +206,8 @@ async function fetchChannelVideosOnce({
     if (!playlistPage) {
       throw new StableProviderFailure("temporary_failure");
     }
+    incompleteMetadataCount += playlistPage.invalidItemCount;
+    skippedCount += playlistPage.invalidItemCount;
     const newVideoIds = playlistPage.videoIds.filter((videoId) => {
       if (seenVideoIds.has(videoId)) return false;
       seenVideoIds.add(videoId);
@@ -210,14 +234,9 @@ async function fetchChannelVideosOnce({
       if (!pageVideos) {
         throw new StableProviderFailure("temporary_failure");
       }
-      if (pageVideos.missingMetadataCount > 0 && retryMissingMetadata) {
-        throw new RetryableProviderFailure({
-          error: "temporary_failure",
-          retryAfterMilliseconds: null,
-        });
-      }
       videos.push(...pageVideos.videos);
       incompleteMetadataCount += pageVideos.incompleteMetadataCount;
+      missingMetadataCount += pageVideos.missingMetadataCount;
       skippedCount += pageVideos.skippedCount;
     }
     const coversCandidateWindow = playlistPage.oldestPublishedAt
@@ -229,6 +248,7 @@ async function fetchChannelVideosOnce({
     ) {
       return {
         ok: true,
+        missingMetadataCount,
         videos: videos.sort((left, right) =>
           right.publishedAt.localeCompare(left.publishedAt),
         ),
@@ -246,6 +266,46 @@ async function fetchChannelVideosOnce({
     seenPageTokens.add(playlistPage.nextPageToken);
     pageToken = playlistPage.nextPageToken;
   }
+}
+
+function publicFetchResult({
+  missingMetadataCount: _missingMetadataCount,
+  ...result
+}: FetchChannelVideosAttempt): Extract<FetchChannelVideosResult, { ok: true }> {
+  return result;
+}
+
+function withRetryCount(
+  result: Extract<FetchChannelVideosResult, { ok: true }>,
+  retryCount: number,
+): Extract<FetchChannelVideosResult, { ok: true }> {
+  return retryCount === 0 ? result : { ...result, retryCount };
+}
+
+function mergePartialAttempts(
+  previous: FetchChannelVideosAttempt | null,
+  current: FetchChannelVideosAttempt,
+): FetchChannelVideosAttempt {
+  if (previous === null) return current;
+  const videos = new Map(
+    previous.videos.map((video) => [video.externalId, video]),
+  );
+  for (const video of current.videos) videos.set(video.externalId, video);
+  return {
+    ok: true,
+    outcome: "partial",
+    videos: [...videos.values()].sort((left, right) =>
+      right.publishedAt.localeCompare(left.publishedAt),
+    ),
+    missingMetadataCount: Math.min(
+      previous.missingMetadataCount,
+      current.missingMetadataCount,
+    ),
+    skippedCount: Math.max(
+      previous.skippedCount ?? 0,
+      current.skippedCount ?? 0,
+    ),
+  };
 }
 
 function parseChannelUrl(
@@ -515,12 +575,14 @@ function readPlaylistPage(body: unknown): {
   videoIds: string[];
   oldestPublishedAt: string | null;
   nextPageToken: string | null;
+  invalidItemCount: number;
 } | null {
   const items = objectArrayProperty(body, "items");
   if (!items) return null;
   const videoIds: string[] = [];
   const seenVideoIds = new Set<string>();
   let oldestPublishedAt: string | null = null;
+  let invalidItemCount = 0;
   for (const item of items) {
     const videoId = stringProperty(
       recordProperty(item, "contentDetails"),
@@ -530,14 +592,17 @@ function readPlaylistPage(body: unknown): {
       recordProperty(item, "snippet"),
       "publishedAt",
     );
-    if (!videoId || !publishedAt || Number.isNaN(Date.parse(publishedAt))) {
-      return null;
+    if (!videoId) {
+      invalidItemCount += 1;
+      continue;
     }
     if (!seenVideoIds.has(videoId)) {
       seenVideoIds.add(videoId);
       videoIds.push(videoId);
     }
-    if (oldestPublishedAt === null || publishedAt < oldestPublishedAt) {
+    if (!publishedAt || Number.isNaN(Date.parse(publishedAt))) {
+      invalidItemCount += 1;
+    } else if (oldestPublishedAt === null || publishedAt < oldestPublishedAt) {
       oldestPublishedAt = new Date(publishedAt).toISOString();
     }
   }
@@ -545,6 +610,7 @@ function readPlaylistPage(body: unknown): {
     videoIds,
     oldestPublishedAt,
     nextPageToken: stringProperty(body, "nextPageToken"),
+    invalidItemCount,
   };
 }
 
@@ -574,10 +640,12 @@ function readVideos(
       continue;
     }
     returnedVideoIds.add(externalId);
-    const candidate = readVideo(item, expectedChannelId);
-    if (candidate.kind === "accepted") videos.push(candidate.video);
-    if (candidate.kind !== "accepted") skippedCount += 1;
-    if (candidate.kind === "invalid") incompleteMetadataCount += 1;
+    const classifiedVideo = readVideo(item, expectedChannelId);
+    if (classifiedVideo.kind === "accepted") {
+      videos.push(classifiedVideo.video);
+    }
+    if (classifiedVideo.kind !== "accepted") skippedCount += 1;
+    if (classifiedVideo.kind === "invalid") incompleteMetadataCount += 1;
   }
   const missingCount = requestedVideoIds.filter(
     (videoId) => !returnedVideoIds.has(videoId),

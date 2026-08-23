@@ -462,6 +462,74 @@ describe("YouTube client", () => {
     expect(fetch).toHaveBeenCalledTimes(6);
   });
 
+  it("retains usable partial metadata when later retries totally fail", async () => {
+    vi.useFakeTimers();
+    const publishedAt = "2026-08-22T12:00:00.000Z";
+    const fetch = vi
+      .fn<YouTubeFetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: ["valid", "missing"].map((id) => ({
+            contentDetails: { videoId: id },
+            snippet: { publishedAt },
+          })),
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [videoResource({ id: "valid", publishedAt })] }),
+      )
+      .mockRejectedValueOnce(new TypeError("network unavailable"))
+      .mockResolvedValueOnce(jsonResponse({ error: "still unavailable" }, 503));
+    const resultPromise = createYouTubeClient({
+      apiKey: "server-secret",
+      fetch,
+      retry: testRetryPolicy,
+    }).fetchChannelVideos({ channel: testChannel });
+
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(20);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      ok: true,
+      outcome: "partial",
+      retryCount: 2,
+      skippedCount: 1,
+      videos: [{ externalId: "valid" }],
+    });
+  });
+
+  it("skips an isolated malformed playlist record while publishing valid neighbors", async () => {
+    const publishedAt = "2026-08-22T12:00:00.000Z";
+    const fetch = vi
+      .fn<YouTubeFetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [
+            { surprising: true },
+            {
+              contentDetails: { videoId: "valid" },
+              snippet: { publishedAt },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [videoResource({ id: "valid", publishedAt })] }),
+      );
+
+    const result = await createYouTubeClient({
+      apiKey: "server-secret",
+      fetch,
+    }).fetchChannelVideos({ channel: testChannel });
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: "partial",
+      skippedCount: 1,
+      videos: [{ externalId: "valid" }],
+    });
+  });
+
   it("does not retry a deterministic malformed response envelope", async () => {
     const fetch = vi
       .fn<YouTubeFetch>()
@@ -545,6 +613,28 @@ describe("YouTube client", () => {
       error: "throttled",
     });
     expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("uses fallback backoff when 429 omits Retry-After", async () => {
+    vi.useFakeTimers();
+    const fetch = vi
+      .fn<YouTubeFetch>()
+      .mockResolvedValue(jsonResponse({ error: "slow down" }, 429));
+    const resultPromise = createYouTubeClient({
+      apiKey: "server-secret",
+      fetch,
+      retry: testRetryPolicy,
+    }).fetchChannelVideos({ channel: testChannel });
+
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(20);
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      error: "throttled",
+      retryCount: 2,
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it.each([400, 401, 403, 404])(
