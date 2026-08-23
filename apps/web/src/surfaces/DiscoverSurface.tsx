@@ -1,12 +1,18 @@
-import { useState, type FormEvent } from "react";
-import type { DiscoverPreview } from "@unshelf/shared";
+import { useEffect, useState, type FormEvent } from "react";
+import type {
+  DiscoverPreview,
+  DiscoverPreviewVideo,
+  DiscoverWorkspace,
+} from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   DiscoverPreviewError,
+  createDiscoverFollow,
   fetchDiscoverPreview,
+  fetchDiscoverWorkspace,
   type DiscoverPreviewFailure,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
@@ -17,10 +23,38 @@ type PreviewState =
   | { status: "ready"; preview: DiscoverPreview }
   | { status: "error"; failure: DiscoverPreviewFailure };
 
+type WorkspaceState =
+  | { status: "loading" }
+  | { status: "ready"; workspace: DiscoverWorkspace }
+  | { status: "error" };
+
 export function DiscoverSurface() {
   const user = useCurrentUser();
   const [url, setUrl] = useState("");
   const [state, setState] = useState<PreviewState>({ status: "idle" });
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>({
+    status: "loading",
+  });
+  const [showSetup, setShowSetup] = useState(true);
+  const [followStatus, setFollowStatus] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
+
+  useEffect(() => {
+    let active = true;
+    void fetchDiscoverWorkspace(user)
+      .then((workspace) => {
+        if (!active) return;
+        setWorkspaceState({ status: "ready", workspace });
+        setShowSetup(workspace.follows.length === 0);
+      })
+      .catch(() => {
+        if (active) setWorkspaceState({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,6 +73,28 @@ export function DiscoverSurface() {
           error instanceof DiscoverPreviewError ? error.kind : "temporary",
       });
     }
+  };
+
+  const follow = async (preview: DiscoverPreview) => {
+    setFollowStatus("loading");
+    try {
+      await createDiscoverFollow(user, { targetId: preview.targetId });
+      const workspace = await fetchDiscoverWorkspace(user);
+      setWorkspaceState({ status: "ready", workspace });
+      setUrl("");
+      setState({ status: "idle" });
+      setShowSetup(false);
+      setFollowStatus("idle");
+    } catch {
+      setFollowStatus("error");
+    }
+  };
+
+  const beginAnotherFollow = () => {
+    setUrl("");
+    setState({ status: "idle" });
+    setFollowStatus("idle");
+    setShowSetup(true);
   };
 
   return (
@@ -61,41 +117,73 @@ export function DiscoverSurface() {
         </p>
       </header>
 
-      <form
-        className="grid max-w-3xl gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
-        onSubmit={(event) => void submit(event)}
-      >
-        <Field>
-          <FieldLabel htmlFor="discover-channel-url">
-            YouTube channel URL
-          </FieldLabel>
-          <Input
-            id="discover-channel-url"
-            type="url"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://youtube.com/@channel"
-            autoComplete="url"
-          />
-          <FieldDescription>
-            Use a channel ID or @handle URL. Playlists, videos, /user, and /c
-            links are not supported.
-          </FieldDescription>
-        </Field>
-        <Button type="submit" disabled={state.status === "loading"}>
-          {state.status === "loading"
-            ? "Resolving channel…"
-            : "Preview channel"}
-        </Button>
-      </form>
+      {showSetup && (
+        <form
+          className="grid max-w-3xl gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
+          onSubmit={(event) => void submit(event)}
+        >
+          <Field>
+            <FieldLabel htmlFor="discover-channel-url">
+              YouTube channel URL
+            </FieldLabel>
+            <Input
+              id="discover-channel-url"
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://youtube.com/@channel"
+              autoComplete="url"
+            />
+            <FieldDescription>
+              Use a channel ID or @handle URL. Playlists, videos, /user, and /c
+              links are not supported.
+            </FieldDescription>
+          </Field>
+          <Button type="submit" disabled={state.status === "loading"}>
+            {state.status === "loading"
+              ? "Resolving channel…"
+              : "Preview channel"}
+          </Button>
+        </form>
+      )}
 
-      {state.status === "loading" && (
+      {showSetup && state.status === "loading" && (
         <p role="status" className="m-0 text-sm text-muted-foreground">
           Resolving channel and gathering its latest videos…
         </p>
       )}
-      {state.status === "error" && <PreviewFailure failure={state.failure} />}
-      {state.status === "ready" && <ChannelPreview preview={state.preview} />}
+      {showSetup && state.status === "error" && (
+        <PreviewFailure failure={state.failure} />
+      )}
+      {showSetup && state.status === "ready" && (
+        <ChannelPreview
+          preview={state.preview}
+          followStatus={followStatus}
+          onFollow={() => void follow(state.preview)}
+        />
+      )}
+      {followStatus === "error" && (
+        <Alert className="max-w-3xl p-4">
+          This channel could not be followed. Try again.
+        </Alert>
+      )}
+      {workspaceState.status === "loading" && (
+        <p className="m-0 text-sm text-muted-foreground">
+          Loading your Discover queue…
+        </p>
+      )}
+      {workspaceState.status === "error" && (
+        <Alert className="max-w-3xl p-4">
+          Your Discover queue could not be loaded. Try again shortly.
+        </Alert>
+      )}
+      {workspaceState.status === "ready" &&
+        workspaceState.workspace.follows.length > 0 && (
+          <CandidateQueue
+            workspace={workspaceState.workspace}
+            onFollowAnother={beginAnotherFollow}
+          />
+        )}
     </section>
   );
 }
@@ -113,7 +201,15 @@ function PreviewFailure({ failure }: { failure: DiscoverPreviewFailure }) {
   return <Alert className="max-w-3xl p-4">{messages[failure]}</Alert>;
 }
 
-function ChannelPreview({ preview }: { preview: DiscoverPreview }) {
+function ChannelPreview({
+  preview,
+  followStatus,
+  onFollow,
+}: {
+  preview: DiscoverPreview;
+  followStatus: "idle" | "loading" | "error";
+  onFollow: () => void;
+}) {
   return (
     <section className="grid gap-4" aria-labelledby="preview-channel-heading">
       <div className="flex items-center gap-3">
@@ -150,47 +246,101 @@ function ChannelPreview({ preview }: { preview: DiscoverPreview }) {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {preview.videos.map((video) => (
-            <article
-              key={video.externalId}
-              aria-label={video.title}
-              className="grid overflow-hidden rounded-[var(--radius-panel)] border bg-card"
-            >
-              {video.thumbnailUrl ? (
-                <img
-                  className="aspect-video w-full object-cover"
-                  src={video.thumbnailUrl}
-                  alt={video.title}
-                />
-              ) : (
-                <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
-                  No thumbnail
-                </div>
-              )}
-              <div className="grid content-start gap-2 p-4">
-                <a
-                  className="font-serif text-lg font-semibold hover:underline"
-                  href={video.source}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {video.title}
-                </a>
-                <p className="m-0 text-sm text-muted-foreground">
-                  {video.channelTitle}
-                </p>
-                <p className="m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                  <time dateTime={video.publishedAt}>
-                    {formatPublishedAt(video.publishedAt)}
-                  </time>
-                  <span aria-hidden="true">·</span>
-                  <span>{formatDuration(video.durationSeconds)}</span>
-                </p>
-              </div>
-            </article>
+            <VideoCard key={video.externalId} video={video} />
+          ))}
+        </div>
+      )}
+      <div>
+        <Button
+          type="button"
+          onClick={onFollow}
+          disabled={followStatus === "loading"}
+        >
+          {followStatus === "loading" ? "Following…" : "Follow channel"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function CandidateQueue({
+  workspace,
+  onFollowAnother,
+}: {
+  workspace: DiscoverWorkspace;
+  onFollowAnother: () => void;
+}) {
+  return (
+    <section className="grid gap-4" aria-labelledby="candidate-queue-heading">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Your intake
+          </p>
+          <h2
+            id="candidate-queue-heading"
+            className="m-0 font-serif text-2xl font-semibold"
+          >
+            Pending Candidates
+          </h2>
+        </div>
+        <Button type="button" variant="secondary" onClick={onFollowAnother}>
+          Follow another
+        </Button>
+      </div>
+      {workspace.candidates.length === 0 ? (
+        <p className="m-0 rounded-[var(--radius-panel)] border bg-card p-5 text-muted-foreground">
+          No pending Candidates from your followed channels.
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {workspace.candidates.map((candidate) => (
+            <VideoCard key={candidate.id} video={candidate.video} />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function VideoCard({ video }: { video: DiscoverPreviewVideo }) {
+  return (
+    <article
+      aria-label={video.title}
+      className="grid overflow-hidden rounded-[var(--radius-panel)] border bg-card"
+    >
+      {video.thumbnailUrl ? (
+        <img
+          className="aspect-video w-full object-cover"
+          src={video.thumbnailUrl}
+          alt={video.title}
+        />
+      ) : (
+        <div className="grid aspect-video place-items-center bg-muted text-sm text-muted-foreground">
+          No thumbnail
+        </div>
+      )}
+      <div className="grid content-start gap-2 p-4">
+        <a
+          className="font-serif text-lg font-semibold hover:underline"
+          href={video.source}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {video.title}
+        </a>
+        <p className="m-0 text-sm text-muted-foreground">
+          {video.channelTitle}
+        </p>
+        <p className="m-0 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+          <time dateTime={video.publishedAt}>
+            {formatPublishedAt(video.publishedAt)}
+          </time>
+          <span aria-hidden="true">·</span>
+          <span>{formatDuration(video.durationSeconds)}</span>
+        </p>
+      </div>
+    </article>
   );
 }
 

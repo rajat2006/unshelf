@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   DailyFocusId,
+  DiscoverProviderTargetId,
   ItemId,
   LabelId,
   LearningPlanId,
@@ -28,6 +29,8 @@ export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
 export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
 export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
+export const discoverProviderTargetIdSchema =
+  identifierSchema<DiscoverProviderTargetId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -71,6 +74,10 @@ export const suppressDailyPlanningItemRequestSchema = z.strictObject({
 
 export const discoverPreviewRequestSchema = z.strictObject({
   url: z.string().trim().min(1),
+});
+
+export const createDiscoverFollowRequestSchema = z.strictObject({
+  targetId: discoverProviderTargetIdSchema,
 });
 
 export const createPartsRequestSchema = z.strictObject({
@@ -160,6 +167,9 @@ export type SuppressDailyPlanningItemRequest = z.infer<
 >;
 export type DiscoverPreviewRequest = z.infer<
   typeof discoverPreviewRequestSchema
+>;
+export type CreateDiscoverFollowRequest = z.infer<
+  typeof createDiscoverFollowRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;

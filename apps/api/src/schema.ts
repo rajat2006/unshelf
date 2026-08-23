@@ -17,6 +17,8 @@ import {
   ITEM_STATUSES,
   ITEM_STATUS_MODES,
   ITEM_TYPES,
+  CANDIDATE_STATES,
+  CandidateState,
   PLAN_NODE_KINDS,
   Status,
   StatusMode,
@@ -134,6 +136,79 @@ export const discoverProviderResults = pgTable(
     check(
       "discover_provider_results_duration_check",
       sql`${table.durationSeconds} >= 0`,
+    ),
+  ],
+);
+
+/** A User's one private Follow of one shared channel target. */
+export const discoverFollows = pgTable(
+  "discover_follows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    targetId: uuid("target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_follows_user_target_unique").on(
+      table.userId,
+      table.targetId,
+    ),
+    index("discover_follows_active_target_idx").on(
+      table.targetId,
+      table.deletedAt,
+    ),
+  ],
+);
+
+/** A User's durable private decision state for one shared video. */
+export const discoverCandidates = pgTable(
+  "discover_candidates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    resultId: uuid("result_id")
+      .notNull()
+      .references(() => discoverProviderResults.id),
+    state: text("state", { enum: nonEmpty(CANDIDATE_STATES) })
+      .notNull()
+      .default(CandidateState.Pending),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_candidates_user_result_unique").on(
+      table.userId,
+      table.resultId,
+    ),
+    index("discover_candidates_user_state_idx").on(table.userId, table.state),
+    check(
+      "discover_candidates_state_check",
+      sql`${table.state} in ${enumList(CANDIDATE_STATES)}`,
+    ),
+    check(
+      "discover_candidates_decision_timestamps_check",
+      sql`(${table.state} = 'pending' and ${table.keptAt} is null and ${table.rejectedAt} is null)
+        or (${table.state} = 'kept' and ${table.keptAt} is not null and ${table.rejectedAt} is null)
+        or (${table.state} = 'rejected' and ${table.keptAt} is null and ${table.rejectedAt} is not null)`,
     ),
   ],
 );

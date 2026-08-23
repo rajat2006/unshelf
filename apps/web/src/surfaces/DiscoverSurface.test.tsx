@@ -8,19 +8,28 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  DiscoverFollow,
   DiscoverPreview,
   DiscoverProviderTargetId,
+  DiscoverWorkspace,
 } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
-import { DiscoverPreviewError, fetchDiscoverPreview } from "../api";
+import {
+  createDiscoverFollow,
+  DiscoverPreviewError,
+  fetchDiscoverPreview,
+  fetchDiscoverWorkspace,
+} from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
+  createDiscoverFollow: vi.fn(),
   fetchDiscoverPreview: vi.fn(),
+  fetchDiscoverWorkspace: vi.fn(),
 }));
 
 const auth: ApplicationAuth = {
@@ -70,12 +79,101 @@ function renderDiscover() {
   );
 }
 
+const emptyWorkspace: DiscoverWorkspace = { follows: [], candidates: [] };
+
+beforeEach(() => {
+  vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(emptyWorkspace);
+});
+
 afterEach(() => {
   cleanup();
   vi.mocked(fetchDiscoverPreview).mockReset();
+  vi.mocked(createDiscoverFollow).mockReset();
+  vi.mocked(fetchDiscoverWorkspace).mockReset();
 });
 
 describe("Discover channel preview", () => {
+  it("loads an existing pending queue and explains when it is empty", async () => {
+    const follow = {
+      id: "00000000-0000-0000-0000-000000000030",
+      targetId: preview.targetId,
+      channel: preview.channel,
+    } as DiscoverFollow;
+    let resolveWorkspace!: (value: DiscoverWorkspace) => void;
+    vi.mocked(fetchDiscoverWorkspace).mockReturnValue(
+      new Promise((resolve) => {
+        resolveWorkspace = resolve;
+      }),
+    );
+    renderDiscover();
+
+    expect(screen.getByText("Loading your Discover queue…")).toBeVisible();
+    resolveWorkspace({ follows: [follow], candidates: [] });
+
+    expect(
+      await screen.findByRole("heading", { name: "Pending Candidates" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("No pending Candidates", { exact: false }),
+    ).toBeVisible();
+  });
+
+  it("shows a recoverable workspace error", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockRejectedValue(
+      new Error("temporary failure"),
+    );
+    renderDiscover();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Discover queue could not be loaded",
+    );
+  });
+
+  it("confirms a preview into the pending queue and can Follow another channel", async () => {
+    const follow = {
+      id: "00000000-0000-0000-0000-000000000010",
+      targetId: preview.targetId,
+      channel: preview.channel,
+    } as DiscoverFollow;
+    const workspace: DiscoverWorkspace = {
+      follows: [follow],
+      candidates: [
+        {
+          id: "00000000-0000-0000-0000-000000000020",
+          state: "pending",
+          video: preview.videos[0],
+        },
+      ],
+    } as DiscoverWorkspace;
+    vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
+    vi.mocked(createDiscoverFollow).mockResolvedValue(follow);
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(emptyWorkspace)
+      .mockResolvedValueOnce(workspace);
+    renderDiscover();
+    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+    await screen.findByRole("heading", { name: "Quiet Learning" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Pending Candidates" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toHaveTextContent("15:01");
+    expect(createDiscoverFollow).toHaveBeenCalledWith(auth.user, {
+      targetId: preview.targetId,
+    });
+    expect(fetchDiscoverPreview).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow another" }));
+    expect(screen.getByLabelText("YouTube channel URL")).toHaveValue("");
+  });
+
   it("announces resolution and presents the latest channel videos", async () => {
     let resolvePreview!: (value: DiscoverPreview) => void;
     vi.mocked(fetchDiscoverPreview).mockReturnValue(

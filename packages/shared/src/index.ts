@@ -97,6 +97,22 @@ export type DiscoverProviderTargetId = string & {
   readonly [identifierBrand]: "DiscoverProviderTargetId";
 };
 
+export type DiscoverFollowId = string & {
+  readonly [identifierBrand]: "DiscoverFollowId";
+};
+
+export type DiscoverCandidateId = string & {
+  readonly [identifierBrand]: "DiscoverCandidateId";
+};
+
+export enum CandidateState {
+  Pending = "pending",
+  Kept = "kept",
+  Rejected = "rejected",
+}
+
+export const CANDIDATE_STATES = Object.values(CandidateState);
+
 /** Shared public YouTube channel facts returned by a transient preview. */
 export interface DiscoverPreviewChannel {
   externalId: string;
@@ -121,6 +137,25 @@ export interface DiscoverPreview {
   targetId: DiscoverProviderTargetId;
   channel: DiscoverPreviewChannel;
   videos: DiscoverPreviewVideo[];
+}
+
+/** One active private relationship between the current User and a channel. */
+export interface DiscoverFollow {
+  id: DiscoverFollowId;
+  targetId: DiscoverProviderTargetId;
+  channel: DiscoverPreviewChannel;
+}
+
+/** One pending private decision backed by current shared video metadata. */
+export interface DiscoverCandidate {
+  id: DiscoverCandidateId;
+  state: CandidateState;
+  video: DiscoverPreviewVideo;
+}
+
+export interface DiscoverWorkspace {
+  follows: DiscoverFollow[];
+  candidates: DiscoverCandidate[];
 }
 
 /** The authenticated database calendar document used for Today-dependent UI. */
@@ -160,6 +195,7 @@ export type {
   DailyPlanningQuery,
   SuppressDailyPlanningItemRequest,
   DiscoverPreviewRequest,
+  CreateDiscoverFollowRequest,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */

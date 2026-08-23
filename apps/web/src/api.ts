@@ -12,6 +12,9 @@ import type {
   DailyPlanningQuery,
   DiscoverPreview,
   DiscoverPreviewRequest,
+  CreateDiscoverFollowRequest,
+  DiscoverFollow,
+  DiscoverWorkspace,
   Item,
   ItemDetail,
   ItemId,
@@ -108,6 +111,25 @@ export async function fetchDiscoverPreview(
     if (error.status === 429) throw new DiscoverPreviewError("throttled");
     throw new DiscoverPreviewError("temporary");
   }
+}
+
+/** Read the current User's active Follow and pending Candidate workspace. */
+export async function fetchDiscoverWorkspace(
+  user: CurrentUser,
+): Promise<DiscoverWorkspace> {
+  return requestJson<DiscoverWorkspace>(user, "/api/discover");
+}
+
+/** Confirm shared preview data into one private Follow. */
+export async function createDiscoverFollow(
+  user: CurrentUser,
+  input: CreateDiscoverFollowRequest,
+): Promise<DiscoverFollow> {
+  return requestJson<DiscoverFollow>(user, "/api/discover/follows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 /** Fetch All — every Item belonging to the current User. */
