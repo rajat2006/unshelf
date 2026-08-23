@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROTOTYPE — Same-session CI repair</title>
+<style>body{font:16px system-ui;max-width:980px;margin:40px auto;padding:0 20px;color:#1d2633;background:#f5f7fa}h1{margin-bottom:6px}.card{background:white;border:1px solid #d8dee8;border-radius:12px;padding:20px;margin:18px 0}dl{display:grid;grid-template-columns:180px 1fr;gap:8px}dt{font-weight:700}button{margin:5px;padding:9px 13px;border:0;border-radius:7px;background:#315efb;color:white;cursor:pointer}button.secondary{background:#596579}.notice{padding:12px;border-left:4px solid #315efb;background:#edf2ff}.tabs button.active{background:#162d6b}code{font-size:14px}</style></head>
+<body><h1>PROTOTYPE — Same-session Product CI repair</h1><p>This demo asks whether a capability can stop its agent, wait without spending LLM time, resume that exact Provider session with bounded evidence, and end with green CI, an explicit rerun, or a blocked draft PR.</p>
+<div class="card"><h2>Current state</h2><dl id="state"></dl><div class="notice" id="notice">Start with any action or walkthrough.</div></div>
+<div class="card"><h2>Free play</h2><div id="actions"></div></div>
+<div class="card"><h2>Guided walkthroughs</h2><div class="tabs" id="tabs"></div><p id="scenario"></p><div id="steps"></div></div>
+<script>
+const initial=()=>({provider:'Codex',phase:'agent working',head:'A',gatedHead:null,session:'captured',attempts:0,maxAttempts:2,llmActive:true,pr:'draft',review:'not current',outcome:'pending'});
+let s=initial(),message='';
+const actions={
+'Agent exits':()=>{if(s.phase!=='agent working'&&s.phase!=='repairing')return illegal();s.phase='waiting for Product CI';s.llmActive=false;s.gatedHead=s.head;message='Agent process exited; CI waits with no LLM active.'},
+'Exact-head CI passes':()=>{if(s.phase!=='waiting for Product CI')return illegal();s.phase='complete';s.outcome='green';s.review='current';message='Lifecycle mutations may now run.'},
+'Exact-head CI fails':()=>{if(s.phase!=='waiting for Product CI')return illegal();if(s.attempts>=s.maxAttempts)return block();s.phase='repairing';s.llmActive=true;s.attempts++;message='Same session resumed with bounded failure evidence.'},
+'Stale/cancelled CI arrives':()=>{if(s.phase!=='waiting for Product CI')return illegal();message='Ignored: it does not prove anything about the gated head.'},
+'Repair commit':()=>{if(s.phase!=='repairing')return illegal();s.head=String.fromCharCode(s.head.charCodeAt(0)+1);s.review='stale';s.phase='waiting for Product CI';s.llmActive=false;s.gatedHead=s.head;message='Repair committed; agent exited; CI and review must cover the new head.'},
+'Request CI rerun':()=>{if(s.phase!=='repairing')return illegal();s.phase='waiting for Product CI';s.llmActive=false;message='Transient rerun requested; the attempt was consumed without a commit.'},
+'Cannot repair':()=>{if(s.phase!=='repairing')return illegal();block()},
+'Reset':()=>{s=initial();message='Reset.'},
+'Switch Provider':()=>{s.provider=s.provider==='Codex'?'Claude Code':'Codex';message='The same state contract applies to either Provider.'}
+};
+function block(){s.phase='complete';s.outcome='blocked';s.pr='draft + agent:blocked';s.llmActive=false;message='Repair stopped explicitly; no downstream lifecycle mutation runs.'}
+function illegal(){message='Illegal in the current phase; state was unchanged.'}
+const scenarios={
+'Repair then green':['Agent exits','Exact-head CI fails','Repair commit','Exact-head CI passes'],
+'Transient rerun':['Agent exits','Exact-head CI fails','Request CI rerun','Exact-head CI passes'],
+'Ignore stale':['Agent exits','Stale/cancelled CI arrives','Exact-head CI passes'],
+'Exhaust attempts':['Agent exits','Exact-head CI fails','Repair commit','Exact-head CI fails','Repair commit','Exact-head CI fails']};
+let selected=Object.keys(scenarios)[0],step=0;
+function dispatch(name){actions[name]();render()}
+function select(name){selected=name;step=0;s=initial();message='Walkthrough reset to a known start.';render()}
+function guided(name,index){if(index!==step)return;dispatch(name);step++}
+function render(){document.querySelector('#state').innerHTML=Object.entries(s).map(([k,v])=>`<dt>${k.replace(/([A-Z])/g,' $1')}</dt><dd><code>${v}</code></dd>`).join('');document.querySelector('#notice').textContent=message;document.querySelector('#actions').innerHTML=Object.keys(actions).map(n=>`<button class="${n==='Reset'||n==='Switch Provider'?'secondary':''}" onclick="dispatch('${n}')">${n}</button>`).join('');document.querySelector('#tabs').innerHTML=Object.keys(scenarios).map(n=>`<button class="${n===selected?'active':''}" onclick="select('${n}')">${n}</button>`).join('');document.querySelector('#scenario').textContent=`Watch the exact head, attempt count, session, LLM activity, and final outcome.`;document.querySelector('#steps').innerHTML=scenarios[selected].map((n,i)=>`<button ${i!==step?'disabled':''} onclick="guided('${n}',${i})">${i+1}. ${n}</button>`).join('')}
+render();
+</script></body></html>
