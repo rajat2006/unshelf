@@ -7,10 +7,10 @@ import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
 /**
  * Capture and All at the HTTP boundary (issue #17), driven against a real
  * ephemeral Postgres. These are the load-bearing guarantees of the Item spine:
- * capture is one uniform insert scoped to the current User, All is the query
- * "every Item where user = me", and one User's Items are never visible to
- * another. Every assertion runs through the same auth seam T2 established — a
- * header names the acting User, no Clerk involved.
+ * Capture creates immediately and reuses only an exact owned YouTube identity,
+ * All is the query "every Item where user = me", and one User's Items are never
+ * visible to another. Every assertion runs through the same auth seam T2
+ * established — a header names the acting User, no Clerk involved.
  */
 let harness: TestApp;
 let app: Express;
@@ -140,6 +140,73 @@ describe("POST /api/items — capture", () => {
     expect(
       all.filter((item) => item.source === "https://dup.example"),
     ).toHaveLength(2);
+  });
+
+  it("reuses one Item for equivalent exact YouTube video identities", async () => {
+    const first = (
+      await capture("clerk_cap_youtube_identity", {
+        title: "First confirmed title",
+        type: "video",
+        source: "https://youtu.be/abc_DEF-123?t=90",
+      })
+    ).body as Item;
+    const second = (
+      await capture("clerk_cap_youtube_identity", {
+        title: "Later confirmation",
+        type: "course",
+        source: "https://m.youtube.com/watch?v=abc_DEF-123&feature=share",
+      })
+    ).body as Item;
+    const third = (
+      await capture("clerk_cap_youtube_identity", {
+        title: "Short URL confirmation",
+        type: "book",
+        source: "https://www.youtube.com/shorts/abc_DEF-123/?si=tracking",
+      })
+    ).body as Item;
+
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+    expect(first).toMatchObject({
+      title: "First confirmed title",
+      type: "video",
+      source: "https://youtu.be/abc_DEF-123?t=90",
+    });
+    expect((await listAll("clerk_cap_youtube_identity")).body).toHaveLength(1);
+  });
+
+  it.each([
+    "https://youtube.com/watch?v=abcdefghij",
+    "https://youtube.com/watch?v=abcdefghijk&v=abcdefghijk",
+    "https://youtube.com/watch?v=abcdefghijk&list=0123456789",
+    "https://youtube.com/channel/abcdefghijk",
+    "https://youtube.com/playlist?list=0123456789",
+    "https://example.com/watch?v=abcdefghijk",
+  ])("keeps identity-less Source captures distinct: %s", async (source) => {
+    const user = `clerk_cap_identityless_${Buffer.from(source).toString("hex")}`;
+    const body = { title: "Independent capture", type: "video", source };
+
+    const first = (await capture(user, body)).body as Item;
+    const second = (await capture(user, body)).body as Item;
+
+    expect(second.id).not.toBe(first.id);
+    expect((await listAll(user)).body).toHaveLength(2);
+  });
+
+  it("scopes exact YouTube identity reuse to one User", async () => {
+    const body = {
+      title: "Privately captured",
+      type: "video",
+      source: "https://youtube.com/shorts/abc_DEF-123",
+    };
+
+    const owner = (await capture("clerk_cap_identity_owner", body))
+      .body as Item;
+    const other = (await capture("clerk_cap_identity_other", body))
+      .body as Item;
+
+    expect(other.id).not.toBe(owner.id);
+    expect(other.userId).not.toBe(owner.userId);
   });
 
   it("requires a title", async () => {

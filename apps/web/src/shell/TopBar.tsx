@@ -40,6 +40,7 @@ export function TopBar() {
     location.pathname.startsWith("/today") ||
     backgroundSurface.kind === "today" ||
     backgroundSurface.kind === "history";
+  const discoverActive = location.pathname === "/discover";
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur-md">
@@ -59,18 +60,7 @@ export function TopBar() {
         >
           <NavigationMenuList className="w-max justify-start gap-1">
             <RoomLink to="/today" label="Today" active={todayActive} />
-            <NavigationMenuItem>
-              <Button
-                type="button"
-                variant="quiet"
-                className="h-10 gap-1.5 px-3 text-muted-foreground"
-                aria-label="Discover — Coming later"
-                disabled
-              >
-                <span>Discover</span>
-                <span className="text-xs font-normal">Coming later</span>
-              </Button>
-            </NavigationMenuItem>
+            <RoomLink to="/discover" label="Discover" active={discoverActive} />
             <RoomLink to="/library" label="Library" active={libraryActive} />
             <RoomLink to="/plans" label="Plans" active={plansActive} />
           </NavigationMenuList>

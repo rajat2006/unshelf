@@ -28,31 +28,20 @@ rather than becoming shared Unshelf concepts.
 _Avoid_: Source (the optional link stored on an Item), Follow
 
 **Follow**:
-A User-owned instruction to discover learning material repeatedly from a
-Provider-defined target, such as a channel, playlist, or query. Unshelf owns its
-active, paused, or removed lifecycle; pausing or removing it stops new Discoveries
-without resolving existing ones or deleting history. Resuming examines current
-Provider results without backfilling the paused interval.
+A User-owned relationship to one shared Provider target. A Follow is active when
+`deleted_at` is absent; removing it stops future Candidate intake and hides its
+pending Candidates without deleting shared Provider data, Candidate decisions, or
+Library Items. Following the same target again restores that relationship.
 _Avoid_: Subscription (may mean a paid plan or a provider's own subscription),
 Channel (one provider-specific kind of target), Source (already the link stored
 on an Item)
 
 **Candidate**:
-A provider-identified piece of potential learning material surfaced before an
-Item exists or is linked for it. For one User, one Provider identity denotes one
-durable Candidate, which retains every Follow and Discovery that surfaced it and
-may link to one Item. If that Item is removed, the Candidate retains the prior
-Keep in its history and a future Discovery may link it to a new Item.
+A User-owned durable mapping to one shared Provider result before the User has
+resolved it. For one User, one Provider identity denotes at most one Candidate,
+whose state is exactly _pending_, _kept_, or _rejected_. An untouched Candidate
+remains pending; repeated Provider fetches never reset its decision.
 _Avoid_: Item, Inbox Item, Recommendation
-
-**Discovery**:
-One occurrence accepted by a Provider's discovery policy of a Follow surfacing a
-Candidate to its User. At minimum, repeated polling while that result remains
-present for the same Follow creates none; a different Follow or a result that
-disappears and later reappears is eligible for a new one. Each Discovery
-independently moves from _new_ to _seen_, then to _kept_ or _dismissed_, while its
-history remains durable.
-_Avoid_: Candidate, Capture, Import
 
 **Provider identity**:
 A Provider and that Provider's stable reference to one piece of learning material,
@@ -60,23 +49,18 @@ treated together as an exact, provider-namespaced identity. Matching titles or r
 Source strings are not Provider identity.
 _Avoid_: Source, title, URL
 
-**Seen**:
-The Discovery intake state meaning the User has acknowledged its Candidate but
-has not chosen Keep or Dismiss.
-_Avoid_: Read, Viewed, Completed
-
 **Keep**:
-A User's decision to resolve one Discovery by linking its Candidate to an Item in
-the Library. Keep creates that Item from the Candidate's current title, Type,
-Source, and Provider identity, or reuses the User's Item with that exact Provider
-identity. It does not resolve other Discoveries or silently apply later Provider
-metadata changes to the Item.
+A User's decision to resolve one pending Candidate by linking it to an Item in the
+Library. Keep creates that Item from the User-confirmed title and Type plus the
+Candidate's canonical Source and Provider identity, or reuses the User's Item with
+that exact Provider identity. It does not affect another User's Candidate or
+silently apply later Provider metadata changes to the Item.
 _Avoid_: Capture, Save, Import
 
-**Dismiss**:
-A User's decision to remove one Discovery from intake without changing its
-Candidate or linked Item. It does not suppress later Discoveries; they may surface
-again with the Candidate's prior dismissal or Keep history.
+**Reject**:
+A User's terminal decision to resolve one pending Candidate without creating,
+changing, or deleting an Item. Reject affects only that User's Candidate and
+repeated Provider fetches preserve it.
 _Avoid_: Delete, Hide, Ignore
 
 ### Items & organisation
@@ -156,8 +140,8 @@ metadata. Pasting a link and adding an offline book by title remain the same
 Capture; Source is stored verbatim, and absent or unsuccessful inspection never
 prevents manual completion. Capture creates or reuses the Item immediately; it
 never waits in recurring discovery intake. If a matching Candidate is discovered
-later, it links to that Item while its Discovery remains visible and unresolved as
-already captured.
+later, it remains pending and visible as already in the Library until the User
+chooses Keep or Reject.
 _Avoid_: Import, Ingest, Add, Save (Import means a bulk pull from an external
 tool — a deferred sibling of Capture, not a synonym)
 
@@ -166,7 +150,7 @@ A one-shot, best-effort attempt inside Capture to suggest an Item's title and Ty
 from an eligible YouTube video or playlist Source. It is advisory and ephemeral:
 it neither creates an Item nor leaves a durable metadata record, and its partial
 or absent result leaves the same Capture available for the User to complete.
-_Avoid_: Import, Discovery, metadata sync
+_Avoid_: Import, recurring discovery, metadata sync
 
 **Library**:
 The durable, flat home of every Item. Membership is inherent in Item existence

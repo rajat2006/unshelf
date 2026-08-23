@@ -41,6 +41,20 @@ describe("API server startup", () => {
     }
   });
 
+  it("starts and stops the Discover scheduler with the API server", async () => {
+    const logger = createCollectingLogger();
+    const scheduler = { start: vi.fn(), stop: vi.fn() };
+    const server = startApiServer(express(), 0, logger, { scheduler });
+
+    expect(scheduler.start).not.toHaveBeenCalled();
+    await once(server, "listening");
+    expect(scheduler.start).toHaveBeenCalledOnce();
+
+    server.close();
+    await once(server, "close");
+    expect(scheduler.stop).toHaveBeenCalledOnce();
+  });
+
   it("reports a fatal startup failure when the port cannot be bound", async () => {
     const occupiedServer = express().listen(0);
     await once(occupiedServer, "listening");

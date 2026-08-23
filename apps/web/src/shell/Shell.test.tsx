@@ -50,13 +50,13 @@ describe("routed shell states", () => {
     expect(markup).not.toContain("Primary rooms");
   });
 
-  it("marks the current room and keeps deferred Discover unavailable", () => {
+  it("marks the current room and offers Discover as an ordinary destination", () => {
     const markup = renderTopBar("/library");
 
     expect(markup).toContain('aria-label="Primary rooms"');
     expect(markup).toMatch(/aria-current="page"[^>]+href="\/library"/);
-    expect(markup).toContain('aria-label="Discover — Coming later"');
-    expect(markup).toContain("disabled");
+    expect(markup).toContain('href="/discover"');
+    expect(markup).not.toContain("Coming later");
     expect(markup).toContain("Capture");
   });
 

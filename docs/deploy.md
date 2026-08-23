@@ -39,6 +39,7 @@ The required resource environment is:
 | `PUBLIC_ORIGIN` | api | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
 | `CLERK_SECRET_KEY` | api | Matching Clerk instance secret. |
 | `CLERK_PUBLISHABLE_KEY` | api | Matching Clerk publishable key. |
+| `YOUTUBE_API_KEY` | api | Server-only YouTube Data API credential used for Discover previews and acquisition. |
 | `MIGRATION_MODE` | migrate | `apply` for development/production/schema previews; `verify` for ordinary previews. |
 | `LOG_LEVEL` | migrate, api | Optional; defaults to `info`. |
 

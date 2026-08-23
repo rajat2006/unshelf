@@ -130,12 +130,10 @@ const toItemDetail = (row: ItemDetailRow): ItemDetail => ({
 });
 
 /**
- * Capture an Item for a User — the one uniform manual insert (ADR-0007). Title
- * and type land exactly as given; `source` is stored verbatim and unvalidated when
- * supplied, while an omitted source becomes NULL. Nothing is fetched or mutated;
- * `status` defaults to *not started* and the same input twice yields two distinct
- * rows (no dedupe, ADR-0003). Scoped to `userId`, which is never taken from the
- * client — the caller passes the authenticated User's anchor id.
+ * Insert an identity-less Item for a User. Title and type land exactly as given;
+ * `source` is stored verbatim when supplied, while an omitted source becomes
+ * NULL. The same input may produce distinct rows because Source equality is not
+ * identity. The Capture boundary classifies exact Provider identity first.
  */
 export async function createItem(
   db: Database,
@@ -160,7 +158,7 @@ export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   return rows.map(toItem);
 }
 
-async function getItemSummary(
+export async function getItemSummary(
   db: Database,
   userId: UserId,
   itemId: ItemId,
