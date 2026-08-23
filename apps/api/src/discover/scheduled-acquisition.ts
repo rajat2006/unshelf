@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import type { DiscoverProviderTargetId } from "@unshelf/shared";
 import type { Database } from "../db";
 import { discoverProviderTargets } from "../schema";
 import { candidateRelevanceStart } from "./candidate-relevance";
@@ -19,7 +20,7 @@ const CHANNEL_CONCURRENCY = 4;
 
 interface ClaimedTarget extends YouTubeChannel {
   [key: string]: unknown;
-  id: string;
+  id: DiscoverProviderTargetId;
   claimToken: string;
 }
 

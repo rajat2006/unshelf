@@ -130,6 +130,43 @@ describe("scheduled Discover acquisition", () => {
     );
   });
 
+  it("publishes a partial result while keeping older videos out of Candidate intake", async () => {
+    await previewAndFollow("clerk_scheduled_partial");
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    fetchChannelVideos.mockResolvedValueOnce({
+      ok: true,
+      outcome: "partial",
+      videos: [
+        scheduledVideo,
+        {
+          ...scheduledVideo,
+          externalId: "older-video",
+          publishedAt: "2026-07-23T00:59:59.999Z",
+          source: "https://www.youtube.com/watch?v=older-video",
+        },
+      ],
+    });
+
+    await harness.runDiscoverAcquisitionTick();
+
+    expect(
+      (await readWorkspace("clerk_scheduled_partial")).candidates.map(
+        ({ video }) => video.externalId,
+      ),
+    ).toEqual(["scheduled-video"]);
+    const outcome = await harness.pool.query<{ last_fetch_outcome: string }>(
+      `select last_fetch_outcome from discover_provider_targets`,
+    );
+    const storedVideos = await harness.pool.query<{ external_id: string }>(
+      `select external_id from discover_provider_results order by external_id`,
+    );
+    expect(outcome.rows).toEqual([{ last_fetch_outcome: "partial" }]);
+    expect(storedVideos.rows).toEqual([
+      { external_id: "older-video" },
+      { external_id: "scheduled-video" },
+    ]);
+  });
+
   it("preserves one Candidate when the same video is fetched again", async () => {
     const preview = await previewAndFollow("clerk_scheduled_replay");
 
@@ -155,6 +192,97 @@ describe("scheduled Discover acquisition", () => {
         },
       },
     ]);
+  });
+
+  it("preserves each User's terminal Candidate decision when a video is fetched again", async () => {
+    const preview = await previewAndFollow("clerk_scheduled_kept");
+    await request(app)
+      .post("/api/discover/follows")
+      .set(TEST_USER_HEADER, "clerk_scheduled_rejected")
+      .send({ targetId: preview.targetId })
+      .expect(201);
+
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    await harness.runDiscoverAcquisitionTick();
+    await harness.pool.query(`
+      update discover_candidates candidate
+      set state = case users.clerk_user_id
+            when 'clerk_scheduled_kept' then 'kept'
+            else 'rejected'
+          end,
+          kept_at = case users.clerk_user_id
+            when 'clerk_scheduled_kept'
+              then timestamptz '2026-08-23T01:05:00.000Z'
+            else null::timestamptz
+          end,
+          rejected_at = case users.clerk_user_id
+            when 'clerk_scheduled_rejected'
+              then timestamptz '2026-08-23T01:06:00.000Z'
+            else null::timestamptz
+          end
+      from users
+      where users.id = candidate.user_id
+    `);
+
+    currentTime = new Date("2026-08-23T02:00:00.000Z");
+    await harness.runDiscoverAcquisitionTick();
+
+    const decisions = await harness.pool.query<{
+      clerk_user_id: string;
+      state: string;
+      kept_at: Date | null;
+      rejected_at: Date | null;
+    }>(`
+      select users.clerk_user_id,
+             candidate.state,
+             candidate.kept_at,
+             candidate.rejected_at
+      from discover_candidates candidate
+      join users on users.id = candidate.user_id
+      order by users.clerk_user_id
+    `);
+    expect(decisions.rows).toEqual([
+      {
+        clerk_user_id: "clerk_scheduled_kept",
+        state: "kept",
+        kept_at: new Date("2026-08-23T01:05:00.000Z"),
+        rejected_at: null,
+      },
+      {
+        clerk_user_id: "clerk_scheduled_rejected",
+        state: "rejected",
+        kept_at: null,
+        rejected_at: new Date("2026-08-23T01:06:00.000Z"),
+      },
+    ]);
+  });
+
+  it("fans out later videos only to Users who still actively Follow the channel", async () => {
+    const preview = await previewAndFollow("clerk_scheduled_unfollowed");
+    await request(app)
+      .post("/api/discover/follows")
+      .set(TEST_USER_HEADER, "clerk_scheduled_active")
+      .send({ targetId: preview.targetId })
+      .expect(201);
+    const unfollowedWorkspace = await readWorkspace(
+      "clerk_scheduled_unfollowed",
+    );
+    await request(app)
+      .delete(`/api/discover/follows/${unfollowedWorkspace.follows[0].id}`)
+      .set(TEST_USER_HEADER, "clerk_scheduled_unfollowed")
+      .expect(204);
+
+    currentTime = new Date("2026-08-23T01:00:00.000Z");
+    await harness.runDiscoverAcquisitionTick();
+
+    expect(
+      (await readWorkspace("clerk_scheduled_unfollowed")).candidates,
+    ).toEqual([]);
+    expect(
+      (await readWorkspace("clerk_scheduled_active")).candidates.map(
+        ({ video }) => video.externalId,
+      ),
+    ).toEqual(["scheduled-video"]);
   });
 
   it("keeps stored Candidates visible when a scheduled fetch fails", async () => {

@@ -69,7 +69,7 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
-/** Current shared public metadata for one immutable YouTube channel identity. */
+/** Shared YouTube channel metadata and its scheduled-acquisition lease. */
 export const discoverProviderTargets = pgTable(
   "discover_provider_targets",
   {

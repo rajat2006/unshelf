@@ -61,7 +61,7 @@ export async function previewChannel({
 
     await upsertProviderVideos({
       tx,
-      targetId: target.id,
+      targetId: target.id as DiscoverProviderTargetId,
       videos: acquired.videos,
       updatedAt: now,
     });

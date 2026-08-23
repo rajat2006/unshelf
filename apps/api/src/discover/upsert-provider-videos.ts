@@ -1,3 +1,4 @@
+import type { DiscoverProviderTargetId } from "@unshelf/shared";
 import type { DatabaseTransaction } from "../db";
 import { discoverProviderResults } from "../schema";
 import type { YouTubeVideo } from "./youtube-client";
@@ -10,7 +11,7 @@ export async function upsertProviderVideos({
   updatedAt,
 }: {
   tx: DatabaseTransaction;
-  targetId: string;
+  targetId: DiscoverProviderTargetId;
   videos: YouTubeVideo[];
   updatedAt: Date;
 }): Promise<void> {
