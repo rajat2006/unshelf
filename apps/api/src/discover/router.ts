@@ -8,27 +8,17 @@ import {
   keepDiscoverCandidateRequestSchema,
   rejectDiscoverCandidateRequestSchema,
 } from "@unshelf/shared/validation";
-import type { Database } from "../db";
 import { validateRequest } from "../middleware/validation";
-import { previewChannel } from "./preview-channel";
-import type { YouTubeClient, YouTubeFailure } from "./youtube-client";
-import { followChannel } from "./follow-channel";
-import { readDiscoverWorkspace } from "./read-workspace";
-import { unfollowChannel } from "./unfollow-channel";
-import { keepCandidate } from "./keep-candidate";
-import { rejectCandidate } from "./reject-candidate";
+import type { DiscoverModule } from "./index";
+import type { YouTubeFailure } from "./youtube-client";
 
 /** Mount the authenticated Discover HTTP interface at `/api/discover`. */
 export function createDiscoverRouter({
-  db,
   auth,
-  youtubeClient,
-  now,
+  discover,
 }: {
-  db: Database;
   auth: RequestHandler[];
-  youtubeClient: YouTubeClient;
-  now: () => Date;
+  discover: DiscoverModule;
 }): Router {
   const router = Router();
   router.use(...auth);
@@ -39,11 +29,9 @@ export function createDiscoverRouter({
       "invalid_discover_workspace",
     ),
     async (req, res) => {
-      const workspace = await readDiscoverWorkspace({
-        db,
+      const workspace = await discover.readWorkspace({
         userId: req.user!.id,
         followId: res.locals.validated.query.followId,
-        now: now(),
       });
       if (!workspace) {
         res.status(404).json({ error: "follow_not_found" });
@@ -59,11 +47,9 @@ export function createDiscoverRouter({
       "invalid_discover_follow",
     ),
     async (req, res) => {
-      const result = await followChannel({
-        db,
+      const result = await discover.follow({
         userId: req.user!.id,
         targetId: res.locals.validated.body.targetId,
-        now: now(),
       });
       if (!result.ok) {
         res.status(404).json({ error: "channel_not_found" });
@@ -79,11 +65,9 @@ export function createDiscoverRouter({
       "invalid_discover_follow",
     ),
     async (req, res) => {
-      const result = await unfollowChannel({
-        db,
+      const result = await discover.unfollow({
         userId: req.user!.id,
         followId: res.locals.validated.params.followId,
-        now: now(),
       });
       if (!result.ok) {
         res.status(404).json({ error: "follow_not_found" });
@@ -103,12 +87,10 @@ export function createDiscoverRouter({
     ),
     async (req, res) => {
       const candidateId = res.locals.validated.params.candidateId;
-      const result = await keepCandidate({
-        db,
+      const result = await discover.keep({
         userId: req.user!.id,
         candidateId,
         input: res.locals.validated.body,
-        now: now(),
       });
       if (!result.ok) {
         const status = result.error === "candidate_not_found" ? 404 : 409;
@@ -129,11 +111,9 @@ export function createDiscoverRouter({
     ),
     async (req, res) => {
       const candidateId = res.locals.validated.params.candidateId;
-      const result = await rejectCandidate({
-        db,
+      const result = await discover.reject({
         userId: req.user!.id,
         candidateId,
-        now: now(),
       });
       if (!result.ok) {
         const status = result.error === "candidate_not_found" ? 404 : 409;
@@ -150,11 +130,8 @@ export function createDiscoverRouter({
       "invalid_discover_preview",
     ),
     async (_req, res) => {
-      const result = await previewChannel({
-        db,
-        youtubeClient,
+      const result = await discover.preview({
         url: res.locals.validated.body.url,
-        now: now(),
       });
       if (!result.ok) {
         respondToPreviewFailure(res, result.error);

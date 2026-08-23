@@ -5,7 +5,7 @@ import { createDatabase, readDatabaseConfig } from "./db";
 import { createProductionLogger, parseLogLevel, type Logger } from "./logging";
 import { superviseApiProcess, type ProcessRuntime } from "./process-failures";
 import { createYouTubeClient } from "./discover/youtube-client";
-import { createDiscoverAcquisitionTick } from "./discover/scheduled-acquisition";
+import { createDiscoverModule } from "./discover/index";
 import { createDiscoverScheduler } from "./discover/scheduler";
 
 let logger: Logger;
@@ -77,14 +77,19 @@ await superviseApiProcess({
       fetch,
     });
     const now = () => new Date();
+    const discoverModule = createDiscoverModule({
+      db,
+      youtubeClient,
+      now,
+      logger,
+    });
     const app = createApp(db, createClerkAuth(db, publicOrigin), {
       logger,
       diagnosticSecrets,
-      youtubeClient,
-      now,
+      discoverModule,
     });
     const scheduler = createDiscoverScheduler({
-      tick: createDiscoverAcquisitionTick({ db, youtubeClient, now, logger }),
+      tick: discoverModule.runScheduledAcquisitionTick,
       logger,
     });
 

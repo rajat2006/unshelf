@@ -10,10 +10,8 @@ import { createLearningPlansRouter } from "./learning-plans/router";
 import { createDailyFocusRouter } from "./daily-focus/router";
 import { createServerCalendarRouter } from "./server-calendar/router";
 import { createDiscoverRouter } from "./discover/router";
-import {
-  unavailableYouTubeClient,
-  type YouTubeClient,
-} from "./discover/youtube-client";
+import { createDiscoverModule, type DiscoverModule } from "./discover/index";
+import { unavailableYouTubeClient } from "./discover/youtube-client";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -24,8 +22,7 @@ import {
 } from "./middleware/request-lifecycle";
 
 export type AppOptions = RequestLifecycleOptions & {
-  youtubeClient?: YouTubeClient;
-  now?: () => Date;
+  discoverModule?: DiscoverModule;
 };
 
 /**
@@ -42,6 +39,14 @@ export function createApp(
   options: AppOptions,
 ): Express {
   const app = express();
+  const discover =
+    options.discoverModule ??
+    createDiscoverModule({
+      db,
+      youtubeClient: unavailableYouTubeClient,
+      now: () => new Date(),
+      logger: options.logger,
+    });
   app.use(createRequestLifecycle(options));
   app.use(express.json({ strict: false }));
 
@@ -107,10 +112,8 @@ export function createApp(
     "/api/discover",
     captureRouteMount,
     createDiscoverRouter({
-      db,
       auth,
-      youtubeClient: options.youtubeClient ?? unavailableYouTubeClient,
-      now: options.now ?? (() => new Date()),
+      discover,
     }),
   );
   app.use(markRoutingResolved);
