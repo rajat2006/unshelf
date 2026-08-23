@@ -276,3 +276,26 @@ jobs:
           marker_body="$(jq -n --arg composeId "$compose_id" --arg description "unshelf:last-healthy $marker" '{composeId:$composeId,description:$description}')"
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$marker_body" "$DOKPLOY_URL/api/compose.update" >/dev/null
           printf '### Preview delivery\n\n- State: healthy\n- Source: `%s`\n- Compose: `%s` (`%s`, runtime `%s`)\n- API digest: `%s`\n- Web digest: `%s`\n- Deployment: `%s`\n- Lifecycle: deletion remains a manual Dokploy action after capturing these identities.\n' "$SOURCE_SHA" "$LOGICAL_NAME" "$compose_id" "$runtime_name" "$API_DIGEST" "$WEB_DIGEST" "$deployment_id" >>"$GITHUB_STEP_SUMMARY"
+
+  summarize:
+    needs: [authorize, inspect, api-image, web-image, deploy]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: { actions: read }
+    steps:
+      - name: Record allowlisted final evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          API_DIGEST: ${{ needs.api-image.outputs.digest }}
+          WEB_DIGEST: ${{ needs.web-image.outputs.digest }}
+          COMPOSE_ID: ${{ needs.inspect.outputs.compose_id }}
+          COMPOSE_NAME: ${{ needs.authorize.outputs.logical_name }}
+          RUNTIME_NAME: ${{ needs.inspect.outputs.runtime_name }}
+          GATES: authorize=${{ needs.authorize.result }},inspect=${{ needs.inspect.result }},api-image=${{ needs.api-image.result }},web-image=${{ needs.web-image.result }},deploy=${{ needs.deploy.result }}
+        run: |
+          started="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .run_started_at)"
+          duration="$(( $(date +%s) - $(date -d "$started" +%s) ))s"
+          final_state="${{ needs.deploy.result }}"
+          printf '### Preview final evidence\n\n- Channel: preview\n- Final state: `%s`\n- Selected SHA: `%s`\n- Digests: API `%s`, web `%s`\n- Gates/health: `%s`\n- Duration: `%s`\n- Compose: `%s` (`%s`, runtime `%s`)\n' "$final_state" "${SOURCE_SHA:-unavailable}" "${API_DIGEST:-not-built}" "${WEB_DIGEST:-not-built}" "$GATES" "$duration" "${COMPOSE_NAME:-unresolved}" "${COMPOSE_ID:-unresolved}" "${RUNTIME_NAME:-unresolved}" >>"$GITHUB_STEP_SUMMARY"

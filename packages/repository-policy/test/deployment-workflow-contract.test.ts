@@ -318,6 +318,22 @@ jobs:
     }
   });
 
+  it("records allowlisted final evidence for every channel outcome", () => {
+    for (const name of [
+      "delivery-development.yml",
+      "delivery-preview.yml",
+      "delivery-production.yml",
+    ]) {
+      const summary = inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join("\n") ?? "";
+      expect(summary).toContain("Final state");
+      expect(summary).toContain("Selected SHA");
+      expect(summary).toContain("Digests");
+      expect(summary).toContain("Gates/health");
+      expect(summary).toContain("Duration");
+      expect(summary).toContain("Compose:");
+    }
+  });
+
   it("keeps preview authorization, schema refusal, identity, capacity, and domains visible", () => {
     const workflow = inspectRepositoryWorkflow("delivery-preview.yml");
     const authorize = workflow.jobs.authorize?.runCommands.join("\n") ?? "";
