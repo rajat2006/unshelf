@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
+  DiscoverFollow,
+  DiscoverFollowId,
   DiscoverPreview,
   DiscoverPreviewVideo,
   DiscoverWorkspace,
@@ -9,10 +11,18 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DiscoverPreviewError,
   createDiscoverFollow,
   fetchDiscoverPreview,
   fetchDiscoverWorkspace,
+  unfollowDiscoverChannel,
   type DiscoverPreviewFailure,
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
@@ -39,11 +49,22 @@ export function DiscoverSurface() {
   const [followStatus, setFollowStatus] = useState<
     "idle" | "loading" | "error"
   >("idle");
+  const [selectedFollowId, setSelectedFollowId] =
+    useState<DiscoverFollowId | null>(null);
+  const [unfollowingFollowId, setUnfollowingFollowId] =
+    useState<DiscoverFollowId | null>(null);
+  const [unfollowError, setUnfollowError] = useState<string | null>(null);
+  const [filtering, setFiltering] = useState(false);
+  const [filterFailed, setFilterFailed] = useState(false);
+  const [failedFilterId, setFailedFilterId] = useState<DiscoverFollowId | null>(
+    null,
+  );
   const workspaceRequestId = useRef(0);
 
   useEffect(() => {
     let active = true;
     const requestId = ++workspaceRequestId.current;
+    setSelectedFollowId(null);
     void fetchDiscoverWorkspace(user)
       .then((workspace) => {
         if (!active || requestId !== workspaceRequestId.current) return;
@@ -93,6 +114,7 @@ export function DiscoverSurface() {
     setState({ status: "idle" });
     setShowSetup(false);
     setFollowStatus("idle");
+    setSelectedFollowId(null);
     setWorkspaceState({ status: "loading" });
     try {
       const workspace = await fetchDiscoverWorkspace(user);
@@ -111,6 +133,60 @@ export function DiscoverSurface() {
     setState({ status: "idle" });
     setFollowStatus("idle");
     setShowSetup(true);
+  };
+
+  const selectFollow = async (followId: DiscoverFollowId | null) => {
+    const requestId = ++workspaceRequestId.current;
+    setFiltering(true);
+    setFilterFailed(false);
+    setFailedFilterId(null);
+    try {
+      const workspace = await fetchDiscoverWorkspace(
+        user,
+        followId ?? undefined,
+      );
+      if (requestId === workspaceRequestId.current) {
+        setSelectedFollowId(followId);
+        setWorkspaceState({ status: "ready", workspace });
+        setFiltering(false);
+      }
+    } catch {
+      if (requestId === workspaceRequestId.current) {
+        setFailedFilterId(followId);
+        setFilterFailed(true);
+        setFiltering(false);
+      }
+    }
+  };
+
+  const unfollow = async (follow: DiscoverFollow) => {
+    setUnfollowingFollowId(follow.id);
+    setUnfollowError(null);
+    try {
+      await unfollowDiscoverChannel(user, follow.id);
+    } catch {
+      setUnfollowingFollowId(null);
+      setUnfollowError(
+        `${follow.channel.title} could not be Unfollowed. Try again.`,
+      );
+      return;
+    }
+
+    const requestId = ++workspaceRequestId.current;
+    setUnfollowingFollowId(null);
+    setSelectedFollowId(null);
+    setWorkspaceState({ status: "loading" });
+    try {
+      const workspace = await fetchDiscoverWorkspace(user);
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceState({ status: "ready", workspace });
+        setShowSetup(workspace.follows.length === 0);
+      }
+    } catch {
+      if (requestId === workspaceRequestId.current) {
+        setWorkspaceState({ status: "error" });
+      }
+    }
   };
 
   return (
@@ -197,7 +273,15 @@ export function DiscoverSurface() {
         workspaceState.workspace.follows.length > 0 && (
           <CandidateQueue
             workspace={workspaceState.workspace}
+            selectedFollowId={selectedFollowId}
+            unfollowingFollowId={unfollowingFollowId}
+            unfollowError={unfollowError}
+            filtering={filtering}
+            filterFailed={filterFailed}
             onFollowAnother={beginAnotherFollow}
+            onSelectFollow={(followId) => void selectFollow(followId)}
+            onRetryFilter={() => void selectFollow(failedFilterId)}
+            onUnfollow={(follow) => void unfollow(follow)}
           />
         )}
     </section>
@@ -281,10 +365,26 @@ function ChannelPreview({
 
 function CandidateQueue({
   workspace,
+  selectedFollowId,
+  unfollowingFollowId,
+  unfollowError,
+  filtering,
+  filterFailed,
   onFollowAnother,
+  onSelectFollow,
+  onRetryFilter,
+  onUnfollow,
 }: {
   workspace: DiscoverWorkspace;
+  selectedFollowId: DiscoverFollowId | null;
+  unfollowingFollowId: DiscoverFollowId | null;
+  unfollowError: string | null;
+  filtering: boolean;
+  filterFailed: boolean;
   onFollowAnother: () => void;
+  onSelectFollow: (followId: DiscoverFollowId | null) => void;
+  onRetryFilter: () => void;
+  onUnfollow: (follow: DiscoverFollow) => void;
 }) {
   return (
     <section className="grid gap-4" aria-labelledby="candidate-queue-heading">
@@ -304,6 +404,93 @@ function CandidateQueue({
           Follow another
         </Button>
       </div>
+      <section
+        aria-label="Follow management"
+        className="grid gap-4 rounded-[var(--radius-panel)] border bg-card p-4 lg:grid-cols-[minmax(14rem,20rem)_1fr] lg:items-start"
+      >
+        <div className="grid gap-2">
+          <label htmlFor="candidate-channel" className="text-sm font-medium">
+            Candidate channel
+          </label>
+          <Select
+            disabled={filtering}
+            value={selectedFollowId ?? "all"}
+            onValueChange={(value) =>
+              onSelectFollow(
+                value === "all" ? null : (value as DiscoverFollowId),
+              )
+            }
+          >
+            <SelectTrigger
+              id="candidate-channel"
+              aria-label="Candidate channel"
+              className="w-full"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All followed channels</SelectItem>
+              {workspace.follows.map((follow) => (
+                <SelectItem key={follow.id} value={follow.id}>
+                  {follow.channel.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-2">
+          <p className="m-0 text-sm font-medium">Followed channels</p>
+          <ul
+            aria-label="Followed channels"
+            className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2"
+          >
+            {workspace.follows.map((follow) => (
+              <li
+                key={follow.id}
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] bg-muted/50 px-3 py-2"
+              >
+                <a
+                  className="min-w-0 truncate text-sm font-medium hover:underline"
+                  href={follow.channel.canonicalUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {follow.channel.title}
+                </a>
+                <Button
+                  type="button"
+                  size="compact"
+                  variant="quiet-destructive"
+                  loading={unfollowingFollowId === follow.id}
+                  loadingLabel={`Unfollowing ${follow.channel.title}…`}
+                  onClick={() => onUnfollow(follow)}
+                >
+                  Unfollow {follow.channel.title}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+      {filtering && (
+        <p role="status" className="m-0 text-sm text-muted-foreground">
+          Filtering pending Candidates…
+        </p>
+      )}
+      {filterFailed && (
+        <Alert className="flex flex-wrap items-center justify-between gap-2 p-4">
+          <span>The channel filter could not be loaded.</span>
+          <Button
+            type="button"
+            size="compact"
+            variant="secondary"
+            onClick={onRetryFilter}
+          >
+            Retry channel filter
+          </Button>
+        </Alert>
+      )}
+      {unfollowError && <Alert className="p-4">{unfollowError}</Alert>}
       {workspace.candidates.length === 0 ? (
         <p className="m-0 rounded-[var(--radius-panel)] border bg-card p-5 text-muted-foreground">
           No pending Candidates from your followed channels.

@@ -20,12 +20,14 @@ import { candidateRelevanceStart } from "./candidate-relevance";
 export async function readDiscoverWorkspace({
   db,
   userId,
+  followId,
   now,
 }: {
   db: Database;
   userId: UserId;
+  followId?: DiscoverFollowId;
   now: Date;
-}): Promise<DiscoverWorkspace> {
+}): Promise<DiscoverWorkspace | null> {
   const follows = await db
     .select({
       id: discoverFollows.id,
@@ -47,6 +49,10 @@ export async function readDiscoverWorkspace({
       ),
     )
     .orderBy(discoverProviderTargets.title);
+
+  if (followId && !follows.some((follow) => follow.id === followId)) {
+    return null;
+  }
 
   const relevanceStart = candidateRelevanceStart(now);
   const candidates = await db
@@ -81,6 +87,7 @@ export async function readDiscoverWorkspace({
     .where(
       and(
         eq(discoverCandidates.userId, userId),
+        ...(followId ? [eq(discoverFollows.id, followId)] : []),
         eq(discoverCandidates.state, CandidateState.Pending),
         isNull(discoverFollows.deletedAt),
         gte(discoverProviderResults.publishedAt, relevanceStart),

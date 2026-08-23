@@ -196,6 +196,7 @@ export type {
   SuppressDailyPlanningItemRequest,
   DiscoverPreviewRequest,
   CreateDiscoverFollowRequest,
+  DiscoverWorkspaceQuery,
 } from "./validation";
 
 /** A private, free-text marker the User applies across Library Items. */

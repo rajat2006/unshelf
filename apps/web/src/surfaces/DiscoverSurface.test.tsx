@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
@@ -22,6 +23,7 @@ import {
   DiscoverPreviewError,
   fetchDiscoverPreview,
   fetchDiscoverWorkspace,
+  unfollowDiscoverChannel,
 } from "../api";
 import { DiscoverSurface } from "./DiscoverSurface";
 
@@ -30,6 +32,7 @@ vi.mock("../api", async (importOriginal) => ({
   createDiscoverFollow: vi.fn(),
   fetchDiscoverPreview: vi.fn(),
   fetchDiscoverWorkspace: vi.fn(),
+  unfollowDiscoverChannel: vi.fn(),
 }));
 
 const auth: ApplicationAuth = {
@@ -81,6 +84,58 @@ function renderDiscover() {
 
 const emptyWorkspace: DiscoverWorkspace = { follows: [], candidates: [] };
 
+const secondPreview: DiscoverPreview = {
+  targetId: "00000000-0000-0000-0000-000000000101" as DiscoverProviderTargetId,
+  channel: {
+    externalId: "UC_systems",
+    title: "Systems School",
+    thumbnailUrl: null,
+    canonicalUrl: "https://www.youtube.com/channel/UC_systems",
+  },
+  videos: [
+    {
+      externalId: "systems-new",
+      title: "Systems newest",
+      thumbnailUrl: null,
+      publishedAt: "2026-08-22T12:00:00.000Z",
+      durationSeconds: 1_202,
+      source: "https://www.youtube.com/watch?v=systems-new",
+      channelExternalId: "UC_systems",
+      channelTitle: "Systems School",
+    },
+  ],
+};
+
+const quietFollow = {
+  id: "00000000-0000-0000-0000-000000000110",
+  targetId: preview.targetId,
+  channel: preview.channel,
+} as DiscoverFollow;
+const systemsFollow = {
+  id: "00000000-0000-0000-0000-000000000111",
+  targetId: secondPreview.targetId,
+  channel: secondPreview.channel,
+} as DiscoverFollow;
+const severalFollowsWorkspace = {
+  follows: [quietFollow, systemsFollow],
+  candidates: [
+    {
+      id: "00000000-0000-0000-0000-000000000120",
+      state: "pending",
+      video: secondPreview.videos[0],
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000121",
+      state: "pending",
+      video: preview.videos[0],
+    },
+  ],
+} as DiscoverWorkspace;
+
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 beforeEach(() => {
   vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(emptyWorkspace);
 });
@@ -90,6 +145,7 @@ afterEach(() => {
   vi.mocked(fetchDiscoverPreview).mockReset();
   vi.mocked(createDiscoverFollow).mockReset();
   vi.mocked(fetchDiscoverWorkspace).mockReset();
+  vi.mocked(unfollowDiscoverChannel).mockReset();
 });
 
 describe("Discover channel preview", () => {
@@ -286,6 +342,188 @@ describe("Discover channel preview", () => {
     expect(
       screen.queryByLabelText("YouTube channel URL"),
     ).not.toBeInTheDocument();
+  });
+
+  it("filters one combined queue by Follow with an accessible keyboard selector", async () => {
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(severalFollowsWorkspace)
+      .mockResolvedValueOnce({
+        follows: severalFollowsWorkspace.follows,
+        candidates: [severalFollowsWorkspace.candidates[0]],
+      });
+    renderDiscover();
+
+    const selector = await screen.findByRole("combobox", {
+      name: "Candidate channel",
+    });
+    expect(selector).toHaveTextContent("All followed channels");
+    expect(
+      screen.getByRole("article", { name: "Systems newest" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
+
+    selector.focus();
+    fireEvent.keyDown(selector, { key: "ArrowDown" });
+    const systemsOption = await screen.findByRole("option", {
+      name: "Systems School",
+    });
+    systemsOption.focus();
+    fireEvent.keyDown(systemsOption, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(fetchDiscoverWorkspace).toHaveBeenLastCalledWith(
+        auth.user,
+        systemsFollow.id,
+      ),
+    );
+    expect(
+      await screen.findByRole("article", { name: "Systems newest" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("article", { name: "Newest lesson" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Unfollow Quiet Learning" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Unfollow Systems School" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Follow management" }),
+    ).toHaveClass("lg:grid-cols-[minmax(14rem,20rem)_1fr]");
+    expect(screen.getByRole("list", { name: "Followed channels" })).toHaveClass(
+      "sm:grid-cols-2",
+    );
+  });
+
+  it("preserves the combined queue when a channel filter fails and retries it", async () => {
+    let rejectFilter!: (reason: Error) => void;
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce(severalFollowsWorkspace)
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectFilter = reject;
+        }),
+      )
+      .mockResolvedValueOnce({
+        follows: severalFollowsWorkspace.follows,
+        candidates: [severalFollowsWorkspace.candidates[1]],
+      });
+    renderDiscover();
+    const selector = await screen.findByRole("combobox", {
+      name: "Candidate channel",
+    });
+    fireEvent.click(selector);
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Quiet Learning" }),
+    );
+
+    expect(selector).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Filtering pending Candidates",
+    );
+    expect(
+      screen.getByRole("article", { name: "Systems newest" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
+    rejectFilter(new Error("temporary failure"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "channel filter could not be loaded",
+    );
+    expect(
+      screen.getByRole("article", { name: "Systems newest" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry channel filter" }),
+    );
+
+    await waitFor(() =>
+      expect(fetchDiscoverWorkspace).toHaveBeenLastCalledWith(
+        auth.user,
+        quietFollow.id,
+      ),
+    );
+    expect(
+      screen.queryByRole("article", { name: "Systems newest" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
+  });
+
+  it("soft-Unfollows a channel and can re-follow the same channel", async () => {
+    vi.mocked(fetchDiscoverWorkspace)
+      .mockResolvedValueOnce({
+        follows: [quietFollow],
+        candidates: [severalFollowsWorkspace.candidates[1]],
+      })
+      .mockResolvedValueOnce(emptyWorkspace)
+      .mockResolvedValueOnce({
+        follows: [quietFollow],
+        candidates: [severalFollowsWorkspace.candidates[1]],
+      });
+    vi.mocked(unfollowDiscoverChannel).mockResolvedValue();
+    vi.mocked(fetchDiscoverPreview).mockResolvedValue(preview);
+    vi.mocked(createDiscoverFollow).mockResolvedValue(quietFollow);
+    renderDiscover();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Unfollow Quiet Learning" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Unfollowing Quiet Learning…" }),
+    ).toBeDisabled();
+
+    expect(await screen.findByLabelText("YouTube channel URL")).toBeVisible();
+    expect(unfollowDiscoverChannel).toHaveBeenCalledWith(
+      auth.user,
+      quietFollow.id,
+    );
+    fireEvent.change(screen.getByLabelText("YouTube channel URL"), {
+      target: { value: "https://youtube.com/@quietlearning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview channel" }));
+    await screen.findByRole("heading", { name: "Quiet Learning" });
+    fireEvent.click(screen.getByRole("button", { name: "Follow channel" }));
+
+    await waitFor(() =>
+      expect(fetchDiscoverWorkspace).toHaveBeenCalledTimes(3),
+    );
+    expect(
+      await screen.findByRole("article", { name: "Newest lesson" }),
+    ).toBeVisible();
+    expect(createDiscoverFollow).toHaveBeenCalledWith(auth.user, {
+      targetId: quietFollow.targetId,
+    });
+  });
+
+  it("keeps Follow management available after a recoverable Unfollow error", async () => {
+    vi.mocked(fetchDiscoverWorkspace).mockResolvedValue(
+      severalFollowsWorkspace,
+    );
+    vi.mocked(unfollowDiscoverChannel).mockRejectedValue(
+      new Error("temporary failure"),
+    );
+    renderDiscover();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Unfollow Systems School" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Systems School could not be Unfollowed",
+    );
+    expect(
+      screen.getByRole("button", { name: "Unfollow Systems School" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("article", { name: "Systems newest" }),
+    ).toBeVisible();
   });
 
   it("announces resolution and presents the latest channel videos", async () => {

@@ -42,6 +42,7 @@ export const VALIDATION_FAILURE_CODES = [
   "invalid_daily_planning_query",
   "invalid_discover_preview",
   "invalid_discover_follow",
+  "invalid_discover_workspace",
 ] as const;
 
 export type ValidationFailureCode = (typeof VALIDATION_FAILURE_CODES)[number];

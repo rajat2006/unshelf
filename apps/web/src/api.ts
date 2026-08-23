@@ -14,6 +14,7 @@ import type {
   DiscoverPreviewRequest,
   CreateDiscoverFollowRequest,
   DiscoverFollow,
+  DiscoverFollowId,
   DiscoverWorkspace,
   Item,
   ItemDetail,
@@ -113,11 +114,15 @@ export async function fetchDiscoverPreview(
   }
 }
 
-/** Read the current User's active Follow and pending Candidate workspace. */
+/** Read active Follows and the optionally channel-filtered Candidate queue. */
 export async function fetchDiscoverWorkspace(
   user: CurrentUser,
+  followId?: DiscoverFollowId,
 ): Promise<DiscoverWorkspace> {
-  return requestJson<DiscoverWorkspace>(user, "/api/discover");
+  const query = followId
+    ? `?${new URLSearchParams({ followId }).toString()}`
+    : "";
+  return requestJson<DiscoverWorkspace>(user, `/api/discover${query}`);
 }
 
 /** Confirm shared preview data into one private Follow. */
@@ -129,6 +134,16 @@ export async function createDiscoverFollow(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+/** Stop future intake from one owned channel while preserving its history. */
+export async function unfollowDiscoverChannel(
+  user: CurrentUser,
+  followId: DiscoverFollowId,
+): Promise<void> {
+  await authenticatedRequest(user, `/api/discover/follows/${followId}`, {
+    method: "DELETE",
   });
 }
 
