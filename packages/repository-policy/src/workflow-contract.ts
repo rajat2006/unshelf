@@ -26,7 +26,13 @@ export type WorkflowConcurrency = {
 };
 
 export type WorkflowJob = {
+  checkouts: Array<{
+    action: string;
+    persistCredentials?: boolean | string;
+    ref?: string;
+  }>;
   environment?: string;
+  inheritsSecrets: boolean;
   needs: string[];
   permissions?: WorkflowPermissions;
   secretReferences: string[];
@@ -34,6 +40,7 @@ export type WorkflowJob = {
 
 export type WorkflowContract = {
   concurrency?: WorkflowConcurrency;
+  inheritsSecrets: boolean;
   jobs: Record<string, WorkflowJob>;
   permissions?: WorkflowPermissions;
   secretReferences: string[];
@@ -44,15 +51,19 @@ export function inspectWorkflow(source: string): WorkflowContract {
   const document: unknown = parse(source);
   const workflow = requireRecord(document, "workflow");
   const jobs = requireRecord(workflow.jobs, "workflow.jobs");
+  const parsedJobs = Object.fromEntries(
+    Object.entries(jobs).map(([name, value]) => [
+      name,
+      parseJob({ name, value }),
+    ]),
+  );
 
   return {
     concurrency: parseConcurrency(workflow.concurrency),
-    jobs: Object.fromEntries(
-      Object.entries(jobs).map(([name, value]) => [
-        name,
-        parseJob({ name, value }),
-      ]),
+    inheritsSecrets: Object.values(parsedJobs).some(
+      ({ inheritsSecrets }) => inheritsSecrets,
     ),
+    jobs: parsedJobs,
     permissions: parsePermissions(workflow.permissions),
     secretReferences: findSecretReferences(workflow),
     triggers: parseTriggers(workflow.on),
@@ -187,11 +198,60 @@ function parseJob({
 }): WorkflowJob {
   const job = requireRecord(value, `workflow.jobs.${name}`);
   return {
+    checkouts: parseCheckouts(job.steps, name),
     environment: parseEnvironment(job.environment, name),
+    inheritsSecrets: job.secrets === "inherit",
     needs: parseNeeds(job.needs, name),
     permissions: parsePermissions(job.permissions),
     secretReferences: findSecretReferences(job),
   };
+}
+
+function parseCheckouts(
+  value: unknown,
+  jobName: string,
+): WorkflowJob["checkouts"] {
+  if (value === undefined) {
+    return [];
+  }
+  const steps = requireArray(value, `workflow.jobs.${jobName}.steps`);
+  return steps.flatMap((value, index) => {
+    const step = requireRecord(
+      value,
+      `workflow.jobs.${jobName}.steps[${index}]`,
+    );
+    if (
+      typeof step.uses !== "string" ||
+      !step.uses.startsWith("actions/checkout@")
+    ) {
+      return [];
+    }
+
+    const checkout: WorkflowJob["checkouts"][number] = {
+      action: step.uses,
+    };
+    if (step.with === undefined) {
+      return [checkout];
+    }
+    const inputs = requireRecord(
+      step.with,
+      `workflow.jobs.${jobName}.steps[${index}].with`,
+    );
+    if (inputs.ref !== undefined) {
+      checkout.ref = requireString(inputs.ref, "checkout.ref");
+    }
+    if (inputs["persist-credentials"] !== undefined) {
+      const persistCredentials = inputs["persist-credentials"];
+      if (
+        typeof persistCredentials !== "boolean" &&
+        typeof persistCredentials !== "string"
+      ) {
+        throw new Error("checkout.persist-credentials is invalid");
+      }
+      checkout.persistCredentials = persistCredentials;
+    }
+    return [checkout];
+  });
 }
 
 function parseEnvironment(value: unknown, jobName: string): string | undefined {
@@ -282,8 +342,10 @@ function parseConcurrency(value: unknown): WorkflowConcurrency | undefined {
 function findSecretReferences(value: unknown): string[] {
   const references = new Set<string>();
   visitStrings(value, (text) => {
-    for (const match of text.matchAll(/\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
-      const name = match[1];
+    for (const match of text.matchAll(
+      /\bsecrets(?:\.([A-Za-z_][A-Za-z0-9_]*)|\s*\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\])/g,
+    )) {
+      const name = match[1] ?? match[2];
       if (name !== undefined) {
         references.add(name);
       }
