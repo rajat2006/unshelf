@@ -128,7 +128,9 @@ function parseChannelUrl(
   ) {
     return null;
   }
-  const parts = url.pathname.split("/").filter(Boolean);
+  const parts = url.pathname.slice(1).split("/");
+  if (parts.at(-1) === "") parts.pop();
+  if (parts.some((part) => part.length === 0)) return null;
   if (
     parts.length === 2 &&
     parts[0] === "channel" &&

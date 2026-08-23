@@ -56,18 +56,21 @@ export async function previewChannel({
       .returning({ id: discoverProviderTargets.id });
 
     for (const video of acquired.videos) {
+      const metadata = {
+        source: video.source,
+        title: video.title,
+        thumbnailUrl: video.thumbnailUrl,
+        publishedAt: new Date(video.publishedAt),
+        durationSeconds: video.durationSeconds,
+        updatedAt: now,
+      };
       await tx
         .insert(discoverProviderResults)
         .values({
           targetId: target.id,
           provider: "youtube",
           externalId: video.externalId,
-          source: video.source,
-          title: video.title,
-          thumbnailUrl: video.thumbnailUrl,
-          publishedAt: new Date(video.publishedAt),
-          durationSeconds: video.durationSeconds,
-          updatedAt: now,
+          ...metadata,
         })
         .onConflictDoUpdate({
           target: [
@@ -76,12 +79,7 @@ export async function previewChannel({
           ],
           set: {
             targetId: target.id,
-            source: video.source,
-            title: video.title,
-            thumbnailUrl: video.thumbnailUrl,
-            publishedAt: new Date(video.publishedAt),
-            durationSeconds: video.durationSeconds,
-            updatedAt: now,
+            ...metadata,
           },
         });
     }
