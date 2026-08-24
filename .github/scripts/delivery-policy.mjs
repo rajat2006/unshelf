@@ -130,24 +130,32 @@ function collectNestedObjects(value, records = []) {
   return records;
 }
 
-function containsNestedArray(value) {
-  if (Array.isArray(value)) return true;
-  if (!value || typeof value !== "object") return false;
-  return Object.values(value).some(containsNestedArray);
+function extractDeploymentResponse(value) {
+  const candidates = [];
+  if (Array.isArray(value)) candidates.push(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (Array.isArray(value.result)) candidates.push(value.result);
+    if (Array.isArray(value.result?.deployments)) {
+      candidates.push(value.result.deployments);
+    }
+    if (Array.isArray(value.result?.data?.json)) {
+      candidates.push(value.result.data.json);
+    }
+  }
+  if (candidates.length !== 1) fail("invalid deployment response");
+  return candidates[0];
 }
 
 function deploymentState(input) {
   if (typeof input.composeId !== "string" || input.composeId.length === 0) {
     fail("invalid Compose identity");
   }
-  if (!containsNestedArray(input.records)) {
-    fail("invalid deployment response");
-  }
-  const deploymentRecords = collectNestedObjects(input.records).filter(
-    (record) =>
-      ["deploymentId", "status", "title"].some((name) =>
-        Object.prototype.hasOwnProperty.call(record, name),
-      ),
+  const deploymentRecords = collectNestedObjects(
+    extractDeploymentResponse(input.records),
+  ).filter((record) =>
+    ["deploymentId", "status", "title"].some((name) =>
+      Object.prototype.hasOwnProperty.call(record, name),
+    ),
   );
   for (const record of deploymentRecords) {
     if (

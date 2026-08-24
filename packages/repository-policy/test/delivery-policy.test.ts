@@ -224,6 +224,12 @@ describe("direct delivery policy", () => {
       runPolicy("deployment-state", { composeId, records: {} }).status,
     ).not.toBe(0);
     expect(
+      runPolicy("deployment-state", {
+        composeId,
+        records: { garbage: [] },
+      }).status,
+    ).not.toBe(0);
+    expect(
       JSON.parse(
         runPolicy("deployment-state", {
           composeId,
