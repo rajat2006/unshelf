@@ -42,8 +42,46 @@ bodies, browser state, and repository Playwright artifacts.
   web document containing the Unshelf title and root mount.
 - The creation run built both images; it was not a no-op.
 
-## Refresh and deletion
+## Refresh
 
-Pending a newer exact-green pull-request revision, identity-preserving refresh,
-authenticated same-origin observation, pre-delete identity capture, manual
-Dokploy deletion with volume removal disabled, and residue audit.
+- The acceptance record itself produced the newer pull-request revision
+  `c5fefa99dd11509ef1067d12e604cfa612987d92`.
+- Product CI for that exact revision passed on its single manual rerun. The
+  first attempt completed all 384 API tests, then failed during PostgreSQL
+  teardown with SQLSTATE `57P01` while the test database was being terminated.
+- Manual workflow
+  [run 32744008224](https://github.com/rajat2006/unshelf/actions/runs/32744008224)
+  successfully refreshed the existing preview. It selected the newer exact
+  SHA, rebuilt both images, skipped the no-op path, reconciled the same routes,
+  and completed public API/database and web health checks.
+- The logical identity and public origin remained `unshelf-pr-570` and
+  `https://pr-570.200-141-9-57.sslip.io`.
+- The refreshed runtime resolved to Compose ID `TY5oTtHdgm6uzv4WbdLIi`, runtime
+  `appName` `unshelf-pr-570-lehmiv`, and deployment ID
+  `v9zpIsdk1p9gUyjA2ANMc`.
+- The deployed image digests were API
+  `sha256:22f67991a54c34a6f6177b60bc2146770ac1e59f4ddc290fe035d215787cde1d`
+  and web
+  `sha256:a2416ef092533d6d2707bf135210e8aa657c10de48bb1a63d40099025897fa03`.
+- A human signed in through the preview origin and observed an authenticated,
+  same-origin `GET /api/items` request return HTTP 200. No browser state or
+  response body was retained.
+
+## Manual deletion
+
+- Immediately before deletion, the live Compose record and both attached
+  Domain records were read back by API. Their captured Domain IDs were
+  `8VJsyt4tYKhf-h86KGAhr` and `kM8OewWNApNS3Zu6ODBBf`.
+- A maintainer selected the resource by its exact logical name, Compose ID, and
+  runtime `appName`, then deleted it manually in Dokploy with volume removal
+  disabled.
+- Post-delete API read-back found no Compose record by the captured logical
+  name or ID and neither captured Domain record. The public preview route no
+  longer answered.
+- Read-only host checks found no captured Compose project, container, network,
+  volume, or resource directory by runtime `appName`.
+- The development Compose resource, managed PostgreSQL resource, shared
+  `unshelf-nonprod-db` network, and development API/database health remained
+  present.
+- Removing `deploy:preview` from pull request #570 produced no workflow run;
+  only the two manual `workflow_dispatch` runs exist.
