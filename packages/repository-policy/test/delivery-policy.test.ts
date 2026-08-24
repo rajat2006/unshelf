@@ -14,6 +14,54 @@ function runPolicy(command: string, input: unknown) {
 }
 
 describe("direct delivery policy", () => {
+  it("permits a no-op only for the complete healthy channel state", () => {
+    const marker = {
+      channel: "development",
+      sourceSha: "a".repeat(40),
+      apiDigest: `sha256:${"b".repeat(64)}`,
+      webDigest: `sha256:${"c".repeat(64)}`,
+      runId: "123",
+      runAttempt: "1",
+      deploymentId: "deployment-123",
+    };
+    const healthy = {
+      channel: "development",
+      sourceSha: marker.sourceSha,
+      description: `unshelf:last-healthy ${JSON.stringify(marker)}`,
+      isolated: true,
+      liveCompose: "services: {}",
+      trustedCompose: "services: {}",
+      liveEnv: "DATABASE_URL=opaque\nAPI_IMAGE=immutable",
+      expectedEnv: "DATABASE_URL=opaque\nAPI_IMAGE=immutable",
+    };
+
+    const accepted = runPolicy("healthy-noop", healthy);
+    expect(accepted.status).toBe(0);
+    expect(JSON.parse(accepted.stdout)).toEqual({ eligible: true });
+
+    for (const drifted of [
+      { ...healthy, liveEnv: `${healthy.liveEnv}\nUNRELATED_VALUE=drifted` },
+      { ...healthy, description: "" },
+      { ...healthy, description: "unshelf:last-healthy not-json" },
+      { ...healthy, sourceSha: "d".repeat(40) },
+      { ...healthy, channel: "production" },
+      {
+        ...healthy,
+        description: `unshelf:last-healthy ${JSON.stringify({ ...marker, deploymentId: "" })}`,
+      },
+      {
+        ...healthy,
+        description: `unshelf:last-healthy ${JSON.stringify({ ...marker, runId: 123, runAttempt: 1 })}`,
+      },
+      { ...healthy, isolated: false },
+      { ...healthy, liveCompose: "services: { drifted: {} }" },
+    ]) {
+      const rejected = runPolicy("healthy-noop", drifted);
+      expect(rejected.status).toBe(0);
+      expect(JSON.parse(rejected.stdout)).toEqual({ eligible: false });
+    }
+  });
+
   it("admits a new preview only below the three-record capacity", () => {
     const admitted = runPolicy("select-preview", {
       logicalName: "unshelf-pr-44",
@@ -36,8 +84,16 @@ describe("direct delivery policy", () => {
   it("fails closed for duplicate and partially formed exact preview identities", () => {
     for (const records of [
       [
-        { composeId: "one", name: "unshelf-pr-44", appName: "unshelf-pr-44-abcdef" },
-        { composeId: "two", name: "unshelf-pr-44", appName: "unshelf-pr-44-ghijkl" },
+        {
+          composeId: "one",
+          name: "unshelf-pr-44",
+          appName: "unshelf-pr-44-abcdef",
+        },
+        {
+          composeId: "two",
+          name: "unshelf-pr-44",
+          appName: "unshelf-pr-44-ghijkl",
+        },
       ],
       [{ composeId: "one", name: "unshelf-pr-44" }],
       [{ name: "unshelf-pr-44", appName: "unshelf-pr-44-abcdef" }],
@@ -134,11 +190,26 @@ describe("direct delivery policy", () => {
       port: 80,
       https: true,
     };
-    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [] }).stdout)).toHaveLength(2);
-    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [web] }).stdout)).toEqual([
-      { path: "/api", port: 3001, serviceName: "api" },
-    ]);
-    expect(JSON.parse(runPolicy("reconcile-domains", { ...base, domains: [api, web] }).stdout)).toEqual([]);
-    expect(runPolicy("reconcile-domains", { ...base, domains: [api, { ...api, domainId: "duplicate" }] }).status).not.toBe(0);
+    expect(
+      JSON.parse(
+        runPolicy("reconcile-domains", { ...base, domains: [] }).stdout,
+      ),
+    ).toHaveLength(2);
+    expect(
+      JSON.parse(
+        runPolicy("reconcile-domains", { ...base, domains: [web] }).stdout,
+      ),
+    ).toEqual([{ path: "/api", port: 3001, serviceName: "api" }]);
+    expect(
+      JSON.parse(
+        runPolicy("reconcile-domains", { ...base, domains: [api, web] }).stdout,
+      ),
+    ).toEqual([]);
+    expect(
+      runPolicy("reconcile-domains", {
+        ...base,
+        domains: [api, { ...api, domainId: "duplicate" }],
+      }).status,
+    ).not.toBe(0);
   });
 });
