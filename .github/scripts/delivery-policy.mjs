@@ -29,20 +29,46 @@ const parseEnvironment = (value) => {
 };
 
 function validateEnvironment(input) {
-  if (input.channel !== "development") fail("unknown delivery channel");
+  const channels = {
+    development: {
+      forbidden: [
+        "API_IMAGE",
+        "WEB_IMAGE",
+        "PUBLIC_ORIGIN",
+        "DATABASE_NETWORK",
+      ],
+      migrationMode: "apply",
+      required: ["DATABASE_URL", "DATABASE_TIME_ZONE"],
+    },
+    preview: {
+      forbidden: [
+        "API_IMAGE",
+        "WEB_IMAGE",
+        "PUBLIC_ORIGIN",
+        "APPLICATION_NAME",
+        "APP_NAME",
+        "DATABASE_NETWORK",
+      ],
+      migrationMode: "verify",
+      required: ["DATABASE_URL", "DATABASE_TIME_ZONE"],
+    },
+    production: {
+      forbidden: ["API_IMAGE", "WEB_IMAGE", "PUBLIC_ORIGIN", "APP_NAME"],
+      migrationMode: "apply",
+      required: ["DATABASE_URL", "DATABASE_TIME_ZONE", "DATABASE_NETWORK"],
+    },
+  };
+  const channel = channels[input.channel];
+  if (!channel) fail("unknown delivery channel");
   const entries = parseEnvironment(input.aggregateEnv);
-  for (const name of ["DATABASE_URL", "DATABASE_TIME_ZONE"]) {
-    if (!entries.get(name)) fail("incomplete development environment");
+  for (const name of channel.required) {
+    if (!entries.get(name)) fail("incomplete channel environment");
   }
-  if (entries.get("MIGRATION_MODE") !== "apply")
-    fail("invalid development migration mode");
-  for (const name of [
-    "API_IMAGE",
-    "WEB_IMAGE",
-    "PUBLIC_ORIGIN",
-    "DATABASE_NETWORK",
-  ]) {
-    if (entries.has(name)) fail("workflow-owned development environment value");
+  if (entries.get("MIGRATION_MODE") !== channel.migrationMode) {
+    fail("invalid channel migration mode");
+  }
+  for (const name of channel.forbidden) {
+    if (entries.has(name)) fail("workflow-owned channel environment value");
   }
   return { valid: true };
 }
@@ -93,6 +119,268 @@ function configurationMatches(input) {
     live.size === expected.size &&
     [...expected].every(([name, value]) => live.get(name) === value);
   return { matches };
+}
+
+function collectNestedObjects(value, records = []) {
+  if (!value || typeof value !== "object") return records;
+  if (!Array.isArray(value)) records.push(value);
+  for (const nested of Array.isArray(value) ? value : Object.values(value)) {
+    collectNestedObjects(nested, records);
+  }
+  return records;
+}
+
+function deploymentState(input) {
+  if (typeof input.composeId !== "string" || input.composeId.length === 0) {
+    fail("invalid Compose identity");
+  }
+  const composeRecords = collectNestedObjects(input.records).filter(
+    (record) => record.composeId === input.composeId,
+  );
+  const terminal = new Set(["done", "error", "cancelled"]);
+  if (input.title === undefined) {
+    const records = composeRecords.filter(
+      (record) =>
+        typeof record.deploymentId === "string" &&
+        typeof record.status === "string" &&
+        typeof record.title === "string",
+    );
+    return {
+      state: records.some((record) => !terminal.has(record.status))
+        ? "outstanding"
+        : "settled",
+    };
+  }
+  if (typeof input.title !== "string" || input.title.length === 0) {
+    fail("invalid deployment title");
+  }
+  const exact = composeRecords.filter((record) => record.title === input.title);
+  const byId = new Map();
+  for (const record of exact) {
+    if (
+      typeof record.deploymentId !== "string" ||
+      record.deploymentId.length === 0
+    ) {
+      fail("invalid deployment identity");
+    }
+    const statuses = byId.get(record.deploymentId) ?? new Set();
+    statuses.add(record.status);
+    byId.set(record.deploymentId, statuses);
+  }
+  if (byId.size > 1) fail("ambiguous deployment identity");
+  if (byId.size === 0) return { state: "missing" };
+  const [[deploymentId, statuses]] = byId;
+  if (statuses.size !== 1) fail("ambiguous deployment state");
+  const [status] = statuses;
+  return {
+    deploymentId,
+    state: terminal.has(status) ? status : "pending",
+  };
+}
+
+function authorizeProductCi(input) {
+  if (!/^[0-9a-f]{40}$/.test(input.sourceSha ?? "")) {
+    fail("invalid Product CI revision");
+  }
+  const runs = Array.isArray(input.runs?.workflow_runs)
+    ? input.runs.workflow_runs
+    : [];
+  for (const run of runs) {
+    if (
+      run.head_sha !== input.sourceSha ||
+      run.event !== input.event ||
+      run.status !== "completed" ||
+      run.conclusion !== "success" ||
+      (input.branch !== null && run.head_branch !== input.branch)
+    ) {
+      continue;
+    }
+    const jobs = input.jobsByRunId?.[run.id]?.jobs;
+    if (
+      Array.isArray(jobs) &&
+      jobs.some(
+        (job) =>
+          job.name === "Product" &&
+          job.status === "completed" &&
+          job.conclusion === "success",
+      )
+    ) {
+      return { runId: run.id };
+    }
+  }
+  fail("exact Product CI evidence is unavailable");
+}
+
+function authorizePreview(input) {
+  const pull = input.pull;
+  if (
+    !Number.isSafeInteger(input.prNumber) ||
+    input.prNumber < 1 ||
+    typeof input.repository !== "string" ||
+    pull?.state !== "open" ||
+    pull?.draft !== false ||
+    pull?.base?.ref !== "dev" ||
+    pull?.head?.repo?.full_name !== input.repository ||
+    !Array.isArray(pull?.labels) ||
+    !pull.labels.some((label) => label?.name === "deploy:preview")
+  ) {
+    fail("pull request is not authorized for preview");
+  }
+  const sourceSha = pull.head.sha;
+  const trustedSha = pull.base.sha;
+  if (!/^[0-9a-f]{40}$/.test(sourceSha) || !/^[0-9a-f]{40}$/.test(trustedSha)) {
+    fail("invalid preview revision");
+  }
+  return {
+    logicalName: `unshelf-pr-${input.prNumber}`,
+    sourceSha,
+    trustedSha,
+  };
+}
+
+function validateDeliveryValues(input) {
+  if (!Array.isArray(input.origins) || !Array.isArray(input.digests)) {
+    fail("invalid delivery values");
+  }
+  for (const value of input.origins) {
+    try {
+      const origin = new URL(value);
+      if (origin.protocol !== "https:" || origin.origin !== value) {
+        fail("invalid HTTPS origin");
+      }
+    } catch {
+      fail("invalid HTTPS origin");
+    }
+  }
+  if (input.digests.some((digest) => !/^sha256:[0-9a-f]{64}$/.test(digest))) {
+    fail("invalid immutable digest");
+  }
+  return { valid: true };
+}
+
+function markerState(input) {
+  const prefix = "unshelf:last-healthy ";
+  if (
+    typeof input.description !== "string" ||
+    !input.description.startsWith(prefix) ||
+    !/^[0-9a-f]{40}$/.test(input.sourceSha ?? "")
+  ) {
+    return { matches: false };
+  }
+  let marker;
+  try {
+    marker = JSON.parse(input.description.slice(prefix.length));
+  } catch {
+    return { matches: false };
+  }
+  const expectedKeys = [
+    "apiDigest",
+    "deploymentId",
+    "runAttempt",
+    "runId",
+    "sourceSha",
+    "webDigest",
+  ];
+  if (
+    !marker ||
+    typeof marker !== "object" ||
+    Array.isArray(marker) ||
+    JSON.stringify(Object.keys(marker).sort()) !==
+      JSON.stringify(expectedKeys) ||
+    marker.sourceSha !== input.sourceSha ||
+    !/^sha256:[0-9a-f]{64}$/.test(marker.apiDigest ?? "") ||
+    !/^sha256:[0-9a-f]{64}$/.test(marker.webDigest ?? "") ||
+    !/^[1-9][0-9]*$/.test(marker.runId ?? "") ||
+    !/^[1-9][0-9]*$/.test(marker.runAttempt ?? "") ||
+    typeof marker.deploymentId !== "string" ||
+    marker.deploymentId.length === 0
+  ) {
+    return { matches: false };
+  }
+  return { marker, matches: true };
+}
+
+function authorizeProductionRevision(input) {
+  if (
+    !Number.isSafeInteger(input.runAttempt) ||
+    input.runAttempt < 1 ||
+    !/^[0-9a-f]{40}$/.test(input.mainSha ?? "") ||
+    !/^[0-9a-f]{40}$/.test(input.runSha ?? "") ||
+    !Array.isArray(input.successfulReleases)
+  ) {
+    fail("invalid production revision evidence");
+  }
+  if (input.runAttempt === 1) return { sourceSha: input.mainSha };
+  if (!new Set(["ahead", "identical"]).has(input.relationToMain)) {
+    fail("production rerun is no longer contained in main");
+  }
+  for (const release of input.successfulReleases) {
+    if (release.sha === input.runSha) continue;
+    if (release.relationFromRun !== "behind") {
+      fail("a newer production release already succeeded");
+    }
+  }
+  return { sourceSha: input.runSha };
+}
+
+function selectProductionDeployment(input) {
+  const payloadKeys = [
+    "apiDigest",
+    "dokployDeploymentId",
+    "runAttempt",
+    "runId",
+    "webDigest",
+  ];
+  if (
+    !Array.isArray(input.deployments) ||
+    !input.payload ||
+    typeof input.payload !== "object" ||
+    !input.statusesById ||
+    typeof input.statusesById !== "object"
+  ) {
+    fail("invalid production Deployment evidence");
+  }
+  const exact = input.deployments.filter(
+    (deployment) =>
+      deployment?.payload &&
+      payloadKeys.every(
+        (key) => deployment.payload[key] === input.payload[key],
+      ),
+  );
+  if (exact.length > 1) fail("ambiguous production Deployment evidence");
+  if (exact.length === 0) return { action: "create" };
+  const deploymentId = exact[0].id;
+  if (typeof deploymentId !== "number" && typeof deploymentId !== "string") {
+    fail("invalid production Deployment identity");
+  }
+  if (!Object.prototype.hasOwnProperty.call(input.statusesById, deploymentId)) {
+    return { action: "inspect", deploymentId };
+  }
+  const statuses = input.statusesById[deploymentId];
+  if (!Array.isArray(statuses)) fail("invalid production Deployment statuses");
+  return {
+    action: statuses.some((status) => status?.state === "success")
+      ? "complete"
+      : "record-success",
+    deploymentId,
+  };
+}
+
+function healthState(input) {
+  let api;
+  try {
+    api = JSON.parse(input.apiBody);
+  } catch {
+    return { healthy: false };
+  }
+  const webBody = typeof input.webBody === "string" ? input.webBody : "";
+  return {
+    healthy:
+      api?.status === "ok" &&
+      api?.db === "up" &&
+      /<title>Unshelf<\/title>/i.test(webBody) &&
+      /id=(?:"root"|'root')/i.test(webBody),
+  };
 }
 
 function selectPreview(input) {
@@ -150,9 +438,17 @@ function reconcileDomains(input) {
 
 const commands = {
   "allow-preview-changes": allowPreviewChanges,
+  "authorize-preview": authorizePreview,
+  "authorize-production-revision": authorizeProductionRevision,
+  "authorize-product-ci": authorizeProductCi,
   "configuration-matches": configurationMatches,
+  "deployment-state": deploymentState,
+  "health-state": healthState,
+  "marker-state": markerState,
   "reconcile-domains": reconcileDomains,
   "select-preview": selectPreview,
+  "select-production-deployment": selectProductionDeployment,
+  "validate-delivery-values": validateDeliveryValues,
   "validate-environment": validateEnvironment,
 };
 const command = commands[process.argv[2]];

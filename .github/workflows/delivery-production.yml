@@ -30,35 +30,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
           main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
-          if test "$GITHUB_RUN_ATTEMPT" = 1; then
-            test "$GITHUB_REF" = refs/heads/main
-            source_sha="$main_sha"
-          else
-            source_sha="$GITHUB_SHA"
-            # Built-in reruns retain their original SHA; both comparisons fail closed if it no longer precedes main or a healthy release (ADR-0022).
-            comparison="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${source_sha}...${main_sha}" --jq .status)"
-            test "$comparison" = ahead -o "$comparison" = identical
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${main_sha}" --jq .content | base64 --decode >"$policy"
+          relation_to_main=null
+          successful_releases='[]'
+          if test "$GITHUB_RUN_ATTEMPT" != 1; then
+            relation_to_main="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${main_sha}" --jq .status)"
             deployments="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=production&per_page=100")"
             while IFS= read -r deployment; do
               deployment_id="$(jq -r .id <<<"$deployment")"
               deployed_sha="$(jq -r .sha <<<"$deployment")"
-              test "$deployed_sha" != "$source_sha" || continue
               success="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")')"
               test "$success" = false && continue
-              relation="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${source_sha}...${deployed_sha}" --jq .status)"
-              test "$relation" = behind
+              relation="$(if test "$deployed_sha" = "$GITHUB_SHA"; then printf identical; else gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${deployed_sha}" --jq .status; fi)"
+              successful_releases="$(jq -c --arg sha "$deployed_sha" --arg relationFromRun "$relation" '. + [{sha:$sha,relationFromRun:$relationFromRun}]' <<<"$successful_releases")"
             done < <(jq -c '.[]' <<<"$deployments")
           fi
-          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          authorization="$(jq -n --argjson runAttempt "$GITHUB_RUN_ATTEMPT" --arg mainSha "$main_sha" --arg runSha "$GITHUB_SHA" --arg relationToMain "$relation_to_main" --argjson successfulReleases "$successful_releases" '{runAttempt:$runAttempt,mainSha:$mainSha,runSha:$runSha,relationToMain:$relationToMain,successfulReleases:$successfulReleases}' | node "$policy" authorize-production-revision)"
+          source_sha="$(jq -r .sourceSha <<<"$authorization")"
           runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${source_sha}&event=push&status=completed&per_page=100")"
           run_ids="$(jq -r --arg sha "$source_sha" '.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .id' <<<"$runs")"
-          approved=false
+          jobs_by_run='{}'
           while IFS= read -r run_id; do
             test -n "$run_id" || continue
-            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" --jq '.jobs | any(.name == "Product" and .status == "completed" and .conclusion == "success")' | grep -qx true; then approved=true; break; fi
+            jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")"
+            jobs_by_run="$(jq -c --arg id "$run_id" --argjson jobs "$jobs" '. + {($id):$jobs}' <<<"$jobs_by_run")"
           done <<<"$run_ids"
-          test "$approved" = true
+          jq -n --argjson runs "$runs" --argjson jobsByRunId "$jobs_by_run" --arg sourceSha "$source_sha" '{runs:$runs,jobsByRunId:$jobsByRunId,sourceSha:$sourceSha,event:"push",branch:"main"}' | node "$policy" authorize-product-ci >/dev/null
           printf 'source_sha=%s\n' "$source_sha" >>"$GITHUB_OUTPUT"
 
   inspect:
@@ -88,14 +89,14 @@ jobs:
           DOKPLOY_COMPOSE_ENV: ${{ secrets.DOKPLOY_PRODUCTION_COMPOSE_ENV }}
         run: |
           set -euo pipefail
-          node -e 'for(const name of ["DOKPLOY_URL","PUBLIC_ORIGIN"]){const u=new URL(process.env[name]);if(u.protocol!=="https:"||u.origin!==process.env[name])process.exit(1)}'
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${SOURCE_SHA}" --jq .content | base64 --decode >"$policy"
+          jq -n --arg dokploy "$DOKPLOY_URL" --arg public "$PUBLIC_ORIGIN" '{origins:[$dokploy,$public],digests:[]}' | node "$policy" validate-delivery-values >/dev/null
           test "$PUBLIC_ORIGIN" = https://unshelf.tech
           test -n "$COMPOSE_ID" && test -n "$DOKPLOY_API_KEY" && test -n "$DOKPLOY_COMPOSE_ENV"
           if grep -Eq '^(API_IMAGE|WEB_IMAGE|PUBLIC_ORIGIN)=' <<<"$DOKPLOY_COMPOSE_ENV"; then exit 1; fi
           grep -qx 'MIGRATION_MODE=apply' <<<"$DOKPLOY_COMPOSE_ENV"
           grep -q '^DATABASE_NETWORK=' <<<"$DOKPLOY_COMPOSE_ENV"
-          policy="$RUNNER_TEMP/delivery-policy.mjs"
-          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${SOURCE_SHA}" --jq .content | base64 --decode >"$policy"
           record="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/compose.one")"
           compose_name="$(jq -er '.result.data.json.name // .name' <<<"$record")"
           runtime_name="$(jq -er '.result.data.json.appName // .appName' <<<"$record")"
@@ -105,16 +106,17 @@ jobs:
           isolated="$(jq -er '.result.data.json.isolatedDeployment // .isolatedDeployment' <<<"$record")"
           trusted_compose="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${SOURCE_SHA}" --jq .content | base64 --decode)"
           deploy=true
-          marker="${description#unshelf:last-healthy }"
-          marker_output='{}'
-          marker_api="$(jq -r '.apiDigest // ""' <<<"$marker" 2>/dev/null || true)"
-          marker_web="$(jq -r '.webDigest // ""' <<<"$marker" 2>/dev/null || true)"
+          marker_state="$(jq -n --arg description "$description" --arg sourceSha "$SOURCE_SHA" '{description:$description,sourceSha:$sourceSha}' | node "$policy" marker-state)"
+          marker_matches="$(jq -r .matches <<<"$marker_state")"
+          marker_output="$(jq -c '.marker // {}' <<<"$marker_state")"
+          marker_api="$(jq -r '.marker.apiDigest // ""' <<<"$marker_state")"
+          marker_web="$(jq -r '.marker.webDigest // ""' <<<"$marker_state")"
           configuration_matches="$(jq -n --arg aggregateEnv "$DOKPLOY_COMPOSE_ENV" --arg liveEnv "$live_env" --arg apiImage "ghcr.io/rajat2006/unshelf-api@$marker_api" --arg webImage "ghcr.io/rajat2006/unshelf-web@$marker_web" --arg publicOrigin "$PUBLIC_ORIGIN" '{aggregateEnv:$aggregateEnv,liveEnv:$liveEnv,injected:{API_IMAGE:$apiImage,WEB_IMAGE:$webImage,PUBLIC_ORIGIN:$publicOrigin}}' | node "$policy" configuration-matches | jq -r .matches)"
-          if test "$marker" != "$description" && test "$isolated" = true && test "$live_compose" = "$trusted_compose" && test "$configuration_matches" = true && jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and (.apiDigest | test("^sha256:[0-9a-f]{64}$")) and (.webDigest | test("^sha256:[0-9a-f]{64}$")) and (.runId | test("^[1-9][0-9]*$")) and (.runAttempt | test("^[1-9][0-9]*$")) and (.deploymentId | length > 0)' <<<"$marker" >/dev/null; then
-            marker_output="$(jq -c . <<<"$marker")"
+          if test "$marker_matches" = true && test "$isolated" = true && test "$live_compose" = "$trusted_compose" && test "$configuration_matches" = true; then
             api="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/api/health" || true)"
             web="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/" || true)"
-            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then deploy=false; fi
+            health="$(jq -n --arg apiBody "$api" --arg webBody "$web" '{apiBody:$apiBody,webBody:$webBody}' | node "$policy" health-state | jq -r .healthy)"
+            if test "$health" = true; then deploy=false; fi
           fi
           printf 'deploy=%s\ncompose_id=%s\ncompose_name=%s\nruntime_name=%s\nmarker=%s\n' "$deploy" "$COMPOSE_ID" "$compose_name" "$runtime_name" "$marker_output" >>"$GITHUB_OUTPUT"
 
@@ -188,7 +190,7 @@ jobs:
     if: always() && needs.inspect.result == 'success' && (needs.inspect.outputs.deploy == 'false' || (needs.api-image.result == 'success' && needs.web-image.result == 'success'))
     environment: production
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       deployments: write
@@ -207,14 +209,20 @@ jobs:
           RUN_ID="$(jq -er .runId <<<"$MARKER")"
           RUN_ATTEMPT="$(jq -er .runAttempt <<<"$MARKER")"
           DOKPLOY_DEPLOYMENT_ID="$(jq -er .deploymentId <<<"$MARKER")"
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${SOURCE_SHA}" --jq .content | base64 --decode >"$policy"
+          payload="$(jq -cn --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$RUN_ID" --arg runAttempt "$RUN_ATTEMPT" --arg dokployDeploymentId "$DOKPLOY_DEPLOYMENT_ID" '{apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,dokployDeploymentId:$dokployDeploymentId}')"
           existing="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SOURCE_SHA}&environment=production&per_page=100")"
-          deployment_id="$(jq -r --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$RUN_ID" --arg runAttempt "$RUN_ATTEMPT" --arg dokployDeploymentId "$DOKPLOY_DEPLOYMENT_ID" '.[] | select(.payload.apiDigest == $apiDigest and .payload.webDigest == $webDigest and .payload.runId == $runId and .payload.runAttempt == $runAttempt and .payload.dokployDeploymentId == $dokployDeploymentId) | .id' <<<"$existing" | head -n1)"
-          if test -z "$deployment_id"; then
-            payload="$(jq -cn --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$RUN_ID" --arg runAttempt "$RUN_ATTEMPT" --arg dokployDeploymentId "$DOKPLOY_DEPLOYMENT_ID" '{apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,dokployDeploymentId:$dokployDeploymentId}')"
+          selection="$(jq -n --argjson deployments "$existing" --argjson payload "$payload" '{deployments:$deployments,payload:$payload,statusesById:{}}' | node "$policy" select-production-deployment)"
+          if test "$(jq -r .action <<<"$selection")" = create; then
             deployment="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments" --input - <<<"$(jq -n --arg ref "$SOURCE_SHA" --argjson payload "$payload" '{ref:$ref,environment:"production",auto_merge:false,required_contexts:[],production_environment:true,transient_environment:false,payload:$payload}')")"
             deployment_id="$(jq -er .id <<<"$deployment")"
+          else
+            deployment_id="$(jq -r .deploymentId <<<"$selection")"
           fi
-          if ! gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")' | grep -qx true; then
+          statuses="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=100")"
+          final_selection="$(jq -n --arg id "$deployment_id" --argjson payload "$payload" --argjson statuses "$statuses" '{deployments:[{id:$id,payload:$payload}],payload:$payload,statusesById:{($id):$statuses}}' | node "$policy" select-production-deployment)"
+          if test "$(jq -r .action <<<"$final_selection")" = record-success; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" -f state=success -f environment=production >/dev/null
           fi
           printf '### Production delivery\n\n- State: healthy no-op\n- Source: `%s`\n- Compose ID: `%s`\n' "$SOURCE_SHA" "$COMPOSE_ID" >>"$GITHUB_STEP_SUMMARY"
@@ -232,10 +240,22 @@ jobs:
           DOKPLOY_COMPOSE_ENV: ${{ secrets.DOKPLOY_PRODUCTION_COMPOSE_ENV }}
         run: |
           set -euo pipefail
-          [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] && [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${SOURCE_SHA}" --jq .content | base64 --decode >"$policy"
+          jq -n --arg api "$API_DIGEST" --arg web "$WEB_DIGEST" --arg dokploy "$DOKPLOY_URL" --arg public "$PUBLIC_ORIGIN" '{origins:[$dokploy,$public],digests:[$api,$web]}' | node "$policy" validate-delivery-values >/dev/null
+          jq -n --arg channel production --arg aggregateEnv "$DOKPLOY_COMPOSE_ENV" \
+            '{channel:$channel,aggregateEnv:$aggregateEnv}' | node "$policy" validate-environment >/dev/null
           api_image="ghcr.io/rajat2006/unshelf-api@$API_DIGEST"; web_image="ghcr.io/rajat2006/unshelf-web@$WEB_DIGEST"
           compose_file="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${SOURCE_SHA}" --jq .content | base64 --decode)"
           env_file="${DOKPLOY_COMPOSE_ENV%$'\n'}"$'\n'"API_IMAGE=$api_image"$'\n'"WEB_IMAGE=$web_image"$'\n'"PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
+          outstanding=true
+          for _ in $(seq 1 120); do
+            records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/deployment.allByCompose")"
+            state="$(jq -n --argjson records "$records" --arg composeId "$COMPOSE_ID" '{records:$records,composeId:$composeId}' | node "$policy" deployment-state | jq -r .state)"
+            if test "$state" = settled; then outstanding=false; break; fi
+            sleep 5
+          done
+          test "$outstanding" = false
           body="$(jq -n --arg composeId "$COMPOSE_ID" --arg composeFile "$compose_file" --arg env "$env_file" '{composeId:$composeId,composeFile:$composeFile,env:$env,sourceType:"raw",composeType:"docker-compose",isolatedDeployment:true}')"
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$body" "$DOKPLOY_URL/api/compose.update" >/dev/null
           title="production:$SOURCE_SHA:run-$GITHUB_RUN_ID-attempt-$GITHUB_RUN_ATTEMPT"; description="channel=production source=$SOURCE_SHA run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
@@ -244,9 +264,8 @@ jobs:
           status=missing; deployment_id=""
           for _ in $(seq 1 120); do
             records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/deployment.allByCompose")"
-            matches="$(jq -c --arg title "$title" --arg id "$COMPOSE_ID" '[.. | objects | select(.title? == $title and .composeId? == $id)] | unique_by(.deploymentId)' <<<"$records")"
-            test "$(jq 'length' <<<"$matches")" -le 1
-            status="$(jq -r '.[0].status // "missing"' <<<"$matches")"; deployment_id="$(jq -r '.[0].deploymentId // ""' <<<"$matches")"
+            deployment="$(jq -n --argjson records "$records" --arg composeId "$COMPOSE_ID" --arg title "$title" '{records:$records,composeId:$composeId,title:$title}' | node "$policy" deployment-state)"
+            status="$(jq -r .state <<<"$deployment")"; deployment_id="$(jq -r '.deploymentId // ""' <<<"$deployment")"
             test "$status" != error && test "$status" != cancelled
             test "$status" = "done" && break; sleep 5
           done
@@ -254,7 +273,8 @@ jobs:
           healthy=false
           for _ in $(seq 1 24); do
             api="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/api/health" || true)"; web="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/" || true)"
-            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then healthy=true; break; fi
+            health="$(jq -n --arg apiBody "$api" --arg webBody "$web" '{apiBody:$apiBody,webBody:$webBody}' | node "$policy" health-state | jq -r .healthy)"
+            if test "$health" = true; then healthy=true; break; fi
             sleep 5
           done
           test "$healthy" = true
@@ -263,12 +283,16 @@ jobs:
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$marker_body" "$DOKPLOY_URL/api/compose.update" >/dev/null
           payload="$(jq -cn --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" --arg dokployDeploymentId "$deployment_id" '{apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,dokployDeploymentId:$dokployDeploymentId}')"
           existing="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SOURCE_SHA}&environment=production&per_page=100")"
-          github_deployment_id="$(jq -r --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" --arg dokployDeploymentId "$deployment_id" '.[] | select(.payload.apiDigest == $apiDigest and .payload.webDigest == $webDigest and .payload.runId == $runId and .payload.runAttempt == $runAttempt and .payload.dokployDeploymentId == $dokployDeploymentId) | .id' <<<"$existing" | head -n1)"
-          if test -z "$github_deployment_id"; then
+          selection="$(jq -n --argjson deployments "$existing" --argjson payload "$payload" '{deployments:$deployments,payload:$payload,statusesById:{}}' | node "$policy" select-production-deployment)"
+          if test "$(jq -r .action <<<"$selection")" = create; then
             deployment="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments" --input - <<<"$(jq -n --arg ref "$SOURCE_SHA" --argjson payload "$payload" '{ref:$ref,environment:"production",auto_merge:false,required_contexts:[],production_environment:true,transient_environment:false,payload:$payload}')")"
             github_deployment_id="$(jq -er .id <<<"$deployment")"
+          else
+            github_deployment_id="$(jq -r .deploymentId <<<"$selection")"
           fi
-          if ! gh api "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")' | grep -qx true; then
+          statuses="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses?per_page=100")"
+          final_selection="$(jq -n --arg id "$github_deployment_id" --argjson payload "$payload" --argjson statuses "$statuses" '{deployments:[{id:$id,payload:$payload}],payload:$payload,statusesById:{($id):$statuses}}' | node "$policy" select-production-deployment)"
+          if test "$(jq -r .action <<<"$final_selection")" = record-success; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses" -f state=success -f environment=production >/dev/null
           fi
           printf '### Production delivery\n\n- State: healthy\n- Source: `%s`\n- API digest: `%s`\n- Web digest: `%s`\n- Dokploy deployment: `%s`\n' "$SOURCE_SHA" "$API_DIGEST" "$WEB_DIGEST" "$deployment_id" >>"$GITHUB_STEP_SUMMARY"
