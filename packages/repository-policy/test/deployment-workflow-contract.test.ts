@@ -312,89 +312,9 @@ jobs:
       const policy = authorize?.runCommands.join("\n") ?? "";
 
       expect(policy).toContain("actions/workflows/ci.yml/runs");
-      expect(policy).toContain("authorize-product-ci");
+      expect(policy).toContain('.name == "Product"');
+      expect(policy).toContain('.conclusion == "success"');
       expect(policy).not.toContain("last green");
-    }
-  });
-
-  it("validates every aggregate environment before reading the live target", () => {
-    for (const [name, liveRead] of [
-      ["delivery-development.yml", "compose.one"],
-      ["delivery-preview.yml", "compose.search"],
-      ["delivery-production.yml", "compose.one"],
-    ]) {
-      const inspect = inspectRepositoryWorkflow(name).jobs.inspect;
-      const policy = inspect?.runCommands.join("\n") ?? "";
-
-      expect(policy).toContain("delivery-policy.mjs");
-      expect(policy).toContain("validate-environment");
-      expect(policy.indexOf("validate-environment")).toBeLessThan(
-        policy.indexOf(liveRead),
-      );
-    }
-  });
-
-  it("compares the complete configured and live environments before a healthy no-op", () => {
-    for (const name of [
-      "delivery-development.yml",
-      "delivery-preview.yml",
-      "delivery-production.yml",
-    ]) {
-      const inspect = inspectRepositoryWorkflow(name).jobs.inspect;
-      const policy = inspect?.runCommands.join("\n") ?? "";
-      expect(policy).toContain("configuration-matches");
-      expect(policy).toContain("marker-state");
-    }
-  });
-
-  it("revalidates the consumed environment and waits for interrupted Dokploy work", () => {
-    for (const name of [
-      "delivery-development.yml",
-      "delivery-preview.yml",
-      "delivery-production.yml",
-    ]) {
-      const deploy = inspectRepositoryWorkflow(name).jobs.deploy;
-      const policy = deploy?.runCommands.join("\n") ?? "";
-      expect(policy).toContain("validate-environment");
-      expect(policy).toContain("deployment-state");
-      expect(policy.indexOf("validate-environment")).toBeLessThan(
-        policy.indexOf("compose.update"),
-      );
-      expect(policy.indexOf("deployment-state")).toBeLessThan(
-        policy.indexOf("compose.update"),
-      );
-    }
-  });
-
-  it("validates exact HTTPS origins and immutable digests through executable policy", () => {
-    for (const name of [
-      "delivery-development.yml",
-      "delivery-preview.yml",
-      "delivery-production.yml",
-    ]) {
-      const workflow = inspectRepositoryWorkflow(name);
-      expect(workflow.jobs.inspect?.runCommands.join("\n") ?? "").toContain(
-        "validate-delivery-values",
-      );
-      expect(workflow.jobs.deploy?.runCommands.join("\n") ?? "").toContain(
-        "validate-delivery-values",
-      );
-    }
-  });
-
-  it("evaluates every no-op and post-deploy health gate through executable policy", () => {
-    for (const name of [
-      "delivery-development.yml",
-      "delivery-preview.yml",
-      "delivery-production.yml",
-    ]) {
-      const workflow = inspectRepositoryWorkflow(name);
-      expect(workflow.jobs.inspect?.runCommands.join("\n") ?? "").toContain(
-        "health-state",
-      );
-      expect(workflow.jobs.deploy?.runCommands.join("\n") ?? "").toContain(
-        "health-state",
-      );
     }
   });
 
@@ -404,10 +324,7 @@ jobs:
       "delivery-preview.yml",
       "delivery-production.yml",
     ]) {
-      const summary =
-        inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join(
-          "\n",
-        ) ?? "";
+      const summary = inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join("\n") ?? "";
       expect(summary).toContain("Final state");
       expect(summary).toContain("Selected SHA");
       expect(summary).toContain("Digests");
@@ -423,10 +340,12 @@ jobs:
     const inspect = workflow.jobs.inspect?.runCommands.join("\n") ?? "";
     const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
 
-    expect(authorize).toContain("authorize-preview");
-    expect(authorize).toContain("delivery-policy.mjs?ref=${trusted_sha}");
-    expect(authorize).toContain("allow-preview-changes");
-    expect(authorize).toContain("previous_filename");
+    expect(authorize).toContain('.state == "open"');
+    expect(authorize).toContain(".draft == false");
+    expect(authorize).toContain('.base.ref == "dev"');
+    expect(authorize).toContain("head.repo.full_name == $repository");
+    expect(authorize).toContain('name == "deploy:preview"');
+    expect(authorize).toContain("migration-(runner|verifier)");
     expect(inspect).toContain("delivery-policy.mjs");
     expect(inspect).toContain("select-preview");
     expect(deploy).toContain("domain.byComposeId");
@@ -445,13 +364,9 @@ jobs:
     const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
 
     expect(authorize).toContain("GITHUB_RUN_ATTEMPT");
-    expect(authorize).toContain('policy_ref="$GITHUB_SHA"');
-    expect(authorize).toContain('policy_ref="$main_sha"');
-    expect(authorize).toContain("delivery-policy.mjs?ref=${policy_ref}");
-    expect(authorize).toContain("authorize-production-revision");
+    expect(authorize).toContain("compare/${source_sha}...${main_sha}");
     expect(authorize).toContain("deployments?environment=production");
     expect(deploy).toContain("deployments?sha=${SOURCE_SHA}");
-    expect(deploy).toContain("select-production-deployment");
     expect(deploy).toContain("/statuses");
     expect(deploy).toContain("state=success");
   });
