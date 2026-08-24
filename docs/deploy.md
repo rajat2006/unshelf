@@ -84,6 +84,7 @@ The complete resource environment contains:
 | `PUBLIC_ORIGIN` | Exact canonical HTTPS origin with no trailing slash, path, query, fragment, or credentials. |
 | `CLERK_SECRET_KEY` | Runtime secret for the matching Clerk instance. |
 | `CLERK_PUBLISHABLE_KEY` | Runtime publishable key for the matching Clerk instance. |
+| `YOUTUBE_API_KEY` | Server-only YouTube Data API credential used for Discover previews and acquisition. |
 | `MIGRATION_MODE` | `apply` for development and production; `verify` for previews. |
 | `LOG_LEVEL` | Optional; defaults to `info`. |
 

@@ -10,6 +10,16 @@ import type {
   DailyFocus,
   DailyPlanning,
   DailyPlanningQuery,
+  DiscoverPreview,
+  DiscoverPreviewRequest,
+  CreateDiscoverFollowRequest,
+  DiscoverFollow,
+  DiscoverFollowId,
+  DiscoverCandidate,
+  DiscoverCandidateId,
+  DiscoverWorkspace,
+  KeepDiscoverCandidateRequest,
+  KeepDiscoverCandidateResult,
   Item,
   ItemDetail,
   ItemId,
@@ -66,8 +76,138 @@ async function authenticatedRequest(
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...init, headers });
-  if (!response.ok) throw new Error(`api responded ${response.status}`);
+  if (!response.ok) throw new ApiResponseError(response.status);
   return response;
+}
+
+class ApiResponseError extends Error {
+  constructor(readonly status: number) {
+    super(`api responded ${status}`);
+  }
+}
+
+export type DiscoverPreviewFailure =
+  "invalid" | "not_found" | "throttled" | "temporary";
+
+export class DiscoverPreviewError extends Error {
+  constructor(readonly kind: DiscoverPreviewFailure) {
+    super(`discover preview failed: ${kind}`);
+  }
+}
+
+/** Resolve one public YouTube channel into an ephemeral review experience. */
+export async function fetchDiscoverPreview(
+  user: CurrentUser,
+  url: string,
+): Promise<DiscoverPreview> {
+  const body: DiscoverPreviewRequest = { url };
+  try {
+    return await requestJson<DiscoverPreview>(user, "/api/discover/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (!(error instanceof ApiResponseError)) {
+      throw new DiscoverPreviewError("temporary");
+    }
+    if (error.status === 400) throw new DiscoverPreviewError("invalid");
+    if (error.status === 404) throw new DiscoverPreviewError("not_found");
+    if (error.status === 429) throw new DiscoverPreviewError("throttled");
+    throw new DiscoverPreviewError("temporary");
+  }
+}
+
+/** Read active Follows and the optionally channel-filtered Candidate queue. */
+export async function fetchDiscoverWorkspace(
+  user: CurrentUser,
+  followId?: DiscoverFollowId,
+): Promise<DiscoverWorkspace> {
+  const query = followId
+    ? `?${new URLSearchParams({ followId }).toString()}`
+    : "";
+  return requestJson<DiscoverWorkspace>(user, `/api/discover${query}`);
+}
+
+/** Confirm shared preview data into one private Follow. */
+export async function createDiscoverFollow(
+  user: CurrentUser,
+  input: CreateDiscoverFollowRequest,
+): Promise<DiscoverFollow> {
+  return requestJson<DiscoverFollow>(user, "/api/discover/follows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+/** Stop future intake from one owned channel while preserving its history. */
+export async function unfollowDiscoverChannel(
+  user: CurrentUser,
+  followId: DiscoverFollowId,
+): Promise<void> {
+  await authenticatedRequest(user, `/api/discover/follows/${followId}`, {
+    method: "DELETE",
+  });
+}
+
+export class DiscoverCandidateDecisionError extends Error {
+  constructor(readonly kind: "conflict" | "temporary") {
+    super(`discover Candidate decision failed: ${kind}`);
+  }
+}
+
+function toDiscoverCandidateDecisionError(
+  error: unknown,
+): DiscoverCandidateDecisionError {
+  return new DiscoverCandidateDecisionError(
+    error instanceof ApiResponseError && error.status === 409
+      ? "conflict"
+      : "temporary",
+  );
+}
+
+/** Keep one pending Candidate using only User-confirmed Library fields. */
+export async function keepDiscoverCandidate(
+  user: CurrentUser,
+  input: KeepDiscoverCandidateRequest & {
+    candidateId: DiscoverCandidateId;
+  },
+): Promise<KeepDiscoverCandidateResult> {
+  const { candidateId, ...body } = input;
+  try {
+    return await requestJson<KeepDiscoverCandidateResult>(
+      user,
+      `/api/discover/candidates/${candidateId}/keep`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch (error) {
+    throw toDiscoverCandidateDecisionError(error);
+  }
+}
+
+/** Reject one pending Candidate without crossing into the Library. */
+export async function rejectDiscoverCandidate(
+  user: CurrentUser,
+  candidateId: DiscoverCandidateId,
+): Promise<DiscoverCandidate> {
+  try {
+    return await requestJson<DiscoverCandidate>(
+      user,
+      `/api/discover/candidates/${candidateId}/reject`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+  } catch (error) {
+    throw toDiscoverCandidateDecisionError(error);
+  }
 }
 
 /** Fetch All — every Item belonging to the current User. */
