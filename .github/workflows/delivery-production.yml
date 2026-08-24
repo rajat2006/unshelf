@@ -35,6 +35,7 @@ jobs:
           [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           policy="$RUNNER_TEMP/delivery-policy.mjs"
           policy_ref="$main_sha"
+          # A rerun retains its original SHA, so it must also retain that revision's authorization policy (ADR-0022).
           if test "$GITHUB_RUN_ATTEMPT" != 1; then policy_ref="$GITHUB_SHA"; fi
           gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${policy_ref}" --jq .content | base64 --decode >"$policy"
           relation_to_main=null

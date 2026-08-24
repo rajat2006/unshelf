@@ -207,6 +207,11 @@ describe("direct delivery policy", () => {
       { composeId, status: "running", title: "older-run" },
       { composeId, deploymentId: "deployment-2", title: "older-run" },
       { composeId, deploymentId: "deployment-2", status: "running" },
+      {
+        deploymentId: "deployment-2",
+        status: "running",
+        title: "older-run",
+      },
     ]) {
       expect(
         runPolicy("deployment-state", {
@@ -215,6 +220,17 @@ describe("direct delivery policy", () => {
         }).status,
       ).not.toBe(0);
     }
+    expect(
+      runPolicy("deployment-state", { composeId, records: {} }).status,
+    ).not.toBe(0);
+    expect(
+      JSON.parse(
+        runPolicy("deployment-state", {
+          composeId,
+          records: { result: { data: { json: [] } } },
+        }).stdout,
+      ),
+    ).toEqual({ state: "settled" });
   });
 
   it("authorizes Product CI only from immutable exact-run revision evidence", () => {

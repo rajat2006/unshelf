@@ -130,20 +130,29 @@ function collectNestedObjects(value, records = []) {
   return records;
 }
 
+function containsNestedArray(value) {
+  if (Array.isArray(value)) return true;
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some(containsNestedArray);
+}
+
 function deploymentState(input) {
   if (typeof input.composeId !== "string" || input.composeId.length === 0) {
     fail("invalid Compose identity");
   }
-  const composeRecords = collectNestedObjects(input.records).filter(
-    (record) => record.composeId === input.composeId,
-  );
-  const deploymentRecords = composeRecords.filter((record) =>
-    ["deploymentId", "status", "title"].some((name) =>
-      Object.prototype.hasOwnProperty.call(record, name),
-    ),
+  if (!containsNestedArray(input.records)) {
+    fail("invalid deployment response");
+  }
+  const deploymentRecords = collectNestedObjects(input.records).filter(
+    (record) =>
+      ["deploymentId", "status", "title"].some((name) =>
+        Object.prototype.hasOwnProperty.call(record, name),
+      ),
   );
   for (const record of deploymentRecords) {
     if (
+      typeof record.composeId !== "string" ||
+      record.composeId.length === 0 ||
       typeof record.deploymentId !== "string" ||
       record.deploymentId.length === 0 ||
       typeof record.status !== "string" ||
@@ -154,10 +163,13 @@ function deploymentState(input) {
       fail("invalid deployment record");
     }
   }
+  const composeRecords = deploymentRecords.filter(
+    (record) => record.composeId === input.composeId,
+  );
   const terminal = new Set(["done", "error", "cancelled"]);
   if (input.title === undefined) {
     return {
-      state: deploymentRecords.some((record) => !terminal.has(record.status))
+      state: composeRecords.some((record) => !terminal.has(record.status))
         ? "outstanding"
         : "settled",
     };
@@ -165,9 +177,7 @@ function deploymentState(input) {
   if (typeof input.title !== "string" || input.title.length === 0) {
     fail("invalid deployment title");
   }
-  const exact = deploymentRecords.filter(
-    (record) => record.title === input.title,
-  );
+  const exact = composeRecords.filter((record) => record.title === input.title);
   const byId = new Map();
   for (const record of exact) {
     if (
