@@ -137,16 +137,27 @@ function deploymentState(input) {
   const composeRecords = collectNestedObjects(input.records).filter(
     (record) => record.composeId === input.composeId,
   );
+  const deploymentRecords = composeRecords.filter((record) =>
+    ["deploymentId", "status", "title"].some((name) =>
+      Object.prototype.hasOwnProperty.call(record, name),
+    ),
+  );
+  for (const record of deploymentRecords) {
+    if (
+      typeof record.deploymentId !== "string" ||
+      record.deploymentId.length === 0 ||
+      typeof record.status !== "string" ||
+      record.status.length === 0 ||
+      typeof record.title !== "string" ||
+      record.title.length === 0
+    ) {
+      fail("invalid deployment record");
+    }
+  }
   const terminal = new Set(["done", "error", "cancelled"]);
   if (input.title === undefined) {
-    const records = composeRecords.filter(
-      (record) =>
-        typeof record.deploymentId === "string" &&
-        typeof record.status === "string" &&
-        typeof record.title === "string",
-    );
     return {
-      state: records.some((record) => !terminal.has(record.status))
+      state: deploymentRecords.some((record) => !terminal.has(record.status))
         ? "outstanding"
         : "settled",
     };
@@ -154,7 +165,9 @@ function deploymentState(input) {
   if (typeof input.title !== "string" || input.title.length === 0) {
     fail("invalid deployment title");
   }
-  const exact = composeRecords.filter((record) => record.title === input.title);
+  const exact = deploymentRecords.filter(
+    (record) => record.title === input.title,
+  );
   const byId = new Map();
   for (const record of exact) {
     if (
@@ -311,6 +324,10 @@ function authorizeProductionRevision(input) {
     fail("invalid production revision evidence");
   }
   if (input.runAttempt === 1) return { sourceSha: input.mainSha };
+  // GitHub compares base...head: run...main must be ahead/identical so main still
+  // contains the retained rerun SHA, while run...release must be behind so every
+  // other successful release predates it. This preserves ADR-0022's immutable
+  // rerun revision and refuses a rerun after a newer production success.
   if (!new Set(["ahead", "identical"]).has(input.relationToMain)) {
     fail("production rerun is no longer contained in main");
   }

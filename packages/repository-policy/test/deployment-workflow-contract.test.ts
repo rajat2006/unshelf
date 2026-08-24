@@ -317,16 +317,21 @@ jobs:
     }
   });
 
-  it("validates the development aggregate environment before reading the live target", () => {
-    const inspect = inspectRepositoryWorkflow("delivery-development.yml").jobs
-      .inspect;
-    const policy = inspect?.runCommands.join("\n") ?? "";
+  it("validates every aggregate environment before reading the live target", () => {
+    for (const [name, liveRead] of [
+      ["delivery-development.yml", "compose.one"],
+      ["delivery-preview.yml", "compose.search"],
+      ["delivery-production.yml", "compose.one"],
+    ]) {
+      const inspect = inspectRepositoryWorkflow(name).jobs.inspect;
+      const policy = inspect?.runCommands.join("\n") ?? "";
 
-    expect(policy).toContain("delivery-policy.mjs");
-    expect(policy).toContain("validate-environment");
-    expect(policy.indexOf("validate-environment")).toBeLessThan(
-      policy.indexOf("compose.one"),
-    );
+      expect(policy).toContain("delivery-policy.mjs");
+      expect(policy).toContain("validate-environment");
+      expect(policy.indexOf("validate-environment")).toBeLessThan(
+        policy.indexOf(liveRead),
+      );
+    }
   });
 
   it("compares the complete configured and live environments before a healthy no-op", () => {
@@ -440,6 +445,9 @@ jobs:
     const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
 
     expect(authorize).toContain("GITHUB_RUN_ATTEMPT");
+    expect(authorize).toContain('policy_ref="$GITHUB_SHA"');
+    expect(authorize).toContain('policy_ref="$main_sha"');
+    expect(authorize).toContain("delivery-policy.mjs?ref=${policy_ref}");
     expect(authorize).toContain("authorize-production-revision");
     expect(authorize).toContain("deployments?environment=production");
     expect(deploy).toContain("deployments?sha=${SOURCE_SHA}");

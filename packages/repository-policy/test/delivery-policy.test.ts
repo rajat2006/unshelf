@@ -203,6 +203,18 @@ describe("direct delivery policy", () => {
         }).stdout,
       ),
     ).toEqual({ state: "settled" });
+    for (const malformed of [
+      { composeId, status: "running", title: "older-run" },
+      { composeId, deploymentId: "deployment-2", title: "older-run" },
+      { composeId, deploymentId: "deployment-2", status: "running" },
+    ]) {
+      expect(
+        runPolicy("deployment-state", {
+          composeId,
+          records: [malformed],
+        }).status,
+      ).not.toBe(0);
+    }
   });
 
   it("authorizes Product CI only from immutable exact-run revision evidence", () => {

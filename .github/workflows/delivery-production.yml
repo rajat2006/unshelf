@@ -34,7 +34,9 @@ jobs:
           main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
           [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           policy="$RUNNER_TEMP/delivery-policy.mjs"
-          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${main_sha}" --jq .content | base64 --decode >"$policy"
+          policy_ref="$main_sha"
+          if test "$GITHUB_RUN_ATTEMPT" != 1; then policy_ref="$GITHUB_SHA"; fi
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${policy_ref}" --jq .content | base64 --decode >"$policy"
           relation_to_main=null
           successful_releases='[]'
           if test "$GITHUB_RUN_ATTEMPT" != 1; then
@@ -94,9 +96,8 @@ jobs:
           jq -n --arg dokploy "$DOKPLOY_URL" --arg public "$PUBLIC_ORIGIN" '{origins:[$dokploy,$public],digests:[]}' | node "$policy" validate-delivery-values >/dev/null
           test "$PUBLIC_ORIGIN" = https://unshelf.tech
           test -n "$COMPOSE_ID" && test -n "$DOKPLOY_API_KEY" && test -n "$DOKPLOY_COMPOSE_ENV"
-          if grep -Eq '^(API_IMAGE|WEB_IMAGE|PUBLIC_ORIGIN)=' <<<"$DOKPLOY_COMPOSE_ENV"; then exit 1; fi
-          grep -qx 'MIGRATION_MODE=apply' <<<"$DOKPLOY_COMPOSE_ENV"
-          grep -q '^DATABASE_NETWORK=' <<<"$DOKPLOY_COMPOSE_ENV"
+          jq -n --arg channel production --arg aggregateEnv "$DOKPLOY_COMPOSE_ENV" \
+            '{channel:$channel,aggregateEnv:$aggregateEnv}' | node "$policy" validate-environment >/dev/null
           record="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/compose.one")"
           compose_name="$(jq -er '.result.data.json.name // .name' <<<"$record")"
           runtime_name="$(jq -er '.result.data.json.appName // .appName' <<<"$record")"

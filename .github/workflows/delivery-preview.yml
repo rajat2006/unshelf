@@ -95,8 +95,8 @@ jobs:
           jq -n --arg origin "$DOKPLOY_URL" '{origins:[$origin],digests:[]}' | node "$policy" validate-delivery-values >/dev/null
           [[ "$DOMAIN_SUFFIX" =~ ^[a-z0-9.-]+$ ]] && [[ "$DOMAIN_SUFFIX" != .* ]] && [[ "$DOMAIN_SUFFIX" != *. ]]
           test -n "$ENVIRONMENT_ID" && test -n "$DOKPLOY_API_KEY" && test -n "$DOKPLOY_COMPOSE_ENV"
-          grep -qx 'MIGRATION_MODE=verify' <<<"$DOKPLOY_COMPOSE_ENV"
-          if grep -Eq '^(API_IMAGE|WEB_IMAGE|PUBLIC_ORIGIN|APPLICATION_NAME|APP_NAME|DATABASE_NETWORK)=' <<<"$DOKPLOY_COMPOSE_ENV"; then exit 1; fi
+          jq -n --arg channel preview --arg aggregateEnv "$DOKPLOY_COMPOSE_ENV" \
+            '{channel:$channel,aggregateEnv:$aggregateEnv}' | node "$policy" validate-environment >/dev/null
           public_origin="https://pr-${PR_NUMBER}.${DOMAIN_SUFFIX}"
           jq -n --arg origin "$public_origin" '{origins:[$origin],digests:[]}' | node "$policy" validate-delivery-values >/dev/null
           records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "environmentId=$ENVIRONMENT_ID" --data-urlencode 'limit=100' "$DOKPLOY_URL/api/compose.search")"
