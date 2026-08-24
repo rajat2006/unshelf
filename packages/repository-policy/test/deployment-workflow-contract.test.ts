@@ -324,13 +324,49 @@ jobs:
       "delivery-preview.yml",
       "delivery-production.yml",
     ]) {
-      const summary = inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join("\n") ?? "";
+      const summary =
+        inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join(
+          "\n",
+        ) ?? "";
       expect(summary).toContain("Final state");
       expect(summary).toContain("Selected SHA");
       expect(summary).toContain("Digests");
       expect(summary).toContain("Gates/health");
       expect(summary).toContain("Duration");
       expect(summary).toContain("Compose:");
+    }
+  });
+
+  it("treats complete runtime environment drift as a deployment", () => {
+    for (const name of [
+      "delivery-development.yml",
+      "delivery-preview.yml",
+      "delivery-production.yml",
+    ]) {
+      const inspect =
+        inspectRepositoryWorkflow(name).jobs.inspect?.runCommands.join("\n") ??
+        "";
+
+      expect(inspect).toContain("expected_env=");
+      expect(inspect).toContain('--arg liveEnv "$live_env"');
+      expect(inspect).toContain('--arg expectedEnv "$expected_env"');
+      expect(inspect).toContain("healthy-noop");
+    }
+  });
+
+  it("binds every healthy marker to its delivery channel", () => {
+    for (const [name, channel] of [
+      ["delivery-development.yml", "development"],
+      ["delivery-preview.yml", "preview"],
+      ["delivery-production.yml", "production"],
+    ] as const) {
+      const workflow = inspectRepositoryWorkflow(name);
+      const inspect = workflow.jobs.inspect?.runCommands.join("\n") ?? "";
+      const deploy = workflow.jobs.deploy?.runCommands.join("\n") ?? "";
+
+      expect(inspect).toContain(`--arg channel ${channel}`);
+      expect(deploy).toContain(`--arg channel ${channel}`);
+      expect(deploy).toContain("{channel:$channel");
     }
   });
 
