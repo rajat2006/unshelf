@@ -318,13 +318,40 @@ jobs:
     }
   });
 
+  it("validates the development aggregate environment before reading the live target", () => {
+    const inspect = inspectRepositoryWorkflow("delivery-development.yml").jobs
+      .inspect;
+    const policy = inspect?.runCommands.join("\n") ?? "";
+
+    expect(policy).toContain("delivery-policy.mjs");
+    expect(policy).toContain("validate-environment");
+    expect(policy.indexOf("validate-environment")).toBeLessThan(
+      policy.indexOf("compose.one"),
+    );
+  });
+
+  it("compares the complete configured and live environments before a healthy no-op", () => {
+    for (const name of [
+      "delivery-development.yml",
+      "delivery-preview.yml",
+      "delivery-production.yml",
+    ]) {
+      const inspect = inspectRepositoryWorkflow(name).jobs.inspect;
+      const policy = inspect?.runCommands.join("\n") ?? "";
+      expect(policy).toContain("configuration-matches");
+    }
+  });
+
   it("records allowlisted final evidence for every channel outcome", () => {
     for (const name of [
       "delivery-development.yml",
       "delivery-preview.yml",
       "delivery-production.yml",
     ]) {
-      const summary = inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join("\n") ?? "";
+      const summary =
+        inspectRepositoryWorkflow(name).jobs.summarize?.runCommands.join(
+          "\n",
+        ) ?? "";
       expect(summary).toContain("Final state");
       expect(summary).toContain("Selected SHA");
       expect(summary).toContain("Digests");
@@ -345,7 +372,8 @@ jobs:
     expect(authorize).toContain('.base.ref == "dev"');
     expect(authorize).toContain("head.repo.full_name == $repository");
     expect(authorize).toContain('name == "deploy:preview"');
-    expect(authorize).toContain("migration-(runner|verifier)");
+    expect(authorize).toContain("delivery-policy.mjs?ref=${trusted_sha}");
+    expect(authorize).toContain("allow-preview-changes");
     expect(inspect).toContain("delivery-policy.mjs");
     expect(inspect).toContain("select-preview");
     expect(deploy).toContain("domain.byComposeId");

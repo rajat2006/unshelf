@@ -56,10 +56,9 @@ jobs:
           done <<<"$run_ids"
           test "$approved" = true
           changed="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${trusted_sha}...${source_sha}" --paginate --jq '.files[].filename')"
-          if grep -Eq '^(apps/api/(drizzle/|src/schema\.ts$|src/migration-(runner|verifier)\.ts$|drizzle\.config\.ts$|package\.json$)|pnpm-lock\.yaml$)' <<<"$changed"; then
-            echo 'Preview refused because the pull request changes the shared schema or migration runtime.' >&2
-            exit 1
-          fi
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${trusted_sha}" --jq .content | base64 --decode >"$policy"
+          jq -Rsc '{paths:split("\n") | map(select(length > 0))}' <<<"$changed" | node "$policy" allow-preview-changes >/dev/null
           printf 'source_sha=%s\ntrusted_sha=%s\npr_number=%s\nlogical_name=unshelf-pr-%s\n' "$source_sha" "$trusted_sha" "$PR_NUMBER" "$PR_NUMBER" >>"$GITHUB_OUTPUT"
 
   inspect:
@@ -116,7 +115,8 @@ jobs:
           marker="${description#unshelf:last-healthy }"
           marker_api="$(jq -r '.apiDigest // ""' <<<"$marker" 2>/dev/null || true)"
           marker_web="$(jq -r '.webDigest // ""' <<<"$marker" 2>/dev/null || true)"
-          if test -n "$compose_id" && test "$marker" != "$description" && test "$isolated" = true && test "$live_compose" = "$trusted_compose" && jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and (.apiDigest | test("^sha256:[0-9a-f]{64}$")) and (.webDigest | test("^sha256:[0-9a-f]{64}$")) and (.runId | test("^[1-9][0-9]*$")) and (.runAttempt | test("^[1-9][0-9]*$")) and (.deploymentId | length > 0)' <<<"$marker" >/dev/null && grep -qx "API_IMAGE=ghcr.io/rajat2006/unshelf-api@$marker_api" <<<"$live_env" && grep -qx "WEB_IMAGE=ghcr.io/rajat2006/unshelf-web@$marker_web" <<<"$live_env" && grep -qx 'DATABASE_NETWORK=unshelf-nonprod-db' <<<"$live_env" && grep -qx 'MIGRATION_MODE=verify' <<<"$live_env" && grep -qx "APPLICATION_NAME=$LOGICAL_NAME" <<<"$live_env" && grep -qx "PUBLIC_ORIGIN=$public_origin" <<<"$live_env"; then
+          configuration_matches="$(jq -n --arg aggregateEnv "$DOKPLOY_COMPOSE_ENV" --arg liveEnv "$live_env" --arg apiImage "ghcr.io/rajat2006/unshelf-api@$marker_api" --arg webImage "ghcr.io/rajat2006/unshelf-web@$marker_web" --arg publicOrigin "$public_origin" --arg logicalName "$LOGICAL_NAME" '{aggregateEnv:$aggregateEnv,liveEnv:$liveEnv,injected:{API_IMAGE:$apiImage,WEB_IMAGE:$webImage,PUBLIC_ORIGIN:$publicOrigin,APPLICATION_NAME:$logicalName,DATABASE_NETWORK:"unshelf-nonprod-db"}}' | node "$policy" configuration-matches | jq -r .matches)"
+          if test -n "$compose_id" && test "$marker" != "$description" && test "$isolated" = true && test "$live_compose" = "$trusted_compose" && test "$configuration_matches" = true && jq -e --arg sha "$SOURCE_SHA" '.sourceSha == $sha and (.apiDigest | test("^sha256:[0-9a-f]{64}$")) and (.webDigest | test("^sha256:[0-9a-f]{64}$")) and (.runId | test("^[1-9][0-9]*$")) and (.runAttempt | test("^[1-9][0-9]*$")) and (.deploymentId | length > 0)' <<<"$marker" >/dev/null; then
             api="$(curl --fail --silent --show-error "$public_origin/api/health" || true)"; web="$(curl --fail --silent --show-error "$public_origin/" || true)"
             if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then deploy=false; fi
           fi
