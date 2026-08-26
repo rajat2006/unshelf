@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, exists, isNull, sql } from "drizzle-orm";
 import { deriveItemCompletion } from "@unshelf/shared";
 import type {
   AddDailyFocusItemRequest,
@@ -16,6 +16,7 @@ import type {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { refreshTodayEntrySnapshot } from "./snapshots";
+import { activeItem } from "../items/active-item";
 import { ITEM_PROJECTION, toItem } from "../items/repository";
 import {
   dailyFocuses,
@@ -78,6 +79,7 @@ async function readDailyFocus(
       and(
         eq(items.id, dailyFocusItems.itemId),
         eq(items.userId, dailyFocusItems.userId),
+        activeItem(),
       ),
     )
     .leftJoin(
@@ -281,7 +283,7 @@ export async function addTodayItem({
         status: items.status,
       })
       .from(items)
-      .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+      .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
       .limit(1);
     if (!ownedItem) return { ok: false, error: "not_found" };
 
@@ -433,6 +435,18 @@ export async function removeTodayItem({
           eq(dailyFocusItems.dailyFocusId, dailyFocusId),
           eq(dailyFocusItems.userId, userId),
           eq(dailyFocusItems.itemId, itemId),
+          exists(
+            tx
+              .select({ id: items.id })
+              .from(items)
+              .where(
+                and(
+                  eq(items.id, itemId),
+                  eq(items.userId, userId),
+                  activeItem(),
+                ),
+              ),
+          ),
         ),
       )
       .returning({ itemId: dailyFocusItems.itemId });

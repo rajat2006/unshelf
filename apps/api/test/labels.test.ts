@@ -114,6 +114,31 @@ describe("private Labels", () => {
     expect((removedAgain.body as Item).title).toBe("First Item");
   });
 
+  it("treats Label membership mutations on a tombstone as missing", async () => {
+    const user = "clerk_label_tombstone";
+    const item = (await capture(user, "Ended labelled Item")).body as Item;
+    const retained = (await createLabel(user, { name: "Retained" }))
+      .body as Label;
+    const unapplied = (await createLabel(user, { name: "Unapplied" }))
+      .body as Label;
+    await applyLabel(user, item.id, retained.id);
+    await harness.pool.query(
+      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
+      [item.id],
+    );
+
+    const applied = await applyLabel(user, item.id, unapplied.id);
+    const removed = await removeLabel(user, item.id, retained.id);
+
+    expect(applied.status).toBe(404);
+    expect(removed.status).toBe(404);
+    const memberships = await harness.pool.query<{ label_id: string }>(
+      "SELECT label_id FROM item_labels WHERE item_id = $1 ORDER BY label_id",
+      [item.id],
+    );
+    expect(memberships.rows).toEqual([{ label_id: retained.id }]);
+  });
+
   it("rejects cross-User Label membership at the database boundary", async () => {
     const aliceItem = (await capture("clerk_label_db_alice", "Alice Item"))
       .body as Item;

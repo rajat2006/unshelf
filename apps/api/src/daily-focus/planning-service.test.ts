@@ -617,6 +617,48 @@ describe("Daily Planning service", () => {
     );
   });
 
+  it("hides a tombstone from planning and rejects its suppression", async () => {
+    const user = "daily-planning-tombstone";
+    const createItem = async (title: string) =>
+      (
+        await request(app)
+          .post("/api/items")
+          .set(TEST_USER_HEADER, user)
+          .send({ title, type: "article" })
+          .expect(201)
+      ).body as Item;
+    const ended = await createItem("Lifecycle search ended");
+    const active = await createItem("Lifecycle search active");
+    await harness.pool.query(
+      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
+      [ended.id],
+    );
+
+    const planning = (
+      await request(app)
+        .get("/api/daily-focus/today/planning")
+        .query({ query: "lifecycle search" })
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyPlanning;
+    const suppressed = await request(app)
+      .post("/api/daily-focus/today/suppressions")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: ended.id });
+
+    expect(planning.searchResults.map(({ id }) => id)).toEqual([active.id]);
+    expect(planning.suggestions.map(({ item }) => item.id)).toEqual([
+      active.id,
+    ]);
+    expect(suppressed.status).toBe(404);
+    expect(suppressed.body).toEqual({ error: "item not found" });
+    const retained = await harness.pool.query(
+      "SELECT item_id FROM daily_planning_suppressions WHERE item_id = $1",
+      [ended.id],
+    );
+    expect(retained.rows).toEqual([]);
+  });
+
   it("rejects the retired temporary planning inputs", async () => {
     await request(app)
       .get("/api/daily-focus/today/planning")

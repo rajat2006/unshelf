@@ -436,6 +436,64 @@ describe("Item Parts", () => {
     expect(unchanged.statusMode).toBe("manual");
   });
 
+  it("treats every Part mutation on a tombstone as missing", async () => {
+    const user = "parts-tombstone";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Ended structure", type: "course" })
+    ).body as Item;
+    const structured = (
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["Frozen Part"] })
+    ).body as ItemDetail;
+    const partId = structured.parts[0].id;
+    await harness.pool.query(
+      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
+      [item.id],
+    );
+
+    const responses = [
+      await request(app)
+        .post(`/api/items/${item.id}/parts`)
+        .set(TEST_USER_HEADER, user)
+        .send({ titles: ["New Part"] }),
+      await request(app)
+        .patch(`/api/items/${item.id}/parts/${partId}`)
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Changed Part" }),
+      await request(app)
+        .patch(`/api/items/${item.id}/parts/${partId}/completion`)
+        .set(TEST_USER_HEADER, user)
+        .send({ completed: true }),
+      await request(app)
+        .put(`/api/items/${item.id}/parts/order`)
+        .set(TEST_USER_HEADER, user)
+        .send({ partIds: [partId] }),
+      await request(app)
+        .delete(`/api/items/${item.id}/parts/${partId}`)
+        .set(TEST_USER_HEADER, user),
+    ];
+
+    expect(responses.map(({ status }) => status)).toEqual([
+      404, 404, 404, 404, 404,
+    ]);
+    const frozen = await harness.pool.query<{
+      title: string;
+      completed: boolean;
+      position: number;
+    }>(
+      "SELECT title, completed, position FROM parts WHERE item_id = $1 ORDER BY position",
+      [item.id],
+    );
+    expect(frozen.rows).toEqual([
+      { title: "Frozen Part", completed: false, position: 0 },
+    ]);
+  });
+
   it("enforces Part ownership, order, title, and cascade constraints in PostgreSQL", async () => {
     const first = (
       await request(app)

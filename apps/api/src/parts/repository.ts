@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, exists, sql } from "drizzle-orm";
 import {
   Status,
   StatusMode,
@@ -13,8 +13,26 @@ import {
 } from "@unshelf/shared";
 import type { Database } from "../db";
 import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
+import { activeItem } from "../items/active-item";
 import { getItem } from "../items/repository";
 import { items, parts } from "../schema";
+
+const activeOwnedItemExists = (
+  db: Database,
+  input: { userId: UserId; itemId: ItemId },
+) =>
+  exists(
+    db
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          eq(items.id, input.itemId),
+          eq(items.userId, input.userId),
+          activeItem(),
+        ),
+      ),
+  );
 
 export async function createParts(
   db: Database,
@@ -27,7 +45,13 @@ export async function createParts(
     const owned = await tx
       .select({ id: items.id })
       .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)))
+      .where(
+        and(
+          eq(items.id, input.itemId),
+          eq(items.userId, input.userId),
+          activeItem(),
+        ),
+      )
       .limit(1);
     if (!owned[0]) return null;
 
@@ -70,6 +94,7 @@ export async function updatePart(
         eq(parts.id, input.partId),
         eq(parts.itemId, input.itemId),
         eq(parts.userId, input.userId),
+        activeOwnedItemExists(db, input),
       ),
     )
     .returning({ id: parts.id });
@@ -91,7 +116,13 @@ export async function reorderParts(
     const owned = await tx
       .select({ id: items.id })
       .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)))
+      .where(
+        and(
+          eq(items.id, input.itemId),
+          eq(items.userId, input.userId),
+          activeItem(),
+        ),
+      )
       .limit(1);
     if (!owned[0]) return "not_found";
 
@@ -147,6 +178,14 @@ export async function updatePartCompletion(
     const current = await tx
       .select({ completed: parts.completed })
       .from(parts)
+      .innerJoin(
+        items,
+        and(
+          eq(items.id, parts.itemId),
+          eq(items.userId, parts.userId),
+          activeItem(),
+        ),
+      )
       .where(
         and(
           eq(parts.id, input.partId),
@@ -168,6 +207,7 @@ export async function updatePartCompletion(
           eq(parts.id, input.partId),
           eq(parts.itemId, input.itemId),
           eq(parts.userId, input.userId),
+          activeOwnedItemExists(tx, input),
         ),
       );
     await deriveItemStatus(tx, input);
@@ -191,6 +231,7 @@ export async function removePart(
           eq(parts.id, input.partId),
           eq(parts.itemId, input.itemId),
           eq(parts.userId, input.userId),
+          activeOwnedItemExists(tx, input),
         ),
       )
       .returning({ id: parts.id });
@@ -221,7 +262,13 @@ export async function removePart(
       await tx
         .update(items)
         .set({ statusMode: StatusMode.Manual })
-        .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
+        .where(
+          and(
+            eq(items.id, input.itemId),
+            eq(items.userId, input.userId),
+            activeItem(),
+          ),
+        );
     }
     await refreshTodayEntrySnapshot(tx, input);
     return getItem(tx, input.userId, input.itemId);
@@ -256,7 +303,13 @@ async function deriveItemStatus(
       status,
       statusMode: StatusMode.Automatic,
     })
-    .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)));
+    .where(
+      and(
+        eq(items.id, input.itemId),
+        eq(items.userId, input.userId),
+        activeItem(),
+      ),
+    );
 }
 
 export const getStructuredItem = (

@@ -607,6 +607,69 @@ describe("Daily Focus service", () => {
     ).toMatchObject({ id: item.id, status: "done" });
   });
 
+  it("hides a tombstone from Today and rejects its membership mutations", async () => {
+    const user = "daily-focus-tombstone";
+    const ended = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Ended Today Item", type: "article" })
+    ).body as Item;
+    const active = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Active Today Item", type: "book" })
+    ).body as Item;
+    const focus = (
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: ended.id })
+        .expect(201)
+    ).body as DailyFocus;
+    await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: active.id })
+      .expect(201);
+    await request(app)
+      .patch(`/api/items/${active.id}/status`)
+      .set(TEST_USER_HEADER, user)
+      .send({ status: "done" })
+      .expect(200);
+    await harness.pool.query(
+      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
+      [ended.id],
+    );
+
+    const today = await request(app)
+      .get("/api/daily-focus/today")
+      .set(TEST_USER_HEADER, user);
+    const added = await request(app)
+      .post("/api/daily-focus/today/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: ended.id });
+    const removed = await request(app)
+      .delete(`/api/daily-focus/${focus.id}/items/${ended.id}`)
+      .set(TEST_USER_HEADER, user);
+
+    expect(today.body).toMatchObject({
+      done: 1,
+      total: 1,
+      entries: [{ item: { id: active.id } }],
+    });
+    expect(added.status).toBe(404);
+    expect(added.body).toEqual({ error: "item not found" });
+    expect(removed.status).toBe(404);
+    expect(removed.body).toEqual({ error: "daily focus or item not found" });
+    const retained = await harness.pool.query(
+      "SELECT item_id FROM daily_focus_items WHERE daily_focus_id = $1 AND item_id = $2",
+      [focus.id, ended.id],
+    );
+    expect(retained.rows).toHaveLength(1);
+  });
+
   it("keeps current focus membership private and database constrained", async () => {
     const owner = "daily-focus-private-owner";
     const intruder = "daily-focus-private-intruder";
