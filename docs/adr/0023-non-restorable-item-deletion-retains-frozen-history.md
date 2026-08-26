@@ -44,6 +44,10 @@ The history reader determines availability from the retained row's
 keeps one lifecycle truth while allowing the snapshot content itself to remain
 unchanged.
 
+The explicit, application-managed cleanup transaction and its concurrency scope
+are defined by
+[ADR-0026](0026-item-deletion-is-one-explicit-cleanup-transaction.md).
+
 ## Considered options
 
 - **Erase or neutralise scalar Item facts at deletion.** Rejected because the
@@ -70,3 +74,5 @@ unchanged.
   [ADR-0024](0024-item-deletion-uses-an-offline-forward-only-cutover.md).
 - Cross-surface acceptance must cover active filtering as well as canonical Item
   detail, because Item-bearing queries are intentionally feature-specific.
+- Item deletion performs its relationship cleanup atomically, without promising
+  serialization against overlapping same-User mutations.

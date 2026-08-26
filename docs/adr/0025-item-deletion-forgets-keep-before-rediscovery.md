@@ -49,10 +49,10 @@ presentation, while ownership and pending state continue to control a decision
 request addressed by id.
 
 There is no special product ordering for a decision request overlapping Item
-deletion. The atomic deletion contract must prevent impossible committed states,
-including a Provider identity that points to a tombstone or a kept Candidate
-whose exact identity has no active Item. The transactional and locking mechanism
-belongs to [Choose the atomic Item deletion and topology contract](https://github.com/rajat2006/unshelf/issues/577).
+deletion. [ADR-0026](0026-item-deletion-is-one-explicit-cleanup-transaction.md)
+defines the single-request transaction and deliberately leaves overlapping
+same-User mutations unsupported rather than introducing a shared lifecycle-lock
+protocol.
 
 The ended Candidate's Keep timestamp is not retained in a separate audit model.
 Elapsed Daily Focus snapshots and the Item tombstone remain the historical
@@ -88,6 +88,9 @@ records required by this effort.
 - Candidate creation remains inside Discover rather than the Item lifecycle.
 - Later Capture and Keep create or reuse only a fresh active Item for the freed
   Provider identity.
+- The deletion transaction removes every matching kept Candidate it observes,
+  but does not promise an ordering against an overlapping decision request.
 - Acceptance must cover kept, pending, and rejected Candidates; active,
   unfollowed, and stale Provider results; Capture before rediscovery; and normal
-  replay, conflict, and concurrent-Keep behavior on a fresh Candidate.
+  replay, conflict, and concurrent-Keep behavior on a fresh Candidate. It does
+  not cover a Candidate decision racing Item deletion.
