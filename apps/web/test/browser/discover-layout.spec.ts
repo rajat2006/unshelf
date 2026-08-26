@@ -80,3 +80,72 @@ test("Discover preserves the accepted desktop intake and scroll contract", async
   expect(followScroll.scrollHeight).toBeGreaterThan(followScroll.clientHeight);
   expect(followScroll.overflowY).toBe("auto");
 });
+
+test("a User can scroll a long channel preview while Follow stays visible", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "desktop layout contract");
+
+  const videos = Array.from({ length: 12 }, (_, index) => ({
+    externalId: `preview-video-${index}`,
+    title: `Preview lesson ${index + 1}`,
+    thumbnailUrl: null,
+    publishedAt: new Date(Date.UTC(2026, 7, 23 - index, 9, 18)).toISOString(),
+    durationSeconds: 600 + index,
+    source: `https://www.youtube.com/watch?v=preview-video-${index}`,
+    channelExternalId: "UC_preview_layout",
+    channelTitle: "Preview Learning",
+  }));
+  await page.route("**/api/discover/preview", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        targetId: "00000000-0000-0000-0000-000000000400",
+        channel: {
+          externalId: "UC_preview_layout",
+          title: "Preview Learning",
+          thumbnailUrl: null,
+          canonicalUrl: "https://www.youtube.com/channel/UC_preview_layout",
+        },
+        videos,
+      }),
+    }),
+  );
+  await page.route("**/api/discover", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ follows: [], candidates: [] }),
+    }),
+  );
+  await page.goto(testAppUrl("/discover", "desktop-discover-preview-layout"));
+  await page
+    .getByLabel("YouTube channel URL")
+    .fill("https://youtube.com/@previewlearning");
+  await page.getByRole("button", { name: "Preview channel" }).click();
+
+  const follow = page.getByRole("button", { name: "Follow channel" });
+  const previewVideos = page.getByRole("region", {
+    name: "Channel preview videos",
+  });
+  await expect(follow).toBeVisible();
+  await expect(previewVideos).toBeVisible();
+  const previewScroll = await previewVideos.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }));
+
+  expect(previewScroll.scrollHeight).toBeGreaterThan(
+    previewScroll.clientHeight,
+  );
+  expect(previewScroll.overflowY).toBe("auto");
+  await previewVideos.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(follow).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "Preview lesson 12" }),
+  ).toBeInViewport();
+});
