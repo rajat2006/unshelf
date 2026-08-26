@@ -458,6 +458,34 @@ function PreviewFailure({ failure }: { failure: DiscoverPreviewFailure }) {
   return <Alert className="max-w-3xl p-4">{messages[failure]}</Alert>;
 }
 
+function ChannelAvatar({ channel }: { channel: DiscoverPreview["channel"] }) {
+  const [failedThumbnailUrl, setFailedThumbnailUrl] = useState<string | null>(
+    null,
+  );
+  const thumbnailUrl = channel.thumbnailUrl;
+
+  if (thumbnailUrl && thumbnailUrl !== failedThumbnailUrl) {
+    return (
+      <img
+        className="size-12 shrink-0 rounded-full object-cover"
+        src={thumbnailUrl}
+        alt=""
+        onError={() => setFailedThumbnailUrl(thumbnailUrl)}
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="channel-avatar-fallback"
+      className="grid size-12 shrink-0 place-items-center rounded-full bg-muted font-serif text-xl"
+    >
+      {channel.title.slice(0, 1)}
+    </div>
+  );
+}
+
 function ChannelPreview({
   preview,
   followStatus,
@@ -474,20 +502,7 @@ function ChannelPreview({
     >
       <div className="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
-          {preview.channel.thumbnailUrl ? (
-            <img
-              className="size-12 shrink-0 rounded-full object-cover"
-              src={preview.channel.thumbnailUrl}
-              alt=""
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="grid size-12 shrink-0 place-items-center rounded-full bg-muted font-serif text-xl"
-            >
-              {preview.channel.title.slice(0, 1)}
-            </div>
-          )}
+          <ChannelAvatar channel={preview.channel} />
           <div className="min-w-0">
             <p className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Channel preview
@@ -517,7 +532,7 @@ function ChannelPreview({
         <div
           role="region"
           aria-label="Channel preview videos"
-          className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid min-h-0 flex-1 auto-rows-max content-start gap-4 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-2 lg:grid-cols-3"
         >
           {preview.videos.map((video) => (
             <VideoCardLayout key={video.externalId} video={video} />
