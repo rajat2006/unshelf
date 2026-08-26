@@ -393,7 +393,7 @@ function ChannelSetup({
   onFollow: (preview: DiscoverPreview) => void;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className="discover-setup flex min-h-0 flex-1 flex-col gap-4">
       <form
         className="grid shrink-0 gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
         onSubmit={(event) => void onSubmit(event)}

@@ -134,38 +134,34 @@ test("a User can scroll a long channel preview while Follow stays visible", asyn
     scrollHeight: element.scrollHeight,
     overflowY: getComputedStyle(element).overflowY,
   }));
-
-  expect(previewScroll.overflowY).toBe("auto");
-  const lastVideo = page.getByRole("article", { name: "Preview lesson 12" });
-  if (testInfo.project.name === "desktop") {
-    expect(previewScroll.scrollHeight).toBeGreaterThan(
-      previewScroll.clientHeight,
-    );
-    await previewVideos.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
-    await expect(follow).toBeVisible();
-    await expect(lastVideo).toBeInViewport();
-    return;
-  }
-
   const documentScroll = await page.locator("html").evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
-  expect(documentScroll.scrollHeight).toBeGreaterThan(
-    documentScroll.clientHeight,
+
+  expect(previewScroll.scrollHeight).toBeGreaterThan(
+    previewScroll.clientHeight,
   );
+  expect(previewScroll.overflowY).toBe("auto");
+  expect(documentScroll.scrollHeight).toBe(documentScroll.clientHeight);
   expect(documentScroll.scrollWidth).toBe(documentScroll.clientWidth);
-  const headingBox = await page
-    .getByRole("heading", { name: "Preview Learning" })
-    .boundingBox();
-  const followBox = await follow.boundingBox();
-  if (!headingBox || !followBox)
-    throw new Error("preview header is not visible");
-  expect(followBox.y).toBeGreaterThanOrEqual(headingBox.y + headingBox.height);
-  await lastVideo.scrollIntoViewIfNeeded();
+  const lastVideo = page.getByRole("article", { name: "Preview lesson 12" });
+  if (testInfo.project.name === "phone") {
+    const headingBox = await page
+      .getByRole("heading", { name: "Preview Learning" })
+      .boundingBox();
+    const followBox = await follow.boundingBox();
+    if (!headingBox || !followBox)
+      throw new Error("preview header is not visible");
+    expect(followBox.y).toBeGreaterThanOrEqual(
+      headingBox.y + headingBox.height,
+    );
+  }
+  await previewVideos.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(follow).toBeVisible();
   await expect(lastVideo).toBeInViewport();
 });
