@@ -65,8 +65,8 @@ unchanged.
 - Active Item JSON remains unchanged; `deleted_at` is persistence-only.
 - Elapsed Daily Focus has a dedicated response shape rather than making the
   editable current-day Item nullable.
-- The history wire contract requires a coordinated or versioned rollout; the
-  migration and compatibility sequence is decided by
-  [Choose the deleted-Item migration and compatibility contract](https://github.com/rajat2006/unshelf/issues/576).
+- The history wire contract changes in place during the offline, forward-only
+  cutover defined by
+  [ADR-0024](0024-item-deletion-uses-an-offline-forward-only-cutover.md).
 - Cross-surface acceptance must cover active filtering as well as canonical Item
   detail, because Item-bearing queries are intentionally feature-specific.
