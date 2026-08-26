@@ -40,7 +40,9 @@ on an Item)
 A User-owned durable mapping to one shared Provider result before the User has
 resolved it. For one User, one Provider identity denotes at most one Candidate,
 whose state is exactly _pending_, _kept_, or _rejected_. An untouched Candidate
-remains pending; repeated Provider fetches never reset its decision.
+remains pending, and repeated Provider fetches never reset its decision. Deleting
+the Item linked by Keep ends that kept Candidate; normal Discover intake may later
+create a fresh pending Candidate when the Provider result is still eligible.
 _Avoid_: Item, Inbox Item, Recommendation
 
 **Provider identity**:
@@ -54,7 +56,9 @@ A User's decision to resolve one pending Candidate by linking it to an Item in t
 Library. Keep creates that Item from the User-confirmed title and Type plus the
 Candidate's canonical Source and Provider identity, or reuses the User's Item with
 that exact Provider identity. It does not affect another User's Candidate or
-silently apply later Provider metadata changes to the Item.
+silently apply later Provider metadata changes to the Item. After that Item is
+deleted, only a fresh Candidate can be kept, and it can link only to a fresh active
+Item rather than restoring the ended one.
 _Avoid_: Capture, Save, Import
 
 **Reject**:
@@ -73,8 +77,11 @@ but at most once in any one Learning Plan, and every placement points at the
 single stored record. "Only one of it" is about model identity —
 one row per capture — not source-uniqueness: capturing the same link twice creates
 two Items unless the capture establishes the same exact Provider identity, in
-which case the User's existing Item is reused.
-_Avoid_: Bookmark, Link, Resource, Content
+which case the User's existing Item is reused. Deleting permanently ends the
+Item: it leaves the Library and every active relationship, cannot be restored,
+and exists afterward only through any Daily Focus snapshots already preserved
+as history.
+_Avoid_: Bookmark, Link, Resource, Content, Deleted Item
 
 **Type**:
 The kind of material an Item is — one of _article_, _video_, _playlist_,
@@ -180,8 +187,14 @@ A dated selection of whole Items chosen for current attention from the Library o
 one or more Learning Plans. Selecting an Item changes neither its Library nor plan
 placement; when selected from a Learning Plan, the selection may retain that
 specific placement as origin context. The current day is editable, while a past
-day preserves its membership and each Item's day-end Status as history.
+day preserves each selection as a Daily Focus snapshot.
 _Avoid_: Task list, Learning Plan, Status
+
+**Daily Focus snapshot**:
+An elapsed Daily Focus's frozen record of one selected Item: its title, Type,
+day-end Status, and Part percentage. If the Item is later deleted, the snapshot
+remains as inert history without an Item link, origin, or reconsideration action.
+_Avoid_: Historical Item, Archived Item, Deleted Item
 
 **Label**:
 A free-text marker a User optionally applies to Items as durable, many-to-many
