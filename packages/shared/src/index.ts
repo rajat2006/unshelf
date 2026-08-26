@@ -294,6 +294,14 @@ export interface DailyFocus {
   total: number;
 }
 
+/** The four Item facts owned and frozen by one dated Daily Focus entry. */
+export interface DailyFocusSnapshot {
+  title: string;
+  type: Type;
+  status: Status;
+  partPercentage: number | null;
+}
+
 /** Optional current Plan placement retained only to navigate from a focus entry. */
 export interface DailyFocusOrigin {
   learningPlan: PlacementLearningPlan;
@@ -305,11 +313,35 @@ export interface DailyFocusEntry {
   item: Item;
   origin: DailyFocusOrigin | null;
   /** The Item state last visible on this focus's server calendar date. */
-  snapshot: {
-    status: Status;
-    partPercentage: number | null;
-  };
+  snapshot: DailyFocusSnapshot;
 }
+
+/** One elapsed Daily Focus whose presentation no longer depends on live Item facts. */
+export interface DailyFocusHistory {
+  id: DailyFocusId;
+  userId: UserId;
+  date: string;
+  entries: DailyFocusHistoryEntry[];
+  done: number;
+  total: number;
+}
+
+/** An elapsed entry that can still navigate to and reconsider an active Item. */
+export interface AvailableDailyFocusHistoryEntry {
+  kind: "available";
+  itemId: ItemId;
+  snapshot: DailyFocusSnapshot;
+  origin: DailyFocusOrigin | null;
+}
+
+/** An inert elapsed entry retained after its Item has permanently ended. */
+export interface DeletedDailyFocusHistoryEntry {
+  kind: "deleted";
+  snapshot: DailyFocusSnapshot;
+}
+
+export type DailyFocusHistoryEntry =
+  AvailableDailyFocusHistoryEntry | DeletedDailyFocusHistoryEntry;
 
 /** The ordered, transparent signals that can place an Item in Daily Planning. */
 export type DailyPlanningSignal =

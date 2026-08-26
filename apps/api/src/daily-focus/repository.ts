@@ -4,7 +4,11 @@ import type {
   AddDailyFocusItemRequest,
   DailyFocus,
   DailyFocusEntry,
+  DailyFocusHistory,
+  DailyFocusHistoryEntry,
   DailyFocusId,
+  DailyFocusOrigin,
+  DailyFocusSnapshot,
   ItemId,
   LearningPlanId,
   StageId,
@@ -51,7 +55,6 @@ async function ensureTodayFocus(
 async function readDailyFocus(
   db: Database,
   row: DailyFocusIdentityRow,
-  completionSource: "item" | "snapshot",
 ): Promise<DailyFocus> {
   const itemRows = await db
     .select({
@@ -60,6 +63,8 @@ async function readDailyFocus(
       originLearningPlanName: learningPlans.name,
       originStageId: stages.id,
       originStageName: stages.name,
+      titleSnapshot: dailyFocusItems.titleSnapshot,
+      typeSnapshot: dailyFocusItems.typeSnapshot,
       statusSnapshot: dailyFocusItems.statusSnapshot,
       partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
     })
@@ -113,6 +118,8 @@ async function readDailyFocus(
     return {
       item,
       snapshot: {
+        title: itemRow.titleSnapshot,
+        type: itemRow.typeSnapshot,
         status: itemRow.statusSnapshot,
         partPercentage: itemRow.partPercentageSnapshot,
       },
@@ -139,12 +146,120 @@ async function readDailyFocus(
     userId: row.user_id as UserId,
     date: row.date,
     entries,
-    ...deriveItemCompletion(
-      entries.map((entry) =>
-        completionSource === "item" ? entry.item : entry.snapshot,
-      ),
-    ),
+    ...deriveItemCompletion(entries.map((entry) => entry.item)),
   };
+}
+
+async function readDailyFocusHistory(
+  db: Database,
+  row: DailyFocusIdentityRow,
+): Promise<DailyFocusHistory> {
+  const itemRows = await db
+    .select({
+      itemId: dailyFocusItems.itemId,
+      deletedAt: items.deletedAt,
+      titleSnapshot: dailyFocusItems.titleSnapshot,
+      typeSnapshot: dailyFocusItems.typeSnapshot,
+      statusSnapshot: dailyFocusItems.statusSnapshot,
+      partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
+      originLearningPlanId: learningPlans.id,
+      originLearningPlanName: learningPlans.name,
+      originStageId: stages.id,
+      originStageName: stages.name,
+    })
+    .from(dailyFocusItems)
+    .innerJoin(
+      items,
+      and(
+        eq(items.id, dailyFocusItems.itemId),
+        eq(items.userId, dailyFocusItems.userId),
+      ),
+    )
+    .leftJoin(
+      dailyFocusItemOrigins,
+      and(
+        eq(dailyFocusItemOrigins.dailyFocusId, dailyFocusItems.dailyFocusId),
+        eq(dailyFocusItemOrigins.userId, dailyFocusItems.userId),
+        eq(dailyFocusItemOrigins.itemId, dailyFocusItems.itemId),
+      ),
+    )
+    .leftJoin(
+      learningPlanItemPlacements,
+      and(
+        eq(learningPlanItemPlacements.id, dailyFocusItemOrigins.placementId),
+        eq(learningPlanItemPlacements.userId, dailyFocusItemOrigins.userId),
+        eq(learningPlanItemPlacements.itemId, dailyFocusItemOrigins.itemId),
+      ),
+    )
+    .leftJoin(
+      learningPlans,
+      and(
+        eq(learningPlans.id, learningPlanItemPlacements.learningPlanId),
+        eq(learningPlans.userId, learningPlanItemPlacements.userId),
+      ),
+    )
+    .leftJoin(
+      stages,
+      and(
+        eq(stages.id, learningPlanItemPlacements.stageId),
+        eq(stages.userId, learningPlanItemPlacements.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(dailyFocusItems.dailyFocusId, row.id),
+        eq(dailyFocusItems.userId, row.user_id),
+      ),
+    )
+    .orderBy(asc(dailyFocusItems.addedAt), asc(dailyFocusItems.itemId));
+
+  const entries = itemRows.map((itemRow): DailyFocusHistoryEntry => {
+    const snapshot: DailyFocusSnapshot = {
+      title: itemRow.titleSnapshot,
+      type: itemRow.typeSnapshot,
+      status: itemRow.statusSnapshot,
+      partPercentage: itemRow.partPercentageSnapshot,
+    };
+    if (itemRow.deletedAt) return { kind: "deleted", snapshot };
+    return {
+      kind: "available",
+      itemId: itemRow.itemId as ItemId,
+      snapshot,
+      origin: toOrigin(itemRow),
+    };
+  });
+  return {
+    id: row.id as DailyFocusId,
+    userId: row.user_id as UserId,
+    date: row.date,
+    entries,
+    ...deriveItemCompletion(entries.map((entry) => entry.snapshot)),
+  };
+}
+
+function toOrigin({
+  originLearningPlanId,
+  originLearningPlanName,
+  originStageId,
+  originStageName,
+}: {
+  originLearningPlanId: string | null;
+  originLearningPlanName: string | null;
+  originStageId: string | null;
+  originStageName: string | null;
+}): DailyFocusOrigin | null {
+  return originLearningPlanId && originLearningPlanName
+    ? {
+        learningPlan: {
+          id: originLearningPlanId as LearningPlanId,
+          name: originLearningPlanName,
+        },
+        stage:
+          originStageId && originStageName
+            ? { id: originStageId as StageId, name: originStageName }
+            : null,
+      }
+    : null;
 }
 
 export type AddTodayItemResult =
@@ -170,6 +285,8 @@ export async function addTodayItem({
     const [ownedItem] = await tx
       .select({
         id: items.id,
+        title: items.title,
+        type: items.type,
         status: items.status,
       })
       .from(items)
@@ -214,6 +331,8 @@ export async function addTodayItem({
         dailyFocusId: focus.id,
         userId,
         itemId,
+        titleSnapshot: ownedItem.title,
+        typeSnapshot: ownedItem.type,
         statusSnapshot: ownedItem.status,
         partPercentageSnapshot: null,
       })
@@ -242,7 +361,7 @@ export async function addTodayItem({
     return {
       ok: true,
       added: inserted.length > 0,
-      focus: await readDailyFocus(tx, focus, "item"),
+      focus: await readDailyFocus(tx, focus),
     };
   });
 }
@@ -254,7 +373,7 @@ export async function getTodayFocus(
 ): Promise<DailyFocus> {
   return db.transaction(async (tx) => {
     const focus = await ensureTodayFocus(tx, userId);
-    return readDailyFocus(tx, focus, "item");
+    return readDailyFocus(tx, focus);
   });
 }
 
@@ -267,7 +386,7 @@ export async function getHistoricalFocus({
   db: Database;
   userId: UserId;
   date: string;
-}): Promise<DailyFocus | null> {
+}): Promise<DailyFocusHistory | null> {
   const [focus] = await db
     .select({
       id: dailyFocuses.id,
@@ -283,7 +402,7 @@ export async function getHistoricalFocus({
       ),
     )
     .limit(1);
-  return focus ? readDailyFocus(db, focus, "snapshot") : null;
+  return focus ? readDailyFocusHistory(db, focus) : null;
 }
 
 /** Remove only current focus membership, never the shared Item itself. */
@@ -326,6 +445,6 @@ export async function removeTodayItem({
         ),
       )
       .returning({ itemId: dailyFocusItems.itemId });
-    return removed.length > 0 ? readDailyFocus(tx, focus, "item") : null;
+    return removed.length > 0 ? readDailyFocus(tx, focus) : null;
   });
 }

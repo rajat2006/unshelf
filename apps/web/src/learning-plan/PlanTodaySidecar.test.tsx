@@ -91,7 +91,12 @@ describe("Learning Plan Today sidecar", () => {
             },
             stage: { id: originStageId, name: "Parsing" },
           },
-          snapshot: { status: item.status, partPercentage: null },
+          snapshot: {
+            title: item.title,
+            type: item.type,
+            status: item.status,
+            partPercentage: null,
+          },
         },
       ],
       total: 1,
@@ -130,7 +135,12 @@ describe("Learning Plan Today sidecar", () => {
         {
           item,
           origin: null,
-          snapshot: { status: item.status, partPercentage: null },
+          snapshot: {
+            title: item.title,
+            type: item.type,
+            status: item.status,
+            partPercentage: null,
+          },
         },
       ],
       total: 1,

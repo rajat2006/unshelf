@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { DailyFocus, Item, ItemDetail } from "@unshelf/shared";
+import type {
+  DailyFocus,
+  DailyFocusHistory,
+  Item,
+  ItemDetail,
+} from "@unshelf/shared";
 import {
   startTestApp,
   TEST_USER_HEADER,
@@ -62,7 +67,7 @@ describe("Daily Focus service", () => {
     expect(duplicateFocus.date).toBe(serverDate.rows[0]?.date);
   });
 
-  it("keeps today's Status and Part percentage snapshot current with Item changes", async () => {
+  it("keeps today's complete Item snapshot current with Item changes", async () => {
     const user = "daily-focus-current-snapshot";
     const item = (
       await request(app)
@@ -85,7 +90,12 @@ describe("Daily Focus service", () => {
         .expect(201)
     ).body as DailyFocus;
     expect(selected.entries[0]).toMatchObject({
-      snapshot: { status: "not_started", partPercentage: 0 },
+      snapshot: {
+        title: item.title,
+        type: "course",
+        status: "not_started",
+        partPercentage: 0,
+      },
     });
 
     await request(app)
@@ -100,7 +110,12 @@ describe("Daily Focus service", () => {
         .expect(200)
     ).body as DailyFocus;
     expect(manuallyCompleted.entries[0]).toMatchObject({
-      snapshot: { status: "done", partPercentage: 0 },
+      snapshot: {
+        title: item.title,
+        type: "course",
+        status: "done",
+        partPercentage: 0,
+      },
     });
 
     await request(app)
@@ -117,7 +132,12 @@ describe("Daily Focus service", () => {
 
     expect(refreshed.entries[0]).toMatchObject({
       item: { id: item.id, status: "in_progress" },
-      snapshot: { status: "in_progress", partPercentage: 50 },
+      snapshot: {
+        title: item.title,
+        type: "course",
+        status: "in_progress",
+        partPercentage: 50,
+      },
     });
   });
 
@@ -162,23 +182,35 @@ describe("Daily Focus service", () => {
       .set(TEST_USER_HEADER, user)
       .send({ status: "done" })
       .expect(200);
+    await harness.pool.query(
+      "update items set title = 'Mutable current title', type = 'video' where id = $1",
+      [item.id],
+    );
     const history = await request(app)
       .get(`/api/daily-focus/${historicalDate}`)
       .set(TEST_USER_HEADER, user)
       .expect(200);
 
-    expect(history.body).toMatchObject({
+    const historicalFocus = history.body as DailyFocusHistory;
+    expect(historicalFocus).toMatchObject({
       id: selected.id,
       date: historicalDate,
       done: 0,
       total: 1,
-      entries: [
-        {
-          item: { id: item.id, status: "done" },
-          snapshot: { status: "in_progress", partPercentage: 50 },
-        },
-      ],
     });
+    expect(historicalFocus.entries).toEqual([
+      {
+        kind: "available",
+        itemId: item.id,
+        origin: null,
+        snapshot: {
+          title: item.title,
+          type: "book",
+          status: "in_progress",
+          partPercentage: 50,
+        },
+      },
+    ]);
     await request(app)
       .delete(`/api/daily-focus/${selected.id}/items/${item.id}`)
       .set(TEST_USER_HEADER, user)
@@ -208,10 +240,64 @@ describe("Daily Focus service", () => {
       entries: [
         {
           item: { id: item.id, status: "done" },
-          snapshot: { status: "done", partPercentage: 50 },
+          snapshot: {
+            title: "Mutable current title",
+            type: "video",
+            status: "done",
+            partPercentage: 50,
+          },
         },
       ],
     });
+  });
+
+  it("returns a deleted elapsed entry as an inert frozen snapshot", async () => {
+    const user = "daily-focus-deleted-history";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "History survives deletion", type: "article" })
+    ).body as Item;
+    const selected = (
+      await request(app)
+        .post("/api/daily-focus/today/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ itemId: item.id })
+        .expect(201)
+    ).body as DailyFocus;
+    const elapsed = await harness.pool.query<{ date: string }>(
+      `update daily_focuses
+       set date = current_date - 1
+       where id = $1
+       returning date::text`,
+      [selected.id],
+    );
+    await harness.pool.query(
+      `update items
+       set title = 'Changed live title', type = 'course', status = 'done',
+           deleted_at = now()
+       where id = $1`,
+      [item.id],
+    );
+
+    const history = await request(app)
+      .get(`/api/daily-focus/${elapsed.rows[0].date}`)
+      .set(TEST_USER_HEADER, user)
+      .expect(200);
+
+    expect(history.body).toMatchObject({ done: 0, total: 1 });
+    expect((history.body as DailyFocusHistory).entries).toEqual([
+      {
+        kind: "deleted",
+        snapshot: {
+          title: item.title,
+          type: "article",
+          status: "not_started",
+          partPercentage: null,
+        },
+      },
+    ]);
   });
 
   it("retains an active direct Learning Plan placement as optional origin context", async () => {
@@ -491,7 +577,12 @@ describe("Daily Focus service", () => {
         {
           item: { id: item.id, status: "done" },
           origin: null,
-          snapshot: { status: "not_started", partPercentage: null },
+          snapshot: {
+            title: item.title,
+            type: "course",
+            status: "not_started",
+            partPercentage: null,
+          },
         },
       ],
     });
@@ -575,16 +666,16 @@ describe("Daily Focus service", () => {
     await expect(
       harness.pool.query(
         `insert into daily_focus_items
-          (daily_focus_id, user_id, item_id, status_snapshot)
-         values ($1, $2, $3, 'not_started')`,
+          (daily_focus_id, user_id, item_id, title_snapshot, type_snapshot, status_snapshot)
+         values ($1, $2, $3, 'Owner snapshot', 'book', 'not_started')`,
         [focus.id, focus.userId, ownerItem.id],
       ),
     ).rejects.toThrow(/daily_focus_items_daily_focus_id_item_id_pk/);
     await expect(
       harness.pool.query(
         `insert into daily_focus_items
-          (daily_focus_id, user_id, item_id, status_snapshot)
-         values ($1, $2, $3, 'not_started')`,
+          (daily_focus_id, user_id, item_id, title_snapshot, type_snapshot, status_snapshot)
+         values ($1, $2, $3, 'Foreign snapshot', 'book', 'not_started')`,
         [focus.id, focus.userId, intruderItem.id],
       ),
     ).rejects.toThrow(/daily_focus_items_item_owner_fk/);

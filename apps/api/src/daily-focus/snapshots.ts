@@ -11,6 +11,18 @@ export async function refreshTodayEntrySnapshot(
   await db
     .update(dailyFocusItems)
     .set({
+      titleSnapshot: sql`(
+        select ${items.title}
+        from ${items}
+        where ${items.id} = ${input.itemId}
+          and ${items.userId} = ${input.userId}
+      )`,
+      typeSnapshot: sql`(
+        select ${items.type}
+        from ${items}
+        where ${items.id} = ${input.itemId}
+          and ${items.userId} = ${input.userId}
+      )`,
       statusSnapshot: sql`(
         select ${items.status}
         from ${items}

@@ -150,7 +150,12 @@ describe("Learning Plan Item list", () => {
             learningPlan: { id: learningPlanId, name: "Plan" },
             stage: { id: stageId, name: stage.name },
           },
-          snapshot: { status: stagedItem.status, partPercentage: null },
+          snapshot: {
+            title: stagedItem.title,
+            type: stagedItem.type,
+            status: stagedItem.status,
+            partPercentage: null,
+          },
         },
       ],
       total: 1,

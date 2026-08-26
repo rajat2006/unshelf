@@ -8,6 +8,7 @@ import type {
   CreateStageWithItemRequest,
   CreateLearningPlanRequest,
   DailyFocus,
+  DailyFocusHistory,
   DailyPlanning,
   DailyPlanningQuery,
   DiscoverPreview,
@@ -400,8 +401,8 @@ export async function suppressDailyPlanningItem(
 export async function fetchDailyFocusHistory(
   user: CurrentUser,
   date: string,
-): Promise<DailyFocus> {
-  return requestJson<DailyFocus>(user, `/api/daily-focus/${date}`);
+): Promise<DailyFocusHistory> {
+  return requestJson<DailyFocusHistory>(user, `/api/daily-focus/${date}`);
 }
 
 /** Explicitly select one whole shared Library Item for Today. */
