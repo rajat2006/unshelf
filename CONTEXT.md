@@ -40,7 +40,9 @@ on an Item)
 A User-owned durable mapping to one shared Provider result before the User has
 resolved it. For one User, one Provider identity denotes at most one Candidate,
 whose state is exactly _pending_, _kept_, or _rejected_. An untouched Candidate
-remains pending; repeated Provider fetches never reset its decision.
+remains pending, and repeated Provider fetches never reset its decision. Deleting
+the Item linked by Keep ends that kept Candidate; normal Discover intake may later
+create a fresh pending Candidate when the Provider result is still eligible.
 _Avoid_: Item, Inbox Item, Recommendation
 
 **Provider identity**:
@@ -54,7 +56,9 @@ A User's decision to resolve one pending Candidate by linking it to an Item in t
 Library. Keep creates that Item from the User-confirmed title and Type plus the
 Candidate's canonical Source and Provider identity, or reuses the User's Item with
 that exact Provider identity. It does not affect another User's Candidate or
-silently apply later Provider metadata changes to the Item.
+silently apply later Provider metadata changes to the Item. After that Item is
+deleted, only a fresh Candidate can be kept, and it can link only to a fresh active
+Item rather than restoring the ended one.
 _Avoid_: Capture, Save, Import
 
 **Reject**:
