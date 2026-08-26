@@ -472,8 +472,8 @@ function ChannelPreview({
       className="flex min-h-0 flex-1 flex-col gap-4"
       aria-labelledby="preview-channel-heading"
     >
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
           {preview.channel.thumbnailUrl ? (
             <img
               className="size-12 shrink-0 rounded-full object-cover"

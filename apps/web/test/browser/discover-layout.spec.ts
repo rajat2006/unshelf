@@ -84,8 +84,6 @@ test("Discover preserves the accepted desktop intake and scroll contract", async
 test("a User can scroll a long channel preview while Follow stays visible", async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "desktop layout contract");
-
   const videos = Array.from({ length: 12 }, (_, index) => ({
     externalId: `preview-video-${index}`,
     title: `Preview lesson ${index + 1}`,
@@ -137,15 +135,37 @@ test("a User can scroll a long channel preview while Follow stays visible", asyn
     overflowY: getComputedStyle(element).overflowY,
   }));
 
-  expect(previewScroll.scrollHeight).toBeGreaterThan(
-    previewScroll.clientHeight,
-  );
   expect(previewScroll.overflowY).toBe("auto");
-  await previewVideos.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-  await expect(follow).toBeVisible();
-  await expect(
-    page.getByRole("article", { name: "Preview lesson 12" }),
-  ).toBeInViewport();
+  const lastVideo = page.getByRole("article", { name: "Preview lesson 12" });
+  if (testInfo.project.name === "desktop") {
+    expect(previewScroll.scrollHeight).toBeGreaterThan(
+      previewScroll.clientHeight,
+    );
+    await previewVideos.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(follow).toBeVisible();
+    await expect(lastVideo).toBeInViewport();
+    return;
+  }
+
+  const documentScroll = await page.locator("html").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(documentScroll.scrollHeight).toBeGreaterThan(
+    documentScroll.clientHeight,
+  );
+  expect(documentScroll.scrollWidth).toBe(documentScroll.clientWidth);
+  const headingBox = await page
+    .getByRole("heading", { name: "Preview Learning" })
+    .boundingBox();
+  const followBox = await follow.boundingBox();
+  if (!headingBox || !followBox)
+    throw new Error("preview header is not visible");
+  expect(followBox.y).toBeGreaterThanOrEqual(headingBox.y + headingBox.height);
+  await lastVideo.scrollIntoViewIfNeeded();
+  await expect(lastVideo).toBeInViewport();
 });
