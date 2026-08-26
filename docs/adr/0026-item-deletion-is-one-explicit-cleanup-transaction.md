@@ -26,6 +26,10 @@ The operation first resolves the Item through its id, owner, and active
 eligibility, then performs explicit, owner-and-Item-scoped cleanup before setting
 the one deletion timestamp and committing. Missing optional relationships are
 normal; any database failure rolls back both cleanup and the tombstone.
+This transaction is only the first transition. A repeated HTTP request for the
+owned tombstone follows the no-write success contract in
+[ADR-0027](0027-item-deletion-has-an-idempotent-http-and-history-contract.md)
+without rerunning cleanup or changing the timestamp.
 
 The transaction:
 

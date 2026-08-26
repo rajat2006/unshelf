@@ -47,6 +47,9 @@ unchanged.
 The explicit, application-managed cleanup transaction and its concurrency scope
 are defined by
 [ADR-0026](0026-item-deletion-is-one-explicit-cleanup-transaction.md).
+The exact elapsed-history variants, Item deletion HTTP contract, and stale-route
+recovery are defined by
+[ADR-0027](0027-item-deletion-has-an-idempotent-http-and-history-contract.md).
 
 ## Considered options
 
