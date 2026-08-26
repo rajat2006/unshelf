@@ -1,5 +1,5 @@
 import { isNull } from "drizzle-orm";
 import { items } from "../schema";
 
-/** The persistence rule shared by every ordinary Item interface. */
+/** Exclude internal tombstones from an ordinary Item query. */
 export const activeItem = () => isNull(items.deletedAt);

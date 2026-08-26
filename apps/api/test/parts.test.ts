@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import type { Item, ItemDetail } from "@unshelf/shared";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 describe("Item Parts", () => {
   let harness: TestApp;
@@ -451,10 +456,19 @@ describe("Item Parts", () => {
         .send({ titles: ["Frozen Part"] })
     ).body as ItemDetail;
     const partId = structured.parts[0].id;
-    await harness.pool.query(
-      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
-      [item.id],
-    );
+    const foreignItem = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, "parts-tombstone-foreign")
+        .send({ title: "Foreign structure", type: "book" })
+    ).body as Item;
+    const foreignStructured = (
+      await request(app)
+        .post(`/api/items/${foreignItem.id}/parts`)
+        .set(TEST_USER_HEADER, "parts-tombstone-foreign")
+        .send({ titles: ["Foreign Part"] })
+    ).body as ItemDetail;
+    await seedItemTombstone(harness.pool, item.id);
 
     const responses = [
       await request(app)
@@ -492,6 +506,10 @@ describe("Item Parts", () => {
     expect(frozen.rows).toEqual([
       { title: "Frozen Part", completed: false, position: 0 },
     ]);
+    const foreignRead = await request(app)
+      .get(`/api/items/${foreignItem.id}`)
+      .set(TEST_USER_HEADER, "parts-tombstone-foreign");
+    expect(foreignRead.body.parts).toEqual(foreignStructured.parts);
   });
 
   it("enforces Part ownership, order, title, and cascade constraints in PostgreSQL", async () => {

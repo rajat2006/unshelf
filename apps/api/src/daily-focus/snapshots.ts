@@ -4,7 +4,7 @@ import type { Database } from "../db";
 import { activeItem } from "../items/active-item";
 import { dailyFocuses, dailyFocusItems, items, parts } from "../schema";
 
-/** Refresh the dated snapshot only while its Daily Focus is still Today. */
+/** Refresh an active Item's dated snapshot only while its Daily Focus is Today. */
 export async function refreshTodayEntrySnapshot(
   db: Database,
   input: { userId: UserId; itemId: ItemId },

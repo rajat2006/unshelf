@@ -54,6 +54,17 @@ export async function migrateTestDatabase(db: Database): Promise<void> {
  * only the identity source differs.
  */
 export const TEST_USER_HEADER = "x-test-clerk-user-id";
+export const SEEDED_TOMBSTONE_TIME = "2026-08-25T12:00:00Z";
+
+export async function seedItemTombstone(
+  pool: Pool,
+  itemId: string,
+): Promise<void> {
+  await pool.query("UPDATE items SET deleted_at = $1 WHERE id = $2", [
+    SEEDED_TOMBSTONE_TIME,
+    itemId,
+  ]);
+}
 
 export interface TestApp {
   app: Express;

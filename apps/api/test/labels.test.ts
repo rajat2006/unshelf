@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import type { Item, Label } from "@unshelf/shared";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 let harness: TestApp;
 let app: Express;
@@ -122,10 +127,14 @@ describe("private Labels", () => {
     const unapplied = (await createLabel(user, { name: "Unapplied" }))
       .body as Label;
     await applyLabel(user, item.id, retained.id);
-    await harness.pool.query(
-      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
-      [item.id],
-    );
+    const foreignUser = "clerk_label_tombstone_foreign";
+    const foreignItem = (await capture(foreignUser, "Foreign labelled Item"))
+      .body as Item;
+    const foreignLabel = (
+      await createLabel(foreignUser, { name: "Foreign Label" })
+    ).body as Label;
+    await applyLabel(foreignUser, foreignItem.id, foreignLabel.id);
+    await seedItemTombstone(harness.pool, item.id);
 
     const applied = await applyLabel(user, item.id, unapplied.id);
     const removed = await removeLabel(user, item.id, retained.id);
@@ -137,6 +146,10 @@ describe("private Labels", () => {
       [item.id],
     );
     expect(memberships.rows).toEqual([{ label_id: retained.id }]);
+    const foreignRead = await request(app)
+      .get(`/api/items/${foreignItem.id}`)
+      .set(TEST_USER_HEADER, foreignUser);
+    expect(foreignRead.body.labels).toEqual([foreignLabel]);
   });
 
   it("rejects cross-User Label membership at the database boundary", async () => {

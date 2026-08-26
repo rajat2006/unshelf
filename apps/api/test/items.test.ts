@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { ITEM_STATUSES, ITEM_TYPES, type Item } from "@unshelf/shared";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  SEEDED_TOMBSTONE_TIME,
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 /**
  * Capture and All at the HTTP boundary (issue #17), driven against a real
@@ -733,10 +739,13 @@ describe("GET /api/items — All", () => {
     const active = (
       await capture(clerkUserId, { title: "Active Item", type: "book" })
     ).body as Item;
-    await harness.pool.query(
-      "UPDATE items SET deleted_at = '2026-08-25T12:00:00Z' WHERE id = $1",
-      [tombstone.id],
-    );
+    const foreign = (
+      await capture("clerk_all_tombstone_foreign", {
+        title: "Foreign active Item",
+        type: "course",
+      })
+    ).body as Item;
+    await seedItemTombstone(harness.pool, tombstone.id);
 
     const listed = (await listAll(clerkUserId)).body as Item[];
     const missing = await readItem(
@@ -756,6 +765,11 @@ describe("GET /api/items — All", () => {
     expect(status.body).toEqual(missing.body);
     expect(targetDate.status).toBe(404);
     expect(targetDate.body).toEqual(missing.body);
+    expect(
+      ((await listAll("clerk_all_tombstone_foreign")).body as Item[]).map(
+        ({ id }) => id,
+      ),
+    ).toEqual([foreign.id]);
     const frozen = await harness.pool.query<{
       status: string;
       target_date: string | null;
@@ -767,7 +781,7 @@ describe("GET /api/items — All", () => {
     expect(frozen.rows[0]).toEqual({
       status: "not_started",
       target_date: null,
-      deleted_at: new Date("2026-08-25T12:00:00Z"),
+      deleted_at: new Date(SEEDED_TOMBSTONE_TIME),
     });
   });
 
