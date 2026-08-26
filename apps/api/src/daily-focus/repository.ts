@@ -33,6 +33,17 @@ interface DailyFocusIdentityRow {
   date: string;
 }
 
+const DAILY_FOCUS_ENTRY_CONTEXT_PROJECTION = {
+  originLearningPlanId: learningPlans.id,
+  originLearningPlanName: learningPlans.name,
+  originStageId: stages.id,
+  originStageName: stages.name,
+  titleSnapshot: dailyFocusItems.titleSnapshot,
+  typeSnapshot: dailyFocusItems.typeSnapshot,
+  statusSnapshot: dailyFocusItems.statusSnapshot,
+  partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
+} as const;
+
 async function ensureTodayFocus(
   db: Database,
   userId: UserId,
@@ -59,14 +70,7 @@ async function readDailyFocus(
   const itemRows = await db
     .select({
       ...ITEM_PROJECTION,
-      originLearningPlanId: learningPlans.id,
-      originLearningPlanName: learningPlans.name,
-      originStageId: stages.id,
-      originStageName: stages.name,
-      titleSnapshot: dailyFocusItems.titleSnapshot,
-      typeSnapshot: dailyFocusItems.typeSnapshot,
-      statusSnapshot: dailyFocusItems.statusSnapshot,
-      partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
+      ...DAILY_FOCUS_ENTRY_CONTEXT_PROJECTION,
     })
     .from(dailyFocusItems)
     .innerJoin(
@@ -117,28 +121,8 @@ async function readDailyFocus(
     const item = toItem(itemRow);
     return {
       item,
-      snapshot: {
-        title: itemRow.titleSnapshot,
-        type: itemRow.typeSnapshot,
-        status: itemRow.statusSnapshot,
-        partPercentage: itemRow.partPercentageSnapshot,
-      },
-      origin:
-        itemRow.originLearningPlanId && itemRow.originLearningPlanName
-          ? {
-              learningPlan: {
-                id: itemRow.originLearningPlanId as LearningPlanId,
-                name: itemRow.originLearningPlanName,
-              },
-              stage:
-                itemRow.originStageId && itemRow.originStageName
-                  ? {
-                      id: itemRow.originStageId as StageId,
-                      name: itemRow.originStageName,
-                    }
-                  : null,
-            }
-          : null,
+      snapshot: toSnapshot(itemRow),
+      origin: toOrigin(itemRow),
     };
   });
   return {
@@ -158,14 +142,7 @@ async function readDailyFocusHistory(
     .select({
       itemId: dailyFocusItems.itemId,
       deletedAt: items.deletedAt,
-      titleSnapshot: dailyFocusItems.titleSnapshot,
-      typeSnapshot: dailyFocusItems.typeSnapshot,
-      statusSnapshot: dailyFocusItems.statusSnapshot,
-      partPercentageSnapshot: dailyFocusItems.partPercentageSnapshot,
-      originLearningPlanId: learningPlans.id,
-      originLearningPlanName: learningPlans.name,
-      originStageId: stages.id,
-      originStageName: stages.name,
+      ...DAILY_FOCUS_ENTRY_CONTEXT_PROJECTION,
     })
     .from(dailyFocusItems)
     .innerJoin(
@@ -214,12 +191,7 @@ async function readDailyFocusHistory(
     .orderBy(asc(dailyFocusItems.addedAt), asc(dailyFocusItems.itemId));
 
   const entries = itemRows.map((itemRow): DailyFocusHistoryEntry => {
-    const snapshot: DailyFocusSnapshot = {
-      title: itemRow.titleSnapshot,
-      type: itemRow.typeSnapshot,
-      status: itemRow.statusSnapshot,
-      partPercentage: itemRow.partPercentageSnapshot,
-    };
+    const snapshot = toSnapshot(itemRow);
     if (itemRow.deletedAt) return { kind: "deleted", snapshot };
     return {
       kind: "available",
@@ -234,6 +206,25 @@ async function readDailyFocusHistory(
     date: row.date,
     entries,
     ...deriveItemCompletion(entries.map((entry) => entry.snapshot)),
+  };
+}
+
+function toSnapshot({
+  titleSnapshot,
+  typeSnapshot,
+  statusSnapshot,
+  partPercentageSnapshot,
+}: {
+  titleSnapshot: DailyFocusSnapshot["title"];
+  typeSnapshot: DailyFocusSnapshot["type"];
+  statusSnapshot: DailyFocusSnapshot["status"];
+  partPercentageSnapshot: DailyFocusSnapshot["partPercentage"];
+}): DailyFocusSnapshot {
+  return {
+    title: titleSnapshot,
+    type: typeSnapshot,
+    status: statusSnapshot,
+    partPercentage: partPercentageSnapshot,
   };
 }
 
