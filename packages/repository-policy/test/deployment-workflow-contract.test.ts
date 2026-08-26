@@ -194,6 +194,48 @@ jobs:
     });
   });
 
+  it("schedules development daily at 22:00 Asia/Kolkata through the manual authority path", () => {
+    const workflow = inspectRepositoryWorkflow("delivery-development.yml");
+    const source = readRepositoryWorkflow("delivery-development.yml");
+    const authority = workflow.jobs.authorize?.runCommands.join("\n") ?? "";
+
+    expect(Object.keys(workflow.triggers).sort()).toEqual([
+      "schedule",
+      "workflow_dispatch",
+    ]);
+    expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({});
+    expect(workflow.triggers.schedule?.schedules).toEqual([
+      { cron: "0 22 * * *", timezone: "Asia/Kolkata" },
+    ]);
+    expect(workflow.concurrency).toEqual({
+      cancelInProgress: false,
+      group: "development-delivery",
+    });
+    expect(authority).toContain("git/ref/heads/dev");
+    expect(authority).toContain(
+      "head_sha=${source_sha}&event=push&status=completed",
+    );
+    expect(authority).toContain(".head_sha == $sha");
+    expect(authority).toContain('.head_branch == "dev"');
+    expect(authority).toContain('.event == "push"');
+    expect(authority).toContain('.conclusion == "success"');
+    expect(authority).toContain(
+      '.name == "Product" and .status == "completed" and .conclusion == "success"',
+    );
+    expect(authority).not.toContain("GITHUB_SHA");
+    for (const recoveryMechanism of [
+      "workflow_run:",
+      "repository_dispatch:",
+      "/dispatches",
+      "gh run rerun",
+      "gh workflow run",
+      "/rerun",
+      "continue-on-error: true",
+    ]) {
+      expect(source).not.toContain(recoveryMechanism);
+    }
+  });
+
   it.each([
     [
       "delivery-development.yml",
@@ -223,11 +265,15 @@ jobs:
       { actions: "read", contents: "read", deployments: "read" },
     ],
   ])(
-    "keeps %s channel policy direct, manual, serialized, and least privileged",
+    "keeps %s channel policy direct, serialized, and least privileged",
     (name, concurrencyGroup, inputs, environment, authorizePermissions) => {
       const workflow = inspectRepositoryWorkflow(name);
 
-      expect(Object.keys(workflow.triggers)).toEqual(["workflow_dispatch"]);
+      expect(Object.keys(workflow.triggers).sort()).toEqual(
+        name === "delivery-development.yml"
+          ? ["schedule", "workflow_dispatch"]
+          : ["workflow_dispatch"],
+      );
       expect(workflow.triggers.workflow_dispatch?.inputs).toEqual(inputs);
       expect(workflow.concurrency).toEqual({
         cancelInProgress: false,
