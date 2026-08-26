@@ -317,7 +317,7 @@ export function DiscoverSurface() {
           if (!open) setShowSetup(false);
         }}
       >
-        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90svh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Follow a public YouTube channel</DialogTitle>
             <DialogDescription>
@@ -393,9 +393,9 @@ function ChannelSetup({
   onFollow: (preview: DiscoverPreview) => void;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="discover-setup flex min-h-0 flex-1 flex-col gap-4">
       <form
-        className="grid gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
+        className="grid shrink-0 gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
         onSubmit={(event) => void onSubmit(event)}
       >
         <Field>
@@ -458,6 +458,34 @@ function PreviewFailure({ failure }: { failure: DiscoverPreviewFailure }) {
   return <Alert className="max-w-3xl p-4">{messages[failure]}</Alert>;
 }
 
+function ChannelAvatar({ channel }: { channel: DiscoverPreview["channel"] }) {
+  const [failedThumbnailUrl, setFailedThumbnailUrl] = useState<string | null>(
+    null,
+  );
+  const thumbnailUrl = channel.thumbnailUrl;
+
+  if (thumbnailUrl && thumbnailUrl !== failedThumbnailUrl) {
+    return (
+      <img
+        className="size-12 shrink-0 rounded-full object-cover"
+        src={thumbnailUrl}
+        alt=""
+        onError={() => setFailedThumbnailUrl(thumbnailUrl)}
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="channel-avatar-fallback"
+      className="grid size-12 shrink-0 place-items-center rounded-full bg-muted font-serif text-xl"
+    >
+      {channel.title.slice(0, 1)}
+    </div>
+  );
+}
+
 function ChannelPreview({
   preview,
   followStatus,
@@ -468,54 +496,49 @@ function ChannelPreview({
   onFollow: () => void;
 }) {
   return (
-    <section className="grid gap-4" aria-labelledby="preview-channel-heading">
-      <div className="flex items-center gap-3">
-        {preview.channel.thumbnailUrl ? (
-          <img
-            className="size-12 rounded-full object-cover"
-            src={preview.channel.thumbnailUrl}
-            alt=""
-          />
-        ) : (
-          <div
-            aria-hidden="true"
-            className="grid size-12 place-items-center rounded-full bg-muted font-serif text-xl"
-          >
-            {preview.channel.title.slice(0, 1)}
+    <section
+      className="flex min-h-0 flex-1 flex-col gap-4"
+      aria-labelledby="preview-channel-heading"
+    >
+      <div className="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
+          <ChannelAvatar channel={preview.channel} />
+          <div className="min-w-0">
+            <p className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              Channel preview
+            </p>
+            <h2
+              id="preview-channel-heading"
+              className="m-0 font-serif text-2xl font-semibold"
+            >
+              {preview.channel.title}
+            </h2>
           </div>
-        )}
-        <div>
-          <p className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Channel preview
-          </p>
-          <h2
-            id="preview-channel-heading"
-            className="m-0 font-serif text-2xl font-semibold"
-          >
-            {preview.channel.title}
-          </h2>
         </div>
-      </div>
-      {preview.videos.length === 0 ? (
-        <p className="m-0 rounded-[var(--radius-panel)] border bg-card p-5 text-muted-foreground">
-          No eligible videos are available to preview.
-        </p>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {preview.videos.map((video) => (
-            <VideoCardLayout key={video.externalId} video={video} />
-          ))}
-        </div>
-      )}
-      <div>
         <Button
           type="button"
+          className="shrink-0"
           onClick={onFollow}
           disabled={followStatus === "loading"}
         >
           {followStatus === "loading" ? "Following…" : "Follow channel"}
         </Button>
       </div>
+      {preview.videos.length === 0 ? (
+        <p className="m-0 rounded-[var(--radius-panel)] border bg-card p-5 text-muted-foreground">
+          No eligible videos are available to preview.
+        </p>
+      ) : (
+        <div
+          role="region"
+          aria-label="Channel preview videos"
+          className="grid min-h-0 flex-1 auto-rows-max content-start gap-4 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {preview.videos.map((video) => (
+            <VideoCardLayout key={video.externalId} video={video} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

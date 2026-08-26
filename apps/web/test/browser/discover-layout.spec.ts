@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { testAppUrl } from "./test-helpers";
 
+const previewThumbnail =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'%3E%3Crect width='1600' height='900' fill='%23255d3a'/%3E%3C/svg%3E";
+
 test("Discover preserves the accepted desktop intake and scroll contract", async ({
   page,
 }, testInfo) => {
@@ -79,4 +82,122 @@ test("Discover preserves the accepted desktop intake and scroll contract", async
   expect(feedScroll.overflowY).toBe("auto");
   expect(followScroll.scrollHeight).toBeGreaterThan(followScroll.clientHeight);
   expect(followScroll.overflowY).toBe("auto");
+});
+
+test("a User can scroll a long channel preview while Follow stays visible", async ({
+  page,
+}, testInfo) => {
+  const videos = Array.from({ length: 12 }, (_, index) => ({
+    externalId: `preview-video-${index}`,
+    title: `Preview lesson ${index + 1}`,
+    thumbnailUrl: previewThumbnail,
+    publishedAt: new Date(Date.UTC(2026, 7, 23 - index, 9, 18)).toISOString(),
+    durationSeconds: 600 + index,
+    source: `https://www.youtube.com/watch?v=preview-video-${index}`,
+    channelExternalId: "UC_preview_layout",
+    channelTitle: "Preview Learning",
+  }));
+  await page.route("https://invalid.example/**", (route) => route.abort());
+  await page.route("**/api/server-calendar", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        today: "2026-08-26",
+        validUntil: "2030-08-27T00:00:00.000Z",
+      }),
+    }),
+  );
+  await page.route("**/api/discover/preview", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        targetId: "00000000-0000-0000-0000-000000000400",
+        channel: {
+          externalId: "UC_preview_layout",
+          title: "Preview Learning",
+          thumbnailUrl: "https://invalid.example/channel.jpg",
+          canonicalUrl: "https://www.youtube.com/channel/UC_preview_layout",
+        },
+        videos,
+      }),
+    }),
+  );
+  await page.route("**/api/discover", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ follows: [], candidates: [] }),
+    }),
+  );
+  await page.goto(testAppUrl("/", "desktop-discover-preview-layout"));
+  await page.getByRole("link", { name: "Discover" }).click();
+  await page
+    .getByLabel("YouTube channel URL")
+    .fill("https://youtube.com/@previewlearning");
+  await page.getByRole("button", { name: "Preview channel" }).click();
+
+  const follow = page.getByRole("button", { name: "Follow channel" });
+  const previewVideos = page.getByRole("region", {
+    name: "Channel preview videos",
+  });
+  await expect(follow).toBeVisible();
+  await expect(previewVideos).toBeVisible();
+  await expect(page.getByTestId("channel-avatar-fallback")).toBeVisible();
+  const previewScroll = await previewVideos.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }));
+  const documentScroll = await page.locator("html").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+
+  expect(previewScroll.scrollHeight).toBeGreaterThan(
+    previewScroll.clientHeight,
+  );
+  expect(previewScroll.overflowY).toBe("auto");
+  expect(documentScroll.scrollHeight).toBe(documentScroll.clientHeight);
+  expect(documentScroll.scrollWidth).toBe(documentScroll.clientWidth);
+  const firstVideo = page.getByRole("article", {
+    name: "Preview lesson 1",
+    exact: true,
+  });
+  const firstVideoGeometry = await firstVideo.evaluate((article) => {
+    const image = article.querySelector("img");
+    if (!image) throw new Error("preview thumbnail is missing");
+    return {
+      clientHeight: article.clientHeight,
+      scrollHeight: article.scrollHeight,
+      imageHeight: image.clientHeight,
+      imageWidth: image.clientWidth,
+    };
+  });
+  expect(firstVideoGeometry.scrollHeight).toBe(firstVideoGeometry.clientHeight);
+  expect(
+    firstVideoGeometry.imageHeight / firstVideoGeometry.imageWidth,
+  ).toBeGreaterThan(0.5);
+  const lastVideo = page.getByRole("article", { name: "Preview lesson 12" });
+  if (testInfo.project.name === "phone") {
+    const headingBox = await page
+      .getByRole("heading", { name: "Preview Learning" })
+      .boundingBox();
+    const followBox = await follow.boundingBox();
+    if (!headingBox || !followBox)
+      throw new Error("preview header is not visible");
+    expect(followBox.y).toBeGreaterThanOrEqual(
+      headingBox.y + headingBox.height,
+    );
+  }
+  await previewVideos.hover();
+  await page.mouse.wheel(0, previewScroll.scrollHeight);
+  await expect
+    .poll(() => previewVideos.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(follow).toBeVisible();
+  await expect(lastVideo).toBeInViewport();
 });
