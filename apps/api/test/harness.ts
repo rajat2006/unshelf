@@ -27,6 +27,11 @@ import {
 } from "../src/discover/youtube-client";
 import { createDiscoverModule } from "../src/discover/index";
 import type { DiscoverAcquisitionTick } from "../src/discover/scheduled-acquisition";
+import {
+  stopTestPostgres,
+  trackTestPool,
+  type TrackedTestPool,
+} from "./postgres-lifecycle";
 
 /**
  * The committed migration folder, resolved from this file rather than the
@@ -155,9 +160,17 @@ export async function startTestApp({
     connectionString: container.getConnectionUri(),
     timeZone,
   });
+  const testPool = trackTestPool(db.$client);
   await migrateTestDatabase(db);
 
-  return runningTestApp({ container, db, identify, youtubeClient, now });
+  return runningTestApp({
+    container,
+    db,
+    testPool,
+    identify,
+    youtubeClient,
+    now,
+  });
 }
 
 /**
@@ -177,6 +190,7 @@ export async function startTestAppWithLegacyFixture(
     connectionString: container.getConnectionUri(),
     timeZone: "UTC",
   });
+  const testPool = trackTestPool(db.$client);
   const migrations = readMigrationFiles({
     migrationsFolder: MIGRATIONS_FOLDER,
   });
@@ -198,6 +212,7 @@ export async function startTestAppWithLegacyFixture(
   return runningTestApp({
     container,
     db,
+    testPool,
     identify,
     youtubeClient: unavailableYouTubeClient,
     now: () => new Date("2026-08-23T00:00:00.000Z"),
@@ -218,12 +233,14 @@ async function applyMigrationFiles(
 function runningTestApp({
   container,
   db,
+  testPool,
   identify,
   youtubeClient,
   now,
 }: {
   container: StartedPostgreSqlContainer;
   db: DatabaseWithClient;
+  testPool: TrackedTestPool;
   identify: Identify;
   youtubeClient: YouTubeClient;
   now: () => Date;
@@ -243,10 +260,7 @@ function runningTestApp({
     pool: db.$client,
     logger,
     runDiscoverAcquisitionTick: discoverModule.runScheduledAcquisitionTick,
-    stop: async () => {
-      await db.$client.end();
-      await container.stop();
-    },
+    stop: () => stopTestPostgres({ pool: testPool, container }),
   };
 }
 

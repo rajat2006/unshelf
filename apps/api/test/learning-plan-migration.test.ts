@@ -4,6 +4,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../src/db";
+import { stopTestPostgres, trackTestPool } from "./postgres-lifecycle";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
 
@@ -16,6 +17,7 @@ describe("Learning Plan migration", () => {
       connectionString: container.getConnectionUri(),
       timeZone: "UTC",
     });
+    const testPool = trackTestPool(db.$client);
 
     try {
       const migrations = readMigrationFiles({
@@ -264,8 +266,7 @@ describe("Learning Plan migration", () => {
         },
       ]);
     } finally {
-      await db.$client.end();
-      await container.stop();
+      await stopTestPostgres({ pool: testPool, container });
     }
   });
 });
