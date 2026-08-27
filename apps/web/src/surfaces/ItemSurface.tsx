@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import type { Item, ItemId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemSidebar } from "../items/ItemSidebar";
+import type { ItemPlacementChange } from "../items/ItemPlacements";
 import {
   itemBackgroundSurface,
   readItemBackgroundLocation,
@@ -36,6 +37,21 @@ export function ItemSurface() {
     backgroundSurface.kind === "library" && backgroundLocation
       ? backgroundLocation.search
       : "";
+  const handlePlacementChange = (change: ItemPlacementChange) => {
+    if (
+      change.operation === "remove" &&
+      backgroundSurface.kind === "plan" &&
+      backgroundSurface.learningPlanId === change.learningPlanId &&
+      backgroundLocation
+    ) {
+      void navigate(
+        `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`,
+      );
+      return;
+    }
+
+    setPlacementVersion((current) => current + 1);
+  };
 
   return (
     <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
@@ -45,9 +61,7 @@ export function ItemSurface() {
           user={user}
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
-          onPlacementChanged={() =>
-            setPlacementVersion((current) => current + 1)
-          }
+          onPlacementChanged={handlePlacementChange}
           onClose={() => {
             void navigate(
               backgroundLocation
