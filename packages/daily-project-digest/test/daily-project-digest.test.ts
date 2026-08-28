@@ -20,6 +20,14 @@ afterEach(() => {
 
 function deliveryAdaptersWithOpenAI(
   openai: DeliveryAdapters["openai"],
+  pullRequestBody = `## Summary
+
+The Learning Plan overview now shows each stage's progress and the next Item to continue.
+
+## Validation
+
+The overview behavior is covered for empty, active, and completed plans.`,
+  pullRequestTitle = "Improve the learning plan overview",
 ): DeliveryAdapters {
   return {
     clock: { now: () => new Date("2026-08-17T17:30:00.000Z") },
@@ -30,7 +38,7 @@ function deliveryAdaptersWithOpenAI(
             state: "OPEN" as const,
             mergedAt: null,
             number: 202,
-            title: "Improve the learning plan overview",
+            title: pullRequestTitle,
             baseRefName: "dev",
             headRefName: "agent/learning-plan-overview",
             headRepository: "rajat2006/unshelf",
@@ -39,6 +47,7 @@ function deliveryAdaptersWithOpenAI(
             headContainsMain: false,
             blockedBy: [],
             closingIssues: [],
+            body: pullRequestBody,
           },
         ]),
       listDeployments: () => Promise.resolve([]),
@@ -52,12 +61,390 @@ function deliveryAdaptersWithOpenAI(
 
 const validPresentationItem = {
   subjectId: "pull-request:202",
-  sentence: "Improves the learning plan overview for readers.",
+  sentence:
+    "The Learning Plan overview now shows stage progress and the next Item to continue.",
   audienceGroup: "standard",
   citations: ["title"],
 } as const;
 
 describe("Daily Project Digest", () => {
+  it("gives the presentation concrete changed behavior and verification evidence", async () => {
+    let presentationInput: unknown;
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI({
+        generatePresentation: (input) => {
+          presentationInput = input;
+          return Promise.resolve({
+            schemaVersion: "1",
+            items: [validPresentationItem],
+          });
+        },
+      }),
+    );
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "pull-request:202",
+          kind: "pull-request",
+          facts: [
+            {
+              id: "title",
+              value: "Improve the learning plan overview",
+              source: "github_untrusted",
+            },
+            {
+              id: "summary",
+              value:
+                "The Learning Plan overview now shows each stage's progress and the next Item to continue.",
+              source: "github_untrusted",
+            },
+            {
+              id: "verification",
+              value:
+                "The overview behavior is covered for empty, active, and completed plans.",
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("asks for a concrete change brief rather than a general benefit", async () => {
+    let instructions: unknown;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        if (typeof init?.body !== "string") {
+          throw new Error("Expected a serialized OpenAI request.");
+        }
+        const request = JSON.parse(init.body) as { instructions?: unknown };
+        instructions = request.instructions;
+        return Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [
+                  {
+                    type: "output_text",
+                    text: JSON.stringify({
+                      schemaVersion: "1",
+                      items: [validPresentationItem],
+                    }),
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      }),
+    );
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI(
+        createOpenAIResponsesAdapter({ apiKey: "openai-key" }),
+      ),
+    );
+
+    expect(instructions).toEqual(
+      expect.stringContaining(
+        "Name the affected product area and the specific behavior that changed",
+      ),
+    );
+    expect(instructions).not.toEqual(
+      expect.stringContaining(
+        "state only what becomes better, safer, easier, clearer, or more dependable",
+      ),
+    );
+    expect(instructions).toEqual(
+      expect.stringContaining(
+        "Do not state or imply the subject's project delivery status",
+      ),
+    );
+    expect(instructions).not.toEqual(
+      expect.stringContaining(
+        "rewrite any sentence containing lifecycle words",
+      ),
+    );
+  });
+
+  it("uses a narrative pull-request description when it has no Summary heading", async () => {
+    let presentationInput: unknown;
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI(
+        {
+          generatePresentation: (input) => {
+            presentationInput = input;
+            return Promise.resolve({
+              schemaVersion: "1",
+              items: [validPresentationItem],
+            });
+          },
+        },
+        `Follow-up to the Discover preview acceptance.
+
+- compare the full scrollable preview before considering it settled
+- keep channel identity and Follow visible while videos scroll`,
+      ),
+    );
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "pull-request:202",
+          kind: "pull-request",
+          facts: [
+            {
+              id: "title",
+              value: "Improve the learning plan overview",
+              source: "github_untrusted",
+            },
+            {
+              id: "summary",
+              value:
+                "Follow-up to the Discover preview acceptance. compare the full scrollable preview before considering it settled keep channel identity and Follow visible while videos scroll",
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("bounds pull-request description facts before calling the model", async () => {
+    let presentationInput: unknown;
+    const longSummary =
+      "The Discover preview keeps Follow visible while videos scroll. "
+        .repeat(40)
+        .trim();
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI(
+        {
+          generatePresentation: (input) => {
+            presentationInput = input;
+            return Promise.resolve({
+              schemaVersion: "1",
+              items: [validPresentationItem],
+            });
+          },
+        },
+        `## Summary\n\n${longSummary}`,
+      ),
+    );
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "pull-request:202",
+          kind: "pull-request",
+          facts: [
+            {
+              id: "title",
+              value: "Improve the learning plan overview",
+              source: "github_untrusted",
+            },
+            {
+              id: "summary",
+              value: `${longSummary.slice(0, 1_199).trimEnd()}…`,
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("removes links, credentials, and raw patches from model facts", async () => {
+    let presentationInput: unknown;
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI(
+        {
+          generatePresentation: (input) => {
+            presentationInput = input;
+            return Promise.resolve({
+              schemaVersion: "1",
+              items: [validPresentationItem],
+            });
+          },
+        },
+        `## Summary
+
+- Discover preview now keeps Follow visible; details in [acceptance](https://example.com/private)
+- DAILY_DIGEST_OPENAI_API_KEY=sk-sensitive-value
+- See www.example.com/private and github.com/example/private for details
+- Authorization: Bearer bearer-sensitive-value
+- Encoded credential eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature-value
+
+-----BEGIN PRIVATE KEY-----
+private-key-material
+-----END PRIVATE KEY-----
+
+--- a/old.ts
++++ b/new.ts
+@@ -1,2 +1,2 @@
+- old behavior
++  return render(items);
+ unchanged context
+
+## Validation
+
+@@ -1,2 +1,2 @@
+- old validation
++ new validation
+ unchanged validation context`,
+        "Fix leaked credential sk-abcdefghijklmnop",
+      ),
+    );
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "pull-request:202",
+          kind: "pull-request",
+          facts: [
+            {
+              id: "summary",
+              value:
+                "Discover preview now keeps Follow visible; details in acceptance",
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("uses narrative preambles and common test-plan headings", async () => {
+    let presentationInput: unknown;
+
+    await runDailyProjectDigest(
+      { mode: "deliver" },
+      deliveryAdaptersWithOpenAI(
+        {
+          generatePresentation: (input) => {
+            presentationInput = input;
+            return Promise.resolve({
+              schemaVersion: "1",
+              items: [validPresentationItem],
+            });
+          },
+        },
+        `Discover previews keep their Follow control visible while long video lists scroll.
+
+## Test plan
+
+- desktop wheel input
+- phone-sized viewport`,
+      ),
+    );
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "pull-request:202",
+          kind: "pull-request",
+          facts: [
+            {
+              id: "title",
+              value: "Improve the learning plan overview",
+              source: "github_untrusted",
+            },
+            {
+              id: "summary",
+              value:
+                "Discover previews keep their Follow control visible while long video lists scroll.",
+              source: "github_untrusted",
+            },
+            {
+              id: "verification",
+              value: "desktop wheel input phone-sized viewport",
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("gives planning subjects their concrete destination", async () => {
+    let presentationInput: unknown;
+    const adapters = deliveryAdaptersWithOpenAI({
+      generatePresentation: (input) => {
+        presentationInput = input;
+        return Promise.resolve({
+          schemaVersion: "1",
+          items: [
+            {
+              subjectId: "wayfinder-map:424",
+              sentence:
+                "The digest plan defines a nightly Discord brief with concrete project changes.",
+              audienceGroup: "standard",
+              citations: ["summary"],
+            },
+          ],
+        });
+      },
+    });
+    adapters.github.listPullRequests = () => Promise.resolve([]);
+    adapters.github.listWayfinderMaps = () =>
+      Promise.resolve([
+        {
+          state: "OPEN",
+          stateReason: null,
+          closedAt: null,
+          number: 424,
+          title: "Wayfinder: publish a Daily Project Digest to Discord",
+          body: `## Destination
+
+Produce a nightly Discord brief that tells project stakeholders exactly what changed.`,
+          labels: ["wayfinder:map"],
+          children: [],
+        },
+      ]);
+
+    await runDailyProjectDigest({ mode: "deliver" }, adapters);
+
+    expect(presentationInput).toEqual({
+      schemaVersion: "1",
+      subjects: [
+        {
+          subjectId: "wayfinder-map:424",
+          kind: "wayfinder-map",
+          facts: [
+            {
+              id: "title",
+              value: "Wayfinder: publish a Daily Project Digest to Discord",
+              source: "github_untrusted",
+            },
+            {
+              id: "summary",
+              value:
+                "Produce a nightly Discord brief that tells project stakeholders exactly what changed.",
+              source: "github_untrusted",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("delivers production releases alongside completed and active work", async () => {
     vi.useFakeTimers();
     const retryClockStart = Date.now();
@@ -1290,6 +1677,11 @@ describe("Daily Project Digest", () => {
             query?: unknown;
           };
           const query = String(request.query);
+          if (!/\n\s+body\s*\n/.test(query)) {
+            throw new Error(
+              "Expected GitHub evidence to include the pull-request body.",
+            );
+          }
           const pageSize = Number(
             query.match(/pullRequests\(states: OPEN, first: (\d+)/)?.[1],
           );
@@ -1317,6 +1709,13 @@ describe("Daily Project Digest", () => {
                       {
                         number: 202,
                         title: "Improve the learning plan overview",
+                        body: `## Summary
+
+The Learning Plan overview now shows each stage's progress and the next Item to continue.
+
+## Validation
+
+The overview behavior is covered for empty, active, and completed plans.`,
                         baseRefName: "dev",
                         headRefName: "agent/learning-plan-overview",
                         headRefOid: "b".repeat(40),
