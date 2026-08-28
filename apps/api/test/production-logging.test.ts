@@ -49,6 +49,7 @@ function resolveProductionCompose(logLevel = ""): ResolvedCompose {
         LOG_LEVEL: logLevel,
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
+        YOUTUBE_API_KEY: "test-youtube-api-key",
         VITE_CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
       },
     },

@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fetchItem, fetchLabels } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemLabels } from "./ItemLabels";
+import type { ItemPlacementChange } from "./ItemPlacements";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { ItemSource } from "./ItemSource";
@@ -21,7 +22,7 @@ interface ItemSidebarProps {
   itemOverride?: Item;
   onClose: () => void;
   onItemChanged?: (item: Item) => void;
-  onPlacementChanged?: () => void;
+  onPlacementChanged?: (change: ItemPlacementChange) => void;
 }
 
 /** Route-owned canonical Item detail, isolated from the live surface beside it. */

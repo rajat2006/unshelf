@@ -1,0 +1,298 @@
+name: Deliver production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-delivery
+  cancel-in-progress: false
+
+env:
+  IMAGE_TAG: production-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+    outputs:
+      source_sha: ${{ steps.authority.outputs.source_sha }}
+    steps:
+      - id: authority
+        name: Select an authorized main revision
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          if test "$GITHUB_RUN_ATTEMPT" = 1; then
+            test "$GITHUB_REF" = refs/heads/main
+            source_sha="$main_sha"
+          else
+            source_sha="$GITHUB_SHA"
+            # Built-in reruns retain their original SHA; both comparisons fail closed if it no longer precedes main or a healthy release (ADR-0022).
+            comparison="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${source_sha}...${main_sha}" --jq .status)"
+            test "$comparison" = ahead -o "$comparison" = identical
+            deployments="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=production&per_page=100")"
+            while IFS= read -r deployment; do
+              deployment_id="$(jq -r .id <<<"$deployment")"
+              deployed_sha="$(jq -r .sha <<<"$deployment")"
+              test "$deployed_sha" != "$source_sha" || continue
+              success="$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")')"
+              test "$success" = false && continue
+              relation="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${source_sha}...${deployed_sha}" --jq .status)"
+              test "$relation" = behind
+            done < <(jq -c '.[]' <<<"$deployments")
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${source_sha}&event=push&status=completed&per_page=100")"
+          run_ids="$(jq -r --arg sha "$source_sha" '.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .id' <<<"$runs")"
+          approved=false
+          while IFS= read -r run_id; do
+            test -n "$run_id" || continue
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" --jq '.jobs | any(.name == "Product" and .status == "completed" and .conclusion == "success")' | grep -qx true; then approved=true; break; fi
+          done <<<"$run_ids"
+          test "$approved" = true
+          printf 'source_sha=%s\n' "$source_sha" >>"$GITHUB_OUTPUT"
+
+  inspect:
+    needs: authorize
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.target.outputs.deploy }}
+      source_sha: ${{ needs.authorize.outputs.source_sha }}
+      compose_id: ${{ steps.target.outputs.compose_id }}
+      compose_name: ${{ steps.target.outputs.compose_name }}
+      runtime_name: ${{ steps.target.outputs.runtime_name }}
+      marker: ${{ steps.target.outputs.marker }}
+    steps:
+      - id: target
+        name: Resolve the exact target and healthy marker
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          DOKPLOY_URL: ${{ vars.DOKPLOY_PRODUCTION_URL }}
+          COMPOSE_ID: ${{ vars.DOKPLOY_PRODUCTION_COMPOSE_ID }}
+          PUBLIC_ORIGIN: ${{ vars.PRODUCTION_PUBLIC_ORIGIN }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_PRODUCTION_API_KEY }}
+          DOKPLOY_COMPOSE_ENV: ${{ secrets.DOKPLOY_PRODUCTION_COMPOSE_ENV }}
+        run: |
+          set -euo pipefail
+          node -e 'for(const name of ["DOKPLOY_URL","PUBLIC_ORIGIN"]){const u=new URL(process.env[name]);if(u.protocol!=="https:"||u.origin!==process.env[name])process.exit(1)}'
+          test "$PUBLIC_ORIGIN" = https://unshelf.tech
+          test -n "$COMPOSE_ID" && test -n "$DOKPLOY_API_KEY" && test -n "$DOKPLOY_COMPOSE_ENV"
+          if grep -Eq '^(API_IMAGE|WEB_IMAGE|PUBLIC_ORIGIN)=' <<<"$DOKPLOY_COMPOSE_ENV"; then exit 1; fi
+          grep -qx 'MIGRATION_MODE=apply' <<<"$DOKPLOY_COMPOSE_ENV"
+          grep -q '^DATABASE_NETWORK=' <<<"$DOKPLOY_COMPOSE_ENV"
+          record="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/compose.one")"
+          compose_name="$(jq -er '.result.data.json.name // .name' <<<"$record")"
+          runtime_name="$(jq -er '.result.data.json.appName // .appName' <<<"$record")"
+          description="$(jq -er '.result.data.json.description // .description // ""' <<<"$record")"
+          live_env="$(jq -er '.result.data.json.env // .env // ""' <<<"$record")"
+          live_compose="$(jq -er '.result.data.json.composeFile // .composeFile // ""' <<<"$record")"
+          isolated="$(jq -er '.result.data.json.isolatedDeployment // .isolatedDeployment' <<<"$record")"
+          trusted_compose="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${SOURCE_SHA}" --jq .content | base64 --decode)"
+          policy="$RUNNER_TEMP/delivery-policy.mjs"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/scripts/delivery-policy.mjs?ref=${SOURCE_SHA}" --jq .content | base64 --decode >"$policy"
+          deploy=true
+          marker="${description#unshelf:last-healthy }"
+          marker_output='{}'
+          marker_api="$(jq -r '.apiDigest // ""' <<<"$marker" 2>/dev/null || true)"
+          marker_web="$(jq -r '.webDigest // ""' <<<"$marker" 2>/dev/null || true)"
+          expected_env="${DOKPLOY_COMPOSE_ENV%$'\n'}"$'\n'"API_IMAGE=ghcr.io/rajat2006/unshelf-api@$marker_api"$'\n'"WEB_IMAGE=ghcr.io/rajat2006/unshelf-web@$marker_web"$'\n'"PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
+          candidate="$(jq -n --arg channel production --arg sourceSha "$SOURCE_SHA" --arg description "$description" --argjson isolated "$isolated" --arg liveCompose "$live_compose" --arg trustedCompose "$trusted_compose" --arg liveEnv "$live_env" --arg expectedEnv "$expected_env" '{channel:$channel,sourceSha:$sourceSha,description:$description,isolated:$isolated,liveCompose:$liveCompose,trustedCompose:$trustedCompose,liveEnv:$liveEnv,expectedEnv:$expectedEnv}' | node "$policy" healthy-noop)"
+          if jq -e '.eligible == true' <<<"$candidate" >/dev/null; then
+            marker_output="$(jq -c . <<<"$marker")"
+            api="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/api/health" || true)"
+            web="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/" || true)"
+            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then deploy=false; fi
+          fi
+          printf 'deploy=%s\ncompose_id=%s\ncompose_name=%s\nruntime_name=%s\nmarker=%s\n' "$deploy" "$COMPOSE_ID" "$compose_name" "$runtime_name" "$marker_output" >>"$GITHUB_OUTPUT"
+
+  api-image:
+    needs: inspect
+    if: needs.inspect.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: { contents: read, packages: write }
+    outputs: { digest: "${{ steps.publish.outputs.digest }}" }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.source_sha }}",
+            persist-credentials: false,
+          }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          {
+            registry: ghcr.io,
+            username: "${{ github.actor }}",
+            password: "${{ secrets.GITHUB_TOKEN }}",
+          }
+      - id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/rajat2006/unshelf-api:${{ env.IMAGE_TAG }}-${{ needs.inspect.outputs.source_sha }}
+
+  web-image:
+    needs: inspect
+    if: needs.inspect.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: { contents: read, packages: write }
+    outputs: { digest: "${{ steps.publish.outputs.digest }}" }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.source_sha }}",
+            persist-credentials: false,
+          }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          {
+            registry: ghcr.io,
+            username: "${{ github.actor }}",
+            password: "${{ secrets.GITHUB_TOKEN }}",
+          }
+      - id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/rajat2006/unshelf-web:${{ env.IMAGE_TAG }}-${{ needs.inspect.outputs.source_sha }}
+          build-args: |
+            VITE_CLERK_PUBLISHABLE_KEY=${{ vars.VITE_CLERK_PUBLISHABLE_KEY_PRODUCTION }}
+            VITE_YOUTUBE_OEMBED_ENABLED=true
+
+  deploy:
+    needs: [authorize, inspect, api-image, web-image]
+    if: always() && needs.inspect.result == 'success' && (needs.inspect.outputs.deploy == 'false' || (needs.api-image.result == 'success' && needs.web-image.result == 'success'))
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - if: needs.inspect.outputs.deploy == 'false'
+        name: Record a healthy no-op and repair its release record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          COMPOSE_ID: ${{ needs.inspect.outputs.compose_id }}
+          MARKER: ${{ needs.inspect.outputs.marker }}
+        run: |
+          set -euo pipefail
+          API_DIGEST="$(jq -er --arg sha "$SOURCE_SHA" 'select(.sourceSha == $sha) | .apiDigest' <<<"$MARKER")"
+          WEB_DIGEST="$(jq -er .webDigest <<<"$MARKER")"
+          RUN_ID="$(jq -er .runId <<<"$MARKER")"
+          RUN_ATTEMPT="$(jq -er .runAttempt <<<"$MARKER")"
+          DOKPLOY_DEPLOYMENT_ID="$(jq -er .deploymentId <<<"$MARKER")"
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SOURCE_SHA}&environment=production&per_page=100")"
+          deployment_id="$(jq -r --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$RUN_ID" --arg runAttempt "$RUN_ATTEMPT" --arg dokployDeploymentId "$DOKPLOY_DEPLOYMENT_ID" '.[] | select(.payload.apiDigest == $apiDigest and .payload.webDigest == $webDigest and .payload.runId == $runId and .payload.runAttempt == $runAttempt and .payload.dokployDeploymentId == $dokployDeploymentId) | .id' <<<"$existing" | head -n1)"
+          if test -z "$deployment_id"; then
+            payload="$(jq -cn --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$RUN_ID" --arg runAttempt "$RUN_ATTEMPT" --arg dokployDeploymentId "$DOKPLOY_DEPLOYMENT_ID" '{apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,dokployDeploymentId:$dokployDeploymentId}')"
+            deployment="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments" --input - <<<"$(jq -n --arg ref "$SOURCE_SHA" --argjson payload "$payload" '{ref:$ref,environment:"production",auto_merge:false,required_contexts:[],production_environment:true,transient_environment:false,payload:$payload}')")"
+            deployment_id="$(jq -er .id <<<"$deployment")"
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")' | grep -qx true; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" -f state=success -f environment=production >/dev/null
+          fi
+          printf '### Production delivery\n\n- State: healthy no-op\n- Source: `%s`\n- Compose ID: `%s`\n' "$SOURCE_SHA" "$COMPOSE_ID" >>"$GITHUB_STEP_SUMMARY"
+      - if: needs.inspect.outputs.deploy == 'true'
+        name: Deploy and record the production release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          API_DIGEST: ${{ needs.api-image.outputs.digest }}
+          WEB_DIGEST: ${{ needs.web-image.outputs.digest }}
+          DOKPLOY_URL: ${{ vars.DOKPLOY_PRODUCTION_URL }}
+          COMPOSE_ID: ${{ vars.DOKPLOY_PRODUCTION_COMPOSE_ID }}
+          PUBLIC_ORIGIN: ${{ vars.PRODUCTION_PUBLIC_ORIGIN }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_PRODUCTION_API_KEY }}
+          DOKPLOY_COMPOSE_ENV: ${{ secrets.DOKPLOY_PRODUCTION_COMPOSE_ENV }}
+        run: |
+          set -euo pipefail
+          [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] && [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          api_image="ghcr.io/rajat2006/unshelf-api@$API_DIGEST"; web_image="ghcr.io/rajat2006/unshelf-web@$WEB_DIGEST"
+          compose_file="$(gh api "repos/${GITHUB_REPOSITORY}/contents/docker-compose.yml?ref=${SOURCE_SHA}" --jq .content | base64 --decode)"
+          env_file="${DOKPLOY_COMPOSE_ENV%$'\n'}"$'\n'"API_IMAGE=$api_image"$'\n'"WEB_IMAGE=$web_image"$'\n'"PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
+          body="$(jq -n --arg composeId "$COMPOSE_ID" --arg composeFile "$compose_file" --arg env "$env_file" '{composeId:$composeId,composeFile:$composeFile,env:$env,sourceType:"raw",composeType:"docker-compose",isolatedDeployment:true}')"
+          curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$body" "$DOKPLOY_URL/api/compose.update" >/dev/null
+          title="production:$SOURCE_SHA:run-$GITHUB_RUN_ID-attempt-$GITHUB_RUN_ATTEMPT"; description="channel=production source=$SOURCE_SHA run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
+          deploy_body="$(jq -n --arg composeId "$COMPOSE_ID" --arg title "$title" --arg description "$description" '{composeId:$composeId,title:$title,description:$description}')"
+          curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$deploy_body" "$DOKPLOY_URL/api/compose.deploy" >/dev/null
+          status=missing; deployment_id=""
+          for _ in $(seq 1 120); do
+            records="$(curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" --get --data-urlencode "composeId=$COMPOSE_ID" "$DOKPLOY_URL/api/deployment.allByCompose")"
+            matches="$(jq -c --arg title "$title" --arg id "$COMPOSE_ID" '[.. | objects | select(.title? == $title and .composeId? == $id)] | unique_by(.deploymentId)' <<<"$records")"
+            test "$(jq 'length' <<<"$matches")" -le 1
+            status="$(jq -r '.[0].status // "missing"' <<<"$matches")"; deployment_id="$(jq -r '.[0].deploymentId // ""' <<<"$matches")"
+            test "$status" != error && test "$status" != cancelled
+            test "$status" = "done" && break; sleep 5
+          done
+          test "$status" = "done"
+          healthy=false
+          for _ in $(seq 1 24); do
+            api="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/api/health" || true)"; web="$(curl --fail --silent --show-error "$PUBLIC_ORIGIN/" || true)"
+            if jq -e '.status == "ok" and .db == "up"' <<<"$api" >/dev/null && grep -Eqi '<title>Unshelf</title>' <<<"$web" && grep -Eqi "id=(\"root\"|'root')" <<<"$web"; then healthy=true; break; fi
+            sleep 5
+          done
+          test "$healthy" = true
+          marker="$(jq -cn --arg channel production --arg sourceSha "$SOURCE_SHA" --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" --arg deploymentId "$deployment_id" '{channel:$channel,sourceSha:$sourceSha,apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,deploymentId:$deploymentId}')"
+          marker_body="$(jq -n --arg composeId "$COMPOSE_ID" --arg description "unshelf:last-healthy $marker" '{composeId:$composeId,description:$description}')"
+          curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$marker_body" "$DOKPLOY_URL/api/compose.update" >/dev/null
+          payload="$(jq -cn --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" --arg dokployDeploymentId "$deployment_id" '{apiDigest:$apiDigest,webDigest:$webDigest,runId:$runId,runAttempt:$runAttempt,dokployDeploymentId:$dokployDeploymentId}')"
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SOURCE_SHA}&environment=production&per_page=100")"
+          github_deployment_id="$(jq -r --arg apiDigest "$API_DIGEST" --arg webDigest "$WEB_DIGEST" --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" --arg dokployDeploymentId "$deployment_id" '.[] | select(.payload.apiDigest == $apiDigest and .payload.webDigest == $webDigest and .payload.runId == $runId and .payload.runAttempt == $runAttempt and .payload.dokployDeploymentId == $dokployDeploymentId) | .id' <<<"$existing" | head -n1)"
+          if test -z "$github_deployment_id"; then
+            deployment="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments" --input - <<<"$(jq -n --arg ref "$SOURCE_SHA" --argjson payload "$payload" '{ref:$ref,environment:"production",auto_merge:false,required_contexts:[],production_environment:true,transient_environment:false,payload:$payload}')")"
+            github_deployment_id="$(jq -er .id <<<"$deployment")"
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses?per_page=100" --jq 'any(.state == "success")' | grep -qx true; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses" -f state=success -f environment=production >/dev/null
+          fi
+          printf '### Production delivery\n\n- State: healthy\n- Source: `%s`\n- API digest: `%s`\n- Web digest: `%s`\n- Dokploy deployment: `%s`\n' "$SOURCE_SHA" "$API_DIGEST" "$WEB_DIGEST" "$deployment_id" >>"$GITHUB_STEP_SUMMARY"
+
+  summarize:
+    needs: [authorize, inspect, api-image, web-image, deploy]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: { actions: read }
+    steps:
+      - name: Record allowlisted final evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          API_DIGEST: ${{ needs.api-image.outputs.digest }}
+          WEB_DIGEST: ${{ needs.web-image.outputs.digest }}
+          COMPOSE_ID: ${{ needs.inspect.outputs.compose_id }}
+          COMPOSE_NAME: ${{ needs.inspect.outputs.compose_name }}
+          RUNTIME_NAME: ${{ needs.inspect.outputs.runtime_name }}
+          GATES: authorize=${{ needs.authorize.result }},inspect=${{ needs.inspect.result }},api-image=${{ needs.api-image.result }},web-image=${{ needs.web-image.result }},deploy=${{ needs.deploy.result }}
+        run: |
+          started="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .run_started_at)"
+          duration="$(( $(date +%s) - $(date -d "$started" +%s) ))s"
+          final_state=success; [[ "$GATES" == *failure* ]] && final_state=failure; [[ "$GATES" == *cancelled* ]] && final_state=cancelled
+          printf '### Production final evidence\n\n- Channel: production\n- Final state: `%s`\n- Selected SHA: `%s`\n- Digests: API `%s`, web `%s`\n- Gates/health: `%s`\n- Duration: `%s`\n- Compose: `%s` (`%s`, runtime `%s`)\n' "$final_state" "${SOURCE_SHA:-unavailable}" "${API_DIGEST:-not-built}" "${WEB_DIGEST:-not-built}" "$GATES" "$duration" "${COMPOSE_NAME:-unresolved}" "${COMPOSE_ID:-unresolved}" "${RUNTIME_NAME:-unresolved}" >>"$GITHUB_STEP_SUMMARY"

@@ -20,7 +20,6 @@ import {
   getItemPlacementCatalog,
 } from "../placements/service";
 import {
-  createItem,
   applyLabelToItem,
   getItem,
   listItems,
@@ -28,6 +27,7 @@ import {
   updateItemStatus,
   updateItemTargetDate,
 } from "./repository";
+import { captureItem } from "./capture-item";
 import {
   createParts,
   removePart,
@@ -49,7 +49,7 @@ export function createItemsRouter(
     validateRequest({ body: createItemRequestSchema }, "invalid_item_create"),
     async (req, res) => {
       const { body } = res.locals.validated;
-      const item = await createItem(db, req.user!.id, body);
+      const item = await captureItem({ db, userId: req.user!.id, input: body });
       res.status(201).json(item);
     },
   );

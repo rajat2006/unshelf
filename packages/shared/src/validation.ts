@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type {
   DailyFocusId,
+  DiscoverCandidateId,
+  DiscoverFollowId,
+  DiscoverProviderTargetId,
   ItemId,
   LabelId,
   LearningPlanId,
@@ -28,6 +31,11 @@ export const learningPlanIdSchema = identifierSchema<LearningPlanId>();
 export const planNodeIdSchema = identifierSchema<PlanNodeId>();
 export const labelIdSchema = identifierSchema<LabelId>();
 export const dailyFocusIdSchema = identifierSchema<DailyFocusId>();
+export const discoverProviderTargetIdSchema =
+  identifierSchema<DiscoverProviderTargetId>();
+export const discoverFollowIdSchema = identifierSchema<DiscoverFollowId>();
+export const discoverCandidateIdSchema =
+  identifierSchema<DiscoverCandidateId>();
 
 export const createItemRequestSchema = z.strictObject({
   title: titleSchema,
@@ -68,6 +76,25 @@ export const dailyPlanningQuerySchema = z.strictObject({
 export const suppressDailyPlanningItemRequestSchema = z.strictObject({
   itemId: itemIdSchema,
 });
+
+export const discoverPreviewRequestSchema = z.strictObject({
+  url: z.string().trim().min(1),
+});
+
+export const createDiscoverFollowRequestSchema = z.strictObject({
+  targetId: discoverProviderTargetIdSchema,
+});
+
+export const discoverWorkspaceQuerySchema = z.strictObject({
+  followId: discoverFollowIdSchema.optional(),
+});
+
+export const keepDiscoverCandidateRequestSchema = z.strictObject({
+  title: titleSchema,
+  type: z.enum(Type),
+});
+
+export const rejectDiscoverCandidateRequestSchema = z.strictObject({});
 
 export const createPartsRequestSchema = z.strictObject({
   titles: z
@@ -153,6 +180,18 @@ export type AddDailyFocusItemRequest = z.infer<
 export type DailyPlanningQuery = z.infer<typeof dailyPlanningQuerySchema>;
 export type SuppressDailyPlanningItemRequest = z.infer<
   typeof suppressDailyPlanningItemRequestSchema
+>;
+export type DiscoverPreviewRequest = z.infer<
+  typeof discoverPreviewRequestSchema
+>;
+export type CreateDiscoverFollowRequest = z.infer<
+  typeof createDiscoverFollowRequestSchema
+>;
+export type DiscoverWorkspaceQuery = z.infer<
+  typeof discoverWorkspaceQuerySchema
+>;
+export type KeepDiscoverCandidateRequest = z.infer<
+  typeof keepDiscoverCandidateRequestSchema
 >;
 export type CreatePartsRequest = z.infer<typeof createPartsRequestSchema>;
 export type UpdatePartRequest = z.infer<typeof updatePartRequestSchema>;

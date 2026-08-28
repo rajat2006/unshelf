@@ -9,6 +9,9 @@ import { createStagesRouter } from "./stages/router";
 import { createLearningPlansRouter } from "./learning-plans/router";
 import { createDailyFocusRouter } from "./daily-focus/router";
 import { createServerCalendarRouter } from "./server-calendar/router";
+import { createDiscoverRouter } from "./discover/router";
+import { createDiscoverModule, type DiscoverModule } from "./discover/index";
+import { unavailableYouTubeClient } from "./discover/youtube-client";
 import { createApiErrorHandler } from "./middleware/error-handler";
 import { serializeFailure } from "./diagnostics";
 import {
@@ -18,7 +21,9 @@ import {
   type RequestLifecycleOptions,
 } from "./middleware/request-lifecycle";
 
-export type AppOptions = RequestLifecycleOptions;
+export type AppOptions = RequestLifecycleOptions & {
+  discoverModule?: DiscoverModule;
+};
 
 /**
  * Build the Express app around an injected Drizzle handle and auth chain. Both are
@@ -34,6 +39,14 @@ export function createApp(
   options: AppOptions,
 ): Express {
   const app = express();
+  const discover =
+    options.discoverModule ??
+    createDiscoverModule({
+      db,
+      youtubeClient: unavailableYouTubeClient,
+      now: () => new Date(),
+      logger: options.logger,
+    });
   app.use(createRequestLifecycle(options));
   app.use(express.json({ strict: false }));
 
@@ -94,6 +107,14 @@ export function createApp(
     "/api/server-calendar",
     captureRouteMount,
     createServerCalendarRouter(db, auth),
+  );
+  app.use(
+    "/api/discover",
+    captureRouteMount,
+    createDiscoverRouter({
+      auth,
+      discover,
+    }),
   );
   app.use(markRoutingResolved);
   app.use(

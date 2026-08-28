@@ -61,6 +61,7 @@ export function ItemTargetDate({ item, user, onChanged }: ItemTargetDateProps) {
               : pendingTargetDate
           }
           today={calendar.status === "available" ? calendar.today : null}
+          min={calendar.status === "available" ? calendar.today : undefined}
           allowToday
           allowClear
           disabled={saving}

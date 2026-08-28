@@ -21,7 +21,11 @@ import {
   type StageId,
   type UserId,
 } from "@unshelf/shared";
-import { fetchLearningPlanItemCandidates, placeItemDirectly } from "../api";
+import {
+  fetchLearningPlanItemCandidates,
+  placeItemDirectly,
+  removeDirectItemFromLearningPlan,
+} from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { CaptureContext } from "../shell/capture-context";
 import { PlanLibraryDrawer } from "./PlanLibraryDrawer";
@@ -146,6 +150,40 @@ describe("Learning Plan Library placement drawer", () => {
 
     await waitFor(() =>
       expect(onLearningPlanChanged).toHaveBeenCalledWith(changed),
+    );
+  });
+
+  it("reports the Item removed from the Learning Plan sidebar", async () => {
+    vi.mocked(fetchLearningPlanItemCandidates).mockResolvedValue([
+      { kind: "direct", item },
+    ]);
+    const changed: LearningPlanView = { nodes: [], edges: [] };
+    vi.mocked(removeDirectItemFromLearningPlan).mockResolvedValue(changed);
+    const onItemRemovedFromPlan = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <CaptureContext.Provider
+          value={{ open: vi.fn(), subscribe: () => () => undefined }}
+        >
+          <PlanLibraryDrawer
+            learningPlanId={learningPlanId}
+            user={user}
+            onLearningPlanChanged={vi.fn()}
+            onItemRemovedFromPlan={onItemRemovedFromPlan}
+          />
+        </CaptureContext.Provider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Remove Database Internals from this Learning Plan",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(onItemRemovedFromPlan).toHaveBeenCalledWith(item.id),
     );
   });
 

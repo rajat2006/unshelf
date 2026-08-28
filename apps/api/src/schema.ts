@@ -17,10 +17,13 @@ import {
   ITEM_STATUSES,
   ITEM_STATUS_MODES,
   ITEM_TYPES,
+  CANDIDATE_STATES,
+  CandidateState,
   PLAN_NODE_KINDS,
   Status,
   StatusMode,
 } from "@unshelf/shared";
+import { DISCOVER_FETCH_OUTCOMES } from "./discover/fetch-schedule";
 
 /**
  * The database schema, in TypeScript. `drizzle-kit generate` diffs this against
@@ -65,6 +68,173 @@ export const users = pgTable("users", {
     .notNull()
     .defaultNow(),
 });
+
+/** Shared YouTube channel metadata and its scheduled-acquisition lease. */
+export const discoverProviderTargets = pgTable(
+  "discover_provider_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    title: text("title").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    uploadsPlaylistId: text("uploads_playlist_id").notNull(),
+    nextFetchAt: timestamp("next_fetch_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    lastFetchOutcome: text("last_fetch_outcome", {
+      enum: nonEmpty(DISCOVER_FETCH_OUTCOMES),
+    }),
+    claimToken: uuid("claim_token"),
+    claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_provider_targets_identity_unique").on(
+      table.provider,
+      table.externalId,
+    ),
+    check(
+      "discover_provider_targets_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+    check(
+      "discover_provider_targets_fetch_outcome_check",
+      sql`${table.lastFetchOutcome} is null or ${table.lastFetchOutcome} in ${enumList(DISCOVER_FETCH_OUTCOMES)}`,
+    ),
+    check(
+      "discover_provider_targets_claim_check",
+      sql`(${table.claimToken} is null and ${table.claimExpiresAt} is null)
+        or (${table.claimToken} is not null and ${table.claimExpiresAt} is not null)`,
+    ),
+    index("discover_provider_targets_due_idx").on(
+      table.nextFetchAt,
+      table.claimExpiresAt,
+    ),
+  ],
+);
+
+/** Current shared public metadata for one exact YouTube video identity. */
+export const discoverProviderResults = pgTable(
+  "discover_provider_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetId: uuid("target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    source: text("source").notNull(),
+    title: text("title").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_provider_results_identity_unique").on(
+      table.provider,
+      table.externalId,
+    ),
+    index("discover_provider_results_target_published_idx").on(
+      table.targetId,
+      table.publishedAt,
+    ),
+    check(
+      "discover_provider_results_provider_check",
+      sql`${table.provider} = 'youtube'`,
+    ),
+    check(
+      "discover_provider_results_duration_check",
+      sql`${table.durationSeconds} >= 0`,
+    ),
+  ],
+);
+
+/** A User's one private Follow of one shared channel target. */
+export const discoverFollows = pgTable(
+  "discover_follows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    targetId: uuid("target_id")
+      .notNull()
+      .references(() => discoverProviderTargets.id),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_follows_user_target_unique").on(
+      table.userId,
+      table.targetId,
+    ),
+    index("discover_follows_active_target_idx").on(
+      table.targetId,
+      table.deletedAt,
+    ),
+  ],
+);
+
+/** A User's durable private decision state for one shared video. */
+export const discoverCandidates = pgTable(
+  "discover_candidates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    resultId: uuid("result_id")
+      .notNull()
+      .references(() => discoverProviderResults.id),
+    state: text("state", { enum: nonEmpty(CANDIDATE_STATES) })
+      .notNull()
+      .default(CandidateState.Pending),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("discover_candidates_user_result_unique").on(
+      table.userId,
+      table.resultId,
+    ),
+    index("discover_candidates_user_state_idx").on(table.userId, table.state),
+    check(
+      "discover_candidates_state_check",
+      sql`${table.state} in ${enumList(CANDIDATE_STATES)}`,
+    ),
+    check(
+      "discover_candidates_decision_timestamps_check",
+      sql`(${table.state} = 'pending' and ${table.keptAt} is null and ${table.rejectedAt} is null)
+        or (${table.state} = 'kept' and ${table.keptAt} is not null and ${table.rejectedAt} is null)
+        or (${table.state} = 'rejected' and ${table.keptAt} is null and ${table.rejectedAt} is not null)`,
+    ),
+  ],
+);
 
 /**
  * The Item spine (ADR-0003): one table for every Type, scoped to a User. All is
@@ -116,6 +286,34 @@ export const items = pgTable(
     check(
       "items_status_mode_check",
       sql`${table.statusMode} in ${enumList(ITEM_STATUS_MODES)}`,
+    ),
+  ],
+);
+
+/** Library-owned link from one exact Provider identity to one owned Item. */
+export const itemProviderIdentities = pgTable(
+  "item_provider_identities",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.provider, table.externalId] }),
+    foreignKey({
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+      name: "item_provider_identities_item_owner_fk",
+    }),
+    check(
+      "item_provider_identities_provider_check",
+      sql`${table.provider} = 'youtube'`,
     ),
   ],
 );

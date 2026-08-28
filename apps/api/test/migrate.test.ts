@@ -13,6 +13,7 @@ import {
   objectContaining,
   parseJsonRecord,
 } from "./assertion-boundaries";
+import { stopTestPostgres, trackTestPool } from "./postgres-lifecycle";
 
 const execFileAsync = promisify(execFile);
 const API_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -26,6 +27,7 @@ describe("migration CLI", () => {
       connectionString: container.getConnectionUri(),
       timeZone: "UTC",
     });
+    const testPool = trackTestPool(db.$client);
 
     try {
       const { stdout } = await execFileAsync(
@@ -176,8 +178,7 @@ describe("migration CLI", () => {
       ).not.toContain("verification-only-test-password");
       expect(await readSchemaShape(db.$client)).toEqual(schemaBefore);
     } finally {
-      await db.$client.end();
-      await container.stop();
+      await stopTestPostgres({ pool: testPool, container });
     }
   });
 });
