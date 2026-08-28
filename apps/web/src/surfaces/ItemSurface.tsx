@@ -24,7 +24,6 @@ export function ItemSurface() {
   const navigate = useNavigate();
   const user = useCurrentUser();
   const [changedItems, setChangedItems] = useState<Record<string, Item>>({});
-  const [placementVersion, setPlacementVersion] = useState(0);
   const recordItemChange = useCallback((changed: Item) => {
     setChangedItems((current) => ({ ...current, [changed.id]: changed }));
   }, []);
@@ -45,9 +44,6 @@ export function ItemSurface() {
           user={user}
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
-          onPlacementChanged={() =>
-            setPlacementVersion((current) => current + 1)
-          }
           onClose={() => {
             void navigate(
               backgroundLocation
@@ -64,7 +60,7 @@ export function ItemSurface() {
               changedItem
                 ? `${changedItem.id}:${changedItem.status}`
                 : "learningPlan"
-            }:${placementVersion}`}
+            }`}
             learningPlanId={backgroundSurface.learningPlanId}
           />
         ) : backgroundSurface.kind === "today" ? (

@@ -11,7 +11,6 @@ import { ItemLabels } from "./ItemLabels";
 import { ItemStatusSelect } from "./ItemStatusSelect";
 import { ItemTargetDate } from "./ItemTargetDate";
 import { ItemSource } from "./ItemSource";
-import { ItemPlacements } from "./ItemPlacements";
 import { TYPE_LABELS } from "./presentation";
 import { PartChecklist } from "./PartChecklist";
 
@@ -21,7 +20,6 @@ interface ItemSidebarProps {
   itemOverride?: Item;
   onClose: () => void;
   onItemChanged?: (item: Item) => void;
-  onPlacementChanged?: () => void;
 }
 
 /** Route-owned canonical Item detail, isolated from the live surface beside it. */
@@ -31,7 +29,6 @@ export function ItemSidebar({
   itemOverride,
   onClose,
   onItemChanged,
-  onPlacementChanged,
 }: ItemSidebarProps) {
   const [item, setItem] = useState<ItemDetail | null>(null);
   const [labels, setLabels] = useState<Label[] | null>(null);
@@ -164,12 +161,6 @@ export function ItemSidebar({
             item={visibleItem}
             user={user}
             onChanged={replaceItem}
-          />
-          <ItemPlacements
-            itemId={visibleItem.id}
-            itemTitle={visibleItem.title}
-            user={user}
-            onChanged={onPlacementChanged}
           />
         </div>
       )}

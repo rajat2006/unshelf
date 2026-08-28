@@ -21,14 +21,13 @@ import {
 } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
-import { fetchItem, fetchItemPlacements, fetchLabels } from "../api";
+import { fetchItem, fetchLabels } from "../api";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { ItemSurface } from "./ItemSurface";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   fetchItem: vi.fn(),
-  fetchItemPlacements: vi.fn(),
   fetchLabels: vi.fn(),
 }));
 vi.mock("./LibrarySurface", () => ({
@@ -100,10 +99,6 @@ function renderItemSurface(
 ) {
   vi.mocked(fetchItem).mockResolvedValue(item);
   vi.mocked(fetchLabels).mockResolvedValue([]);
-  vi.mocked(fetchItemPlacements).mockResolvedValue({
-    itemId,
-    learningPlans: [],
-  });
 
   return render(
     <ApplicationAuthProvider auth={auth}>
@@ -145,6 +140,28 @@ describe("canonical Item route", () => {
     expect(
       detail.compareDocumentPosition(room) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("omits Learning Plan placement controls from Item details", async () => {
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: `/plans/${planId}`,
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    expect(
+      await screen.findByRole("complementary", {
+        name: `${item.title} details`,
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Learning Plan placements" }),
+    ).not.toBeInTheDocument();
   });
 
   it.each([
