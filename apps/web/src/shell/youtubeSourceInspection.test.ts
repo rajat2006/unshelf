@@ -64,7 +64,10 @@ describe("prepareYouTubeSourceInspection", () => {
 
   it.each([
     ["https://youtube.com/watch?v=abcdefghijk", Type.Video],
-    ["http://www.youtube.com/watch/?feature=share&v=abc_DEF-123#t=2", Type.Video],
+    [
+      "http://www.youtube.com/watch/?feature=share&v=abc_DEF-123#t=2",
+      Type.Video,
+    ],
     ["https://m.youtube.com/watch?v=abc_DEF-123", Type.Video],
     ["https://youtube.com/shorts/abc_DEF-123", Type.Video],
     ["https://www.youtube.com/shorts/abc_DEF-123/", Type.Video],
@@ -155,9 +158,7 @@ describe("prepareYouTubeSourceInspection", () => {
   it.each([undefined, "", "false", "TRUE", "1"])(
     "performs no request when title acquisition is not exactly enabled (%s)",
     async (enabled) => {
-      if (enabled !== undefined) {
-        vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", enabled);
-      }
+      vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", enabled);
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
 
@@ -234,7 +235,10 @@ describe("prepareYouTubeSourceInspection", () => {
   it("rejects malformed UTF-8 and response data above 16 KiB", async () => {
     vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", "true");
     const invalidUtf8 = new Uint8Array([0x7b, 0xff, 0x7d]);
-    const oversized = JSON.stringify({ title: "ok", padding: "x".repeat(16_384) });
+    const oversized = JSON.stringify({
+      title: "ok",
+      padding: "x".repeat(16_384),
+    });
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -259,7 +263,10 @@ describe("prepareYouTubeSourceInspection", () => {
 
   it("fails softly when the browser request fails", async () => {
     vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", "true");
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("CORS failed")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("CORS failed")),
+    );
 
     await expect(
       preparedVideo().acquireTitle(new AbortController().signal),
@@ -268,7 +275,9 @@ describe("prepareYouTubeSourceInspection", () => {
 
   it("makes at most one request for a prepared acquisition operation", async () => {
     vi.stubEnv("VITE_YOUTUBE_OEMBED_ENABLED", "true");
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: "Once" }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ title: "Once" }));
     vi.stubGlobal("fetch", fetchMock);
     const prepared = preparedVideo();
 
@@ -321,7 +330,9 @@ describe("prepareYouTubeSourceInspection", () => {
     const caller = new AbortController();
     caller.abort();
 
-    await expect(preparedVideo().acquireTitle(caller.signal)).resolves.toBeNull();
+    await expect(
+      preparedVideo().acquireTitle(caller.signal),
+    ).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
