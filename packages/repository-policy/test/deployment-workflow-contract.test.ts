@@ -194,7 +194,7 @@ jobs:
     });
   });
 
-  it("schedules development daily at 22:00 Asia/Kolkata through the manual authority path", () => {
+  it("schedules development daily at 23:00 Asia/Kolkata through the manual authority path", () => {
     const workflow = inspectRepositoryWorkflow("delivery-development.yml");
     const source = readRepositoryWorkflow("delivery-development.yml");
     const authority = workflow.jobs.authorize?.runCommands.join("\n") ?? "";
@@ -205,7 +205,7 @@ jobs:
     ]);
     expect(workflow.triggers.workflow_dispatch?.inputs).toEqual({});
     expect(workflow.triggers.schedule?.schedules).toEqual([
-      { cron: "0 22 * * *", timezone: "Asia/Kolkata" },
+      { cron: "0 23 * * *", timezone: "Asia/Kolkata" },
     ]);
     expect(workflow.concurrency).toEqual({
       cancelInProgress: false,

@@ -31,7 +31,7 @@ deployment, requires basic external health, and records a non-secret
 last-healthy marker. There is no generic dispatcher, candidate state machine,
 durable ledger, moving channel tag, or custom orchestration package.
 
-Development selects the current green `dev` head at 22:00 Asia/Kolkata or on
+Development selects the current green `dev` head at 23:00 Asia/Kolkata or on
 manual request. Preview deployment is a manual action for an open, non-draft,
 same-repository pull request into `dev` carrying `deploy:preview`; the workflow
 creates or refreshes a stable `unshelf-pr-<number>` resource and refuses a

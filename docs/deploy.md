@@ -17,7 +17,7 @@ There are exactly three deployment entry workflows:
 
 | Channel | Trigger | Selected revision | Dokploy target |
 | --- | --- | --- | --- |
-| Development | 22:00 `Asia/Kolkata` daily or manual dispatch | Exact current `dev` head | One configured stable Compose resource |
+| Development | 23:00 `Asia/Kolkata` daily or manual dispatch | Exact current `dev` head | One configured stable Compose resource |
 | Preview | Manual dispatch with a pull-request number | Exact current head of an authorized pull request | Stable `unshelf-pr-<number>` Compose resource, at most three |
 | Production | Manual dispatch with no inputs | Exact current `main` head | One configured stable Compose resource |
 
@@ -253,7 +253,7 @@ endpoint is retained for that workflow; do not remove it merely to make the
 managed service appear private-only. Never record its credentials or connection
 string as acceptance evidence.
 
-The schedule is absent during the initial authority switch. Enable the 22:00
+The schedule is absent during the initial authority switch. Enable the 23:00
 `Asia/Kolkata` schedule only after one manual deployment and an immediate
 same-revision healthy no-op pass. Observe one scheduled deployment or no-op
 before declaring development rollout complete.
@@ -520,7 +520,7 @@ leaving two runnable authorities.
 3. Confirm credential/log hygiene and that non-production automation cannot
    reach production.
 4. Immediately rerun the same revision and prove a healthy no-op.
-5. Add the 22:00 `Asia/Kolkata` schedule.
+5. Add the 23:00 `Asia/Kolkata` schedule.
 6. Observe one scheduled deployment or no-op.
 
 ### 5. Accept preview
