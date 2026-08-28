@@ -8,6 +8,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import {
   items,
   learningPlanItemPlacements,
@@ -44,7 +45,11 @@ export async function createStageWithItem(
         .from(learningPlans)
         .innerJoin(
           items,
-          and(eq(items.id, input.itemId), eq(items.userId, input.userId)),
+          and(
+            eq(items.id, input.itemId),
+            eq(items.userId, input.userId),
+            activeItem(),
+          ),
         )
         .where(
           and(

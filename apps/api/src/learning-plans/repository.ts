@@ -15,6 +15,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import { items, learningPlanItemPlacements, learningPlans } from "../schema";
 
 /**
@@ -87,6 +88,7 @@ async function selectLearningPlans(
       and(
         eq(items.id, learningPlanItemPlacements.itemId),
         eq(items.userId, learningPlans.userId),
+        activeItem(),
       ),
     )
     .where(

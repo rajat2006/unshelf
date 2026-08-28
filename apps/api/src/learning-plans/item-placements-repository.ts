@@ -10,6 +10,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import { ITEM_PROJECTION, toItem } from "../items/repository";
 import {
   items,
@@ -56,7 +57,7 @@ export async function searchItemCandidates({
     .limit(1);
   if (!ownedPlan) return null;
 
-  const predicates = [eq(items.userId, userId)];
+  const predicates = [eq(items.userId, userId), activeItem()];
   if (query) {
     predicates.push(ilike(items.title, `%${escapeLikePattern(query)}%`));
   }
@@ -114,7 +115,10 @@ export async function placeDirectItem({
       const [ownedEnds] = await tx
         .select({ learningPlanId: learningPlans.id })
         .from(learningPlans)
-        .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
+        .innerJoin(
+          items,
+          and(eq(items.id, itemId), eq(items.userId, userId), activeItem()),
+        )
         .where(
           and(
             eq(learningPlans.id, learningPlanId),
@@ -187,7 +191,10 @@ export async function removeDirectItem({
   const [ownedEnds] = await db
     .select({ learningPlanId: learningPlans.id })
     .from(learningPlans)
-    .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
+    .innerJoin(
+      items,
+      and(eq(items.id, itemId), eq(items.userId, userId), activeItem()),
+    )
     .where(
       and(
         eq(learningPlans.id, learningPlanId),

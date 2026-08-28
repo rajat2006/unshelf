@@ -11,6 +11,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
 import {
   items,
@@ -198,7 +199,13 @@ async function listItemsIn(
       stageItems,
       and(eq(stageItems.itemId, items.id), eq(stageItems.userId, items.userId)),
     )
-    .where(and(eq(items.userId, userId), eq(stageItems.stageId, stageId)))
+    .where(
+      and(
+        eq(items.userId, userId),
+        eq(stageItems.stageId, stageId),
+        activeItem(),
+      ),
+    )
     .orderBy(asc(stageItems.position));
   return rows.map(toItem);
 }

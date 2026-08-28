@@ -12,6 +12,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import {
   items,
   learningPlanItemPlacements,
@@ -59,7 +60,13 @@ export async function getItemPlacementCatalog(
   const [ownedItem] = await db
     .select({ id: items.id })
     .from(items)
-    .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)))
+    .where(
+      and(
+        eq(items.id, input.itemId),
+        eq(items.userId, input.userId),
+        activeItem(),
+      ),
+    )
     .limit(1);
   if (!ownedItem) return null;
 
@@ -176,6 +183,7 @@ export async function searchStageItemCandidates(
     );
   const predicates = [
     eq(items.userId, input.userId),
+    activeItem(),
     notExists(currentMembership),
   ];
   if (input.query) {
@@ -259,7 +267,11 @@ export async function placeItemInStage(
     .from(stages)
     .innerJoin(
       items,
-      and(eq(items.id, input.itemId), eq(items.userId, input.userId)),
+      and(
+        eq(items.id, input.itemId),
+        eq(items.userId, input.userId),
+        activeItem(),
+      ),
     )
     .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
     .limit(1);
@@ -359,6 +371,18 @@ export async function removeItemFromStage(
   db: Database,
   input: { userId: UserId; stageId: StageId; itemId: ItemId },
 ): Promise<StageDetail | null> {
+  const [activeTarget] = await db
+    .select({ id: items.id })
+    .from(items)
+    .where(
+      and(
+        eq(items.id, input.itemId),
+        eq(items.userId, input.userId),
+        activeItem(),
+      ),
+    )
+    .limit(1);
+  if (!activeTarget) return getStage(db, input.userId, input.stageId);
   await db
     .delete(learningPlanItemPlacements)
     .where(
@@ -386,6 +410,20 @@ export async function reorderStageItems(
       .where(and(eq(stages.id, input.stageId), eq(stages.userId, input.userId)))
       .limit(1);
     if (!ownedStage) return "not_found" as const;
+
+    const activeRequestedItems = await tx
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(
+          eq(items.userId, input.userId),
+          activeItem(),
+          inArray(items.id, input.itemIds),
+        ),
+      );
+    if (activeRequestedItems.length !== input.itemIds.length) {
+      return "conflict" as const;
+    }
 
     const current = await tx
       .select({ itemId: stageItems.itemId })
@@ -466,6 +504,7 @@ export async function moveLearningPlanItem(
         and(
           eq(items.id, learningPlanItemPlacements.itemId),
           eq(items.userId, input.userId),
+          activeItem(),
         ),
       )
       .where(
@@ -540,7 +579,11 @@ export async function moveLearningPlanItem(
   return moved ? getLearningPlan(db, input.userId, input.learningPlanId) : null;
 }
 
-/** Remove a Stage only after the caller chooses what happens to its placements. */
+/**
+ * Remove a Stage after the caller chooses what happens to its active Item
+ * placements. Tombstone placements leave with the Stage; promoting them would
+ * turn an ended Item into a new direct Plan Node.
+ */
 export async function removeStageWithDisposition(
   db: Database,
   input: {
@@ -566,6 +609,14 @@ export async function removeStageWithDisposition(
           itemId: learningPlanItemPlacements.itemId,
         })
         .from(learningPlanItemPlacements)
+        .innerJoin(
+          items,
+          and(
+            eq(items.id, learningPlanItemPlacements.itemId),
+            eq(items.userId, learningPlanItemPlacements.userId),
+            activeItem(),
+          ),
+        )
         .where(
           and(
             eq(learningPlanItemPlacements.stageId, input.stageId),

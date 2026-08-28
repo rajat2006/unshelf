@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { PlanNodeKind } from "@unshelf/shared";
 import type {
   LearningPlanEdge,
@@ -12,6 +12,7 @@ import type {
   UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import { ITEM_PROJECTION, toItem, type ItemRow } from "../items/repository";
 import {
   items,
@@ -114,7 +115,11 @@ async function selectLearningPlan(
     )
     .leftJoin(
       items,
-      and(eq(items.id, stageItems.itemId), eq(items.userId, stages.userId)),
+      and(
+        eq(items.id, stageItems.itemId),
+        eq(items.userId, stages.userId),
+        activeItem(),
+      ),
     )
     .where(
       and(eq(stages.userId, userId), eq(stages.learningPlanId, learningPlanId)),
@@ -140,6 +145,7 @@ async function selectLearningPlan(
       and(
         eq(items.id, learningPlanItemPlacements.itemId),
         eq(items.userId, learningPlanItemPlacements.userId),
+        activeItem(),
       ),
     )
     .where(
@@ -175,9 +181,18 @@ async function selectLearningPlan(
       item: toItem(row),
     };
   });
+  const visibleNodeIds = new Set([
+    ...stageNodes.map(({ id }) => id),
+    ...directItemRows.map(({ node_id }) => node_id),
+  ]);
   return {
     nodes: [...stageNodes.map(toNode), ...directItemNodes],
-    edges: edges.map(toEdge),
+    edges: edges
+      .filter(
+        ({ from_node_id, to_node_id }) =>
+          visibleNodeIds.has(from_node_id) && visibleNodeIds.has(to_node_id),
+      )
+      .map(toEdge),
   };
 }
 
@@ -274,11 +289,37 @@ async function bothNodesOnLearningPlan(
   const rows = await db
     .select({ count: count().mapWith(Number) })
     .from(learningPlanNodes)
+    .leftJoin(
+      learningPlanItemPlacements,
+      and(
+        eq(learningPlanItemPlacements.nodeId, learningPlanNodes.id),
+        eq(learningPlanItemPlacements.userId, learningPlanNodes.userId),
+        eq(
+          learningPlanItemPlacements.learningPlanId,
+          learningPlanNodes.learningPlanId,
+        ),
+      ),
+    )
+    .leftJoin(
+      items,
+      and(
+        eq(items.id, learningPlanItemPlacements.itemId),
+        eq(items.userId, learningPlanNodes.userId),
+        activeItem(),
+      ),
+    )
     .where(
       and(
         eq(learningPlanNodes.userId, userId),
         eq(learningPlanNodes.learningPlanId, learningPlanId),
         inArray(learningPlanNodes.id, [fromNodeId, toNodeId]),
+        or(
+          eq(learningPlanNodes.kind, PlanNodeKind.Stage),
+          and(
+            eq(learningPlanNodes.kind, PlanNodeKind.Item),
+            isNotNull(items.id),
+          ),
+        ),
       ),
     );
   return Number(rows[0]?.count) === 2;
@@ -322,10 +363,13 @@ export async function disconnectLearningPlanNodes(
   db: Database,
   userId: UserId,
   learningPlanId: LearningPlanId,
-  { fromNodeId, toNodeId }: ConnectLearningPlanNodesRequest,
+  endpoints: ConnectLearningPlanNodesRequest,
 ): Promise<LearningPlanView | null> {
   if (!(await learningPlanBelongsToUser(db, userId, learningPlanId)))
     return null;
+  if (!(await bothNodesOnLearningPlan(db, userId, learningPlanId, endpoints)))
+    return selectLearningPlan(db, userId, learningPlanId);
+  const { fromNodeId, toNodeId } = endpoints;
   await db
     .delete(learningPlanEdges)
     .where(
