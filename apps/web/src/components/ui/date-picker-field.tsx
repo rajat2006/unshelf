@@ -39,6 +39,7 @@ interface DatePickerFieldProps {
   allowToday?: boolean;
   allowClear?: boolean;
   min?: string;
+  selectionMin?: string;
   max?: string;
   onValueChange: (value: string | null) => void;
   onValidityChange?: (valid: boolean) => void;
@@ -54,6 +55,7 @@ export function DatePickerField({
   allowToday = false,
   allowClear = false,
   min,
+  selectionMin,
   max,
   onValueChange,
   onValidityChange,
@@ -84,6 +86,26 @@ export function DatePickerField({
   const focusCalendarOnOpen = useRef(false);
   const restoreDesktopInputFocus = useRef(false);
   const canClear = allowClear && !required;
+  const minimumSelection = selectionMin ?? min;
+  const preservesControlledSelection =
+    value !== null &&
+    selectionMin !== undefined &&
+    validateCanonicalCalendarDate({ value, min, max }).ok &&
+    !validateCanonicalCalendarDate({
+      value,
+      min: minimumSelection,
+      max,
+    }).ok;
+  const [editingPreservedSelection, setEditingPreservedSelection] =
+    useState(false);
+
+  function isPreservedDraft(nextDraft: string) {
+    return (
+      preservesControlledSelection &&
+      value !== null &&
+      nextDraft === formatLocalizedCalendarDate(value, locale)
+    );
+  }
 
   function reportValidity(valid: boolean) {
     currentValidity.current = valid;
@@ -139,7 +161,11 @@ export function DatePickerField({
 
   const todayIsInBounds =
     today !== null &&
-    validateCanonicalCalendarDate({ value: today, min, max }).ok;
+    validateCanonicalCalendarDate({
+      value: today,
+      min: minimumSelection,
+      max,
+    }).ok;
   const errorId = `${id}-error`;
   const describedBy = [ariaDescribedBy, validationError ? errorId : undefined]
     .filter(Boolean)
@@ -199,10 +225,16 @@ export function DatePickerField({
       return;
     }
 
+    if (isPreservedDraft(draft)) {
+      setValidationError(undefined);
+      reportValidity(true);
+      return;
+    }
+
     const result = parseLocalizedCalendarDate({
       value: draft,
       locale,
-      min,
+      min: minimumSelection,
       max,
     });
     if (result.ok) {
@@ -216,7 +248,12 @@ export function DatePickerField({
     }
 
     setValidationError(
-      validationMessage({ error: result.error, locale, min, max }),
+      validationMessage({
+        error: result.error,
+        locale,
+        min: minimumSelection,
+        max,
+      }),
     );
     reportValidity(false);
   }
@@ -268,7 +305,7 @@ export function DatePickerField({
     ? getCalendarBounds({
         today: authoritativeToday,
         selected: selectedDate,
-        min,
+        min: minimumSelection,
         max,
       })
     : undefined;
@@ -307,14 +344,15 @@ export function DatePickerField({
               setDraft(nextDraft);
               setValidationError(undefined);
               reportValidity(
-                nextDraft === ""
-                  ? canClear
-                  : parseLocalizedCalendarDate({
-                      value: nextDraft,
-                      locale,
-                      min,
-                      max,
-                    }).ok,
+                isPreservedDraft(nextDraft) ||
+                  (nextDraft === ""
+                    ? canClear
+                    : parseLocalizedCalendarDate({
+                        value: nextDraft,
+                        locale,
+                        min: minimumSelection,
+                        max,
+                      }).ok),
               );
             }}
             onKeyDown={(event) => {
@@ -395,9 +433,25 @@ export function DatePickerField({
     <Input
       {...sharedInputProps}
       type="date"
-      min={min}
+      min={
+        preservesControlledSelection && !editingPreservedSelection
+          ? undefined
+          : minimumSelection
+      }
       max={max}
-      value={value ?? ""}
+      value={editingPreservedSelection ? "" : (value ?? "")}
+      onFocus={() => {
+        if (preservesControlledSelection) {
+          setEditingPreservedSelection(true);
+        }
+      }}
+      onBlur={() => {
+        if (preservesControlledSelection) {
+          setEditingPreservedSelection(false);
+          setValidationError(undefined);
+          reportValidity(true);
+        }
+      }}
       onChange={(event) => {
         const nextValue = event.target.value;
         if (nextValue === "") {
@@ -411,16 +465,22 @@ export function DatePickerField({
 
         const result = validateCanonicalCalendarDate({
           value: nextValue,
-          min,
+          min: minimumSelection,
           max,
         });
         if (result.ok) {
+          setEditingPreservedSelection(false);
           emitAction(result.value);
           return;
         }
 
         setValidationError(
-          validationMessage({ error: result.error, locale, min, max }),
+          validationMessage({
+            error: result.error,
+            locale,
+            min: minimumSelection,
+            max,
+          }),
         );
         reportValidity(false);
       }}

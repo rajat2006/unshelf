@@ -248,6 +248,74 @@ describe("DatePickerField", () => {
     expect(onValueChange).not.toHaveBeenCalled();
   });
 
+  it("constrains new selections without invalidating an existing earlier value", () => {
+    const onValueChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-09"
+        today="2026-08-10"
+        locale="en-US"
+        selectionMin="2026-08-10"
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const input = screen.getByLabelText("Target date");
+    expect(input).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(input).not.toHaveAttribute("aria-invalid");
+
+    openCalendarFromInput();
+
+    expect(
+      screen.getByRole("button", {
+        name: /Sunday, August 9th, 2026, selected/i,
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Today.*Monday, August 10th, 2026/i }),
+    ).toBeEnabled();
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it("preserves a historical native value until editing a constrained replacement", () => {
+    stubMatchMedia(false);
+    const onValueChange = vi.fn();
+    render(
+      <DatePickerField
+        id="target-date"
+        aria-label="Target date"
+        value="2026-08-09"
+        today="2026-08-10"
+        selectionMin="2026-08-10"
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const input = screen.getByLabelText("Target date");
+    expect(input).toHaveValue("2026-08-09");
+    expect(input).not.toHaveAttribute("min");
+    expect(input).toBeValid();
+
+    fireEvent.focus(input);
+
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("min", "2026-08-10");
+    expect(input).toBeValid();
+
+    fireEvent.change(input, { target: { value: "2026-08-09" } });
+    expect(onValueChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(input);
+    expect(input).toHaveValue("2026-08-09");
+    expect(input).toBeValid();
+  });
+
   it("focuses the selected day and returns focus to the input on Escape", async () => {
     render(
       <DatePickerField

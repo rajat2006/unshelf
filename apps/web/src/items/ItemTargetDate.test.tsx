@@ -198,6 +198,51 @@ describe("Item Target date editor", () => {
     });
   });
 
+  it("disables Target dates before authoritative Today", async () => {
+    renderTargetDate();
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitForAuthoritativeToday();
+
+    input.focus();
+    fireEvent.click(input);
+
+    expect(
+      screen.getByRole("button", { name: "Saturday, 15 August 2026" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Today.*Sunday, 16 August 2026/i }),
+    ).toBeEnabled();
+    expect(updateItemTargetDate).not.toHaveBeenCalled();
+  });
+
+  it("preserves an existing past Target date without treating it as invalid", async () => {
+    renderTargetDate(vi.fn(), {
+      ...item,
+      targetDate: "2026-08-15",
+      pastTarget: true,
+    });
+    const input = screen.getByLabelText("Target date for Practical indexing");
+    await waitForAuthoritativeToday();
+
+    expect(input).toHaveValue("15/08/2026");
+    expect(input).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(input).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    input.focus();
+    fireEvent.click(input);
+
+    expect(
+      screen.getByRole("button", {
+        name: /Saturday, 15 August 2026, selected/i,
+      }),
+    ).toBeDisabled();
+  });
+
   it("immediately saves the authoritative Today", async () => {
     const changed = { ...item, targetDate: "2026-08-16" };
     vi.mocked(updateItemTargetDate).mockResolvedValue(changed);
