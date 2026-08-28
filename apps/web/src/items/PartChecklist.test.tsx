@@ -58,10 +58,44 @@ const user: CurrentUser = { getToken: async () => null };
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe("Part checklist", () => {
+  it("keeps long Part titles inside their row and reveals the full title on focus", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      vi.fn(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    );
+    const longTitle =
+      "You can't dive under a tidal wave and hope to survive it indefinitely";
+    render(
+      <PartChecklist
+        item={{
+          ...item,
+          parts: [{ ...item.parts[0], title: longTitle }],
+        }}
+        user={user}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    const title = screen.getByText(longTitle);
+    expect(title).toHaveClass("min-w-0", "truncate");
+
+    fireEvent.focus(title);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(longTitle);
+    expect(
+      screen.getByRole("button", { name: `Save ${longTitle}` }),
+    ).toHaveTextContent(/^Save$/);
+  });
+
   it("explains invalid multiline input beside the field", () => {
     render(<PartChecklist item={item} user={user} onChanged={vi.fn()} />);
 

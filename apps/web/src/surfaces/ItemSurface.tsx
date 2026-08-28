@@ -35,7 +35,13 @@ export function ItemSurface() {
     backgroundSurface.kind === "library" && backgroundLocation
       ? backgroundLocation.search
       : "";
-
+  const closeDetails = () => {
+    void navigate(
+      backgroundLocation
+        ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
+        : "/library",
+    );
+  };
   return (
     <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
       {itemId && (
@@ -44,13 +50,7 @@ export function ItemSurface() {
           user={user}
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
-          onClose={() => {
-            void navigate(
-              backgroundLocation
-                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
-                : "/library",
-            );
-          }}
+          onClose={closeDetails}
         />
       )}
       {backgroundLocation ? (
@@ -62,6 +62,9 @@ export function ItemSurface() {
                 : "learningPlan"
             }`}
             learningPlanId={backgroundSurface.learningPlanId}
+            onItemRemovedFromPlan={(removedItemId) => {
+              if (removedItemId === itemId) closeDetails();
+            }}
           />
         ) : backgroundSurface.kind === "today" ? (
           <TodaySurface />

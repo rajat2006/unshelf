@@ -8,6 +8,7 @@ import {
 import { ArrowLeft, Pencil } from "lucide-react";
 import { Link, useParams } from "react-router";
 import type {
+  ItemId,
   LearningPlan,
   LearningPlanId,
   LearningPlanView,
@@ -38,11 +39,13 @@ import { completionPercentage } from "../presentation/progress";
 
 interface LearningPlanSurfaceProps {
   learningPlanId?: LearningPlanId;
+  onItemRemovedFromPlan?: (itemId: ItemId) => void;
 }
 
 /** The routed Library–Items–Today workspace for one durable Learning Plan. */
 export function LearningPlanSurface({
   learningPlanId: selectedLearningPlanId,
+  onItemRemovedFromPlan,
 }: LearningPlanSurfaceProps = {}) {
   const params = useParams();
   const learningPlanId = selectedLearningPlanId ?? params.learningPlanId;
@@ -297,6 +300,7 @@ export function LearningPlanSurface({
                 learningPlanId={learningPlanId as LearningPlanId}
                 user={user}
                 onLearningPlanChanged={acceptDrawerChange}
+                onItemRemovedFromPlan={onItemRemovedFromPlan}
               />
             )}
             <div className="grid min-w-0 content-start gap-4 bg-background p-4 lg:p-7">
