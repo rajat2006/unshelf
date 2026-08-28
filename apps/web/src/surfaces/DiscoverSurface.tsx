@@ -395,27 +395,35 @@ function ChannelSetup({
   return (
     <div className="discover-setup flex min-h-0 flex-1 flex-col gap-4">
       <form
-        className="grid shrink-0 gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:items-end"
+        className="grid shrink-0 gap-3 rounded-[var(--radius-panel)] border bg-card p-5 sm:grid-cols-[1fr_auto] sm:gap-x-3 sm:gap-y-2"
         onSubmit={(event) => void onSubmit(event)}
       >
-        <Field>
-          <FieldLabel htmlFor="discover-channel-url">
+        <Field className="sm:contents">
+          <FieldLabel
+            htmlFor="discover-channel-url"
+            className="sm:col-start-1 sm:row-start-1"
+          >
             YouTube channel URL
           </FieldLabel>
           <Input
             id="discover-channel-url"
+            className="sm:col-start-1 sm:row-start-2"
             type="url"
             value={url}
             onChange={(event) => onUrlChange(event.target.value)}
             placeholder="https://youtube.com/@channel"
             autoComplete="url"
           />
-          <FieldDescription>
+          <FieldDescription className="sm:col-start-1 sm:row-start-3">
             Use a channel ID or @handle URL. Playlists, videos, /user, and /c
             links are not supported.
           </FieldDescription>
         </Field>
-        <Button type="submit" disabled={previewState.status === "loading"}>
+        <Button
+          type="submit"
+          className="sm:col-start-2 sm:row-start-2"
+          disabled={previewState.status === "loading"}
+        >
           {previewState.status === "loading"
             ? "Resolving channel…"
             : "Preview channel"}
