@@ -1,5 +1,6 @@
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { TestProject } from "vitest/node";
+import type {} from "./vitest-context";
 
 const TEST_DATABASE_URL = "UNSHELF_TEST_DATABASE_URL";
 

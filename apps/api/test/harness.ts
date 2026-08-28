@@ -8,7 +8,6 @@ import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Express } from "express";
 import type { Pool } from "pg";
-import { inject } from "vitest";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
@@ -34,6 +33,7 @@ import {
   stopTestPostgres,
   trackTestPool,
 } from "./postgres-lifecycle";
+import { sharedPostgresConnectionUri } from "./vitest-context";
 
 /**
  * The committed migration folder, resolved from this file rather than the
@@ -154,7 +154,7 @@ export async function startTestApp({
   now?: () => Date;
 } = {}): Promise<TestApp> {
   const database = await createIsolatedTestDatabase(
-    inject("postgresConnectionUri"),
+    await sharedPostgresConnectionUri(),
   );
   const db = createDatabase({
     connectionString: database.connectionString,

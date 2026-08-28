@@ -1,20 +1,21 @@
 import { fileURLToPath } from "node:url";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { sql } from "drizzle-orm";
-import { describe, expect, inject, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../src/db";
 import {
   createIsolatedTestDatabase,
   stopIsolatedTestDatabase,
   trackTestPool,
 } from "./postgres-lifecycle";
+import { sharedPostgresConnectionUri } from "./vitest-context";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 describe("Learning Plan migration", () => {
   it("preserves a representative Trail as an ordered Stage-only Learning Plan", async () => {
     const database = await createIsolatedTestDatabase(
-      inject("postgresConnectionUri"),
+      await sharedPostgresConnectionUri(),
     );
     const db = createDatabase({
       connectionString: database.connectionString,
