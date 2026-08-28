@@ -225,6 +225,11 @@ Compose ID and the exact channel/SHA/run/attempt title; neither name is a
 correlation substitute. A retry can therefore finish missing Domain creation,
 but it never repairs conflicting records or deletes anything automatically.
 
+After a healthy deployment or healthy no-op, the workflow creates or updates a
+single bot comment on the pull request with the exact clickable preview origin,
+selected revision, and Actions run. The comment states that the link is valid
+while the Dokploy resource exists because preview deletion remains manual.
+
 GitHub Actions is the only preview creator or updater. Deletion and capacity
 recovery are explicit maintainer actions in Dokploy; closing, merging, or
 unlabelling a pull request does not delete anything automatically. Immediately

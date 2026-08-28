@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../src/db";
 import { verifyMigrationHistory } from "../src/migration-verifier";
+import { stopTestPostgres, trackTestPool } from "./postgres-lifecycle";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
 
@@ -18,6 +19,7 @@ describe("Discover migration", () => {
       connectionString: container.getConnectionUri(),
       timeZone: "UTC",
     });
+    const testPool = trackTestPool(db.$client);
 
     try {
       const migrations = readMigrationFiles({
@@ -156,8 +158,7 @@ describe("Discover migration", () => {
         prototypeMigrationIndex,
       );
     } finally {
-      await db.$client.end();
-      await container.stop();
+      await stopTestPostgres({ pool: testPool, container });
     }
   });
 });
@@ -213,6 +214,7 @@ async function expectUnmappableFollowToRollBack(
     connectionString: failureUrl.toString(),
     timeZone: "UTC",
   });
+  const failurePool = trackTestPool(failureDb.$client);
 
   try {
     const prototypeMigrations = migrations.slice(
@@ -265,7 +267,7 @@ async function expectUnmappableFollowToRollBack(
       },
     ]);
   } finally {
-    await failureDb.$client.end();
+    await failurePool.close();
   }
 }
 
