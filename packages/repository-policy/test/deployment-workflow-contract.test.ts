@@ -440,6 +440,25 @@ jobs:
     );
   });
 
+  it("publishes one exact preview link on the pull request after a healthy delivery", () => {
+    const workflow = inspectRepositoryWorkflow("delivery-preview.yml");
+    const publishLink = workflow.jobs["publish-link"];
+    const commands = publishLink?.runCommands.join("\n") ?? "";
+
+    expect(publishLink).toMatchObject({
+      environment: undefined,
+      inheritsSecrets: false,
+      needs: ["authorize", "inspect", "deploy"],
+      permissions: { "pull-requests": "write" },
+      secretReferences: ["GITHUB_TOKEN"],
+    });
+    expect(commands).toContain("PUBLIC_ORIGIN");
+    expect(commands).toContain("<!-- unshelf-preview-link -->");
+    expect(commands).toContain("issues/${PR_NUMBER}/comments");
+    expect(commands).toContain("--method PATCH");
+    expect(commands).toContain("--method POST");
+  });
+
   it("keeps production rerun and durable release policy visible", () => {
     const workflow = inspectRepositoryWorkflow("delivery-production.yml");
     const authorize = workflow.jobs.authorize?.runCommands.join("\n") ?? "";

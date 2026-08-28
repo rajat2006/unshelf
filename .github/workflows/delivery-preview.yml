@@ -280,8 +280,33 @@ jobs:
           curl --fail --silent --show-error -H "x-api-key: $DOKPLOY_API_KEY" -H 'content-type: application/json' --data "$marker_body" "$DOKPLOY_URL/api/compose.update" >/dev/null
           printf '### Preview delivery\n\n- State: healthy\n- Source: `%s`\n- Compose: `%s` (`%s`, runtime `%s`)\n- API digest: `%s`\n- Web digest: `%s`\n- Deployment: `%s`\n- Lifecycle: deletion remains a manual Dokploy action after capturing these identities.\n' "$SOURCE_SHA" "$LOGICAL_NAME" "$compose_id" "$runtime_name" "$API_DIGEST" "$WEB_DIGEST" "$deployment_id" >>"$GITHUB_STEP_SUMMARY"
 
+  publish-link:
+    needs: [authorize, inspect, deploy]
+    if: always() && needs.deploy.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: { pull-requests: write }
+    steps:
+      - name: Publish the exact preview URL on the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+          PUBLIC_ORIGIN: ${{ needs.inspect.outputs.public_origin }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker='<!-- unshelf-preview-link -->'
+          comment_body="$(printf '%s\n## Preview deployment\n\n[Open the preview](%s) while its Dokploy resource exists.\n\nLast verified for `%s` by [GitHub Actions](%s).\n' "$marker" "$PUBLIC_ORIGIN" "$SOURCE_SHA" "$RUN_URL")"
+          comment_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- unshelf-preview-link -->"))) | .id' | sed -n '1p')"
+          if test -n "$comment_id"; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --raw-field body="$comment_body" >/dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --raw-field body="$comment_body" >/dev/null
+          fi
+
   summarize:
-    needs: [authorize, inspect, api-image, web-image, deploy]
+    needs: [authorize, inspect, api-image, web-image, deploy, publish-link]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -296,7 +321,7 @@ jobs:
           COMPOSE_ID: ${{ needs.inspect.outputs.compose_id }}
           COMPOSE_NAME: ${{ needs.authorize.outputs.logical_name }}
           RUNTIME_NAME: ${{ needs.inspect.outputs.runtime_name }}
-          GATES: authorize=${{ needs.authorize.result }},inspect=${{ needs.inspect.result }},api-image=${{ needs.api-image.result }},web-image=${{ needs.web-image.result }},deploy=${{ needs.deploy.result }}
+          GATES: authorize=${{ needs.authorize.result }},inspect=${{ needs.inspect.result }},api-image=${{ needs.api-image.result }},web-image=${{ needs.web-image.result }},deploy=${{ needs.deploy.result }},publish-link=${{ needs.publish-link.result }}
         run: |
           started="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .run_started_at)"
           duration="$(( $(date +%s) - $(date -d "$started" +%s) ))s"

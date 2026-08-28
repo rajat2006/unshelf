@@ -15,6 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   createParts,
   removePart,
   reorderParts,
@@ -123,34 +129,37 @@ export function PartChecklist({ item, user, onChanged }: PartChecklistProps) {
       {item.parts.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Parts yet</p>
       ) : (
-        <ol className="grid gap-3" aria-label="Parts">
-          {item.parts.map((part, index) => (
-            <PartRow
-              key={part.id}
-              part={part}
-              first={index === 0}
-              last={index === item.parts.length - 1}
-              onCompletion={(completed) =>
-                applyPartMutation(
-                  () => updatePartCompletion(user, item.id, part.id, completed),
-                  `Couldn’t update ${part.title}. Try again.`,
-                )
-              }
-              onRename={(title) =>
-                applyItemDetailMutation(() =>
-                  updatePart(user, item.id, part.id, title),
-                )
-              }
-              onMove={(offset) => move(part, offset)}
-              onRemove={() =>
-                applyPartMutation(
-                  () => removePart(user, item.id, part.id),
-                  `Couldn’t remove ${part.title}. Try again.`,
-                )
-              }
-            />
-          ))}
-        </ol>
+        <TooltipProvider>
+          <ol className="grid gap-3" aria-label="Parts">
+            {item.parts.map((part, index) => (
+              <PartRow
+                key={part.id}
+                part={part}
+                first={index === 0}
+                last={index === item.parts.length - 1}
+                onCompletion={(completed) =>
+                  applyPartMutation(
+                    () =>
+                      updatePartCompletion(user, item.id, part.id, completed),
+                    `Couldn’t update ${part.title}. Try again.`,
+                  )
+                }
+                onRename={(title) =>
+                  applyItemDetailMutation(() =>
+                    updatePart(user, item.id, part.id, title),
+                  )
+                }
+                onMove={(offset) => move(part, offset)}
+                onRemove={() =>
+                  applyPartMutation(
+                    () => removePart(user, item.id, part.id),
+                    `Couldn’t remove ${part.title}. Try again.`,
+                  )
+                }
+              />
+            ))}
+          </ol>
+        </TooltipProvider>
       )}
       {operationError && <Alert>{operationError}</Alert>}
       <form
@@ -233,11 +242,17 @@ function PartRow({
             void runRowMutation(() => onCompletion(checked === true))
           }
         />
-        <span
-          className={part.completed ? "text-muted-foreground line-through" : ""}
-        >
-          {part.title}
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className={`min-w-0 truncate ${part.completed ? "text-muted-foreground line-through" : ""}`}
+            >
+              {part.title}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="break-words">{part.title}</TooltipContent>
+        </Tooltip>
       </label>
       <Field>
         <FieldLabel htmlFor={`part-title-${part.id}`} className="sr-only">
@@ -267,6 +282,7 @@ function PartRow({
           variant="secondary"
           size="compact"
           className="min-h-11 sm:min-h-8"
+          aria-label={`Save ${title.trim() || "Part"}`}
           disabled={busy || emptyTitle || title.trim() === part.title}
           onClick={() =>
             void runRowMutation(() => onRename(title.trim())).then((changed) =>
@@ -275,7 +291,7 @@ function PartRow({
           }
         >
           <Check aria-hidden="true" />
-          Save {title.trim() || "Part"}
+          Save
         </Button>
         <Button
           type="button"
