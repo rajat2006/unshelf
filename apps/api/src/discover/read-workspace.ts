@@ -18,6 +18,7 @@ import {
   itemProviderIdentities,
   items,
 } from "../schema";
+import { activeItem } from "../items/active-item";
 import { candidateRelevanceStart } from "./candidate-relevance";
 
 const CANDIDATE_PROJECTION = {
@@ -102,6 +103,7 @@ function selectDiscoverCandidateRows(db: Database) {
       and(
         eq(items.id, itemProviderIdentities.itemId),
         eq(items.userId, itemProviderIdentities.userId),
+        activeItem(),
       ),
     );
 }

@@ -20,7 +20,12 @@ import {
 import type { YouTubeClient } from "../src/discover/youtube-client";
 import { findOrCreateProviderItem } from "../src/items/provider-identities";
 import * as schema from "../src/schema";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 let harness: TestApp;
 let app: Express;
@@ -205,6 +210,73 @@ describe("Discover Candidate decisions", () => {
     expect(library.body).toHaveLength(1);
   });
 
+  it("does not present a tombstone as already in the Library", async () => {
+    const user = "clerk_tombstone_workspace";
+    await followCandidate(user);
+    const seeded = await harness.pool.query<{ id: string }>(
+      `INSERT INTO items (user_id, title, type, source)
+       SELECT id, 'Ended Library title', 'video', 'manual-source'
+       FROM users WHERE clerk_user_id = $1
+       RETURNING id`,
+      [user],
+    );
+    await harness.pool.query(
+      `INSERT INTO item_provider_identities
+         (user_id, provider, external_id, item_id)
+       SELECT id, 'youtube', 'decision-video', $2
+       FROM users WHERE clerk_user_id = $1`,
+      [user, seeded.rows[0].id],
+    );
+    await seedItemTombstone(harness.pool, seeded.rows[0].id);
+
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+
+    expect(workspace.status).toBe(200);
+    expect((workspace.body as DiscoverWorkspace).candidates[0]).toMatchObject({
+      state: "pending",
+      libraryItem: null,
+    });
+  });
+
+  it("does not let Keep commit against a tombstone identity", async () => {
+    const user = "clerk_tombstone_keep";
+    const candidate = await followCandidate(user);
+    const seeded = await harness.pool.query<{ id: string }>(
+      `INSERT INTO items (user_id, title, type, source)
+       SELECT id, 'Ended Keep title', 'video', 'manual-source'
+       FROM users WHERE clerk_user_id = $1
+       RETURNING id`,
+      [user],
+    );
+    await harness.pool.query(
+      `INSERT INTO item_provider_identities
+         (user_id, provider, external_id, item_id)
+       SELECT id, 'youtube', 'decision-video', $2
+       FROM users WHERE clerk_user_id = $1`,
+      [user, seeded.rows[0].id],
+    );
+    await seedItemTombstone(harness.pool, seeded.rows[0].id);
+
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Fresh confirmation", type: Type.Video });
+    const workspace = await request(app)
+      .get("/api/discover")
+      .set(TEST_USER_HEADER, user);
+
+    expect(kept.status).toBe(500);
+    expect((workspace.body as DiscoverWorkspace).candidates).toContainEqual(
+      expect.objectContaining({
+        id: candidate.id,
+        state: "pending",
+        libraryItem: null,
+      }),
+    );
+  });
+
   it("shows a Capture-first Candidate as Already in Library without resolving it", async () => {
     const user = "clerk_capture_before_discovery";
     const captured = (
@@ -225,6 +297,103 @@ describe("Discover Candidate decisions", () => {
       state: "pending",
       libraryItem: { id: captured.id, title: "My manual title" },
     });
+  });
+
+  it("reuses only a fresh active Capture after a tombstone identity is released", async () => {
+    const user = "clerk_capture_after_tombstone";
+    const source = "https://youtu.be/fresh_CAP-1";
+    const tombstone = (
+      await capture(user, {
+        title: "Ended capture",
+        type: Type.Video,
+        source,
+      })
+    ).body as Item;
+    await seedItemTombstone(harness.pool, tombstone.id);
+    await harness.pool.query(
+      `DELETE FROM item_provider_identities
+       WHERE user_id = (SELECT id FROM users WHERE clerk_user_id = $1)
+         AND provider = 'youtube'
+         AND external_id = 'fresh_CAP-1'`,
+      [user],
+    );
+
+    const fresh = (
+      await capture(user, {
+        title: "Fresh active capture",
+        type: Type.Course,
+        source,
+      })
+    ).body as Item;
+    useExactIdentityVideo({
+      channelExternalId: "UC_capture_after_tombstone",
+      videoExternalId: "fresh_CAP-1",
+    });
+    const candidate = await followCandidate(user);
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Ignored replacement", type: Type.Book });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+
+    expect(fresh.id).not.toBe(tombstone.id);
+    expect(candidate).toMatchObject({
+      state: "pending",
+      libraryItem: { id: fresh.id, title: "Fresh active capture" },
+    });
+    expect(kept.status).toBe(200);
+    expect((kept.body as KeepDiscoverCandidateResult).item.id).toBe(fresh.id);
+    expect(library.body).toEqual([fresh]);
+  });
+
+  it("creates a fresh active Item when Keep follows a released tombstone identity", async () => {
+    const user = "clerk_keep_after_tombstone";
+    const tombstone = (
+      await capture(user, {
+        title: "Ended before rediscovery",
+        type: Type.Video,
+        source: "https://youtu.be/fresh_KEEP-1",
+      })
+    ).body as Item;
+    await seedItemTombstone(harness.pool, tombstone.id);
+    await harness.pool.query(
+      `DELETE FROM item_provider_identities
+       WHERE user_id = (SELECT id FROM users WHERE clerk_user_id = $1)
+         AND provider = 'youtube'
+         AND external_id = 'fresh_KEEP-1'`,
+      [user],
+    );
+    useExactIdentityVideo({
+      channelExternalId: "UC_keep_after_tombstone",
+      videoExternalId: "fresh_KEEP-1",
+    });
+
+    const candidate = await followCandidate(user);
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Fresh Keep", type: Type.Course });
+    const library = await request(app)
+      .get("/api/items")
+      .set(TEST_USER_HEADER, user);
+
+    expect(candidate).toMatchObject({
+      state: "pending",
+      libraryItem: null,
+    });
+    expect(kept.status).toBe(200);
+    expect((kept.body as KeepDiscoverCandidateResult).item).toMatchObject({
+      title: "Fresh Keep",
+      type: Type.Course,
+    });
+    expect((kept.body as KeepDiscoverCandidateResult).item.id).not.toBe(
+      tombstone.id,
+    );
+    expect((library.body as Item[]).map((item) => item.id)).toEqual([
+      (kept.body as KeepDiscoverCandidateResult).item.id,
+    ]);
   });
 
   it("reuses a Keep-first Item during later manual Capture", async () => {
