@@ -55,7 +55,18 @@ vi.mock("./DailyFocusHistorySurface", () => ({
   DailyFocusHistorySurface: () => <main>History room</main>,
 }));
 vi.mock("./LearningPlanSurface", () => ({
-  LearningPlanSurface: () => <main>Learning Plan room</main>,
+  LearningPlanSurface: ({
+    onItemRemovedFromPlan,
+  }: {
+    onItemRemovedFromPlan?: (removedItemId: ItemId) => void;
+  }) => (
+    <main>
+      Learning Plan room
+      <button type="button" onClick={() => onItemRemovedFromPlan?.(itemId)}>
+        Remove open Item from Learning Plan sidebar
+      </button>
+    </main>
+  ),
 }));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -284,6 +295,39 @@ describe("canonical Item route", () => {
       expect(screen.getByLabelText("Test location")).toHaveTextContent(
         `/plans/${planId}`,
       ),
+    );
+    expect(
+      screen.queryByRole("complementary", {
+        name: `${item.title} details`,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("closes details when the Learning Plan sidebar removes the open Item", async () => {
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: `/plans/${planId}`,
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    expect(
+      await screen.findByRole("complementary", {
+        name: `${item.title} details`,
+      }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove open Item from Learning Plan sidebar",
+      }),
+    );
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      `/plans/${planId}`,
     );
     expect(
       screen.queryByRole("complementary", {

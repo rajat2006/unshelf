@@ -37,6 +37,13 @@ export function ItemSurface() {
     backgroundSurface.kind === "library" && backgroundLocation
       ? backgroundLocation.search
       : "";
+  const closeDetails = () => {
+    void navigate(
+      backgroundLocation
+        ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
+        : "/library",
+    );
+  };
   const handlePlacementChange = (change: ItemPlacementChange) => {
     if (
       change.operation === "remove" &&
@@ -44,9 +51,7 @@ export function ItemSurface() {
       backgroundSurface.learningPlanId === change.learningPlanId &&
       backgroundLocation
     ) {
-      void navigate(
-        `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`,
-      );
+      closeDetails();
       return;
     }
 
@@ -62,13 +67,7 @@ export function ItemSurface() {
           itemOverride={changedItem}
           onItemChanged={recordItemChange}
           onPlacementChanged={handlePlacementChange}
-          onClose={() => {
-            void navigate(
-              backgroundLocation
-                ? `${backgroundLocation.pathname}${backgroundLocation.search}${backgroundLocation.hash}`
-                : "/library",
-            );
-          }}
+          onClose={closeDetails}
         />
       )}
       {backgroundLocation ? (
@@ -80,6 +79,9 @@ export function ItemSurface() {
                 : "learningPlan"
             }:${placementVersion}`}
             learningPlanId={backgroundSurface.learningPlanId}
+            onItemRemovedFromPlan={(removedItemId) => {
+              if (removedItemId === itemId) closeDetails();
+            }}
           />
         ) : backgroundSurface.kind === "today" ? (
           <TodaySurface />
