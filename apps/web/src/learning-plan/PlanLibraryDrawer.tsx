@@ -30,6 +30,7 @@ interface PlanLibraryDrawerProps {
   learningPlanId: LearningPlanId;
   user: CurrentUser;
   onLearningPlanChanged: (learningPlan: LearningPlanView) => void;
+  onItemRemovedFromPlan?: (itemId: ItemId) => void;
 }
 
 /** Search and place existing Library Items without creating a Stage. */
@@ -37,6 +38,7 @@ export function PlanLibraryDrawer({
   learningPlanId,
   user,
   onLearningPlanChanged,
+  onItemRemovedFromPlan,
 }: PlanLibraryDrawerProps) {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<
@@ -81,6 +83,9 @@ export function PlanLibraryDrawer({
             )
           : await placeItemDirectly(user, learningPlanId, candidate.item.id);
       onLearningPlanChanged(learningPlan);
+      if (candidate.kind === "direct") {
+        onItemRemovedFromPlan?.(candidate.item.id);
+      }
       await search();
     } catch {
       setError("mutation");

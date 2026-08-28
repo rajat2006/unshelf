@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import {
   PlanNodeKind,
+  type ItemId,
   type LearningPlan,
   type LearningPlanId,
   type LearningPlanView,
@@ -45,8 +46,10 @@ vi.mock("../learning-plan/LearningPlanItems", () => ({
 vi.mock("../learning-plan/PlanLibraryDrawer", () => ({
   PlanLibraryDrawer: ({
     onLearningPlanChanged,
+    onItemRemovedFromPlan,
   }: {
     onLearningPlanChanged: (learningPlan: LearningPlanView) => void;
+    onItemRemovedFromPlan?: (itemId: ItemId) => void;
   }) => (
     <aside aria-label="Library placement drawer">
       Library
@@ -55,6 +58,12 @@ vi.mock("../learning-plan/PlanLibraryDrawer", () => ({
         onClick={() => onLearningPlanChanged({ nodes: [], edges: [] })}
       >
         Place sample Item
+      </button>
+      <button
+        type="button"
+        onClick={() => onItemRemovedFromPlan?.(sampleItemId)}
+      >
+        Remove sample Item
       </button>
     </aside>
   ),
@@ -65,6 +74,7 @@ vi.mock("../learning-plan/PlanTodaySidecar", () => ({
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const learningPlanId = "00000000-0000-0000-0000-000000000002" as LearningPlanId;
 const stageId = "00000000-0000-0000-0000-000000000003" as StageId;
+const sampleItemId = "00000000-0000-0000-0000-000000000004" as ItemId;
 const auth: ApplicationAuth = {
   status: "signed-in",
   user: { getToken: async () => null },
@@ -201,6 +211,34 @@ describe("Learning Plan route", () => {
 
     expect(await screen.findByText("1 of 2 Items done")).toBeVisible();
     expect(fetchLearningPlanRecord).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports an Item removed through the Library placement drawer", async () => {
+    vi.mocked(fetchLearningPlanRecord).mockResolvedValue(record);
+    vi.mocked(fetchLearningPlan).mockResolvedValue(topology);
+    const onItemRemovedFromPlan = vi.fn();
+
+    render(
+      <ApplicationAuthProvider auth={auth}>
+        <MemoryRouter initialEntries={[`/plans/${learningPlanId}`]}>
+          <Routes>
+            <Route
+              path="/plans/:learningPlanId"
+              element={
+                <LearningPlanSurface
+                  onItemRemovedFromPlan={onItemRemovedFromPlan}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </ApplicationAuthProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Distributed systems" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove sample Item" }));
+
+    expect(onItemRemovedFromPlan).toHaveBeenCalledWith(sampleItemId);
   });
 
   it("keeps an archived plan consultable while withholding authoring", async () => {

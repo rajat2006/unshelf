@@ -39,7 +39,12 @@ interface ItemPlacementsProps {
   itemId: ItemId;
   itemTitle: string;
   user: CurrentUser;
-  onChanged?: () => void;
+  onChanged?: (change: ItemPlacementChange) => void;
+}
+
+export interface ItemPlacementChange {
+  learningPlanId: LearningPlanId;
+  operation: "place" | "remove";
 }
 
 /**
@@ -119,7 +124,7 @@ export function ItemPlacements({
       async () => {
         await addItemToStage(user, stageId, itemId);
         await load();
-        onChanged?.();
+        onChanged?.({ learningPlanId, operation: "place" });
       },
       {
         retryStillAppliesAfterReconciliation: (reconciled) =>
@@ -135,7 +140,7 @@ export function ItemPlacements({
       async () => {
         await removeItemFromStage(user, stageId, itemId);
         await load();
-        onChanged?.();
+        onChanged?.({ learningPlanId, operation: "remove" });
       },
       {
         retryStillAppliesAfterReconciliation: (reconciled) =>
@@ -152,7 +157,7 @@ export function ItemPlacements({
       async () => {
         await removeDirectItemFromLearningPlan(user, learningPlanId, itemId);
         await load();
-        onChanged?.();
+        onChanged?.({ learningPlanId, operation: "remove" });
       },
       {
         retryStillAppliesAfterReconciliation: (reconciled) =>
@@ -195,7 +200,7 @@ export function ItemPlacements({
           stage: placementStage,
         });
         setCreatingOn(null);
-        onChanged?.();
+        onChanged?.({ learningPlanId, operation: "place" });
         try {
           await load();
         } catch {
