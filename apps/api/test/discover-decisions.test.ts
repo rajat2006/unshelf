@@ -170,6 +170,29 @@ function useExactIdentityVideo({
   });
 }
 
+async function candidateAfterReleasedTombstone({
+  user,
+  externalId,
+}: {
+  user: string;
+  externalId: string;
+}) {
+  const tombstone = (
+    await capture(user, {
+      title: "Ended before rediscovery",
+      type: Type.Video,
+      source: `https://youtu.be/${externalId}`,
+    })
+  ).body as Item;
+  await seedItemTombstone(harness.pool, tombstone.id);
+  await releaseProviderIdentity({ user, externalId });
+  useExactIdentityVideo({
+    channelExternalId: `UC_${externalId}`,
+    videoExternalId: externalId,
+  });
+  return { candidate: await followCandidate(user), tombstone };
+}
+
 describe("Discover Candidate decisions", () => {
   it("Keeps a pending Candidate with confirmed fields and canonical identity", async () => {
     const user = "clerk_keep_candidate";
@@ -388,40 +411,14 @@ describe("Discover Candidate decisions", () => {
 
   it("creates a fresh active Item when Keep follows a released tombstone identity", async () => {
     const user = "clerk_keep_after_tombstone";
-    const tombstone = (
-      await capture(user, {
-        title: "Ended before rediscovery",
-        type: Type.Video,
-        source: "https://youtu.be/fresh_KEEP-1",
-      })
-    ).body as Item;
-    await seedItemTombstone(harness.pool, tombstone.id);
-    await releaseProviderIdentity({ user, externalId: "fresh_KEEP-1" });
-    useExactIdentityVideo({
-      channelExternalId: "UC_keep_after_tombstone",
-      videoExternalId: "fresh_KEEP-1",
+    const { candidate, tombstone } = await candidateAfterReleasedTombstone({
+      user,
+      externalId: "fresh_KEEP-1",
     });
-
-    const candidate = await followCandidate(user);
-    const keepResponses = await Promise.all([
-      request(app)
-        .post(`/api/discover/candidates/${candidate.id}/keep`)
-        .set(TEST_USER_HEADER, user)
-        .send({ title: "Fresh Keep", type: Type.Course }),
-      request(app)
-        .post(`/api/discover/candidates/${candidate.id}/keep`)
-        .set(TEST_USER_HEADER, user)
-        .send({ title: "Concurrent Keep", type: Type.Book }),
-    ]);
-    const kept = keepResponses[0];
-    const replayed = await request(app)
+    const kept = await request(app)
       .post(`/api/discover/candidates/${candidate.id}/keep`)
       .set(TEST_USER_HEADER, user)
-      .send({ title: "Replay Keep", type: Type.Video });
-    const opposite = await request(app)
-      .post(`/api/discover/candidates/${candidate.id}/reject`)
-      .set(TEST_USER_HEADER, user)
-      .send({});
+      .send({ title: "Fresh Keep", type: Type.Course });
     const library = await request(app)
       .get("/api/items")
       .set(TEST_USER_HEADER, user);
@@ -433,13 +430,7 @@ describe("Discover Candidate decisions", () => {
       state: "pending",
       libraryItem: null,
     });
-    expect(keepResponses.map((response) => response.status)).toEqual([200, 200]);
-    expect(keepResponses[0].body.item.id).toBe(
-      keepResponses[1].body.item.id,
-    );
-    expect(replayed.status).toBe(200);
-    expect(replayed.body.item.id).toBe(kept.body.item.id);
-    expect(opposite.status).toBe(409);
+    expect(kept.status).toBe(200);
     expect((kept.body as KeepDiscoverCandidateResult).item).toMatchObject({
       title: "Fresh Keep",
       type: Type.Course,
@@ -451,6 +442,68 @@ describe("Discover Candidate decisions", () => {
       (kept.body as KeepDiscoverCandidateResult).item.id,
     ]);
     expect((workspace.body as DiscoverWorkspace).candidates).toEqual([]);
+  });
+
+  it("converges concurrent Keeps after a tombstone identity is released", async () => {
+    const user = "clerk_concurrent_keep_after_tombstone";
+    const { candidate, tombstone } = await candidateAfterReleasedTombstone({
+      user,
+      externalId: "race_KEEP-1",
+    });
+
+    const responses = await Promise.all([
+      request(app)
+        .post(`/api/discover/candidates/${candidate.id}/keep`)
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "First confirmation", type: Type.Video }),
+      request(app)
+        .post(`/api/discover/candidates/${candidate.id}/keep`)
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Concurrent confirmation", type: Type.Book }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(responses[0].body.item.id).toBe(responses[1].body.item.id);
+    expect(responses[0].body.item.id).not.toBe(tombstone.id);
+  });
+
+  it("replays Keep against the fresh active Item after a tombstone", async () => {
+    const user = "clerk_replay_keep_after_tombstone";
+    const { candidate } = await candidateAfterReleasedTombstone({
+      user,
+      externalId: "replay_KEEP",
+    });
+    const kept = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Initial Keep", type: Type.Course });
+
+    const replayed = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Replay Keep", type: Type.Video });
+
+    expect(replayed.status).toBe(200);
+    expect(replayed.body.item.id).toBe(kept.body.item.id);
+  });
+
+  it("preserves the opposite-decision conflict after a tombstone", async () => {
+    const user = "clerk_conflict_after_tombstone";
+    const { candidate } = await candidateAfterReleasedTombstone({
+      user,
+      externalId: "oppose_KEEP",
+    });
+    await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/keep`)
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "Initial Keep", type: Type.Course });
+
+    const opposite = await request(app)
+      .post(`/api/discover/candidates/${candidate.id}/reject`)
+      .set(TEST_USER_HEADER, user)
+      .send({});
+
+    expect(opposite.status).toBe(409);
   });
 
   it("keeps a foreign tombstone private during another User's Keep", async () => {
