@@ -49,6 +49,7 @@ const openPullRequestsQuery = `
         nodes {
           number
           title
+          body
           baseRefName
           headRefName
           headRefOid
@@ -83,6 +84,7 @@ const mergedPullRequestsQuery = `
         nodes {
           number
           title
+          body
           mergedAt
           baseRefName
           headRefName
@@ -265,12 +267,14 @@ function parseWayfinderMap(
   const issue = asRecord(value);
   const number = issue?.number;
   const title = issue?.title;
+  const body = issue?.body;
   const stateValue = issue?.state;
   const stateReasonValue = issue?.state_reason;
   const closedAtValue = issue?.closed_at;
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
+    (body !== null && typeof body !== "string") ||
     (stateValue !== "open" && stateValue !== "closed") ||
     (stateReasonValue !== null &&
       stateReasonValue !== "completed" &&
@@ -307,6 +311,7 @@ function parseWayfinderMap(
     closedAt: closedAtValue,
     number,
     title,
+    body,
     labels: parseRestLabels(issue?.labels),
   };
 }
@@ -869,6 +874,7 @@ function parseMergedPullRequest(value: unknown): MergedPullRequest {
   const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
+  const body = pullRequest?.body;
   const mergedAt = pullRequest?.mergedAt;
   const baseRefName = pullRequest?.baseRefName;
   const headRefName = pullRequest?.headRefName;
@@ -882,6 +888,7 @@ function parseMergedPullRequest(value: unknown): MergedPullRequest {
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
+    (body !== null && typeof body !== "string") ||
     typeof mergedAt !== "string" ||
     typeof baseRefName !== "string" ||
     typeof headRefName !== "string" ||
@@ -898,6 +905,7 @@ function parseMergedPullRequest(value: unknown): MergedPullRequest {
       mergedAt,
       number,
       title,
+      body,
       baseRefName,
       headRefName,
       headRepository,
@@ -959,6 +967,7 @@ async function gatherOpenPullRequests({
         mergedAt: null,
         number: pullRequest.number,
         title: pullRequest.title,
+        body: pullRequest.body,
         baseRefName: pullRequest.baseRefName,
         headRefName: pullRequest.headRefName,
         headRepository: pullRequest.headRepository,
@@ -1017,6 +1026,7 @@ function parseRecentlyClosedPullRequest(value: unknown): {
   const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
+  const body = pullRequest?.body;
   const updatedAtValue = pullRequest?.updated_at;
   const mergedAt = pullRequest?.merged_at;
   const baseRefName = nestedString(pullRequest, ["base", "ref"]);
@@ -1034,6 +1044,7 @@ function parseRecentlyClosedPullRequest(value: unknown): {
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
+    (body !== null && typeof body !== "string") ||
     Number.isNaN(updatedAt.getTime()) ||
     (mergedAt !== null && typeof mergedAt !== "string") ||
     baseRefName === undefined ||
@@ -1053,6 +1064,7 @@ function parseRecentlyClosedPullRequest(value: unknown): {
             mergedAt,
             number,
             title,
+            body,
             baseRefName,
             headRefName,
             headRepository,
@@ -1114,6 +1126,7 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   const pullRequest = asRecord(value);
   const number = pullRequest?.number;
   const title = pullRequest?.title;
+  const body = pullRequest?.body;
   const baseRefName = pullRequest?.baseRefName;
   const headRefName = pullRequest?.headRefName;
   const headRefOid = pullRequest?.headRefOid;
@@ -1126,6 +1139,7 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   if (
     !isInteger(number) ||
     typeof title !== "string" ||
+    (body !== null && typeof body !== "string") ||
     typeof baseRefName !== "string" ||
     typeof headRefName !== "string" ||
     typeof headRefOid !== "string" ||
@@ -1137,6 +1151,7 @@ function parsePullRequest(value: unknown): ParsedPullRequest {
   return {
     number,
     title,
+    body,
     baseRefName,
     headRefName,
     headRefOid,
