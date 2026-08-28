@@ -8,6 +8,7 @@ import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Express } from "express";
 import type { Pool } from "pg";
+import { inject } from "vitest";
 import type { ClerkUserId } from "@unshelf/shared";
 import { createApp } from "../src/app";
 import { createAuthMiddleware } from "../src/middleware/auth";
@@ -28,9 +29,10 @@ import {
 import { createDiscoverModule } from "../src/discover/index";
 import type { DiscoverAcquisitionTick } from "../src/discover/scheduled-acquisition";
 import {
+  createIsolatedTestDatabase,
+  stopIsolatedTestDatabase,
   stopTestPostgres,
   trackTestPool,
-  type TrackedTestPool,
 } from "./postgres-lifecycle";
 
 /**
@@ -50,13 +52,11 @@ export async function migrateTestDatabase(db: Database): Promise<void> {
 }
 
 /**
- * The api test harness (extends T1's): an ephemeral Postgres, the schema applied,
- * and the real app — but wired with a Clerk-free auth chain. This is the
- * injection seam in action: `createAuthMiddleware` takes an `Identify`; the
- * default reads `x-test-clerk-user-id`, while a browser harness can supply its own
- * local credential reader. Either can act as any User (and provision a real
- * `users` row) without touching Clerk. It is the same middleware production uses;
- * only the identity source differs.
+ * The API test harness uses an isolated database on the suite's shared Postgres,
+ * applies the schema, and starts the real app with a Clerk-free auth chain.
+ * `createAuthMiddleware` takes an `Identify`; the default reads
+ * `x-test-clerk-user-id`, while a browser harness can supply its own local
+ * credential reader. Either can act as any User without touching Clerk.
  */
 export const TEST_USER_HEADER = "x-test-clerk-user-id";
 
@@ -153,23 +153,27 @@ export async function startTestApp({
   youtubeClient?: YouTubeClient;
   now?: () => Date;
 } = {}): Promise<TestApp> {
-  const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
-    "postgres:16-alpine",
-  ).start();
+  const database = await createIsolatedTestDatabase(
+    inject("postgresConnectionUri"),
+  );
   const db = createDatabase({
-    connectionString: container.getConnectionUri(),
+    connectionString: database.connectionString,
     timeZone,
   });
   const testPool = trackTestPool(db.$client);
-  await migrateTestDatabase(db);
+  try {
+    await migrateTestDatabase(db);
+  } catch (error) {
+    await stopIsolatedTestDatabase({ pool: testPool, database });
+    throw error;
+  }
 
   return runningTestApp({
-    container,
     db,
-    testPool,
     identify,
     youtubeClient,
     now,
+    stop: () => stopIsolatedTestDatabase({ pool: testPool, database }),
   });
 }
 
@@ -210,12 +214,11 @@ export async function startTestAppWithLegacyFixture(
   await seedLegacyDatabase(db);
   await applyMigrationFiles(db, migrations.slice(learningPlanMigrationIndex));
   return runningTestApp({
-    container,
     db,
-    testPool,
     identify,
     youtubeClient: unavailableYouTubeClient,
     now: () => new Date("2026-08-23T00:00:00.000Z"),
+    stop: () => stopTestPostgres({ pool: testPool, container }),
   });
 }
 
@@ -231,19 +234,17 @@ async function applyMigrationFiles(
 }
 
 function runningTestApp({
-  container,
   db,
-  testPool,
   identify,
   youtubeClient,
   now,
+  stop,
 }: {
-  container: StartedPostgreSqlContainer;
   db: DatabaseWithClient;
-  testPool: TrackedTestPool;
   identify: Identify;
   youtubeClient: YouTubeClient;
   now: () => Date;
+  stop: () => Promise<void>;
 }): TestApp {
   const auth = createAuthMiddleware(db, identify);
   const logger = createCollectingLogger();
@@ -260,7 +261,7 @@ function runningTestApp({
     pool: db.$client,
     logger,
     runDiscoverAcquisitionTick: discoverModule.runScheduledAcquisitionTick,
-    stop: () => stopTestPostgres({ pool: testPool, container }),
+    stop,
   };
 }
 

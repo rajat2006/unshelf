@@ -1,7 +1,11 @@
 import { EventEmitter } from "node:events";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { stopTestPostgres, trackTestPool } from "./postgres-lifecycle";
+import {
+  stopIsolatedTestDatabase,
+  stopTestPostgres,
+  trackTestPool,
+} from "./postgres-lifecycle";
 
 describe("PostgreSQL test lifecycle", () => {
   it("keeps PostgreSQL running until every pool client socket ends", async () => {
@@ -31,5 +35,20 @@ describe("PostgreSQL test lifecycle", () => {
 
     await expect(stopTestPostgres({ pool, container })).rejects.toBe(failure);
     expect(stop).toHaveBeenCalledWith({ timeout: 10_000 });
+  });
+
+  it("drops an isolated database only after its clients close", async () => {
+    const pool = { close: vi.fn() };
+    const drop = vi.fn();
+    pool.close.mockImplementation(async () => {
+      expect(drop).not.toHaveBeenCalled();
+    });
+
+    await stopIsolatedTestDatabase({
+      pool,
+      database: { connectionString: "postgresql://test", drop },
+    });
+
+    expect(drop).toHaveBeenCalledOnce();
   });
 });

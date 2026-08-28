@@ -1,4 +1,5 @@
-import type { Pool } from "pg";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 
 export interface TrackedTestPool {
   close: () => Promise<void>;
@@ -6,6 +7,33 @@ export interface TrackedTestPool {
 
 export interface TestPostgresContainer {
   stop: (options: { timeout: number }) => Promise<unknown>;
+}
+
+export interface IsolatedTestDatabase {
+  connectionString: string;
+  drop: () => Promise<void>;
+}
+
+export async function createIsolatedTestDatabase(
+  postgresConnectionUri: string,
+): Promise<IsolatedTestDatabase> {
+  const databaseName = `unshelf_test_${randomUUID().replaceAll("-", "")}`;
+  await runAdminQuery({
+    postgresConnectionUri,
+    query: `CREATE DATABASE ${quoteIdentifier(databaseName)}`,
+  });
+
+  const connectionUrl = new URL(postgresConnectionUri);
+  connectionUrl.pathname = `/${databaseName}`;
+
+  return {
+    connectionString: connectionUrl.toString(),
+    drop: () =>
+      runAdminQuery({
+        postgresConnectionUri,
+        query: `DROP DATABASE ${quoteIdentifier(databaseName)}`,
+      }),
+  };
 }
 
 export function trackTestPool(pool: Pool): TrackedTestPool {
@@ -41,4 +69,38 @@ export async function stopTestPostgres({
   } finally {
     await container.stop({ timeout: 10_000 });
   }
+}
+
+export async function stopIsolatedTestDatabase({
+  pool,
+  database,
+}: {
+  pool: TrackedTestPool;
+  database: IsolatedTestDatabase;
+}): Promise<void> {
+  try {
+    await pool.close();
+  } finally {
+    await database.drop();
+  }
+}
+
+async function runAdminQuery({
+  postgresConnectionUri,
+  query,
+}: {
+  postgresConnectionUri: string;
+  query: string;
+}): Promise<void> {
+  const pool = new Pool({ connectionString: postgresConnectionUri });
+  const trackedPool = trackTestPool(pool);
+  try {
+    await pool.query(query);
+  } finally {
+    await trackedPool.close();
+  }
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
 }
