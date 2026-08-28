@@ -136,7 +136,19 @@ test("a User can scroll a long channel preview while Follow stays visible", asyn
   await page
     .getByLabel("YouTube channel URL")
     .fill("https://youtube.com/@previewlearning");
-  await page.getByRole("button", { name: "Preview channel" }).click();
+  const channelUrl = page.getByLabel("YouTube channel URL");
+  const previewChannel = page.getByRole("button", {
+    name: "Preview channel",
+  });
+  if (testInfo.project.name === "desktop") {
+    const channelUrlBox = await channelUrl.boundingBox();
+    const previewChannelBox = await previewChannel.boundingBox();
+    if (!channelUrlBox || !previewChannelBox) {
+      throw new Error("Discover channel setup controls are missing");
+    }
+    expect(previewChannelBox.y).toBeCloseTo(channelUrlBox.y, 0);
+  }
+  await previewChannel.click();
 
   const follow = page.getByRole("button", { name: "Follow channel" });
   const previewVideos = page.getByRole("region", {
