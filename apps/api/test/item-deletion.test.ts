@@ -11,7 +11,13 @@ let app: Express;
 const capture = (clerkUserId: string, body: object) =>
   request(app).post("/api/items").set(TEST_USER_HEADER, clerkUserId).send(body);
 
-const deleteItem = (clerkUserId: string, itemId: string) =>
+const deleteItem = ({
+  clerkUserId,
+  itemId,
+}: {
+  clerkUserId: string;
+  itemId: string;
+}) =>
   request(app)
     .delete(`/api/items/${itemId}`)
     .set(TEST_USER_HEADER, clerkUserId);
@@ -30,7 +36,7 @@ describe("DELETE /api/items/:itemId", () => {
       await capture(user, { title: "Atomic deletion", type: "course" })
     ).body as Item;
 
-    const response = await deleteItem(user, item.id);
+    const response = await deleteItem({ clerkUserId: user, itemId: item.id });
 
     expect(response.status).toBe(204);
     expect(response.text).toBe("");
@@ -100,7 +106,7 @@ describe("DELETE /api/items/:itemId", () => {
       [item.id],
     );
 
-    await deleteItem(user, item.id).expect(204);
+    await deleteItem({ clerkUserId: user, itemId: item.id }).expect(204);
 
     const after = await harness.pool.query(
       `select id, user_id, title, source, created_at, type, status,
@@ -346,7 +352,7 @@ describe("DELETE /api/items/:itemId", () => {
       ],
     );
 
-    await deleteItem(user, item.id).expect(204);
+    await deleteItem({ clerkUserId: user, itemId: item.id }).expect(204);
 
     const remainingDirect = await request(app)
       .get(`/api/learning-plans/${directPlan.id}/topology`)
@@ -413,7 +419,7 @@ describe("DELETE /api/items/:itemId", () => {
     const item = (
       await capture(user, { title: "Retry safely", type: "article" })
     ).body as Item;
-    await deleteItem(user, item.id).expect(204);
+    await deleteItem({ clerkUserId: user, itemId: item.id }).expect(204);
     const firstDeletion = await harness.pool.query<{ deleted_at: Date }>(
       "select deleted_at from items where id = $1",
       [item.id],
@@ -425,7 +431,10 @@ describe("DELETE /api/items/:itemId", () => {
       [sentinelPartId, item.userId, item.id],
     );
 
-    const replay = await deleteItem(user, item.id);
+    const replay = await deleteItem({
+      clerkUserId: user,
+      itemId: item.id,
+    });
 
     const replayState = await harness.pool.query<{
       deleted_at: Date;
@@ -452,8 +461,14 @@ describe("DELETE /api/items/:itemId", () => {
     ).body as Item;
     const missingId = "00000000-0000-0000-0000-000000000000";
 
-    const missing = await deleteItem(intruder, missingId);
-    const foreignResponse = await deleteItem(intruder, foreign.id);
+    const missing = await deleteItem({
+      clerkUserId: intruder,
+      itemId: missingId,
+    });
+    const foreignResponse = await deleteItem({
+      clerkUserId: intruder,
+      itemId: foreign.id,
+    });
 
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ error: "item not found" });
@@ -469,7 +484,10 @@ describe("DELETE /api/items/:itemId", () => {
   });
 
   it("uses the established malformed-id and unauthenticated envelopes", async () => {
-    const malformed = await deleteItem("delete-item-invalid", "not-an-item-id");
+    const malformed = await deleteItem({
+      clerkUserId: "delete-item-invalid",
+      itemId: "not-an-item-id",
+    });
     const unauthenticated = await request(app).delete(
       "/api/items/00000000-0000-0000-0000-000000000000",
     );
@@ -495,22 +513,15 @@ describe("DELETE /api/items/:itemId", () => {
       .post("/api/daily-focus/today/suppressions")
       .set(TEST_USER_HEADER, user)
       .send({ itemId: item.id });
-    await harness.pool.query(`
-      CREATE FUNCTION reject_item_tombstone() RETURNS trigger AS $$
-      BEGIN
-        IF NEW.deleted_at IS NOT NULL THEN
-          RAISE EXCEPTION 'forced tombstone failure';
-        END IF;
-        RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql;
-      CREATE TRIGGER reject_item_tombstone
-        BEFORE UPDATE ON items
-        FOR EACH ROW EXECUTE FUNCTION reject_item_tombstone();
-    `);
+    await harness.pool.query(
+      "ALTER TABLE items ADD CONSTRAINT reject_item_tombstone CHECK (deleted_at IS NULL) NOT VALID",
+    );
 
     try {
-      const response = await deleteItem(user, item.id);
+      const response = await deleteItem({
+        clerkUserId: user,
+        itemId: item.id,
+      });
       const state = await harness.pool.query<{
         deleted_at: Date | null;
         parts: number;
@@ -534,10 +545,9 @@ describe("DELETE /api/items/:itemId", () => {
         suppressions: 1,
       });
     } finally {
-      await harness.pool.query(`
-        DROP TRIGGER reject_item_tombstone ON items;
-        DROP FUNCTION reject_item_tombstone();
-      `);
+      await harness.pool.query(
+        "ALTER TABLE items DROP CONSTRAINT reject_item_tombstone",
+      );
     }
   });
 });
