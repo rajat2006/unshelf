@@ -1,21 +1,27 @@
 import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../src/db";
+import {
+  createIsolatedTestDatabase,
+  stopIsolatedTestDatabase,
+  trackTestPool,
+} from "./postgres-lifecycle";
+import { sharedPostgresConnectionUri } from "./vitest-context";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 describe("Learning Plan migration", () => {
   it("preserves a representative Trail as an ordered Stage-only Learning Plan", async () => {
-    const container = await new PostgreSqlContainer(
-      "postgres:16-alpine",
-    ).start();
+    const database = await createIsolatedTestDatabase(
+      await sharedPostgresConnectionUri(),
+    );
     const db = createDatabase({
-      connectionString: container.getConnectionUri(),
+      connectionString: database.connectionString,
       timeZone: "UTC",
     });
+    const testPool = trackTestPool(db.$client);
 
     try {
       const migrations = readMigrationFiles({
@@ -264,8 +270,7 @@ describe("Learning Plan migration", () => {
         },
       ]);
     } finally {
-      await db.$client.end();
-      await container.stop();
+      await stopIsolatedTestDatabase({ pool: testPool, database });
     }
   });
 });
