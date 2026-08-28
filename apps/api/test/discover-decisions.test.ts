@@ -123,21 +123,6 @@ async function seedProviderIdentityTombstone({
   return seeded.rows[0].id;
 }
 
-const releaseProviderIdentity = ({
-  user,
-  externalId,
-}: {
-  user: string;
-  externalId: string;
-}) =>
-  harness.pool.query(
-    `DELETE FROM item_provider_identities
-     WHERE user_id = (SELECT id FROM users WHERE clerk_user_id = $1)
-       AND provider = 'youtube'
-       AND external_id = $2`,
-    [user, externalId],
-  );
-
 function useExactIdentityVideo({
   channelExternalId,
   videoExternalId,
@@ -184,8 +169,10 @@ async function candidateAfterReleasedTombstone({
       source: `https://youtu.be/${externalId}`,
     })
   ).body as Item;
-  await seedItemTombstone(harness.pool, tombstone.id);
-  await releaseProviderIdentity({ user, externalId });
+  await request(app)
+    .delete(`/api/items/${tombstone.id}`)
+    .set(TEST_USER_HEADER, user)
+    .expect(204);
   useExactIdentityVideo({
     channelExternalId: `UC_${externalId}`,
     videoExternalId: externalId,
@@ -376,8 +363,10 @@ describe("Discover Candidate decisions", () => {
         source,
       })
     ).body as Item;
-    await seedItemTombstone(harness.pool, tombstone.id);
-    await releaseProviderIdentity({ user, externalId: "fresh_CAP-1" });
+    await request(app)
+      .delete(`/api/items/${tombstone.id}`)
+      .set(TEST_USER_HEADER, user)
+      .expect(204);
 
     const fresh = (
       await capture(user, {
