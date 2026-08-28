@@ -513,6 +513,7 @@ describe("DELETE /api/items/:itemId", () => {
       .post("/api/daily-focus/today/suppressions")
       .set(TEST_USER_HEADER, user)
       .send({ itemId: item.id });
+    // NOT VALID skips tombstones from earlier cases while still checking this update.
     await harness.pool.query(
       "ALTER TABLE items ADD CONSTRAINT reject_item_tombstone CHECK (deleted_at IS NULL) NOT VALID",
     );
