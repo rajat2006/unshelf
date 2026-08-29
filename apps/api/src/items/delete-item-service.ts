@@ -146,7 +146,6 @@ export async function deleteItem({
         ),
       );
 
-    // The tombstone is written last so every earlier cleanup rolls back with it.
     await tx
       .update(items)
       .set({ deletedAt: sql`now()` })
