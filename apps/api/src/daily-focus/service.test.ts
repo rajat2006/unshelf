@@ -201,7 +201,7 @@ describe("Daily Focus service", () => {
     });
     expect(historicalFocus.entries).toEqual([
       {
-        kind: "available",
+        availability: "available",
         itemId: item.id,
         origin: null,
         snapshot: {
@@ -290,7 +290,7 @@ describe("Daily Focus service", () => {
     expect(history.body).toMatchObject({ done: 0, total: 1 });
     expect((history.body as DailyFocusHistory).entries).toEqual([
       {
-        kind: "deleted",
+        availability: "deleted",
         snapshot: {
           title: item.title,
           type: "article",

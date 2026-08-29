@@ -154,7 +154,7 @@ describe("DELETE /api/items/:itemId", () => {
       total: 1,
       entries: [
         {
-          kind: "deleted",
+          availability: "deleted",
           snapshot: {
             title: item.title,
             type: "book",

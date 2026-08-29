@@ -328,7 +328,7 @@ export interface DailyFocusHistory {
 
 /** An elapsed entry that can still navigate to and reconsider an active Item. */
 export interface AvailableDailyFocusHistoryEntry {
-  kind: "available";
+  availability: "available";
   itemId: ItemId;
   snapshot: DailyFocusSnapshot;
   origin: DailyFocusOrigin | null;
@@ -336,7 +336,7 @@ export interface AvailableDailyFocusHistoryEntry {
 
 /** An inert elapsed entry retained after its Item has permanently ended. */
 export interface DeletedDailyFocusHistoryEntry {
-  kind: "deleted";
+  availability: "deleted";
   snapshot: DailyFocusSnapshot;
 }
 

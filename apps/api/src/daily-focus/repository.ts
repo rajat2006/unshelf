@@ -194,9 +194,9 @@ async function readDailyFocusHistory(
 
   const entries = itemRows.map((itemRow): DailyFocusHistoryEntry => {
     const snapshot = toSnapshot(itemRow);
-    if (itemRow.deletedAt) return { kind: "deleted", snapshot };
+    if (itemRow.deletedAt) return { availability: "deleted", snapshot };
     return {
-      kind: "available",
+      availability: "available",
       itemId: itemRow.itemId as ItemId,
       snapshot,
       origin: toOrigin(itemRow),

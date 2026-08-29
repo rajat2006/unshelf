@@ -265,15 +265,15 @@ export function DailyFocusHistorySurface({
             ) : (
               <ul className="grid list-none gap-3 p-0">
                 {state.focus.entries.map((entry, index) => (
-                  <li key={`${entry.kind}-${index}`}>
+                  <li key={`${entry.availability}-${index}`}>
                     <HistoryEntry
                       entry={entry}
                       added={
-                        entry.kind === "available" &&
+                        entry.availability === "available" &&
                         addedItemIds.has(entry.itemId)
                       }
                       adding={
-                        entry.kind === "available" &&
+                        entry.availability === "available" &&
                         addingItemId === entry.itemId
                       }
                       onReconsider={reconsider}
@@ -318,7 +318,7 @@ function HistoryEntry({
             {TYPE_LABELS[snapshot.type]}
           </p>
           <h3 className="m-0 text-base leading-snug font-semibold break-words">
-            {entry.kind === "available" ? (
+            {entry.availability === "available" ? (
               <Link
                 className="text-foreground underline-offset-4 hover:text-primary hover:underline"
                 to={`/items/${entry.itemId}`}
@@ -330,7 +330,7 @@ function HistoryEntry({
               snapshot.title
             )}
           </h3>
-          {entry.kind === "deleted" && (
+          {entry.availability === "deleted" && (
             <p className="mt-1 mb-0 text-sm font-medium text-muted-foreground">
               Item deleted
             </p>
@@ -359,14 +359,14 @@ function HistoryEntry({
           <span className="font-medium text-foreground">
             Read-only day-end snapshot
           </span>
-          {entry.kind === "available" && entry.origin && (
+          {entry.availability === "available" && entry.origin && (
             <span className="block">
               From {entry.origin.learningPlan.name}
               {entry.origin.stage ? ` · ${entry.origin.stage.name}` : ""}
             </span>
           )}
         </div>
-        {entry.kind === "available" &&
+        {entry.availability === "available" &&
           snapshot.status !== Status.Done &&
           (added ? (
             <span

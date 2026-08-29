@@ -101,7 +101,7 @@ const historyFocus: DailyFocusHistory = {
   date: focus.date,
   entries: [
     {
-      kind: "available",
+      availability: "available",
       itemId: item.id,
       origin: null,
       snapshot: focus.entries[0].snapshot,
@@ -937,7 +937,7 @@ describe("Daily Focus history", () => {
       date: "2026-08-13",
       entries: [
         {
-          kind: "available",
+          availability: "available",
           itemId: item.id,
           origin: {
             learningPlan: {
@@ -988,7 +988,7 @@ describe("Daily Focus history", () => {
       done: 1,
       entries: [
         {
-          kind: "deleted",
+          availability: "deleted",
           snapshot: {
             title: "Deleted reading",
             type: Type.Article,

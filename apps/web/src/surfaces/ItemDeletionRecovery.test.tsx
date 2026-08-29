@@ -117,8 +117,8 @@ const history = (deleted: boolean): DailyFocusHistory => ({
   userId,
   date,
   entries: deleted
-    ? [{ kind: "deleted", snapshot }]
-    : [{ kind: "available", itemId, origin: null, snapshot }],
+    ? [{ availability: "deleted", snapshot }]
+    : [{ availability: "available", itemId, origin: null, snapshot }],
   done: 0,
   total: 1,
 });
