@@ -270,6 +270,7 @@ export const items = pgTable(
       .default(StatusMode.Manual),
     targetDate: date("target_date"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     // All lists a User's Items; every read is scoped by user_id, so index it.
@@ -345,6 +346,10 @@ export const dailyFocusItems = pgTable(
       .notNull()
       .references(() => users.id),
     itemId: uuid("item_id").notNull(),
+    titleSnapshot: text("title_snapshot").notNull(),
+    typeSnapshot: text("type_snapshot", {
+      enum: nonEmpty(ITEM_TYPES),
+    }).notNull(),
     statusSnapshot: text("status_snapshot", {
       enum: nonEmpty(ITEM_STATUSES),
     }).notNull(),
@@ -371,6 +376,10 @@ export const dailyFocusItems = pgTable(
       table.itemId,
     ),
     index("daily_focus_items_user_id_idx").on(table.userId),
+    check(
+      "daily_focus_items_type_snapshot_check",
+      sql`${table.typeSnapshot} in ${enumList(ITEM_TYPES)}`,
+    ),
     check(
       "daily_focus_items_status_snapshot_check",
       sql`${table.statusSnapshot} in ${enumList(ITEM_STATUSES)}`,

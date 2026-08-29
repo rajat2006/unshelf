@@ -23,10 +23,12 @@ import {
   StatusMode,
   Type,
   type DailyFocus,
+  type DailyFocusHistory,
   type DailyFocusId,
   type Item,
   type ItemId,
   type LabelId,
+  type LearningPlanId,
   type UserId,
 } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
@@ -82,7 +84,27 @@ const focus: DailyFocus = {
     {
       item,
       origin: null,
-      snapshot: { status: item.status, partPercentage: item.partPercentage },
+      snapshot: {
+        title: item.title,
+        type: item.type,
+        status: item.status,
+        partPercentage: item.partPercentage,
+      },
+    },
+  ],
+  done: 0,
+  total: 1,
+};
+const historyFocus: DailyFocusHistory = {
+  id: focus.id,
+  userId,
+  date: focus.date,
+  entries: [
+    {
+      kind: "available",
+      itemId: item.id,
+      origin: null,
+      snapshot: focus.entries[0].snapshot,
     },
   ],
   done: 0,
@@ -652,6 +674,8 @@ describe("Today room", () => {
           item: replacement,
           origin: null,
           snapshot: {
+            title: replacement.title,
+            type: replacement.type,
             status: replacement.status,
             partPercentage: replacement.partPercentage,
           },
@@ -731,7 +755,10 @@ describe("Today room", () => {
 describe("Daily Focus history", () => {
   it("stages a localized date until View date preserves the query", async () => {
     vi.mocked(fetchDailyFocusHistory).mockImplementation(
-      async (_user, requestedDate) => ({ ...focus, date: requestedDate }),
+      async (_user, requestedDate) => ({
+        ...historyFocus,
+        date: requestedDate,
+      }),
     );
 
     renderHistory(["/today/2026-08-13?source=plan"]);
@@ -773,7 +800,7 @@ describe("Daily Focus history", () => {
 
   it("keeps an invalid draft visible and prevents submitting the older date", async () => {
     vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
-      ...focus,
+      ...historyFocus,
       date: "2026-08-13",
     });
 
@@ -798,7 +825,10 @@ describe("Daily Focus history", () => {
 
   it("replaces an invalid draft when Back and Forward change the routed date", async () => {
     vi.mocked(fetchDailyFocusHistory).mockImplementation(
-      async (_user, requestedDate) => ({ ...focus, date: requestedDate }),
+      async (_user, requestedDate) => ({
+        ...historyFocus,
+        date: requestedDate,
+      }),
     );
 
     renderHistory(
@@ -839,8 +869,8 @@ describe("Daily Focus history", () => {
   });
 
   it("keeps browsing usable while loading and ignores an older route response", async () => {
-    const older = deferred<DailyFocus>();
-    const newest = deferred<DailyFocus>();
+    const older = deferred<DailyFocusHistory>();
+    const newest = deferred<DailyFocusHistory>();
     vi.mocked(fetchDailyFocusHistory).mockImplementation(
       (_user, requestedDate) =>
         requestedDate === "2026-08-13" ? older.promise : newest.promise,
@@ -862,13 +892,13 @@ describe("Daily Focus history", () => {
     fireEvent.keyDown(liveDateField, { key: "Enter" });
     expect(liveDateField).toHaveValue("11/08/2026");
 
-    newest.resolve({ ...focus, date: "2026-08-12" });
+    newest.resolve({ ...historyFocus, date: "2026-08-12" });
     await screen.findByRole("region", {
       name: "Daily Focus for 2026-08-12",
     });
 
     await act(async () => {
-      older.resolve({ ...focus, date: "2026-08-13" });
+      older.resolve({ ...historyFocus, date: "2026-08-13" });
     });
     expect(
       screen.queryByRole("region", { name: "Daily Focus for 2026-08-13" }),
@@ -881,7 +911,7 @@ describe("Daily Focus history", () => {
   it("retries an unavailable record without discarding the staged date", async () => {
     vi.mocked(fetchDailyFocusHistory)
       .mockRejectedValueOnce(new Error("unavailable"))
-      .mockResolvedValueOnce({ ...focus, date: "2026-08-13" });
+      .mockResolvedValueOnce({ ...historyFocus, date: "2026-08-13" });
 
     renderHistory();
 
@@ -901,20 +931,70 @@ describe("Daily Focus history", () => {
     );
   });
 
-  it("presents frozen day-end progress through the shared Item language", async () => {
+  it("keeps an available snapshot linked and reconsiderable with current origin", async () => {
     vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
-      ...focus,
+      ...historyFocus,
       date: "2026-08-13",
       entries: [
         {
-          item: {
-            ...item,
-            status: Status.Done,
-            pastTarget: false,
-            partPercentage: 100,
+          kind: "available",
+          itemId: item.id,
+          origin: {
+            learningPlan: {
+              id: "00000000-0000-0000-0000-000000000006" as LearningPlanId,
+              name: "Systems plan",
+            },
+            stage: null,
           },
-          origin: null,
-          snapshot: { status: Status.InProgress, partPercentage: 50 },
+          snapshot: {
+            title: "Frozen handbook title",
+            type: Type.Book,
+            status: Status.InProgress,
+            partPercentage: 50,
+          },
+        },
+      ],
+    });
+    vi.mocked(addItemToToday).mockResolvedValue(focus);
+
+    renderHistory();
+
+    const historyRegion = await screen.findByRole("region", {
+      name: "Daily Focus for 2026-08-13",
+    });
+    const itemLink = within(historyRegion).getByRole("link", {
+      name: "Frozen handbook title",
+    });
+    const itemPresentation = within(itemLink.closest("article")!);
+    expect(itemPresentation.getByText("Book")).toBeVisible();
+    expect(itemPresentation.getByText("In progress")).toBeVisible();
+    expect(itemPresentation.getByText("50% of Parts complete")).toBeVisible();
+    expect(itemPresentation.getByText("From Systems plan")).toBeVisible();
+
+    fireEvent.click(
+      itemPresentation.getByRole("button", {
+        name: "Add Frozen handbook title to Today",
+      }),
+    );
+    await waitFor(() =>
+      expect(addItemToToday).toHaveBeenCalledWith(auth.user, item.id),
+    );
+  });
+
+  it("renders a deleted snapshot as inert history without Parts", async () => {
+    vi.mocked(fetchDailyFocusHistory).mockResolvedValue({
+      ...historyFocus,
+      date: "2026-08-13",
+      done: 1,
+      entries: [
+        {
+          kind: "deleted",
+          snapshot: {
+            title: "Deleted reading",
+            type: Type.Article,
+            status: Status.Done,
+            partPercentage: null,
+          },
         },
       ],
     });
@@ -924,16 +1004,16 @@ describe("Daily Focus history", () => {
     const historyRegion = await screen.findByRole("region", {
       name: "Daily Focus for 2026-08-13",
     });
-    const itemLink = within(historyRegion).getByRole("link", {
-      name: item.title,
-    });
-    const itemPresentation = within(itemLink.closest("article")!);
-    expect(itemPresentation.getByText("Book")).toBeVisible();
-    expect(itemPresentation.getByText("In progress")).toBeVisible();
-    expect(itemPresentation.queryByText("Done")).not.toBeInTheDocument();
-    expect(itemPresentation.getByText("50% of Parts complete")).toBeVisible();
+    const deletedTitle = within(historyRegion).getByText("Deleted reading");
+    const itemPresentation = within(deletedTitle.closest("article")!);
+    expect(itemPresentation.getByText("Item deleted")).toBeVisible();
+    expect(itemPresentation.getByText("Article")).toBeVisible();
+    expect(itemPresentation.getByText("Done")).toBeVisible();
+    expect(itemPresentation.getByText("No Parts")).toBeVisible();
     expect(
-      itemPresentation.queryByText("100% of Parts complete"),
-    ).not.toBeInTheDocument();
+      within(historyRegion).getByText("1 of 1 done at day end"),
+    ).toBeVisible();
+    expect(itemPresentation.queryByRole("link")).not.toBeInTheDocument();
+    expect(itemPresentation.queryByRole("button")).not.toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { ItemId, Type, UserId } from "@unshelf/shared";
 import type { DatabaseTransaction } from "../db";
 import { itemProviderIdentities, items } from "../schema";
+import { activeItem } from "./active-item";
 
 /** Create or reuse the Library Item for one exact owned Provider identity. */
 export async function findOrCreateProviderItem({
@@ -36,6 +37,14 @@ export async function findOrCreateProviderItem({
   const existing = await tx
     .select({ itemId: itemProviderIdentities.itemId })
     .from(itemProviderIdentities)
+    .innerJoin(
+      items,
+      and(
+        eq(items.id, itemProviderIdentities.itemId),
+        eq(items.userId, itemProviderIdentities.userId),
+        activeItem(),
+      ),
+    )
     .where(
       and(
         eq(itemProviderIdentities.userId, userId),

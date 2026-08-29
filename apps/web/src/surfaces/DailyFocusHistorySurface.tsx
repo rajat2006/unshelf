@@ -7,11 +7,11 @@ import {
 } from "react";
 import {
   Status,
-  type DailyFocus,
-  type DailyFocusEntry,
+  type DailyFocusHistory,
+  type DailyFocusHistoryEntry,
   type ItemId,
 } from "@unshelf/shared";
-import { ArrowLeft, CalendarDays, Check, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, ListChecks, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -21,14 +21,19 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
-import { ItemSummary } from "../items/ItemSummary";
+import { ItemStatusBadge } from "../items/ItemStatusBadge";
+import {
+  itemDetailRouteState,
+  itemLinkBackgroundLocation,
+} from "../items/item-route-state";
+import { TYPE_LABELS } from "../items/presentation";
 import { completionPercentage } from "../presentation/progress";
 import { useServerCalendar } from "../server-calendar/ServerCalendarProvider";
 
 type HistoryState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; focus: DailyFocus };
+  | { status: "ready"; focus: DailyFocusHistory };
 
 interface BrowseDateState {
   routeDate: string;
@@ -196,11 +201,7 @@ export function DailyFocusHistorySurface({
               onValidityChange={updateBrowseDateValidity}
             />
           </Field>
-          <Button
-            type="submit"
-            variant="secondary"
-            disabled={!browseDateValid}
-          >
+          <Button type="submit" variant="secondary" disabled={!browseDateValid}>
             <CalendarDays aria-hidden="true" />
             View date
           </Button>
@@ -259,48 +260,19 @@ export function DailyFocusHistorySurface({
               </div>
             ) : (
               <ul className="grid list-none gap-3 p-0">
-                {state.focus.entries.map(({ item, snapshot, origin }) => (
-                  <li key={item.id}>
-                    <ItemSummary
-                      item={itemAtDayEnd({ item, snapshot }, state.focus.date)}
-                      actions={
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                          <div className="text-sm text-muted-foreground">
-                            <span className="font-medium text-foreground">
-                              Read-only day-end snapshot
-                            </span>
-                            {origin && (
-                              <span className="block">
-                                From {origin.learningPlan.name}
-                                {origin.stage ? ` · ${origin.stage.name}` : ""}
-                              </span>
-                            )}
-                          </div>
-                          {snapshot.status !== Status.Done &&
-                            (addedItemIds.has(item.id) ? (
-                              <span
-                                className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-primary"
-                                role="status"
-                              >
-                                <Check className="size-4" aria-hidden="true" />
-                                Added to Today
-                              </span>
-                            ) : (
-                              <Button
-                                type="button"
-                                size="compact"
-                                className="min-h-11 min-w-32 sm:min-h-8"
-                                loading={addingItemId === item.id}
-                                loadingLabel="Adding…"
-                                onClick={() => void reconsider(item.id)}
-                                aria-label={`Add ${item.title} to Today`}
-                              >
-                                <Plus aria-hidden="true" />
-                                Add to Today
-                              </Button>
-                            ))}
-                        </div>
+                {state.focus.entries.map((entry, index) => (
+                  <li key={`${entry.kind}-${index}`}>
+                    <HistoryEntry
+                      entry={entry}
+                      added={
+                        entry.kind === "available" &&
+                        addedItemIds.has(entry.itemId)
                       }
+                      adding={
+                        entry.kind === "available" &&
+                        addingItemId === entry.itemId
+                      }
+                      onReconsider={reconsider}
                     />
                   </li>
                 ))}
@@ -319,6 +291,106 @@ export function DailyFocusHistorySurface({
   );
 }
 
+function HistoryEntry({
+  entry,
+  added,
+  adding,
+  onReconsider,
+}: {
+  entry: DailyFocusHistoryEntry;
+  added: boolean;
+  adding: boolean;
+  onReconsider: (itemId: ItemId) => Promise<void>;
+}) {
+  const location = useLocation();
+  const { snapshot } = entry;
+  const backgroundLocation = itemLinkBackgroundLocation(location);
+
+  return (
+    <article className="grid min-w-0 gap-3 rounded-[var(--radius-card)] border bg-card p-4 text-card-foreground">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            {TYPE_LABELS[snapshot.type]}
+          </p>
+          <h3 className="m-0 text-base leading-snug font-semibold break-words">
+            {entry.kind === "available" ? (
+              <Link
+                className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+                to={`/items/${entry.itemId}`}
+                state={itemDetailRouteState(backgroundLocation)}
+              >
+                {snapshot.title}
+              </Link>
+            ) : (
+              snapshot.title
+            )}
+          </h3>
+          {entry.kind === "deleted" && (
+            <p className="mt-1 mb-0 text-sm font-medium text-muted-foreground">
+              Item deleted
+            </p>
+          )}
+        </div>
+        <ItemStatusBadge status={snapshot.status} />
+      </div>
+
+      {snapshot.partPercentage === null ? (
+        <p className="m-0 text-sm text-muted-foreground">No Parts</p>
+      ) : (
+        <div className="grid gap-1.5" aria-label="Historical Part progress">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <ListChecks className="size-4" aria-hidden="true" />
+            {snapshot.partPercentage}% of Parts complete
+          </div>
+          <Progress
+            value={snapshot.partPercentage}
+            aria-label={`${snapshot.partPercentage}% of Parts complete`}
+          />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+        <div className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            Read-only day-end snapshot
+          </span>
+          {entry.kind === "available" && entry.origin && (
+            <span className="block">
+              From {entry.origin.learningPlan.name}
+              {entry.origin.stage ? ` · ${entry.origin.stage.name}` : ""}
+            </span>
+          )}
+        </div>
+        {entry.kind === "available" &&
+          snapshot.status !== Status.Done &&
+          (added ? (
+            <span
+              className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-primary"
+              role="status"
+            >
+              <Check className="size-4" aria-hidden="true" />
+              Added to Today
+            </span>
+          ) : (
+            <Button
+              type="button"
+              size="compact"
+              className="min-h-11 min-w-32 sm:min-h-8"
+              loading={adding}
+              loadingLabel="Adding…"
+              onClick={() => void onReconsider(entry.itemId)}
+              aria-label={`Add ${snapshot.title} to Today`}
+            >
+              <Plus aria-hidden="true" />
+              Add to Today
+            </Button>
+          ))}
+      </div>
+    </article>
+  );
+}
+
 function HistoryLoading() {
   return (
     <div
@@ -332,19 +404,4 @@ function HistoryLoading() {
       <span className="sr-only">Loading history…</span>
     </div>
   );
-}
-
-function itemAtDayEnd(
-  { item, snapshot }: Pick<DailyFocusEntry, "item" | "snapshot">,
-  date: string,
-) {
-  return {
-    ...item,
-    status: snapshot.status,
-    partPercentage: snapshot.partPercentage,
-    pastTarget:
-      snapshot.status !== Status.Done &&
-      item.targetDate !== null &&
-      item.targetDate < date,
-  };
 }

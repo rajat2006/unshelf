@@ -28,6 +28,7 @@ import {
   updateItemTargetDate,
 } from "./repository";
 import { captureItem } from "./capture-item";
+import { deleteItem } from "./delete-item-service";
 import {
   createParts,
   removePart,
@@ -242,6 +243,24 @@ export function createItemsRouter(
         return;
       }
       res.json(item);
+    },
+  );
+
+  router.delete(
+    "/:itemId",
+    validateRequest({ params: { itemId: itemIdSchema } }, "missing_item_id"),
+    async (req, res) => {
+      const { params } = res.locals.validated;
+      const result = await deleteItem({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+      });
+      if (!result.ok) {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      res.status(204).end();
     },
   );
 

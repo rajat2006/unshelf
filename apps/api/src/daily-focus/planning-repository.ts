@@ -10,6 +10,7 @@ import {
   type UserId,
 } from "@unshelf/shared";
 import type { Database } from "../db";
+import { activeItem } from "../items/active-item";
 import { ITEM_PROJECTION, toItem } from "../items/repository";
 import {
   dailyFocuses,
@@ -85,6 +86,7 @@ export async function getDailyPlanning({
     .where(
       and(
         eq(items.userId, userId),
+        activeItem(),
         sql`not exists (
           select 1
           from ${dailyFocusItems}
@@ -131,7 +133,7 @@ export async function suppressDailyPlanningItem({
     const [owned] = await tx
       .select({ id: items.id })
       .from(items)
-      .where(and(eq(items.userId, userId), eq(items.id, itemId)))
+      .where(and(eq(items.userId, userId), eq(items.id, itemId), activeItem()))
       .limit(1);
     if (!owned) return false;
     await tx

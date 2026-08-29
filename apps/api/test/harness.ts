@@ -59,9 +59,21 @@ export async function migrateTestDatabase(db: Database): Promise<void> {
  * credential reader. Either can act as any User without touching Clerk.
  */
 export const TEST_USER_HEADER = "x-test-clerk-user-id";
+export const SEEDED_TOMBSTONE_TIME = "2026-08-25T12:00:00Z";
+
+export async function seedItemTombstone(
+  pool: Pool,
+  itemId: string,
+): Promise<void> {
+  await pool.query("UPDATE items SET deleted_at = $1 WHERE id = $2", [
+    SEEDED_TOMBSTONE_TIME,
+    itemId,
+  ]);
+}
 
 export interface TestApp {
   app: Express;
+  db: Database;
   pool: Pool;
   logger: CollectingLogger;
   runDiscoverAcquisitionTick: DiscoverAcquisitionTick;
@@ -258,6 +270,7 @@ function runningTestApp({
 
   return {
     app,
+    db,
     pool: db.$client,
     logger,
     runDiscoverAcquisitionTick: discoverModule.runScheduledAcquisitionTick,

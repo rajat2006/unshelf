@@ -9,6 +9,7 @@ import type {
   LearningPlan,
 } from "@unshelf/shared";
 import {
+  seedItemTombstone,
   startTestApp,
   TEST_USER_HEADER,
   type TestApp,
@@ -615,6 +616,62 @@ describe("Daily Planning service", () => {
     expect(planning.suggestions.map(({ item }) => item.id)).toEqual(
       expect.arrayContaining([activeRecent.id, archivedRecent.id]),
     );
+  });
+
+  it("hides a tombstone from planning and rejects its suppression", async () => {
+    const user = "daily-planning-tombstone";
+    const createItem = async (title: string) =>
+      (
+        await request(app)
+          .post("/api/items")
+          .set(TEST_USER_HEADER, user)
+          .send({ title, type: "article" })
+          .expect(201)
+      ).body as Item;
+    const ended = await createItem("Lifecycle search ended");
+    const active = await createItem("Lifecycle search active");
+    const foreignUser = "daily-planning-tombstone-foreign";
+    const foreign = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, foreignUser)
+        .send({ title: "Foreign planning Item", type: "article" })
+    ).body as Item;
+    await request(app)
+      .post("/api/daily-focus/today/suppressions")
+      .set(TEST_USER_HEADER, foreignUser)
+      .send({ itemId: foreign.id })
+      .expect(204);
+    await seedItemTombstone(harness.pool, ended.id);
+
+    const planning = (
+      await request(app)
+        .get("/api/daily-focus/today/planning")
+        .query({ query: "lifecycle search" })
+        .set(TEST_USER_HEADER, user)
+        .expect(200)
+    ).body as DailyPlanning;
+    const suppressed = await request(app)
+      .post("/api/daily-focus/today/suppressions")
+      .set(TEST_USER_HEADER, user)
+      .send({ itemId: ended.id });
+
+    expect(planning.searchResults.map(({ id }) => id)).toEqual([active.id]);
+    expect(planning.suggestions.map(({ item }) => item.id)).toEqual([
+      active.id,
+    ]);
+    expect(suppressed.status).toBe(404);
+    expect(suppressed.body).toEqual({ error: "item not found" });
+    const retained = await harness.pool.query(
+      "SELECT item_id FROM daily_planning_suppressions WHERE item_id = $1",
+      [ended.id],
+    );
+    expect(retained.rows).toEqual([]);
+    const foreignSuppression = await harness.pool.query(
+      "SELECT item_id FROM daily_planning_suppressions WHERE item_id = $1",
+      [foreign.id],
+    );
+    expect(foreignSuppression.rows).toHaveLength(1);
   });
 
   it("rejects the retired temporary planning inputs", async () => {

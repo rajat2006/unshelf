@@ -385,11 +385,13 @@ function missingItemDatabase(): Database {
 
 function cyclicLearningPlanDatabase(): Database {
   let executeCount = 0;
+  const endpointSelection = {
+    leftJoin: () => endpointSelection,
+    where: async () => [{ count: 2 }],
+  };
   const transaction = {
     select: () => ({
-      from: () => ({
-        where: async () => [{ count: 2 }],
-      }),
+      from: () => endpointSelection,
     }),
     execute: async () => {
       executeCount += 1;

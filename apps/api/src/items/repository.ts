@@ -15,6 +15,7 @@ import type {
 import type { Database } from "../db";
 import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
 import { itemLabels, items, labels } from "../schema";
+import { activeItem } from "./active-item";
 
 export interface ItemRow {
   id: string;
@@ -153,7 +154,7 @@ export async function listItems(db: Database, userId: UserId): Promise<Item[]> {
   const rows = await db
     .select(ITEM_PROJECTION)
     .from(items)
-    .where(eq(items.userId, userId))
+    .where(and(eq(items.userId, userId), activeItem()))
     .orderBy(desc(items.createdAt), asc(items.id));
   return rows.map(toItem);
 }
@@ -166,7 +167,7 @@ export async function getItemSummary(
   const rows = await db
     .select(ITEM_PROJECTION)
     .from(items)
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
     .limit(1);
   return rows[0] ? toItem(rows[0]) : null;
 }
@@ -180,7 +181,7 @@ export async function getItem(
   const rows = await db
     .select(ITEM_DETAIL_PROJECTION)
     .from(items)
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
     .limit(1);
   return rows[0] ? toItemDetail(rows[0]) : null;
 }
@@ -212,7 +213,7 @@ export async function updateItemStatus(
         status,
         statusMode: StatusMode.Manual,
       })
-      .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+      .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
       .returning({ id: items.id });
     if (!rows[0]) return null;
     await refreshTodayEntrySnapshot(tx, { userId, itemId });
@@ -236,7 +237,7 @@ export async function updateItemTargetDate(
   const rows = await db
     .update(items)
     .set({ targetDate })
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
     .returning({ id: items.id });
   return rows[0] ? getItemSummary(db, userId, itemId) : null;
 }
@@ -252,7 +253,7 @@ export async function applyLabelToItem(
     .select({ userId: items.userId, itemId: items.id, labelId: labels.id })
     .from(items)
     .innerJoin(labels, and(eq(labels.id, labelId), eq(labels.userId, userId)))
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+    .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()));
   const rows = await db
     .insert(itemLabels)
     .select(ownedMembership)
@@ -275,7 +276,7 @@ export async function removeLabelFromItem(
     .select({ itemId: items.id })
     .from(items)
     .innerJoin(labels, and(eq(labels.id, labelId), eq(labels.userId, userId)))
-    .where(and(eq(items.id, itemId), eq(items.userId, userId)))
+    .where(and(eq(items.id, itemId), eq(items.userId, userId), activeItem()))
     .limit(1);
   if (!allowed[0]) return null;
 

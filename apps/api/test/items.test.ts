@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { ITEM_STATUSES, ITEM_TYPES, type Item } from "@unshelf/shared";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  SEEDED_TOMBSTONE_TIME,
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 /**
  * Capture and All at the HTTP boundary (issue #17), driven against a real
@@ -725,6 +731,60 @@ describe("past target — derived, never stored, never nagging", () => {
 });
 
 describe("GET /api/items — All", () => {
+  it("hides an owned tombstone from Item reads and mutations", async () => {
+    const clerkUserId = "clerk_all_tombstone";
+    const tombstone = (
+      await capture(clerkUserId, { title: "Ended Item", type: "article" })
+    ).body as Item;
+    const active = (
+      await capture(clerkUserId, { title: "Active Item", type: "book" })
+    ).body as Item;
+    const foreign = (
+      await capture("clerk_all_tombstone_foreign", {
+        title: "Foreign active Item",
+        type: "course",
+      })
+    ).body as Item;
+    await seedItemTombstone(harness.pool, tombstone.id);
+
+    const listed = (await listAll(clerkUserId)).body as Item[];
+    const missing = await readItem(
+      clerkUserId,
+      "00000000-0000-0000-0000-000000000000",
+    );
+    const read = await readItem(clerkUserId, tombstone.id);
+    const status = await setStatus(clerkUserId, tombstone.id, "done");
+    const targetDate = await setTargetDate(clerkUserId, tombstone.id, {
+      targetDate: "2026-09-01",
+    });
+
+    expect(listed.map(({ id }) => id)).toEqual([active.id]);
+    expect(read.status).toBe(404);
+    expect(read.body).toEqual(missing.body);
+    expect(status.status).toBe(404);
+    expect(status.body).toEqual(missing.body);
+    expect(targetDate.status).toBe(404);
+    expect(targetDate.body).toEqual(missing.body);
+    expect(
+      ((await listAll("clerk_all_tombstone_foreign")).body as Item[]).map(
+        ({ id }) => id,
+      ),
+    ).toEqual([foreign.id]);
+    const frozen = await harness.pool.query<{
+      status: string;
+      target_date: string | null;
+      deleted_at: Date;
+    }>(
+      "SELECT status, target_date::text, deleted_at FROM items WHERE id = $1",
+      [tombstone.id],
+    );
+    expect(frozen.rows[0]).toEqual({
+      status: "not_started",
+      target_date: null,
+      deleted_at: new Date(SEEDED_TOMBSTONE_TIME),
+    });
+  });
+
   it("lists every Item belonging to the current User", async () => {
     await capture("clerk_all_owner", { title: "One", type: "article" });
     await capture("clerk_all_owner", { title: "Two", type: "course" });
