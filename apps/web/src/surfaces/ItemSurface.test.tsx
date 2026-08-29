@@ -199,9 +199,10 @@ function renderItemSurface(
     learningPlans: [],
   },
   itemRead: Promise<ItemDetail> = Promise.resolve(item),
+  labelsRead: ReturnType<typeof fetchLabels> = Promise.resolve([]),
 ) {
   vi.mocked(fetchItem).mockReturnValue(itemRead);
-  vi.mocked(fetchLabels).mockResolvedValue([]);
+  vi.mocked(fetchLabels).mockReturnValue(labelsRead);
   vi.mocked(fetchItemPlacements).mockResolvedValue(placementCatalog);
 
   return render(
@@ -451,6 +452,30 @@ describe("canonical Item route", () => {
       undefined,
       Promise.reject(new ItemRequestError("not_found")),
     );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That Item is no longer in your Library.",
+    );
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/library",
+    );
+  });
+
+  it("prioritizes an unavailable canonical Item over a concurrent Label failure", async () => {
+    const itemRead = deferred<ItemDetail>();
+    const labelsRead = deferred<Awaited<ReturnType<typeof fetchLabels>>>();
+    renderItemSurface(
+      [`/items/${itemId}`],
+      undefined,
+      undefined,
+      itemRead.promise,
+      labelsRead.promise,
+    );
+
+    await act(async () => {
+      labelsRead.reject(new Error("Labels unavailable"));
+      itemRead.reject(new ItemRequestError("not_found"));
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That Item is no longer in your Library.",

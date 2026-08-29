@@ -58,13 +58,15 @@ export function ItemSidebar({
     const generation = ++loadGeneration.current;
     setError(null);
     try {
-      const [nextItem, nextLabels] = await Promise.all([
+      const [itemResult, labelsResult] = await Promise.allSettled([
         fetchItem(user, itemId),
         fetchLabels(user),
       ]);
       if (generation !== loadGeneration.current) return;
-      setItem(nextItem);
-      setLabels(nextLabels);
+      if (itemResult.status === "rejected") throw itemResult.reason;
+      if (labelsResult.status === "rejected") throw labelsResult.reason;
+      setItem(itemResult.value);
+      setLabels(labelsResult.value);
     } catch (loadError) {
       if (generation !== loadGeneration.current) return;
       if (
