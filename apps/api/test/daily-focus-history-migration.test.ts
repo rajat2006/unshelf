@@ -284,7 +284,7 @@ async function seedCompleteHistory(db: Database): Promise<void> {
     INSERT INTO daily_focuses (id, user_id, date)
     VALUES
       (${IDS.focusA}, ${IDS.userA}, current_date - 2),
-      (${IDS.focusB}, ${IDS.userB}, current_date - 1)
+      (${IDS.focusB}, ${IDS.userB}, current_date)
   `);
   await db.execute(sql`
     INSERT INTO daily_focus_items (
