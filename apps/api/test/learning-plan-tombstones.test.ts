@@ -9,7 +9,12 @@ import type {
   Stage,
 } from "@unshelf/shared";
 import { anyValue } from "./assertion-boundaries";
-import { startTestApp, TEST_USER_HEADER, type TestApp } from "./harness";
+import {
+  seedItemTombstone,
+  startTestApp,
+  TEST_USER_HEADER,
+  type TestApp,
+} from "./harness";
 
 let harness: TestApp;
 let app: Express;
@@ -19,11 +24,6 @@ const asUser = (user: string) => ({
   post: (path: string, body?: object) =>
     request(app).post(path).set(TEST_USER_HEADER, user).send(body),
 });
-
-const seedTombstone = (itemId: string) =>
-  harness.pool.query("UPDATE items SET deleted_at = now() WHERE id = $1", [
-    itemId,
-  ]);
 
 const seedActive = (itemId: string) =>
   harness.pool.query("UPDATE items SET deleted_at = NULL WHERE id = $1", [
@@ -91,8 +91,8 @@ describe("Learning Plan tombstone eligibility", () => {
       fromNodeId: firstStage.id,
       toNodeId: lastStage.id,
     });
-    await seedTombstone(stagedTombstone.id);
-    await seedTombstone(directTombstone.id);
+    await seedItemTombstone(harness.pool, stagedTombstone.id);
+    await seedItemTombstone(harness.pool, directTombstone.id);
 
     const activeRead = await api.get(`/api/learning-plans/${plan.id}`);
     const stageDetail = await api.get(`/api/stages/${firstStage.id}`);
@@ -163,8 +163,8 @@ describe("Learning Plan tombstone eligibility", () => {
         type: "book",
       })
     ).body as Item;
-    await seedTombstone(tombstone.id);
-    await seedTombstone(foreignTombstone.id);
+    await seedItemTombstone(harness.pool, tombstone.id);
+    await seedItemTombstone(harness.pool, foreignTombstone.id);
 
     const planCandidates = await api.get(
       `/api/learning-plans/${plan.id}/items`,
@@ -259,8 +259,8 @@ describe("Learning Plan tombstone eligibility", () => {
       fromNodeId: stage.id,
       toNodeId: directNodeId,
     });
-    await seedTombstone(stagedTombstone.id);
-    await seedTombstone(directTombstone.id);
+    await seedItemTombstone(harness.pool, stagedTombstone.id);
+    await seedItemTombstone(harness.pool, directTombstone.id);
 
     const connect = await api.post(`/api/learning-plans/${plan.id}/edges`, {
       fromNodeId: directNodeId,
@@ -335,7 +335,7 @@ describe("Learning Plan tombstone eligibility", () => {
     await api.post(`/api/stages/${stage.id}/items`, {
       itemId: tombstone.id,
     });
-    await seedTombstone(tombstone.id);
+    await seedItemTombstone(harness.pool, tombstone.id);
 
     const removed = await request(app)
       .delete(`/api/stages/${stage.id}`)
