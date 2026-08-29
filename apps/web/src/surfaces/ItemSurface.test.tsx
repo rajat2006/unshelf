@@ -291,6 +291,14 @@ describe("canonical Item route", () => {
       within(dialog).getByRole("button", { name: "Close" }),
     ).toBeDisabled();
     fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.pointerDown(
+      document.querySelector('[data-slot="dialog-overlay"]')!,
+      {
+        button: 0,
+        ctrlKey: false,
+        pointerType: "mouse",
+      },
+    );
     fireEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
     expect(screen.getByRole("dialog")).toBeVisible();
 
