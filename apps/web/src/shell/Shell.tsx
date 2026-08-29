@@ -2,6 +2,7 @@ import { Outlet } from "react-router";
 import { CaptureProvider } from "./CaptureProvider";
 import { TopBar } from "./TopBar";
 import { ServerCalendarProvider } from "../server-calendar/ServerCalendarProvider";
+import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 
 /**
  * The signed-in frame: the persistent top bar above a surface region. The top
@@ -21,6 +22,7 @@ export function Shell() {
         <div className="min-h-svh bg-background text-foreground has-[.discover-setup]:flex has-[.discover-setup]:h-svh has-[.discover-setup]:flex-col has-[.discover-setup]:overflow-hidden lg:has-[.discover-surface]:flex lg:has-[.discover-surface]:h-svh lg:has-[.discover-surface]:flex-col lg:has-[.discover-surface]:overflow-hidden">
           <TopBar />
           <main className="mx-auto w-full min-w-0 max-w-[80rem] px-4 py-8 has-[.discover-setup]:min-h-0 has-[.discover-setup]:flex-1 has-[.discover-setup]:overflow-hidden md:px-6 md:py-10 lg:has-[.discover-surface]:min-h-0 lg:has-[.discover-surface]:flex-1 lg:has-[.discover-surface]:overflow-hidden lg:has-[.discover-surface]:py-6 has-[.learning-plan-surface]:max-w-none has-[.learning-plan-surface]:p-0">
+            <ItemRecoveryNotice />
             <Outlet />
           </main>
         </div>

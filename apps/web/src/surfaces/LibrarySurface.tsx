@@ -19,7 +19,6 @@ import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
 import { ItemLabels } from "../items/ItemLabels";
-import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { ItemSource } from "../items/ItemSource";
 import { ItemStatusSelect } from "../items/ItemStatusSelect";
 import { ItemTargetDate } from "../items/ItemTargetDate";
@@ -219,7 +218,6 @@ export function LibrarySurface({
           </p>
         </div>
       </header>
-      <ItemRecoveryNotice />
       {displayedState.status === "loading" && (
         <LibrarySkeleton showFilters={labelFilterEnabled} />
       )}

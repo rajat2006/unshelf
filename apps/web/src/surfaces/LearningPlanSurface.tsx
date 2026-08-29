@@ -32,7 +32,6 @@ import {
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LearningPlanItems } from "../learning-plan/LearningPlanItems";
-import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
 import { PlanTodaySidecar } from "../learning-plan/PlanTodaySidecar";
 import { usePhoneViewport } from "../learning-plan/usePhoneViewport";
@@ -275,7 +274,6 @@ export function LearningPlanSurface({
             </div>
           )}
         </header>
-        <ItemRecoveryNotice />
 
         {loadError && (
           <div className="grid min-h-80 place-content-center justify-items-start gap-4 p-6">

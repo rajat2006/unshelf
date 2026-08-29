@@ -28,7 +28,6 @@ import {
   planItemBackgroundLocation,
 } from "../items/item-route-state";
 import { ItemDoneToggle } from "../items/ItemDoneToggle";
-import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { ItemSummary } from "../items/ItemSummary";
 import { STATUS_LABELS } from "../items/presentation";
 import { useCaptureListener } from "../shell/useCaptureListener";
@@ -434,7 +433,6 @@ export function TodaySurface({
           </div>
         )}
       </header>
-      <ItemRecoveryNotice />
 
       {state.status === "loading" && <TodayLoading />}
       {state.status !== "loading" && (

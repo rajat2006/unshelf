@@ -1,48 +1,48 @@
-import { useEffect, useRef } from "react";
-import {
-  NavigationType,
-  useLocation,
-  useNavigate,
-  useNavigationType,
-} from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { Alert } from "@/components/ui/alert";
 import {
   consumeItemRecoveryNoticeState,
   readItemRecoveryNotice,
+  type ItemRecoveryNoticeKind,
 } from "./item-route-state";
 
 export function ItemRecoveryNotice() {
   const location = useLocation();
   const navigate = useNavigate();
-  const navigationType = useNavigationType();
-  const routeNotice = readItemRecoveryNotice(location.state);
-  const initialNotice = useRef(routeNotice).current;
-  const notice =
-    routeNotice ??
-    (navigationType === NavigationType.Replace ? initialNotice : null);
-  const consumed = useRef(false);
+  const [notice, setNotice] = useState<ItemRecoveryNoticeKind | null>(null);
+  const consuming = useRef(false);
 
   useEffect(() => {
-    if (!notice || consumed.current) return;
-    consumed.current = true;
-    void navigate(
-      {
-        pathname: location.pathname,
-        search: location.search,
-        hash: location.hash,
-      },
-      {
-        replace: true,
-        state: consumeItemRecoveryNoticeState(location.state),
-      },
-    );
+    const routeNotice = readItemRecoveryNotice(location.state);
+    if (routeNotice) {
+      consuming.current = true;
+      setNotice(routeNotice);
+      void navigate(
+        {
+          pathname: location.pathname,
+          search: location.search,
+          hash: location.hash,
+        },
+        {
+          replace: true,
+          state: consumeItemRecoveryNoticeState(location.state),
+        },
+      );
+      return;
+    }
+    if (consuming.current) {
+      consuming.current = false;
+      return;
+    }
+    setNotice(null);
   }, [
     location.hash,
+    location.key,
     location.pathname,
     location.search,
     location.state,
     navigate,
-    notice,
   ]);
 
   if (!notice) return null;

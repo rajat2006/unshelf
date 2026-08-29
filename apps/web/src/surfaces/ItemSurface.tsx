@@ -29,7 +29,11 @@ export function ItemSurface() {
   const [changedItems, setChangedItems] = useState<Record<string, Item>>({});
   const [placementVersion, setPlacementVersion] = useState(0);
   const [backgroundVersion, setBackgroundVersion] = useState(0);
-  const reconciliationResolver = useRef<(() => void) | null>(null);
+  const nextBackgroundVersion = useRef(0);
+  const reconciliationResolver = useRef<{
+    version: number;
+    resolve: () => void;
+  } | null>(null);
   const recordItemChange = useCallback((changed: Item) => {
     setChangedItems((current) => ({ ...current, [changed.id]: changed }));
   }, []);
@@ -53,15 +57,20 @@ export function ItemSurface() {
         : "/library",
     );
   };
-  const finishBackgroundReconciliation = useCallback(() => {
-    reconciliationResolver.current?.();
+  const finishBackgroundReconciliation = useCallback((version: number) => {
+    if (reconciliationResolver.current?.version !== version) return;
+    reconciliationResolver.current.resolve();
     reconciliationResolver.current = null;
   }, []);
   const reconcileBackground = () =>
     new Promise<void>((resolve) => {
-      reconciliationResolver.current = resolve;
-      setBackgroundVersion((current) => current + 1);
+      const version = ++nextBackgroundVersion.current;
+      reconciliationResolver.current = { version, resolve };
+      setBackgroundVersion(version);
     });
+  const finishCurrentBackgroundLoad = useCallback(() => {
+    finishBackgroundReconciliation(backgroundVersion);
+  }, [backgroundVersion, finishBackgroundReconciliation]);
   const recoveryPath = `${recoveryLocation.pathname}${recoveryLocation.search}${recoveryLocation.hash}`;
   const recoverWorkspace = useCallback(
     (notice: "deleted" | "unavailable") => {
@@ -91,8 +100,11 @@ export function ItemSurface() {
     recoverWorkspace("deleted");
   };
   const recoverUnavailableItem = useCallback(() => {
-    recoverWorkspace("unavailable");
-  }, [recoverWorkspace]);
+    void navigate("/library", {
+      replace: true,
+      state: itemRecoveryRouteState("unavailable"),
+    });
+  }, [navigate]);
   const handlePlacementChange = (change: ItemPlacementChange) => {
     if (
       change.operation === "remove" &&
@@ -130,7 +142,7 @@ export function ItemSurface() {
                 : "learningPlan"
             }:${placementVersion}`}
             learningPlanId={backgroundSurface.learningPlanId}
-            onLoadSettled={finishBackgroundReconciliation}
+            onLoadSettled={finishCurrentBackgroundLoad}
             onItemRemovedFromPlan={(removedItemId) => {
               if (removedItemId === itemId) closeDetails();
             }}
@@ -138,13 +150,13 @@ export function ItemSurface() {
         ) : backgroundSurface.kind === "today" ? (
           <TodaySurface
             key={backgroundVersion}
-            onLoadSettled={finishBackgroundReconciliation}
+            onLoadSettled={finishCurrentBackgroundLoad}
           />
         ) : backgroundSurface.kind === "history" ? (
           <DailyFocusHistorySurface
             key={backgroundVersion}
             selectedDate={backgroundSurface.date}
-            onLoadSettled={finishBackgroundReconciliation}
+            onLoadSettled={finishCurrentBackgroundLoad}
           />
         ) : (
           <LibrarySurface
@@ -159,7 +171,7 @@ export function ItemSurface() {
                 search: next.size > 0 ? `?${next.toString()}` : "",
               });
             }}
-            onLoadSettled={finishBackgroundReconciliation}
+            onLoadSettled={finishCurrentBackgroundLoad}
           />
         )
       ) : (
@@ -167,7 +179,7 @@ export function ItemSurface() {
           key={backgroundVersion}
           itemOverrides={itemOverrides}
           onItemChanged={recordItemChange}
-          onLoadSettled={finishBackgroundReconciliation}
+          onLoadSettled={finishCurrentBackgroundLoad}
         />
       )}
     </div>

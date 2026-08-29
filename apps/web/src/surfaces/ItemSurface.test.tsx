@@ -78,7 +78,7 @@ vi.mock("./LearningPlanSurface", () => ({
 }));
 
 let settleBackgroundAutomatically = true;
-let settleBackgroundLoad: (() => void) | undefined;
+let backgroundSettlements: Array<() => void> = [];
 
 function backgroundRoom(name: string) {
   return ({ onLoadSettled }: { onLoadSettled?: () => void }) => (
@@ -97,8 +97,8 @@ function BackgroundRoom({
 }) {
   useEffect(() => {
     if (!onLoadSettled) return;
+    backgroundSettlements.push(onLoadSettled);
     if (settleBackgroundAutomatically) onLoadSettled();
-    else settleBackgroundLoad = onLoadSettled;
   }, [onLoadSettled]);
   return (
     <main>
@@ -161,10 +161,22 @@ function HistoryControls() {
 }
 
 function DestinationRoom() {
+  const location = useLocation();
+  const navigate = useNavigate();
   return (
     <main>
       Destination room
       <ItemRecoveryNotice />
+      <button
+        type="button"
+        onClick={() =>
+          void navigate(`${location.pathname}${location.search}`, {
+            replace: true,
+          })
+        }
+      >
+        Replace destination
+      </button>
     </main>
   );
 }
@@ -210,7 +222,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   settleBackgroundAutomatically = true;
-  settleBackgroundLoad = undefined;
+  backgroundSettlements = [];
 });
 
 describe("canonical Item route", () => {
@@ -235,14 +247,18 @@ describe("canonical Item route", () => {
         fireEvent.pointerDown(
           document.querySelector('[data-slot="dialog-overlay"]')!,
           {
-          button: 0,
-          ctrlKey: false,
-          pointerType: "mouse",
+            button: 0,
+            ctrlKey: false,
+            pointerType: "mouse",
           },
         );
-        fireEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
+        fireEvent.click(
+          document.querySelector('[data-slot="dialog-overlay"]')!,
+        );
       } else {
-        fireEvent.click(within(dialog).getByRole("button", { name: dismissal }));
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: dismissal }),
+        );
       }
 
       await waitFor(() =>
@@ -261,11 +277,19 @@ describe("canonical Item route", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Item" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete Item" }),
+    );
 
-    expect(within(dialog).getByRole("button", { name: "Deleting…" })).toBeDisabled();
-    expect(within(dialog).getByRole("button", { name: "Keep Item" })).toBeDisabled();
-    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Deleting…" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Keep Item" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Close" }),
+    ).toBeDisabled();
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
     expect(screen.getByRole("dialog")).toBeVisible();
@@ -274,10 +298,14 @@ describe("canonical Item route", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Couldn’t confirm whether this Item was deleted. Try again.",
     );
-    expect(within(dialog).getByRole("button", { name: "Keep Item" })).toBeEnabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Keep Item" }),
+    ).toBeEnabled();
     expect(fetchItem).toHaveBeenCalledOnce();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Item" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete Item" }),
+    );
     await waitFor(() => expect(deleteItem).toHaveBeenCalledTimes(2));
   });
 
@@ -314,8 +342,12 @@ describe("canonical Item route", () => {
         }),
       );
 
-      expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
-      expect(screen.getByLabelText("Test location")).toHaveTextContent(destination);
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Item deleted.",
+      );
+      expect(screen.getByLabelText("Test location")).toHaveTextContent(
+        destination,
+      );
       expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -337,20 +369,26 @@ describe("canonical Item route", () => {
       },
     ]);
 
+    await waitFor(() => expect(backgroundSettlements).toHaveLength(1));
+
     fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
-    settleBackgroundLoad = undefined;
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Delete Item",
       }),
     );
 
-    await waitFor(() => expect(settleBackgroundLoad).toBeDefined());
+    await waitFor(() => expect(backgroundSettlements).toHaveLength(2));
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
       `/items/${itemId}`,
     );
 
-    await act(async () => settleBackgroundLoad?.());
+    await act(async () => backgroundSettlements[0]?.());
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      `/items/${itemId}`,
+    );
+
+    await act(async () => backgroundSettlements[1]?.());
     expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
     expect(screen.getByLabelText("Test location")).toHaveTextContent("/today");
   });
@@ -367,7 +405,9 @@ describe("canonical Item route", () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
-    expect(screen.getByLabelText("Test location")).toHaveTextContent("/library");
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/library",
+    );
   });
 
   it("recovers neutrally at the retained destination when deletion finds no Item", async () => {
@@ -407,7 +447,54 @@ describe("canonical Item route", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That Item is no longer in your Library.",
     );
-    expect(screen.getByLabelText("Test location")).toHaveTextContent("/library");
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/library",
+    );
+  });
+
+  it("sends an unavailable canonical read to Library even with a retained room", async () => {
+    renderItemSurface(
+      [
+        {
+          pathname: `/items/${itemId}`,
+          state: itemDetailRouteState({
+            pathname: "/today",
+            search: "",
+            hash: "",
+          }),
+        },
+      ],
+      undefined,
+      undefined,
+      Promise.reject(new ItemRequestError("not_found")),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That Item is no longer in your Library.",
+    );
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      "/library",
+    );
+  });
+
+  it("does not retain a consumed notice through a later replacement visit", async () => {
+    vi.mocked(deleteItem).mockResolvedValue();
+    renderItemSurface([`/items/${itemId}`]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete Item",
+      }),
+    );
+    expect(await screen.findByText("Item deleted.")).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace destination" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Item deleted.")).not.toBeInTheDocument(),
+    );
   });
 
   it("presents routed detail before the retained room in single-column source order", async () => {

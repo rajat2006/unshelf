@@ -22,7 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemStatusBadge } from "../items/ItemStatusBadge";
-import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import {
   itemDetailRouteState,
   itemLinkBackgroundLocation,
@@ -174,7 +173,6 @@ export function DailyFocusHistorySurface({
           Daily Focus records cannot be edited.
         </p>
       </header>
-      <ItemRecoveryNotice />
 
       <div className="flex min-w-0 flex-col gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:flex-row sm:items-end sm:justify-between">
         <Button asChild variant="secondary">
