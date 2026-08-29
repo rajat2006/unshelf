@@ -63,6 +63,8 @@ export function ItemSidebar({
         fetchLabels(user),
       ]);
       if (generation !== loadGeneration.current) return;
+      // Item availability owns route recovery, so a concurrent Labels failure
+      // must not hide a not-found result from the canonical Item read.
       if (itemResult.status === "rejected") throw itemResult.reason;
       if (labelsResult.status === "rejected") throw labelsResult.reason;
       setItem(itemResult.value);

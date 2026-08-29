@@ -9,6 +9,7 @@ import {
   itemBackgroundSurface,
   itemRecoveryRouteState,
   readItemBackgroundLocation,
+  type ItemRecoveryNoticeKind,
 } from "../items/item-route-state";
 import { LibrarySurface } from "./LibrarySurface";
 import { LearningPlanSurface } from "./LearningPlanSurface";
@@ -73,7 +74,7 @@ export function ItemSurface() {
   }, [backgroundVersion, finishBackgroundReconciliation]);
   const recoveryPath = `${recoveryLocation.pathname}${recoveryLocation.search}${recoveryLocation.hash}`;
   const recoverWorkspace = useCallback(
-    (notice: "deleted" | "unavailable") => {
+    (notice: ItemRecoveryNoticeKind) => {
       void navigate(recoveryPath, {
         replace: true,
         state: itemRecoveryRouteState(notice),
