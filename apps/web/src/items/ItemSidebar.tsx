@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import type { Item, ItemDetail, ItemId, Label } from "@unshelf/shared";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchItem, fetchLabels } from "../api";
+import { fetchItem, fetchLabels, ItemRequestError } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemLabels } from "./ItemLabels";
 import type { ItemPlacementChange } from "./ItemPlacements";
@@ -21,6 +28,8 @@ interface ItemSidebarProps {
   user: CurrentUser;
   itemOverride?: Item;
   onClose: () => void;
+  onDelete: () => Promise<void>;
+  onUnavailable: () => void;
   onItemChanged?: (item: Item) => void;
   onPlacementChanged?: (change: ItemPlacementChange) => void;
 }
@@ -31,12 +40,17 @@ export function ItemSidebar({
   user,
   itemOverride,
   onClose,
+  onDelete,
+  onUnavailable,
   onItemChanged,
   onPlacementChanged,
 }: ItemSidebarProps) {
   const [item, setItem] = useState<ItemDetail | null>(null);
   const [labels, setLabels] = useState<Label[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const loadGeneration = useRef(0);
   const headingId = useId();
 
@@ -51,13 +65,20 @@ export function ItemSidebar({
       if (generation !== loadGeneration.current) return;
       setItem(nextItem);
       setLabels(nextLabels);
-    } catch {
+    } catch (loadError) {
       if (generation !== loadGeneration.current) return;
+      if (
+        loadError instanceof ItemRequestError &&
+        loadError.kind === "not_found"
+      ) {
+        onUnavailable();
+        return;
+      }
       setError(
         "Couldn’t load this Item. The rest of your workspace is still available.",
       );
     }
-  }, [itemId, user]);
+  }, [itemId, onUnavailable, user]);
 
   useEffect(() => {
     setItem(null);
@@ -79,6 +100,18 @@ export function ItemSidebar({
       ? { ...loadedItem, ...itemOverride }
       : loadedItem
     : null;
+
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleteFailed(false);
+    setDeleting(true);
+    try {
+      await onDelete();
+    } catch {
+      setDeleteFailed(true);
+      setDeleting(false);
+    }
+  };
 
   return (
     <aside
@@ -126,6 +159,7 @@ export function ItemSidebar({
               variant="quiet"
               size="icon"
               className="-mt-2 -mr-2 size-11 sm:size-10"
+              disabled={deleting}
               onClick={onClose}
             >
               <X aria-hidden="true" />
@@ -172,6 +206,95 @@ export function ItemSidebar({
             user={user}
             onChanged={onPlacementChanged}
           />
+          <section
+            className="grid justify-items-start gap-3 border-t pt-5"
+            aria-label="Delete Item"
+          >
+            <div>
+              <h3 className="m-0 text-sm font-medium">Delete Item</h3>
+              <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                Permanently remove this Item from your active workspace.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="quiet-destructive"
+              onClick={() => {
+                setDeleteFailed(false);
+                setDeleteOpen(true);
+              }}
+            >
+              <Trash2 aria-hidden="true" />
+              Delete Item
+            </Button>
+          </section>
+          <Dialog
+            open={deleteOpen}
+            onOpenChange={(open) => {
+              if (!deleting) setDeleteOpen(open);
+            }}
+          >
+            <DialogContent
+              showCloseButton={false}
+              overlayProps={{
+                onClick: () => {
+                  if (!deleting) setDeleteOpen(false);
+                },
+              }}
+              className="max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] sm:max-w-lg"
+              onEscapeKeyDown={(event) => {
+                if (deleting) event.preventDefault();
+              }}
+              onPointerDownOutside={(event) => {
+                if (deleting) event.preventDefault();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>Delete “{visibleItem.title}”?</DialogTitle>
+                <DialogDescription>
+                  This permanently removes its Parts, Labels, Today entry, and
+                  Learning Plan placements. Past Daily Focus keeps an unlinked
+                  snapshot. If it came from Discover, it becomes available there
+                  again. This can’t be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon"
+                className="absolute top-2 right-2 size-11 sm:size-10"
+                disabled={deleting}
+                onClick={() => setDeleteOpen(false)}
+              >
+                <X aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </Button>
+              {deleteFailed && (
+                <Alert>
+                  Couldn’t confirm whether this Item was deleted. Try again.
+                </Alert>
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={deleting}
+                  onClick={() => setDeleteOpen(false)}
+                >
+                  Keep Item
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  loading={deleting}
+                  loadingLabel="Deleting…"
+                  onClick={() => void confirmDelete()}
+                >
+                  Delete Item
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </aside>

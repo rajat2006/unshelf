@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MemoryRouter,
@@ -30,44 +33,80 @@ import {
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
 import {
+  deleteItem,
   fetchItem,
   fetchItemPlacements,
   fetchLabels,
+  ItemRequestError,
   removeItemFromStage,
 } from "../api";
+import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { ItemSurface } from "./ItemSurface";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
+  deleteItem: vi.fn(),
   fetchItem: vi.fn(),
   fetchItemPlacements: vi.fn(),
   fetchLabels: vi.fn(),
   removeItemFromStage: vi.fn(),
 }));
 vi.mock("./LibrarySurface", () => ({
-  LibrarySurface: () => <main>Library room</main>,
+  LibrarySurface: backgroundRoom("Library room"),
 }));
 vi.mock("./TodaySurface", () => ({
-  TodaySurface: () => <main>Today room</main>,
+  TodaySurface: backgroundRoom("Today room"),
 }));
 vi.mock("./DailyFocusHistorySurface", () => ({
-  DailyFocusHistorySurface: () => <main>History room</main>,
+  DailyFocusHistorySurface: backgroundRoom("History room"),
 }));
 vi.mock("./LearningPlanSurface", () => ({
   LearningPlanSurface: ({
     onItemRemovedFromPlan,
+    onLoadSettled,
   }: {
     onItemRemovedFromPlan?: (removedItemId: ItemId) => void;
+    onLoadSettled?: () => void;
   }) => (
-    <main>
-      Learning Plan room
+    <BackgroundRoom name="Learning Plan room" onLoadSettled={onLoadSettled}>
       <button type="button" onClick={() => onItemRemovedFromPlan?.(itemId)}>
         Remove open Item from Learning Plan sidebar
       </button>
-    </main>
+    </BackgroundRoom>
   ),
 }));
+
+let settleBackgroundAutomatically = true;
+let settleBackgroundLoad: (() => void) | undefined;
+
+function backgroundRoom(name: string) {
+  return ({ onLoadSettled }: { onLoadSettled?: () => void }) => (
+    <BackgroundRoom name={name} onLoadSettled={onLoadSettled} />
+  );
+}
+
+function BackgroundRoom({
+  name,
+  onLoadSettled,
+  children,
+}: {
+  name: string;
+  onLoadSettled?: () => void;
+  children?: ReactNode;
+}) {
+  useEffect(() => {
+    if (!onLoadSettled) return;
+    if (settleBackgroundAutomatically) onLoadSettled();
+    else settleBackgroundLoad = onLoadSettled;
+  }, [onLoadSettled]);
+  return (
+    <main>
+      {name}
+      {children}
+    </main>
+  );
+}
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const itemId = "00000000-0000-0000-0000-000000000002" as ItemId;
@@ -121,6 +160,25 @@ function HistoryControls() {
   );
 }
 
+function DestinationRoom() {
+  return (
+    <main>
+      Destination room
+      <ItemRecoveryNotice />
+    </main>
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
+    resolve = next;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderItemSurface(
   initialEntries: Parameters<typeof MemoryRouter>[0]["initialEntries"],
   initialIndex?: number,
@@ -128,8 +186,9 @@ function renderItemSurface(
     itemId,
     learningPlans: [],
   },
+  itemRead: Promise<ItemDetail> = Promise.resolve(item),
 ) {
-  vi.mocked(fetchItem).mockResolvedValue(item);
+  vi.mocked(fetchItem).mockReturnValue(itemRead);
   vi.mocked(fetchLabels).mockResolvedValue([]);
   vi.mocked(fetchItemPlacements).mockResolvedValue(placementCatalog);
 
@@ -139,7 +198,7 @@ function renderItemSurface(
         <HistoryControls />
         <Routes>
           <Route path="/items/:itemId" element={<ItemSurface />} />
-          <Route path="*" element={<p>Destination room</p>} />
+          <Route path="*" element={<DestinationRoom />} />
         </Routes>
         <LocationState />
       </MemoryRouter>
@@ -150,9 +209,207 @@ function renderItemSurface(
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  settleBackgroundAutomatically = true;
+  settleBackgroundLoad = undefined;
 });
 
 describe("canonical Item route", () => {
+  it.each(["Keep Item", "Close", "Escape", "outside click"])(
+    "dismisses deletion confirmation with %s before submission",
+    async (dismissal) => {
+      renderItemSurface([`/items/${itemId}`]);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Delete Item" }),
+      );
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveTextContent(item.title);
+      expect(dialog).toHaveTextContent(
+        "This permanently removes its Parts, Labels, Today entry, and Learning Plan placements. Past Daily Focus keeps an unlinked snapshot. If it came from Discover, it becomes available there again. This can’t be undone.",
+      );
+
+      if (dismissal === "Escape") {
+        fireEvent.keyDown(document, { key: "Escape" });
+      } else if (dismissal === "outside click") {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        fireEvent.pointerDown(
+          document.querySelector('[data-slot="dialog-overlay"]')!,
+          {
+          button: 0,
+          ctrlKey: false,
+          pointerType: "mouse",
+          },
+        );
+        fireEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
+      } else {
+        fireEvent.click(within(dialog).getByRole("button", { name: dismissal }));
+      }
+
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(deleteItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it("locks dismissal while pending and restores retry after an uncertain result", async () => {
+    const pending = deferred<void>();
+    vi.mocked(deleteItem)
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce();
+    renderItemSurface([`/items/${itemId}`]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Item" }));
+
+    expect(within(dialog).getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Keep Item" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    pending.reject(new ItemRequestError("temporary"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn’t confirm whether this Item was deleted. Try again.",
+    );
+    expect(within(dialog).getByRole("button", { name: "Keep Item" })).toBeEnabled();
+    expect(fetchItem).toHaveBeenCalledOnce();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Item" }));
+    await waitFor(() => expect(deleteItem).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    ["/library?q=systems&label=architecture", "Library room"],
+    ["/today", "Today room"],
+    ["/today/2026-08-13", "History room"],
+    [`/plans/${planId}`, "Learning Plan room"],
+  ])(
+    "reconciles %s and replacement-navigates with one success notice",
+    async (destination, room) => {
+      vi.mocked(deleteItem).mockResolvedValue();
+      const [pathname, search = ""] = destination.split("?");
+      renderItemSurface(
+        [
+          destination,
+          {
+            pathname: `/items/${itemId}`,
+            state: itemDetailRouteState({
+              pathname,
+              search: search ? `?${search}` : "",
+              hash: "",
+            }),
+          },
+        ],
+        1,
+      );
+
+      expect(await screen.findByText(room)).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Delete Item" }));
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "Delete Item",
+        }),
+      );
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
+      expect(screen.getByLabelText("Test location")).toHaveTextContent(destination);
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      expect(screen.queryByText("Item deleted.")).not.toBeInTheDocument();
+    },
+  );
+
+  it("waits for retained-background reconciliation before replacement navigation", async () => {
+    settleBackgroundAutomatically = false;
+    vi.mocked(deleteItem).mockResolvedValue();
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: "/today",
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
+    settleBackgroundLoad = undefined;
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete Item",
+      }),
+    );
+
+    await waitFor(() => expect(settleBackgroundLoad).toBeDefined());
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      `/items/${itemId}`,
+    );
+
+    await act(async () => settleBackgroundLoad?.());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
+    expect(screen.getByLabelText("Test location")).toHaveTextContent("/today");
+  });
+
+  it("returns a cold Item route to Library after confirmed deletion", async () => {
+    vi.mocked(deleteItem).mockResolvedValue();
+    renderItemSurface([`/items/${itemId}`]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete Item",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
+    expect(screen.getByLabelText("Test location")).toHaveTextContent("/library");
+  });
+
+  it("recovers neutrally at the retained destination when deletion finds no Item", async () => {
+    vi.mocked(deleteItem).mockRejectedValue(new ItemRequestError("not_found"));
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: "/today",
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete Item",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That Item is no longer in your Library.",
+    );
+    expect(screen.getByLabelText("Test location")).toHaveTextContent("/today");
+  });
+
+  it("recovers neutrally when the canonical Item read is unavailable", async () => {
+    renderItemSurface(
+      [`/items/${itemId}`],
+      undefined,
+      undefined,
+      Promise.reject(new ItemRequestError("not_found")),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That Item is no longer in your Library.",
+    );
+    expect(screen.getByLabelText("Test location")).toHaveTextContent("/library");
+  });
+
   it("presents routed detail before the retained room in single-column source order", async () => {
     renderItemSurface([
       {

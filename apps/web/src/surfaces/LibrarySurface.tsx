@@ -19,6 +19,7 @@ import { fetchAll, fetchLabels } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LibraryItems } from "../items/LibraryItems";
 import { ItemLabels } from "../items/ItemLabels";
+import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { ItemSource } from "../items/ItemSource";
 import { ItemStatusSelect } from "../items/ItemStatusSelect";
 import { ItemTargetDate } from "../items/ItemTargetDate";
@@ -57,6 +58,7 @@ interface LibrarySurfaceProps {
   labelFilterSearch?: string;
   /** Item routes use this to leave detail before changing Library filters. */
   onLabelFilterChange?: (searchParams: URLSearchParams) => void;
+  onLoadSettled?: () => void;
 }
 
 export function LibrarySurface({
@@ -65,6 +67,7 @@ export function LibrarySurface({
   labelFilterEnabled = false,
   labelFilterSearch,
   onLabelFilterChange,
+  onLoadSettled,
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
@@ -93,8 +96,10 @@ export function LibrarySurface({
     } catch {
       if (generation !== loadGeneration.current) return;
       setState({ status: "error" });
+    } finally {
+      if (generation === loadGeneration.current) onLoadSettled?.();
     }
-  }, [user]);
+  }, [onLoadSettled, user]);
 
   useEffect(() => {
     void load();
@@ -214,6 +219,7 @@ export function LibrarySurface({
           </p>
         </div>
       </header>
+      <ItemRecoveryNotice />
       {displayedState.status === "loading" && (
         <LibrarySkeleton showFilters={labelFilterEnabled} />
       )}

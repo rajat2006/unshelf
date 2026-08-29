@@ -87,6 +87,22 @@ class ApiResponseError extends Error {
   }
 }
 
+export type ItemRequestFailure = "not_found" | "temporary";
+
+export class ItemRequestError extends Error {
+  constructor(readonly kind: ItemRequestFailure) {
+    super(`Item request failed: ${kind}`);
+  }
+}
+
+function toItemRequestError(error: unknown): ItemRequestError {
+  return new ItemRequestError(
+    error instanceof ApiResponseError && error.status === 404
+      ? "not_found"
+      : "temporary",
+  );
+}
+
 export type DiscoverPreviewFailure =
   "invalid" | "not_found" | "throttled" | "temporary";
 
@@ -221,7 +237,25 @@ export async function fetchItem(
   user: CurrentUser,
   itemId: ItemId,
 ): Promise<ItemDetail> {
-  return requestJson<ItemDetail>(user, `/api/items/${itemId}`);
+  try {
+    return await requestJson<ItemDetail>(user, `/api/items/${itemId}`);
+  } catch (error) {
+    throw toItemRequestError(error);
+  }
+}
+
+/** Permanently end one owned Item through the bodyless, idempotent operation. */
+export async function deleteItem(
+  user: CurrentUser,
+  itemId: ItemId,
+): Promise<void> {
+  try {
+    await authenticatedRequest(user, `/api/items/${itemId}`, {
+      method: "DELETE",
+    });
+  } catch (error) {
+    throw toItemRequestError(error);
+  }
 }
 
 export async function createParts(

@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { addItemToToday, fetchDailyFocusHistory } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { ItemStatusBadge } from "../items/ItemStatusBadge";
+import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import {
   itemDetailRouteState,
   itemLinkBackgroundLocation,
@@ -44,8 +45,10 @@ interface BrowseDateState {
 /** One elapsed Daily Focus: frozen evidence with explicit reconsideration only. */
 export function DailyFocusHistorySurface({
   selectedDate,
+  onLoadSettled,
 }: {
   selectedDate?: string;
+  onLoadSettled?: () => void;
 } = {}) {
   const user = useCurrentUser();
   const { date: routeDate = "" } = useParams();
@@ -80,8 +83,10 @@ export function DailyFocusHistorySurface({
       if (requestId === newestHistoryRequest.current) {
         setState({ status: "error" });
       }
+    } finally {
+      if (requestId === newestHistoryRequest.current) onLoadSettled?.();
     }
-  }, [date, user]);
+  }, [date, onLoadSettled, user]);
 
   const stageBrowseDate = useCallback(
     (nextDate: string | null) => {
@@ -169,6 +174,7 @@ export function DailyFocusHistorySurface({
           Daily Focus records cannot be edited.
         </p>
       </header>
+      <ItemRecoveryNotice />
 
       <div className="flex min-w-0 flex-col gap-4 rounded-[var(--radius-panel)] border bg-quiet-panel p-4 sm:flex-row sm:items-end sm:justify-between">
         <Button asChild variant="secondary">

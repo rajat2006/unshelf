@@ -93,6 +93,8 @@ function renderSidebar() {
         itemId={itemId}
         user={user}
         onClose={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        onUnavailable={vi.fn()}
         onItemChanged={vi.fn()}
       />
     </MemoryRouter>,
@@ -204,6 +206,8 @@ describe("canonical Item detail panel", () => {
           itemId={secondItemId}
           user={user}
           onClose={vi.fn()}
+          onDelete={vi.fn().mockResolvedValue(undefined)}
+          onUnavailable={vi.fn()}
           onItemChanged={vi.fn()}
         />
       </MemoryRouter>,

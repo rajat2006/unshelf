@@ -13,6 +13,29 @@ export type ItemBackgroundSurface =
   | { kind: "plan"; learningPlanId: LearningPlanId }
   | { kind: "unknown" };
 
+export type ItemRecoveryNoticeKind = "deleted" | "unavailable";
+
+export function itemRecoveryRouteState(
+  kind: ItemRecoveryNoticeKind,
+): { itemRecoveryNotice: ItemRecoveryNoticeKind } {
+  return { itemRecoveryNotice: kind };
+}
+
+export function readItemRecoveryNotice(
+  state: unknown,
+): ItemRecoveryNoticeKind | null {
+  if (typeof state !== "object" || state === null) return null;
+  const notice = (state as { itemRecoveryNotice?: unknown }).itemRecoveryNotice;
+  return notice === "deleted" || notice === "unavailable" ? notice : null;
+}
+
+export function consumeItemRecoveryNoticeState(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return null;
+  const remaining = { ...(state as Record<string, unknown>) };
+  delete remaining.itemRecoveryNotice;
+  return Object.keys(remaining).length > 0 ? remaining : null;
+}
+
 export function planItemBackgroundLocation({
   learningPlanId,
   stageId,

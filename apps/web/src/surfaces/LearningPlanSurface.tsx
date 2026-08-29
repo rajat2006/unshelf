@@ -32,6 +32,7 @@ import {
 } from "../api";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
 import { LearningPlanItems } from "../learning-plan/LearningPlanItems";
+import { ItemRecoveryNotice } from "../items/ItemRecoveryNotice";
 import { PlanLibraryDrawer } from "../learning-plan/PlanLibraryDrawer";
 import { PlanTodaySidecar } from "../learning-plan/PlanTodaySidecar";
 import { usePhoneViewport } from "../learning-plan/usePhoneViewport";
@@ -40,12 +41,14 @@ import { completionPercentage } from "../presentation/progress";
 interface LearningPlanSurfaceProps {
   learningPlanId?: LearningPlanId;
   onItemRemovedFromPlan?: (itemId: ItemId) => void;
+  onLoadSettled?: () => void;
 }
 
 /** The routed Library–Items–Today workspace for one durable Learning Plan. */
 export function LearningPlanSurface({
   learningPlanId: selectedLearningPlanId,
   onItemRemovedFromPlan,
+  onLoadSettled,
 }: LearningPlanSurfaceProps = {}) {
   const params = useParams();
   const learningPlanId = selectedLearningPlanId ?? params.learningPlanId;
@@ -67,7 +70,10 @@ export function LearningPlanSurface({
   const readOnly = phoneReadOnly || archived;
 
   const refresh = useCallback(async () => {
-    if (!learningPlanId) return;
+    if (!learningPlanId) {
+      onLoadSettled?.();
+      return;
+    }
     setLoadError(false);
     try {
       const [nextRecord, nextTopology] = await Promise.all([
@@ -79,8 +85,10 @@ export function LearningPlanSurface({
       setLearningPlan(nextTopology);
     } catch {
       setLoadError(true);
+    } finally {
+      onLoadSettled?.();
     }
-  }, [user, learningPlanId]);
+  }, [learningPlanId, onLoadSettled, user]);
 
   useEffect(() => {
     setLearningPlan(null);
@@ -267,6 +275,7 @@ export function LearningPlanSurface({
             </div>
           )}
         </header>
+        <ItemRecoveryNotice />
 
         {loadError && (
           <div className="grid min-h-80 place-content-center justify-items-start gap-4 p-6">
