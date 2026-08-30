@@ -129,7 +129,7 @@ describe("Library room", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("link", { name: "Distributed systems handbook" }),
+        screen.getByRole("button", { name: "Distributed systems handbook" }),
       ).toBeVisible(),
     );
     expect(fetchAll).toHaveBeenCalledTimes(2);
@@ -162,14 +162,17 @@ describe("Library room", () => {
     expect(
       screen.getByRole("searchbox", { name: "Search Library" }),
     ).toHaveValue("systems");
-    const itemLink = screen.getByRole("link", {
+    const itemName = screen.getByRole("button", {
       name: "Distributed systems handbook",
     });
-    expect(itemLink).toHaveAttribute(
+    const editDetails = screen.getByRole("link", {
+      name: "Edit Distributed systems handbook",
+    });
+    expect(editDetails).toHaveAttribute(
       "href",
       "/items/00000000-0000-0000-0000-000000000003",
     );
-    const itemPresentation = within(itemLink.closest("article")!);
+    const itemPresentation = within(itemName.closest("article")!);
     expect(itemPresentation.getByText("Book")).toBeVisible();
     expect(itemPresentation.getByText("Systems")).toBeVisible();
     expect(itemPresentation.getByText("In progress")).toBeVisible();
@@ -187,12 +190,42 @@ describe("Library room", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Variant D/)).not.toBeInTheDocument();
 
-    fireEvent.click(itemLink);
-    expect(screen.getByLabelText("Test location")).toHaveTextContent(
-      '"pathname":"/items/00000000-0000-0000-0000-000000000003"',
-    );
+    fireEvent.click(itemName);
     expect(screen.getByLabelText("Test location")).toHaveTextContent(
       '"pathname":"/library","search":"?q=systems"',
+    );
+  });
+
+  it("previews an Item from its name and opens full details from Edit details", async () => {
+    const otherItem = {
+      ...item,
+      id: "00000000-0000-0000-0000-000000000004" as ItemId,
+      title: "Reliable distributed systems",
+    };
+    vi.mocked(fetchAll).mockResolvedValue([item, otherItem]);
+    vi.mocked(fetchLabels).mockResolvedValue([label]);
+
+    renderLibrary();
+
+    const itemName = await screen.findByText("Reliable distributed systems");
+    const itemPresentation = within(itemName.closest("article")!);
+    expect(itemName).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(itemName);
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      '"pathname":"/library"',
+    );
+    expect(
+      screen.getByRole("complementary", {
+        name: "Edit Reliable distributed systems",
+      }),
+    ).toBeVisible();
+    expect(itemName).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(itemPresentation.getByText("Edit details"));
+
+    expect(screen.getByLabelText("Test location")).toHaveTextContent(
+      '"pathname":"/items/00000000-0000-0000-0000-000000000004"',
     );
   });
 
@@ -219,21 +252,21 @@ describe("Library room", () => {
       ),
     );
     expect(
-      screen.getByRole("link", { name: "Distributed systems handbook" }),
+      screen.getByRole("button", { name: "Distributed systems handbook" }),
     ).toBeVisible();
     expect(
-      screen.queryByRole("link", { name: "Unlabelled course" }),
+      screen.queryByRole("button", { name: "Unlabelled course" }),
     ).not.toBeInTheDocument();
   });
 
-  it("uses Library as the context for another Item opened from a cold detail URL", async () => {
+  it("uses Library as the context for details opened from a cold Item URL", async () => {
     vi.mocked(fetchAll).mockResolvedValue([item]);
     vi.mocked(fetchLabels).mockResolvedValue([label]);
     renderLibrary("/items/00000000-0000-0000-0000-000000000099", false);
 
     fireEvent.click(
       await screen.findByRole("link", {
-        name: "Distributed systems handbook",
+        name: "Edit Distributed systems handbook",
       }),
     );
 
