@@ -86,7 +86,7 @@ _Avoid_: Kind, Category, Format
 **Structured Item**:
 An Item that currently owns a non-empty, flat, ordered list of Parts, not a
 separate kind of Item. Structure is optional for every Type and is a User-owned
-snapshot entered and edited manually.
+snapshot confirmed and edited by the User, whether entered manually or suggested.
 _Avoid_: Structured Type, Container Item
 
 **Part**:
