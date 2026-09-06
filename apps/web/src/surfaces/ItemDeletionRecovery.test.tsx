@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,7 +19,13 @@ import {
   it,
   vi,
 } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import {
   PlanNodeKind,
   Status,
@@ -31,6 +38,7 @@ import {
   type Item,
   type ItemDetail,
   type ItemId,
+  type LabelId,
   type LearningPlan,
   type LearningPlanId,
   type LearningPlanView,
@@ -82,6 +90,11 @@ const planId = "00000000-0000-0000-0000-000000000003" as LearningPlanId;
 const focusId = "00000000-0000-0000-0000-000000000004" as DailyFocusId;
 const directNodeId = "00000000-0000-0000-0000-000000000005" as DirectItemNodeId;
 const date = "2026-08-13";
+const label = {
+  id: "00000000-0000-0000-0000-000000000006" as LabelId,
+  userId,
+  name: "Architecture",
+};
 const item: Item = {
   id: itemId,
   userId,
@@ -94,7 +107,7 @@ const item: Item = {
   targetDate: null,
   pastTarget: false,
   completedAt: null,
-  labels: [],
+  labels: [label],
   partPercentage: null,
 };
 const itemDetail: ItemDetail = { ...item, parts: [] };
@@ -143,8 +156,27 @@ const auth: ApplicationAuth = {
 };
 let itemDeleted = false;
 
-function routeState(pathname: string) {
-  return itemDetailRouteState({ pathname, search: "", hash: "" });
+function routeState(destination: string) {
+  const [pathname, query] = destination.split("?");
+  return itemDetailRouteState({
+    pathname,
+    search: query ? `?${query}` : "",
+    hash: "",
+  });
+}
+
+function NavigationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="Location">
+        {location.pathname}
+        {location.search}
+      </output>
+      <button onClick={() => void navigate(-1)}>Back</button>
+    </>
+  );
 }
 
 function renderRecovery(destination: string) {
@@ -158,6 +190,7 @@ function renderRecovery(destination: string) {
         initialIndex={1}
       >
         <CaptureProvider>
+          <NavigationProbe />
           <ItemRecoveryNotice />
           <Routes>
             <Route path="/items/:itemId" element={<ItemSurface />} />
@@ -203,7 +236,7 @@ beforeEach(() => {
     itemId,
     learningPlans: [],
   });
-  vi.mocked(fetchLabels).mockResolvedValue([]);
+  vi.mocked(fetchLabels).mockResolvedValue([label]);
   vi.mocked(fetchAll).mockImplementation(async () =>
     itemDeleted ? [] : [item],
   );
@@ -237,16 +270,20 @@ afterEach(() => {
 
 describe("routed Item deletion recovery", () => {
   it("reloads the real Library without the deleted Item", async () => {
-    renderRecovery("/library");
+    const destination = `/library?q=Distributed&label=${label.id}`;
+    renderRecovery(destination);
     expect(await screen.findByRole("link", { name: item.title })).toBeVisible();
 
     await deleteOpenItem();
 
     expect(await screen.findByText("Nothing captured yet")).toBeVisible();
+    expect(screen.getByLabelText("Location")).toHaveTextContent(destination);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(screen.queryByText("Item deleted.")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: item.title }),
     ).not.toBeInTheDocument();
-    expect(fetchAll).toHaveBeenCalledTimes(3);
   });
 
   it("reloads the real Today room without the deleted Item", async () => {
@@ -260,7 +297,6 @@ describe("routed Item deletion recovery", () => {
         screen.queryByRole("link", { name: item.title }),
       ).not.toBeInTheDocument(),
     );
-    expect(vi.mocked(fetchToday).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("reloads real Daily Focus history as an inert deleted snapshot", async () => {
@@ -274,7 +310,6 @@ describe("routed Item deletion recovery", () => {
     expect(presentation.getByText("Item deleted")).toBeVisible();
     expect(presentation.queryByRole("link")).not.toBeInTheDocument();
     expect(presentation.queryByRole("button")).not.toBeInTheDocument();
-    expect(fetchDailyFocusHistory).toHaveBeenCalledTimes(3);
   });
 
   it("reloads the real Learning Plan without its direct placement", async () => {
@@ -293,6 +328,29 @@ describe("routed Item deletion recovery", () => {
     expect(
       screen.queryByRole("link", { name: item.title }),
     ).not.toBeInTheDocument();
-    expect(fetchLearningPlan).toHaveBeenCalledTimes(3);
+  });
+  it("returns to the destination while its read is pending and recovers from a load failure", async () => {
+    let rejectRead!: (error: Error) => void;
+    const pending = new Promise<Item[]>((_resolve, reject) => {
+      rejectRead = reject;
+    });
+    vi.mocked(fetchAll).mockImplementation(async () =>
+      itemDeleted ? pending : [item],
+    );
+    renderRecovery("/library");
+    expect(await screen.findByRole("link", { name: item.title })).toBeVisible();
+
+    await deleteOpenItem();
+
+    expect(screen.getByLabelText("Location")).toHaveTextContent("/library");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: item.title }),
+    ).not.toBeInTheDocument();
+    await act(async () => rejectRead(new Error("Library unavailable")));
+    expect(screen.getByText("Item deleted.")).toBeVisible();
+    vi.mocked(fetchAll).mockResolvedValue([]);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Nothing captured yet")).toBeVisible();
   });
 });

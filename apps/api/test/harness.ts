@@ -73,7 +73,6 @@ export async function seedItemTombstone(
 
 export interface TestApp {
   app: Express;
-  db: Database;
   pool: Pool;
   logger: CollectingLogger;
   runDiscoverAcquisitionTick: DiscoverAcquisitionTick;
@@ -270,7 +269,6 @@ function runningTestApp({
 
   return {
     app,
-    db,
     pool: db.$client,
     logger,
     runDiscoverAcquisitionTick: discoverModule.runScheduledAcquisitionTick,

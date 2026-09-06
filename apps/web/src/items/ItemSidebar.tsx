@@ -240,11 +240,6 @@ export function ItemSidebar({
           >
             <DialogContent
               showCloseButton={false}
-              overlayProps={{
-                onClick: () => {
-                  if (!deleting) setDeleteOpen(false);
-                },
-              }}
               className="max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] sm:max-w-lg"
               onEscapeKeyDown={(event) => {
                 if (deleting) event.preventDefault();

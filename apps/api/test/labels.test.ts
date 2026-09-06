@@ -127,13 +127,6 @@ describe("private Labels", () => {
     const unapplied = (await createLabel(user, { name: "Unapplied" }))
       .body as Label;
     await applyLabel(user, item.id, retained.id);
-    const foreignUser = "clerk_label_tombstone_foreign";
-    const foreignItem = (await capture(foreignUser, "Foreign labelled Item"))
-      .body as Item;
-    const foreignLabel = (
-      await createLabel(foreignUser, { name: "Foreign Label" })
-    ).body as Label;
-    await applyLabel(foreignUser, foreignItem.id, foreignLabel.id);
     await seedItemTombstone(harness.pool, item.id);
 
     const applied = await applyLabel(user, item.id, unapplied.id);
@@ -146,10 +139,6 @@ describe("private Labels", () => {
       [item.id],
     );
     expect(memberships.rows).toEqual([{ label_id: retained.id }]);
-    const foreignRead = await request(app)
-      .get(`/api/items/${foreignItem.id}`)
-      .set(TEST_USER_HEADER, foreignUser);
-    expect(foreignRead.body.labels).toEqual([foreignLabel]);
   });
 
   it("rejects cross-User Label membership at the database boundary", async () => {

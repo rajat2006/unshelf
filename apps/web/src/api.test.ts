@@ -12,7 +12,9 @@ afterEach(() => {
 
 describe("Item client", () => {
   it("deletes an Item with a bodyless request and returns no value", async () => {
-    const request = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const request = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", request);
 
     await expect(deleteItem(user, itemId)).resolves.toBeUndefined();
@@ -22,9 +24,7 @@ describe("Item client", () => {
         method: "DELETE",
       }),
     );
-    expect(
-      (request.mock.calls[0]?.[1] as RequestInit).headers,
-    ).toHaveProperty("get");
+    expect(request.mock.calls[0]?.[1]).not.toHaveProperty("body");
     expect(
       ((request.mock.calls[0]?.[1] as RequestInit).headers as Headers).get(
         "Authorization",
@@ -40,7 +40,8 @@ describe("Item client", () => {
         vi
           .fn()
           .mockResolvedValueOnce(new Response(null, { status: 404 }))
-          .mockRejectedValueOnce(new TypeError("network interrupted")),
+          .mockRejectedValueOnce(new TypeError("network interrupted"))
+          .mockResolvedValueOnce(new Response(null, { status: 500 })),
       );
 
       await expect(requestItem(user, itemId)).rejects.toMatchObject({
@@ -49,6 +50,9 @@ describe("Item client", () => {
       await expect(requestItem(user, itemId)).rejects.toMatchObject({
         kind: "temporary",
       } satisfies Partial<ItemRequestError>);
+      await expect(requestItem(user, itemId)).rejects.toMatchObject({
+        kind: "temporary",
+      });
     },
   );
 });

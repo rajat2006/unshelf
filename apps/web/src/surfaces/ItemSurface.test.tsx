@@ -10,7 +10,6 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MemoryRouter,
@@ -53,60 +52,28 @@ vi.mock("../api", async (importOriginal) => ({
   removeItemFromStage: vi.fn(),
 }));
 vi.mock("./LibrarySurface", () => ({
-  LibrarySurface: backgroundRoom("Library room"),
+  LibrarySurface: () => <main>Library room</main>,
 }));
 vi.mock("./TodaySurface", () => ({
-  TodaySurface: backgroundRoom("Today room"),
+  TodaySurface: () => <main>Today room</main>,
 }));
 vi.mock("./DailyFocusHistorySurface", () => ({
-  DailyFocusHistorySurface: backgroundRoom("History room"),
+  DailyFocusHistorySurface: () => <main>History room</main>,
 }));
 vi.mock("./LearningPlanSurface", () => ({
   LearningPlanSurface: ({
     onItemRemovedFromPlan,
-    onLoadSettled,
   }: {
     onItemRemovedFromPlan?: (removedItemId: ItemId) => void;
-    onLoadSettled?: () => void;
   }) => (
-    <BackgroundRoom name="Learning Plan room" onLoadSettled={onLoadSettled}>
+    <main>
+      Learning Plan room
       <button type="button" onClick={() => onItemRemovedFromPlan?.(itemId)}>
         Remove open Item from Learning Plan sidebar
       </button>
-    </BackgroundRoom>
+    </main>
   ),
 }));
-
-let settleBackgroundAutomatically = true;
-let backgroundSettlements: Array<() => void> = [];
-
-function backgroundRoom(name: string) {
-  return ({ onLoadSettled }: { onLoadSettled?: () => void }) => (
-    <BackgroundRoom name={name} onLoadSettled={onLoadSettled} />
-  );
-}
-
-function BackgroundRoom({
-  name,
-  onLoadSettled,
-  children,
-}: {
-  name: string;
-  onLoadSettled?: () => void;
-  children?: ReactNode;
-}) {
-  useEffect(() => {
-    if (!onLoadSettled) return;
-    backgroundSettlements.push(onLoadSettled);
-    if (settleBackgroundAutomatically) onLoadSettled();
-  }, [onLoadSettled]);
-  return (
-    <main>
-      {name}
-      {children}
-    </main>
-  );
-}
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const itemId = "00000000-0000-0000-0000-000000000002" as ItemId;
@@ -222,8 +189,6 @@ function renderItemSurface(
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  settleBackgroundAutomatically = true;
-  backgroundSettlements = [];
 });
 
 describe("canonical Item route", () => {
@@ -316,90 +281,6 @@ describe("canonical Item route", () => {
       within(dialog).getByRole("button", { name: "Delete Item" }),
     );
     await waitFor(() => expect(deleteItem).toHaveBeenCalledTimes(2));
-  });
-
-  it.each([
-    ["/library?q=systems&label=architecture", "Library room"],
-    ["/today", "Today room"],
-    ["/today/2026-08-13", "History room"],
-    [`/plans/${planId}`, "Learning Plan room"],
-  ])(
-    "reconciles %s and replacement-navigates with one success notice",
-    async (destination, room) => {
-      vi.mocked(deleteItem).mockResolvedValue();
-      const [pathname, search = ""] = destination.split("?");
-      renderItemSurface(
-        [
-          destination,
-          {
-            pathname: `/items/${itemId}`,
-            state: itemDetailRouteState({
-              pathname,
-              search: search ? `?${search}` : "",
-              hash: "",
-            }),
-          },
-        ],
-        1,
-      );
-
-      expect(await screen.findByText(room)).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "Delete Item" }));
-      fireEvent.click(
-        within(screen.getByRole("dialog")).getByRole("button", {
-          name: "Delete Item",
-        }),
-      );
-
-      expect(await screen.findByRole("alert")).toHaveTextContent(
-        "Item deleted.",
-      );
-      expect(screen.getByLabelText("Test location")).toHaveTextContent(
-        destination,
-      );
-      expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole("button", { name: "Back" }));
-      expect(screen.queryByText("Item deleted.")).not.toBeInTheDocument();
-    },
-  );
-
-  it("waits for retained-background reconciliation before replacement navigation", async () => {
-    settleBackgroundAutomatically = false;
-    vi.mocked(deleteItem).mockResolvedValue();
-    renderItemSurface([
-      {
-        pathname: `/items/${itemId}`,
-        state: itemDetailRouteState({
-          pathname: "/today",
-          search: "",
-          hash: "",
-        }),
-      },
-    ]);
-
-    await waitFor(() => expect(backgroundSettlements).toHaveLength(1));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Item" }));
-    fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Delete Item",
-      }),
-    );
-
-    await waitFor(() => expect(backgroundSettlements).toHaveLength(2));
-    expect(screen.getByLabelText("Test location")).toHaveTextContent(
-      `/items/${itemId}`,
-    );
-
-    await act(async () => backgroundSettlements[0]?.());
-    expect(screen.getByLabelText("Test location")).toHaveTextContent(
-      `/items/${itemId}`,
-    );
-
-    await act(async () => backgroundSettlements[1]?.());
-    expect(await screen.findByRole("alert")).toHaveTextContent("Item deleted.");
-    expect(screen.getByLabelText("Test location")).toHaveTextContent("/today");
   });
 
   it("returns a cold Item route to Library after confirmed deletion", async () => {

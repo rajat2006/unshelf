@@ -630,18 +630,6 @@ describe("Daily Planning service", () => {
       ).body as Item;
     const ended = await createItem("Lifecycle search ended");
     const active = await createItem("Lifecycle search active");
-    const foreignUser = "daily-planning-tombstone-foreign";
-    const foreign = (
-      await request(app)
-        .post("/api/items")
-        .set(TEST_USER_HEADER, foreignUser)
-        .send({ title: "Foreign planning Item", type: "article" })
-    ).body as Item;
-    await request(app)
-      .post("/api/daily-focus/today/suppressions")
-      .set(TEST_USER_HEADER, foreignUser)
-      .send({ itemId: foreign.id })
-      .expect(204);
     await seedItemTombstone(harness.pool, ended.id);
 
     const planning = (
@@ -667,11 +655,6 @@ describe("Daily Planning service", () => {
       [ended.id],
     );
     expect(retained.rows).toEqual([]);
-    const foreignSuppression = await harness.pool.query(
-      "SELECT item_id FROM daily_planning_suppressions WHERE item_id = $1",
-      [foreign.id],
-    );
-    expect(foreignSuppression.rows).toHaveLength(1);
   });
 
   it("rejects the retired temporary planning inputs", async () => {

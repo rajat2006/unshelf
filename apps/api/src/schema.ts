@@ -238,8 +238,8 @@ export const discoverCandidates = pgTable(
 
 /**
  * The Item spine (ADR-0003): one table for every Type, scoped to a User. All is
- * not a table — it is the query "every item where user_id = me", so this is the
- * only table capture and All need. `type` and `status` are text with CHECK
+ * not a table — it lists owned rows whose deleted_at is null. Retained tombstones
+ * must be excluded through activeItem() in ordinary reads and mutations. `type` and `status` are text with CHECK
  * constraints mirroring the shared ITEM_TYPES / ITEM_STATUSES enums (enum values
  * are cheap to revise, ADR-0003). `source`, `target_date` and `completed_at` are
  * all nullable: a link, a soft "by when", and a banked completion are each

@@ -79,9 +79,7 @@ function mergeConfirmedAdd({
 }
 
 /** The current editable Daily Focus and its explicit Library selection seam. */
-export function TodaySurface({
-  onLoadSettled,
-}: { onLoadSettled?: () => void } = {}) {
+export function TodaySurface() {
   const user = useCurrentUser();
   const location = useLocation();
   const [state, setState] = useState<TodayState>({ status: "loading" });
@@ -187,7 +185,6 @@ export function TodaySurface({
         status: "focus-error",
         planning: loadedPlanning,
       });
-      onLoadSettled?.();
       return;
     }
     setState({
@@ -195,8 +192,7 @@ export function TodaySurface({
       focus: focus.value,
       planning: loadedPlanning,
     });
-    onLoadSettled?.();
-  }, [onLoadSettled, user]);
+  }, [user]);
 
   useEffect(() => {
     void load();

@@ -57,7 +57,6 @@ interface LibrarySurfaceProps {
   labelFilterSearch?: string;
   /** Item routes use this to leave detail before changing Library filters. */
   onLabelFilterChange?: (searchParams: URLSearchParams) => void;
-  onLoadSettled?: () => void;
 }
 
 export function LibrarySurface({
@@ -66,7 +65,6 @@ export function LibrarySurface({
   labelFilterEnabled = false,
   labelFilterSearch,
   onLabelFilterChange,
-  onLoadSettled,
 }: LibrarySurfaceProps = {}) {
   const user = useCurrentUser();
   const capture = useCapture();
@@ -95,10 +93,8 @@ export function LibrarySurface({
     } catch {
       if (generation !== loadGeneration.current) return;
       setState({ status: "error" });
-    } finally {
-      if (generation === loadGeneration.current) onLoadSettled?.();
     }
-  }, [onLoadSettled, user]);
+  }, [user]);
 
   useEffect(() => {
     void load();

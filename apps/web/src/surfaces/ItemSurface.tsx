@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type { Item, ItemId } from "@unshelf/shared";
 import { useCurrentUser } from "../application-auth/useCurrentUser";
@@ -29,12 +29,6 @@ export function ItemSurface() {
   const user = useCurrentUser();
   const [changedItems, setChangedItems] = useState<Record<string, Item>>({});
   const [placementVersion, setPlacementVersion] = useState(0);
-  const [backgroundVersion, setBackgroundVersion] = useState(0);
-  const nextBackgroundVersion = useRef(0);
-  const reconciliationResolver = useRef<{
-    version: number;
-    resolve: () => void;
-  } | null>(null);
   const recordItemChange = useCallback((changed: Item) => {
     setChangedItems((current) => ({ ...current, [changed.id]: changed }));
   }, []);
@@ -58,20 +52,6 @@ export function ItemSurface() {
         : "/library",
     );
   };
-  const finishBackgroundReconciliation = useCallback((version: number) => {
-    if (reconciliationResolver.current?.version !== version) return;
-    reconciliationResolver.current.resolve();
-    reconciliationResolver.current = null;
-  }, []);
-  const reconcileBackground = () =>
-    new Promise<void>((resolve) => {
-      const version = ++nextBackgroundVersion.current;
-      reconciliationResolver.current = { version, resolve };
-      setBackgroundVersion(version);
-    });
-  const finishCurrentBackgroundLoad = useCallback(() => {
-    finishBackgroundReconciliation(backgroundVersion);
-  }, [backgroundVersion, finishBackgroundReconciliation]);
   const recoveryPath = `${recoveryLocation.pathname}${recoveryLocation.search}${recoveryLocation.hash}`;
   const recoverWorkspace = useCallback(
     (notice: ItemRecoveryNoticeKind) => {
@@ -91,13 +71,11 @@ export function ItemSurface() {
         deleteError instanceof ItemRequestError &&
         deleteError.kind === "not_found"
       ) {
-        await reconcileBackground();
         recoverWorkspace("unavailable");
         return;
       }
       throw deleteError;
     }
-    await reconcileBackground();
     recoverWorkspace("deleted");
   };
   const recoverUnavailableItem = useCallback(() => {
@@ -137,31 +115,22 @@ export function ItemSurface() {
       {backgroundLocation ? (
         backgroundSurface.kind === "plan" ? (
           <LearningPlanSurface
-            key={`${backgroundVersion}:${
+            key={`${
               changedItem
                 ? `${changedItem.id}:${changedItem.status}`
                 : "learningPlan"
             }:${placementVersion}`}
             learningPlanId={backgroundSurface.learningPlanId}
-            onLoadSettled={finishCurrentBackgroundLoad}
             onItemRemovedFromPlan={(removedItemId) => {
               if (removedItemId === itemId) closeDetails();
             }}
           />
         ) : backgroundSurface.kind === "today" ? (
-          <TodaySurface
-            key={backgroundVersion}
-            onLoadSettled={finishCurrentBackgroundLoad}
-          />
+          <TodaySurface />
         ) : backgroundSurface.kind === "history" ? (
-          <DailyFocusHistorySurface
-            key={backgroundVersion}
-            selectedDate={backgroundSurface.date}
-            onLoadSettled={finishCurrentBackgroundLoad}
-          />
+          <DailyFocusHistorySurface selectedDate={backgroundSurface.date} />
         ) : (
           <LibrarySurface
-            key={backgroundVersion}
             itemOverrides={itemOverrides}
             onItemChanged={recordItemChange}
             labelFilterEnabled={backgroundSurface.kind === "library"}
@@ -172,15 +141,12 @@ export function ItemSurface() {
                 search: next.size > 0 ? `?${next.toString()}` : "",
               });
             }}
-            onLoadSettled={finishCurrentBackgroundLoad}
           />
         )
       ) : (
         <LibrarySurface
-          key={backgroundVersion}
           itemOverrides={itemOverrides}
           onItemChanged={recordItemChange}
-          onLoadSettled={finishCurrentBackgroundLoad}
         />
       )}
     </div>

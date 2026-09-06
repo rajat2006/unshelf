@@ -44,10 +44,8 @@ interface BrowseDateState {
 /** One elapsed Daily Focus: frozen evidence with explicit reconsideration only. */
 export function DailyFocusHistorySurface({
   selectedDate,
-  onLoadSettled,
 }: {
   selectedDate?: string;
-  onLoadSettled?: () => void;
 } = {}) {
   const user = useCurrentUser();
   const { date: routeDate = "" } = useParams();
@@ -82,10 +80,8 @@ export function DailyFocusHistorySurface({
       if (requestId === newestHistoryRequest.current) {
         setState({ status: "error" });
       }
-    } finally {
-      if (requestId === newestHistoryRequest.current) onLoadSettled?.();
     }
-  }, [date, onLoadSettled, user]);
+  }, [date, user]);
 
   const stageBrowseDate = useCallback(
     (nextDate: string | null) => {

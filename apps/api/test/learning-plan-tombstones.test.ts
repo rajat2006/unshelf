@@ -25,11 +25,6 @@ const asUser = (user: string) => ({
     request(app).post(path).set(TEST_USER_HEADER, user).send(body),
 });
 
-const seedActive = (itemId: string) =>
-  harness.pool.query("UPDATE items SET deleted_at = NULL WHERE id = $1", [
-    itemId,
-  ]);
-
 beforeAll(async () => {
   harness = await startTestApp();
   app = harness.app;
@@ -295,24 +290,31 @@ describe("Learning Plan tombstone eligibility", () => {
     expect(reorder.status).toBe(409);
     expect(removeStaged.status).toBe(200);
 
-    await seedActive(stagedTombstone.id);
-    await seedActive(directTombstone.id);
-    const stageAfter = await api.get(`/api/stages/${stage.id}`);
-    const topologyAfter = await api.get(
-      `/api/learning-plans/${plan.id}/topology`,
+    const placements = await harness.pool.query(
+      "SELECT item_id, stage_id, node_id FROM learning_plan_item_placements WHERE learning_plan_id = $1",
+      [plan.id],
     );
-    expect(
-      (stageAfter.body as { items: Item[] }).items.map(({ id }) => id),
-    ).toEqual([active.id, stagedTombstone.id]);
-    expect(topologyAfter.body.nodes).toContainEqual(
-      expect.objectContaining({ id: directNodeId }),
+    expect(placements.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ item_id: active.id, stage_id: stage.id }),
+        expect.objectContaining({
+          item_id: stagedTombstone.id,
+          stage_id: stage.id,
+        }),
+        expect.objectContaining({
+          item_id: directTombstone.id,
+          node_id: directNodeId,
+        }),
+      ]),
     );
-    expect(topologyAfter.body.edges).toContainEqual(
-      expect.objectContaining({
-        fromNodeId: stage.id,
-        toNodeId: directNodeId,
-      }),
+    const edges = await harness.pool.query(
+      "SELECT from_node_id, to_node_id FROM learning_plan_edges WHERE learning_plan_id = $1",
+      [plan.id],
     );
+    expect(edges.rows).toContainEqual({
+      from_node_id: stage.id,
+      to_node_id: directNodeId,
+    });
   });
 
   it("does not turn a tombstone into a direct node when its Stage is removed", async () => {
@@ -349,13 +351,10 @@ describe("Learning Plan tombstone eligibility", () => {
       ),
     ).toEqual([active.id]);
 
-    await seedActive(tombstone.id);
-    const refreshed = (await api.get(`/api/learning-plans/${plan.id}/topology`))
-      .body as LearningPlanView;
-    expect(
-      refreshed.nodes.map((node) =>
-        node.kind === PlanNodeKind.Item ? node.item.id : node.id,
-      ),
-    ).toEqual([active.id]);
+    const placements = await harness.pool.query(
+      "SELECT item_id FROM learning_plan_item_placements WHERE learning_plan_id = $1",
+      [plan.id],
+    );
+    expect(placements.rows).toEqual([{ item_id: active.id }]);
   });
 });

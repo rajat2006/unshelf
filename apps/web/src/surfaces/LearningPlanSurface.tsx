@@ -40,14 +40,12 @@ import { completionPercentage } from "../presentation/progress";
 interface LearningPlanSurfaceProps {
   learningPlanId?: LearningPlanId;
   onItemRemovedFromPlan?: (itemId: ItemId) => void;
-  onLoadSettled?: () => void;
 }
 
 /** The routed Library–Items–Today workspace for one durable Learning Plan. */
 export function LearningPlanSurface({
   learningPlanId: selectedLearningPlanId,
   onItemRemovedFromPlan,
-  onLoadSettled,
 }: LearningPlanSurfaceProps = {}) {
   const params = useParams();
   const learningPlanId = selectedLearningPlanId ?? params.learningPlanId;
@@ -69,10 +67,7 @@ export function LearningPlanSurface({
   const readOnly = phoneReadOnly || archived;
 
   const refresh = useCallback(async () => {
-    if (!learningPlanId) {
-      onLoadSettled?.();
-      return;
-    }
+    if (!learningPlanId) return;
     setLoadError(false);
     try {
       const [nextRecord, nextTopology] = await Promise.all([
@@ -84,10 +79,8 @@ export function LearningPlanSurface({
       setLearningPlan(nextTopology);
     } catch {
       setLoadError(true);
-    } finally {
-      onLoadSettled?.();
     }
-  }, [learningPlanId, onLoadSettled, user]);
+  }, [learningPlanId, user]);
 
   useEffect(() => {
     setLearningPlan(null);

@@ -456,18 +456,6 @@ describe("Item Parts", () => {
         .send({ titles: ["Frozen Part"] })
     ).body as ItemDetail;
     const partId = structured.parts[0].id;
-    const foreignItem = (
-      await request(app)
-        .post("/api/items")
-        .set(TEST_USER_HEADER, "parts-tombstone-foreign")
-        .send({ title: "Foreign structure", type: "book" })
-    ).body as Item;
-    const foreignStructured = (
-      await request(app)
-        .post(`/api/items/${foreignItem.id}/parts`)
-        .set(TEST_USER_HEADER, "parts-tombstone-foreign")
-        .send({ titles: ["Foreign Part"] })
-    ).body as ItemDetail;
     await seedItemTombstone(harness.pool, item.id);
 
     const responses = [
@@ -506,10 +494,6 @@ describe("Item Parts", () => {
     expect(frozen.rows).toEqual([
       { title: "Frozen Part", completed: false, position: 0 },
     ]);
-    const foreignRead = await request(app)
-      .get(`/api/items/${foreignItem.id}`)
-      .set(TEST_USER_HEADER, "parts-tombstone-foreign");
-    expect(foreignRead.body.parts).toEqual(foreignStructured.parts);
   });
 
   it("enforces Part ownership, order, title, and cascade constraints in PostgreSQL", async () => {

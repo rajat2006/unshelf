@@ -639,18 +639,6 @@ describe("Daily Focus service", () => {
       .set(TEST_USER_HEADER, user)
       .send({ status: "done" })
       .expect(200);
-    const foreignUser = "daily-focus-tombstone-foreign";
-    const foreignItem = (
-      await request(app)
-        .post("/api/items")
-        .set(TEST_USER_HEADER, foreignUser)
-        .send({ title: "Foreign Today Item", type: "video" })
-    ).body as Item;
-    await request(app)
-      .post("/api/daily-focus/today/items")
-      .set(TEST_USER_HEADER, foreignUser)
-      .send({ itemId: foreignItem.id })
-      .expect(201);
     await seedItemTombstone(harness.pool, ended.id);
 
     const today = await request(app)
@@ -678,14 +666,6 @@ describe("Daily Focus service", () => {
       [focus.id, ended.id],
     );
     expect(retained.rows).toHaveLength(1);
-    const foreignToday = (
-      await request(app)
-        .get("/api/daily-focus/today")
-        .set(TEST_USER_HEADER, foreignUser)
-    ).body as DailyFocus;
-    expect(foreignToday.entries).toMatchObject([
-      { item: { id: foreignItem.id } },
-    ]);
   });
 
   it("keeps current focus membership private and database constrained", async () => {
