@@ -42,7 +42,7 @@ pinned Sandcastle version and Unshelf's provider set:
   at `medium`, letting `review` carry the completeness check; a **Think tier**
   carries `claude-fable-5`, with `write-pr`/`write-prd-pr` at `medium` and the
   judgement-dense `review`/`to-issues`/`architecture-review`/`explore` at `high`
-  (Codex `xhigh`). Effort types are derived from Sandcastle's own factory
+  while every Codex capability uses `gpt-6-astra` at `medium`. Effort types are derived from Sandcastle's own factory
   options, and `Capability` is a closed union over a `Record`, so adding a runner
   without a policy entry fails the typecheck rather than inheriting a default.
   Also here: `IDLE_TIMEOUT_SECONDS`, the shared idle-watchdog value every runner
@@ -52,16 +52,16 @@ pinned Sandcastle version and Unshelf's provider set:
 
   | Capability | Claude model | Claude effort | Codex model | Codex effort |
   |---|---|---|---|---|
-  | `implement` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `implement-prd` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `implement-pr` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `update-branch` | `claude-opus-4-8` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `write-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `write-prd-pr` | `claude-fable-5` | `medium` | `gpt-5.6-sol` | `medium` |
-  | `review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
-  | `to-issues` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
-  | `architecture-review` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
-  | `explore` | `claude-fable-5` | `high` | `gpt-5.6-sol` | `xhigh` |
+  | `implement` | `claude-opus-4-8` | `medium` | `gpt-6-astra` | `medium` |
+  | `implement-prd` | `claude-opus-4-8` | `medium` | `gpt-6-astra` | `medium` |
+  | `implement-pr` | `claude-opus-4-8` | `medium` | `gpt-6-astra` | `medium` |
+  | `update-branch` | `claude-opus-4-8` | `medium` | `gpt-6-astra` | `medium` |
+  | `write-pr` | `claude-fable-5` | `medium` | `gpt-6-astra` | `medium` |
+  | `write-prd-pr` | `claude-fable-5` | `medium` | `gpt-6-astra` | `medium` |
+  | `review` | `claude-fable-5` | `high` | `gpt-6-astra` | `medium` |
+  | `to-issues` | `claude-fable-5` | `high` | `gpt-6-astra` | `medium` |
+  | `architecture-review` | `claude-fable-5` | `high` | `gpt-6-astra` | `medium` |
+  | `explore` | `claude-fable-5` | `high` | `gpt-6-astra` | `medium` |
 - **`review-output.ts`** — `reviewOutputSchema` (Zod): the `review` capability's
   `<output>` contract — a `summary` plus `findings[]` (each `axis` ∈
   standards/spec, `severity`, `status` ∈ fixed/unresolved, `file`, optional
@@ -139,7 +139,7 @@ pinned Sandcastle version and Unshelf's provider set:
   (Codex refreshes the tokens in place mid-run, so a later phase must not clobber
   them), forces `cli_auth_credentials_store = "file"` in `config.toml` (the OS
   keyring is unreachable in CI), and strips `OPENAI_KEY`/`OPENAI_API_KEY` so Codex
-  uses the `gpt-5.6-sol` subscription seat, not the metered API. A no-op when the
+  uses the `gpt-6-astra` subscription seat, not the metered API. A no-op when the
   run resolved to Claude. Every capability calls it immediately before `run()`, so the
   setup is uniform across phases. (The seeded secret needs a periodic re-paste —
   Codex's refresh token is single-use; see `docs/agents/sandcastle.md`.)

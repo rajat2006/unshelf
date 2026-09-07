@@ -23,7 +23,7 @@ export const OPENAI_KEY_VARS = ["OPENAI_KEY", "OPENAI_API_KEY"] as const;
 
 /**
  * Prepare the runner environment so `codex exec` authenticates against the
- * ChatGPT subscription seat (`gpt-5.6-sol`) rather than the metered Platform API.
+ * ChatGPT subscription seat (`gpt-6-astra`) rather than the metered Platform API.
  * Called by every capability script immediately before `sandcastle.run()`, so the
  * setup is uniform across phases (spec #52 / #64).
  *

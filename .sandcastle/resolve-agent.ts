@@ -86,7 +86,7 @@ interface CapabilityPolicy {
 }
 
 /** The one Codex model, uniform across every capability. */
-export const CODEX_MODEL = "gpt-5.6-sol";
+export const CODEX_MODEL = "gpt-6-astra";
 
 /**
  * Build tier — the model for capabilities that write code. They run lean on
@@ -109,8 +109,7 @@ export const THINK_CLAUDE_MODEL = "claude-fable-5";
  * from which model constant its entry references. Build-tier capabilities stay
  * at `medium`; the four judgement-dense capabilities that most change downstream
  * outcomes (`review`, `to-issues`, `architecture-review`, `explore`) carry the
- * higher effort each provider offers (`high` for Claude, `xhigh` for Codex —
- * the top level both providers share).
+ * `high` effort on Claude. Every Codex capability uses Astra at `medium`.
  */
 const CAPABILITY_POLICY: Record<Capability, CapabilityPolicy> = {
   implement: {
@@ -139,19 +138,19 @@ const CAPABILITY_POLICY: Record<Capability, CapabilityPolicy> = {
   },
   review: {
     claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
-    codex: { model: CODEX_MODEL, effort: "xhigh" },
+    codex: { model: CODEX_MODEL, effort: "medium" },
   },
   "to-issues": {
     claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
-    codex: { model: CODEX_MODEL, effort: "xhigh" },
+    codex: { model: CODEX_MODEL, effort: "medium" },
   },
   "architecture-review": {
     claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
-    codex: { model: CODEX_MODEL, effort: "xhigh" },
+    codex: { model: CODEX_MODEL, effort: "medium" },
   },
   explore: {
     claude: { model: THINK_CLAUDE_MODEL, effort: "high" },
-    codex: { model: CODEX_MODEL, effort: "xhigh" },
+    codex: { model: CODEX_MODEL, effort: "medium" },
   },
 };
 
