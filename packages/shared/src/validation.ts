@@ -105,6 +105,23 @@ export const createPartsRequestSchema = z.strictObject({
     }),
 });
 
+export const confirmChaptersRequestSchema = z.strictObject({
+  titles: z
+    .array(z.string().max(1000, "Each line must be at most 1,000 characters"))
+    .max(1000, "Use at most 1,000 lines, including blank lines")
+    .transform((titles) => titles.map((title) => title.trim()).filter(Boolean))
+    .pipe(
+      z
+        .array(z.string())
+        .min(1, "Enter at least one chapter title")
+        .max(200, "Use at most 200 chapters"),
+    ),
+  confirmationKey: z.uuid(),
+});
+export type ConfirmChaptersRequest = z.infer<
+  typeof confirmChaptersRequestSchema
+>;
+
 export const updatePartRequestSchema = z.strictObject({ title: titleSchema });
 
 export const updatePartCompletionRequestSchema = z.strictObject({
@@ -227,3 +244,50 @@ export type CreateStageWithItemRequest = z.infer<
 export type ConnectLearningPlanNodesRequest = z.infer<
   typeof connectLearningPlanNodesRequestSchema
 >;
+
+const chapterText = z
+  .string()
+  .min(1)
+  .max(1000)
+  .refine((value) => value.trim().length > 0 && !/[\r\n]/u.test(value));
+export const chapterPreviewSchema = z.strictObject({
+  kind: z.enum(["suggestions", "inconclusive"]),
+  reason: z
+    .enum(["ambiguous_identity", "conflicting_evidence", "no_usable_contents"])
+    .nullable(),
+  title: chapterText.nullable(),
+  author: chapterText.nullable(),
+  edition: chapterText.nullable(),
+  coverage: z.enum(["complete", "partial", "unknown"]),
+  chapters: z
+    .array(
+      z.strictObject({
+        title: chapterText,
+        evidence: z.array(z.string().min(1).max(64)).min(1).max(20),
+      }),
+    )
+    .max(300),
+  sources: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(64),
+        title: chapterText,
+        url: z
+          .url()
+          .max(2048)
+          .refine((value) => {
+            const url = new URL(value);
+            return (
+              ["http:", "https:"].includes(url.protocol) &&
+              !url.username &&
+              !url.password
+            );
+          }),
+      }),
+    )
+    .max(20),
+});
+export const chapterDiscoveryRequestSchema = z.strictObject({});
+export const chapterPreviewJsonSchema = z.toJSONSchema(chapterPreviewSchema, {
+  unrepresentable: "any",
+});

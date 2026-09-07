@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
+  Type,
   Status,
   StatusMode,
   type CreatePartsRequest,
@@ -14,22 +16,59 @@ import {
 import type { Database } from "../db";
 import { refreshTodayEntrySnapshot } from "../daily-focus/snapshots";
 import { getItem } from "../items/repository";
-import { items, parts } from "../schema";
+import { items, parts, partConfirmationReceipts } from "../schema";
 
 export async function createParts(
   db: Database,
   input: { userId: UserId; itemId: ItemId; request: CreatePartsRequest },
 ): Promise<ItemDetail | null> {
+  const result = await createPartsAtomically(db, input);
+  return result.ok ? result.item : null;
+}
+
+export async function createPartsAtomically(
+  db: Database,
+  input: {
+    userId: UserId;
+    itemId: ItemId;
+    request: CreatePartsRequest;
+    confirmationKey?: string;
+  },
+) {
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${input.itemId}, 0))`,
     );
     const owned = await tx
-      .select({ id: items.id })
+      .select({ id: items.id, type: items.type })
       .from(items)
       .where(and(eq(items.id, input.itemId), eq(items.userId, input.userId)))
       .limit(1);
-    if (!owned[0]) return null;
+    if (!owned[0]) return { ok: false as const, error: "not_found" as const };
+
+    const payloadDigest = createHash("sha256")
+      .update(JSON.stringify(input.request.titles))
+      .digest("hex");
+    if (input.confirmationKey) {
+      const [receipt] = await tx
+        .select()
+        .from(partConfirmationReceipts)
+        .where(
+          and(
+            eq(partConfirmationReceipts.userId, input.userId),
+            eq(partConfirmationReceipts.itemId, input.itemId),
+            eq(partConfirmationReceipts.confirmationKey, input.confirmationKey),
+          ),
+        );
+      if (receipt) {
+        if (receipt.payloadDigest !== payloadDigest)
+          return { ok: false as const, error: "conflict" as const };
+        return {
+          ok: true as const,
+          item: (await getItem(tx, input.userId, input.itemId))!,
+        };
+      }
+    }
 
     const existing = await tx
       .select({ count: sql<number>`count(*)::integer` })
@@ -38,6 +77,9 @@ export async function createParts(
         and(eq(parts.itemId, input.itemId), eq(parts.userId, input.userId)),
       );
     const start = existing[0].count;
+    if (input.confirmationKey && (start > 0 || owned[0].type !== Type.Book)) {
+      return { ok: false as const, error: "conflict" as const };
+    }
     await tx.insert(parts).values(
       input.request.titles.map((title, offset) => ({
         userId: input.userId,
@@ -46,10 +88,21 @@ export async function createParts(
         position: start + offset,
       })),
     );
+    if (input.confirmationKey) {
+      await tx.insert(partConfirmationReceipts).values({
+        userId: input.userId,
+        itemId: input.itemId,
+        confirmationKey: input.confirmationKey,
+        payloadDigest,
+      });
+    }
     if (start > 0) await deriveItemStatus(tx, input);
     await refreshTodayEntrySnapshot(tx, input);
 
-    return getItem(tx, input.userId, input.itemId);
+    return {
+      ok: true as const,
+      item: (await getItem(tx, input.userId, input.itemId))!,
+    };
   });
 }
 

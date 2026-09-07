@@ -25,6 +25,7 @@ const diagnosticSecrets = [
   process.env.DATABASE_URL,
   process.env.CLERK_SECRET_KEY,
   process.env.YOUTUBE_API_KEY,
+  process.env.OPENAI_API_KEY,
 ].filter((value): value is string => value !== undefined);
 
 const runtime: ProcessRuntime = {
@@ -87,6 +88,7 @@ await superviseApiProcess({
       logger,
       diagnosticSecrets,
       discoverModule,
+      chapterApiKey: process.env.OPENAI_API_KEY,
     });
     const scheduler = createDiscoverScheduler({
       tick: discoverModule.runScheduledAcquisitionTick,

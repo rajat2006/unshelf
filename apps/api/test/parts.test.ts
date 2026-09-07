@@ -15,6 +15,103 @@ describe("Item Parts", () => {
 
   afterAll(async () => harness.stop());
 
+  it("rejects oversized transport and new confirmations on an existing checklist", async () => {
+    const user = "chapter-integrity";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Book", type: "book" })
+    ).body as Item;
+    const url = `/api/items/${item.id}/chapters/confirm`;
+    const confirmationKey = "00000000-0000-4000-8000-000000000003";
+    expect(
+      (
+        await request(app)
+          .post(url)
+          .set(TEST_USER_HEADER, user)
+          .send({ confirmationKey, titles: ["secret-oversize".repeat(10000)] })
+      ).status,
+    ).toBe(413);
+    await request(app)
+      .post(`/api/items/${item.id}/parts`)
+      .set(TEST_USER_HEADER, user)
+      .send({ titles: ["Manual"] });
+    expect(
+      (
+        await request(app)
+          .post(url)
+          .set(TEST_USER_HEADER, user)
+          .send({ confirmationKey, titles: ["New"] })
+      ).status,
+    ).toBe(409);
+    expect(JSON.stringify(harness.logger.records)).not.toContain(
+      "secret-oversize",
+    );
+  });
+
+  it("rejects bounded chapter payloads without writing or logging their content", async () => {
+    const user = "chapter-bounds";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Book", type: "book" })
+    ).body as Item;
+    for (const titles of [
+      [" "],
+      ["private-heading".repeat(100)],
+      Array(201).fill("private-heading"),
+    ]) {
+      const result = await request(app)
+        .post(`/api/items/${item.id}/chapters/confirm`)
+        .set(TEST_USER_HEADER, user)
+        .send({
+          confirmationKey: "00000000-0000-4000-8000-000000000002",
+          titles,
+        });
+      expect(result.status).toBe(400);
+      expect(result.body.issues.length).toBeGreaterThan(0);
+    }
+    const read = await request(app)
+      .get(`/api/items/${item.id}`)
+      .set(TEST_USER_HEADER, user);
+    expect(read.body.parts).toEqual([]);
+    expect(JSON.stringify(harness.logger.records)).not.toContain(
+      "private-heading",
+    );
+  });
+
+  it("confirms normalized chapters once across concurrent submissions", async () => {
+    const user = "chapter-confirmation";
+    const item = (
+      await request(app)
+        .post("/api/items")
+        .set(TEST_USER_HEADER, user)
+        .send({ title: "Book", type: "book" })
+    ).body as Item;
+    const send = (titles: string[]) =>
+      request(app)
+        .post(`/api/items/${item.id}/chapters/confirm`)
+        .set(TEST_USER_HEADER, user)
+        .send({
+          confirmationKey: "00000000-0000-4000-8000-000000000001",
+          titles,
+        });
+    const results = await Promise.all([
+      send(["  One ", "", "One", "二"]),
+      send(["One", "One", "二"]),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([200, 200]);
+    expect(results[0].body).toEqual(results[1].body);
+    expect(results[0].body.parts).toMatchObject([
+      { title: "One", position: 0, completed: false },
+      { title: "One", position: 1, completed: false },
+      { title: "二", position: 2, completed: false },
+    ]);
+    expect((await send(["Changed"])).status).toBe(409);
+  });
+
   it("creates an initial ordered checklist without changing Item Status", async () => {
     const user = "parts-initial-checklist";
     const item = (

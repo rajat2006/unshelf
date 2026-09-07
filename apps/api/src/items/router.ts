@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import {
+  confirmChaptersRequestSchema,
   createItemRequestSchema,
   createPartsRequestSchema,
   createStageWithItemRequestSchema,
@@ -29,6 +30,7 @@ import {
 } from "./repository";
 import { captureItem } from "./capture-item";
 import {
+  confirmChapters,
   createParts,
   removePart,
   reorderParts,
@@ -178,6 +180,30 @@ export function createItemsRouter(
         return;
       }
       res.json(catalog);
+    },
+  );
+
+  router.post(
+    "/:itemId/chapters/confirm",
+    validateRequest(
+      { body: confirmChaptersRequestSchema, params: { itemId: itemIdSchema } },
+      "invalid_parts_create",
+    ),
+    async (req, res) => {
+      const { body, params } = res.locals.validated;
+      const result = await confirmChapters({
+        db,
+        userId: req.user!.id,
+        itemId: params.itemId,
+        request: body,
+      });
+      if (!result.ok) {
+        res
+          .status(result.error === "not_found" ? 404 : 409)
+          .json({ error: result.error });
+        return;
+      }
+      res.json(result.item);
     },
   );
 

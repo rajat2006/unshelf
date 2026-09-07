@@ -19,6 +19,7 @@ type ParameterSchemas = Record<string, Schema>;
 
 export const VALIDATION_FAILURE_CODES = [
   "malformed_json",
+  "invalid_chapter_research",
   "invalid_item_create",
   "invalid_item_status",
   "invalid_target_date",
