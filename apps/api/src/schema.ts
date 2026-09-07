@@ -922,3 +922,24 @@ function enumList(values: readonly string[]) {
 function nonEmpty<T extends string>(values: readonly T[]): [T, ...T[]] {
   return values as [T, ...T[]];
 }
+
+/** Only admission state survives research; previews and evidence stay ephemeral. */
+export const chapterResearchAdmission = pgTable(
+  "chapter_research_admission",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    dispatched: integer("dispatched").notNull(),
+    claim: uuid("claim"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("chapter_research_count", sql`${table.dispatched} between 0 and 10`),
+    check(
+      "chapter_research_claim",
+      sql`(${table.claim} is null) = (${table.expiresAt} is null)`,
+    ),
+  ],
+);

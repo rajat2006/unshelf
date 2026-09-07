@@ -787,3 +787,20 @@ export async function disconnectLearningPlanNodes(
     { method: "DELETE" },
   );
 }
+
+export function researchChapters({
+  user,
+  itemId,
+  signal,
+}: {
+  user: CurrentUser;
+  itemId: ItemId;
+  signal: AbortSignal;
+}): Promise<import("@unshelf/shared").ChapterDiscoveryResult> {
+  return requestJson(user, `/api/items/${itemId}/chapters/research`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    signal,
+  });
+}

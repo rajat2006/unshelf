@@ -5,6 +5,8 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MemoryRouter,
+  createMemoryRouter,
+  RouterProvider,
   Route,
   Routes,
   useLocation,
@@ -21,7 +23,7 @@ import {
 } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
-import { fetchItem, fetchLabels } from "../api";
+import { fetchItem, fetchLabels, researchChapters } from "../api";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { ItemSurface } from "./ItemSurface";
 
@@ -29,6 +31,7 @@ vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   fetchItem: vi.fn(),
   fetchLabels: vi.fn(),
+  researchChapters: vi.fn(),
 }));
 vi.mock("./LibrarySurface", () => ({
   LibrarySurface: () => <main>Library room</main>,
@@ -128,6 +131,7 @@ function renderItemSurface(
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("canonical Item route", () => {
@@ -284,4 +288,75 @@ describe("canonical Item route", () => {
       }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("guards edited chapters on navigation and starts fresh on return", async () => {
+  // JSDOM's signal is from a different realm than Node's Request. This router
+  // has no loaders; omit that unused signal at the platform Request boundary.
+  vi.stubGlobal(
+    "Request",
+    class extends Request {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(input, { ...init, signal: undefined });
+      }
+    },
+  );
+  vi.mocked(fetchItem).mockResolvedValue(item);
+  vi.mocked(fetchLabels).mockResolvedValue([]);
+  vi.mocked(researchChapters).mockResolvedValue({
+    ok: true,
+    preview: {
+      kind: "suggestions",
+      reason: null,
+      title: "Matched",
+      author: null,
+      edition: null,
+      coverage: "unknown",
+      chapters: [{ title: "Chapter 1", evidence: ["toc"] }],
+      sources: [
+        { id: "toc", title: "Contents", url: "https://example.com/contents" },
+      ],
+    },
+  });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "*",
+        element: (
+          <ApplicationAuthProvider auth={auth}>
+            <HistoryControls />
+            <Routes>
+              <Route path="/items/:itemId" element={<ItemSurface />} />
+              <Route path="*" element={<p>Destination room</p>} />
+            </Routes>
+          </ApplicationAuthProvider>
+        ),
+      },
+    ],
+    { initialEntries: ["/library", `/items/${itemId}`] },
+  );
+  render(<RouterProvider router={router} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Find chapters" }));
+  const editor = await screen.findByRole("textbox", {
+    name: "Chapter preview",
+  });
+  fireEvent.change(editor, { target: { value: "My edit" } });
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(await screen.findByRole("alertdialog")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect(editor).toHaveValue("My edit");
+  fireEvent.click(screen.getByRole("button", { name: "Close details" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Discard edits" }));
+  expect(await screen.findByText("Destination room")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(
+    await screen.findByRole("button", { name: "Find chapters" }),
+  ).toBeEnabled();
+  expect(
+    screen.queryByRole("textbox", { name: "Chapter preview" }),
+  ).not.toBeInTheDocument();
+  expect(researchChapters).toHaveBeenCalledTimes(1);
 });

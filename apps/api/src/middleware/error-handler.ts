@@ -24,7 +24,9 @@ export function createApiErrorHandler(
       phase: "request",
       ...(req.user === undefined ? {} : { userId: req.user.id }),
       ...(route === "UNRESOLVED" || route === "UNMATCHED" ? {} : { route }),
-      ...serializeFailure(error, options),
+      ...(req.chapterFlow
+        ? { failureCode: "chapter_request_failed" }
+        : serializeFailure(error, options)),
     });
 
     res.status(500).json({

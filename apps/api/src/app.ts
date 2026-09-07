@@ -1,3 +1,8 @@
+import {
+  createChapterDiscovery,
+  type ChapterDiscovery,
+} from "./chapter-discovery";
+import { createChapterRouter } from "./chapter-discovery/router";
 import express, { type Express, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
 import type { HealthResponse } from "@unshelf/shared";
@@ -23,6 +28,8 @@ import {
 
 export type AppOptions = RequestLifecycleOptions & {
   discoverModule?: DiscoverModule;
+  chapterDiscovery?: ChapterDiscovery;
+  chapterApiKey?: string;
 };
 
 /**
@@ -90,6 +97,20 @@ export function createApp(
     res.json(req.user);
   });
 
+  app.use(
+    "/api/items",
+    captureRouteMount,
+    createChapterRouter({
+      auth,
+      discover:
+        options.chapterDiscovery ??
+        createChapterDiscovery({
+          db,
+          logger: options.logger,
+          apiKey: options.chapterApiKey,
+        }),
+    }),
+  );
   app.use("/api/items", captureRouteMount, createItemsRouter(db, auth));
   app.use("/api/labels", captureRouteMount, createLabelsRouter(db, auth));
   app.use("/api/stages", captureRouteMount, createStagesRouter(db, auth));

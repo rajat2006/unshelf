@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -21,7 +22,12 @@ import {
   type PartId,
   type UserId,
 } from "@unshelf/shared";
-import { applyLabelToItem, fetchItem, fetchLabels } from "../api";
+import {
+  applyLabelToItem,
+  fetchItem,
+  fetchLabels,
+  researchChapters,
+} from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemSidebar } from "./ItemSidebar";
 
@@ -30,6 +36,7 @@ vi.mock("../api", async (importOriginal) => ({
   applyLabelToItem: vi.fn(),
   fetchItem: vi.fn(),
   fetchLabels: vi.fn(),
+  researchChapters: vi.fn(),
 }));
 
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
@@ -215,4 +222,152 @@ describe("canonical Item detail panel", () => {
       screen.queryByRole("status", { name: "Loading Item details" }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("finds editable chapters on a saved empty book with evidence separate from edits", async () => {
+  vi.mocked(fetchItem).mockResolvedValue({
+    ...item,
+    parts: [],
+    partPercentage: null,
+  });
+  resolveSupportingReads();
+  vi.mocked(researchChapters).mockResolvedValue({
+    ok: true,
+    preview: {
+      kind: "suggestions",
+      reason: null,
+      title: "Matched book",
+      author: "Writer",
+      edition: null,
+      coverage: "partial",
+      chapters: [{ title: "Chapter 1", evidence: ["toc"] }],
+      sources: [
+        { id: "toc", title: "Contents", url: "https://example.com/contents" },
+      ],
+    },
+  });
+  renderSidebar();
+  fireEvent.click(await screen.findByRole("button", { name: "Find chapters" }));
+  const editor = await screen.findByRole("textbox", {
+    name: "Chapter preview",
+  });
+  expect(editor).toHaveValue("Chapter 1");
+  expect(screen.getByText("Partial chapter list")).toBeVisible();
+  expect(screen.getByText(/Edition unknown/)).toBeVisible();
+  fireEvent.change(editor, { target: { value: "My edited chapter" } });
+  expect(screen.getByRole("link", { name: "Contents" })).toHaveAttribute(
+    "href",
+    "https://example.com/contents",
+  );
+  expect(
+    screen.getByText("Chapter 1", { exact: false, selector: "li" }),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "Add chapters" }),
+  ).not.toBeInTheDocument();
+});
+
+it("warns before discarding edits and suppresses a cancelled attempt's late result", async () => {
+  vi.mocked(fetchItem).mockResolvedValue({
+    ...item,
+    parts: [],
+    partPercentage: null,
+  });
+  resolveSupportingReads();
+  const late = deferred<Awaited<ReturnType<typeof researchChapters>>>();
+  vi.mocked(researchChapters)
+    .mockReturnValueOnce(late.promise)
+    .mockResolvedValue({
+      ok: true,
+      preview: {
+        kind: "suggestions",
+        reason: null,
+        title: "New match",
+        author: null,
+        edition: null,
+        coverage: "unknown",
+        chapters: [{ title: "New chapter", evidence: ["toc"] }],
+        sources: [
+          { id: "toc", title: "Contents", url: "https://example.com/contents" },
+        ],
+      },
+    });
+  renderSidebar();
+  fireEvent.click(await screen.findByRole("button", { name: "Find chapters" }));
+  expect(screen.getByRole("button", { name: "Find chapters" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel research" }));
+  expect(
+    vi.mocked(researchChapters).mock.calls.at(-1)?.[0].signal.aborted,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Find chapters" }));
+  const editor = await screen.findByRole("textbox", {
+    name: "Chapter preview",
+  });
+  fireEvent.change(editor, { target: { value: "Keep my edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel research" }));
+  expect(screen.getByRole("alertdialog")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect(editor).toHaveValue("Keep my edit");
+  late.resolve({ ok: false, error: "provider_failure" });
+  await waitFor(() => expect(editor).toHaveValue("Keep my edit"));
+  fireEvent.click(screen.getByRole("button", { name: "Retry research" }));
+  fireEvent.click(screen.getByRole("button", { name: "Discard edits" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Chapter preview" }),
+    ).toHaveValue("New chapter"),
+  );
+});
+
+it("renders retrieved markup inertly and bounds waiting when the transport hangs", async () => {
+  vi.mocked(fetchItem).mockResolvedValue({
+    ...item,
+    parts: [],
+    partPercentage: null,
+  });
+  resolveSupportingReads();
+  vi.mocked(researchChapters)
+    .mockResolvedValueOnce({
+      ok: true,
+      preview: {
+        kind: "suggestions",
+        reason: null,
+        title: "<script>attack()</script>",
+        author: null,
+        edition: null,
+        coverage: "unknown",
+        chapters: [
+          { title: "<img src=x onerror=attack()>", evidence: ["toc"] },
+        ],
+        sources: [
+          { id: "toc", title: "Unsafe source", url: "javascript:attack()" },
+        ],
+      },
+    })
+    .mockImplementationOnce(() => new Promise(() => {}));
+  const view = renderSidebar();
+  fireEvent.click(await screen.findByRole("button", { name: "Find chapters" }));
+  expect(
+    await screen.findByRole("textbox", { name: "Chapter preview" }),
+  ).toHaveValue("<img src=x onerror=attack()>");
+  expect(view.container.querySelector("script, img")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Unsafe source" }),
+  ).not.toBeInTheDocument();
+  vi.useFakeTimers();
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Retry research" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(65_000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(/timed out/i);
+    expect(
+      screen.getByRole("button", { name: "Retry research" }),
+    ).toBeEnabled();
+    expect(
+      vi.mocked(researchChapters).mock.calls.at(-1)?.[0].signal.aborted,
+    ).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -12,6 +12,7 @@ declare global {
     interface Request {
       /** Server-owned correlation identifier for this request. */
       requestId: string;
+      chapterFlow: boolean;
       /** Request-scoped logger carrying the server-owned correlation identifier. */
       logger: Logger;
       /** Whether the request traversed the complete registered routing stack. */
@@ -42,6 +43,11 @@ export function createRequestLifecycle({
     const requestId = generateRequestId();
     const startedAt = monotonicNow();
     req.requestId = requestId;
+    // Classify before JSON parsing/auth so malformed and aborted requests also omit content.
+    const rawPath = rawRequestPath(req.originalUrl);
+    req.chapterFlow = [rawPath, safelyDecode(rawPath)].some((path) =>
+      /^\/api\/items\/[^/]+\/chapters(?:\/|$)/i.test(path),
+    );
     req.logger = logger.child({ requestId });
     req.routingResolved = false;
     req.routeMount = "";
@@ -135,6 +141,7 @@ export function failureRequestSnapshot(
   req: Request,
   secrets?: readonly string[],
 ): Readonly<Record<string, unknown>> {
+  if (req.chapterFlow) return { content: "omitted" };
   const route = registeredRoute(req);
   return serializeDiagnosticValue(
     {
