@@ -450,6 +450,7 @@ it.each([400, 413, 500, "disconnect", "malformed"])(
       " ",
       "x".repeat(1001),
       Array(201).fill("One").join("\n"),
+      "One" + "\n".repeat(1000),
     ]) {
       fireEvent.change(editor, { target: { value } });
       fireEvent.click(screen.getByRole("button", { name: "Add chapters" }));

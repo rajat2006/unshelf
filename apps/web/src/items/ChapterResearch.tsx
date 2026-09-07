@@ -1,7 +1,4 @@
-import {
-  confirmChaptersRequestSchema,
-  type ConfirmChaptersRequest,
-} from "@unshelf/shared/validation";
+import type { ConfirmChaptersRequest } from "@unshelf/shared/validation";
 import { DiscardChapterEdits } from "./DiscardChapterEdits";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
@@ -81,25 +78,37 @@ export function ChapterResearch({
   }, []);
   const save = async () => {
     if (savingRef.current) return;
-    const parsed = confirmChaptersRequestSchema.safeParse(
-      submission ?? {
-        titles: text.split("\n"),
-        confirmationKey: crypto.randomUUID(),
-      },
-    );
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
+    let request = submission;
+    if (!request) {
+      const lines = text.split("\n");
+      if (lines.some((line) => line.length > 1000)) {
+        setError("Each line must be at most 1,000 characters");
+        return;
+      }
+      if (lines.length > 1000) {
+        setError("Use at most 1,000 lines, including blank lines");
+        return;
+      }
+      const titles = lines.map((line) => line.trim()).filter(Boolean);
+      if (titles.length === 0 || titles.length > 200) {
+        setError(
+          titles.length === 0
+            ? "Enter at least one chapter title"
+            : "Use at most 200 chapters",
+        );
+        return;
+      }
+      request = { titles, confirmationKey: crypto.randomUUID() };
     }
     savingRef.current = true;
     setSaving(true);
-    setSubmission(parsed.data);
+    setSubmission(request);
     setError(null);
     try {
       const item = await confirmChapters({
         user,
         itemId,
-        request: parsed.data,
+        request,
       });
       if (!mounted.current) return;
       setSubmission(null);
