@@ -7,6 +7,21 @@ export function createApiErrorHandler(
   options: DiagnosticOptions = {},
 ): ErrorRequestHandler {
   return (error, req, res, _next) => {
+    if (
+      req.chapterFlow &&
+      error instanceof Error &&
+      "type" in error &&
+      error.type === "entity.too.large"
+    ) {
+      recordValidationFailure(req, "invalid_parts_create");
+      res
+        .status(413)
+        .json({
+          error: "request_too_large",
+          message: "Chapter requests must fit within 100 KB",
+        });
+      return;
+    }
     if (isMalformedJsonError(error)) {
       recordValidationFailure(req, "malformed_json");
       res.status(400).json({

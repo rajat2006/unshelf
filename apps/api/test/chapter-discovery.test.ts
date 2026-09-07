@@ -503,6 +503,48 @@ describe("authenticated chapter research", () => {
     });
     expect(call).toHaveBeenCalledTimes(1);
   });
+  it("finds chapters, confirms edited titles, and replays without another model call", async () => {
+    const user = "complete-chapter-flow";
+    const captured = await request(http.app)
+      .post("/api/items")
+      .set(TEST_USER_HEADER, user)
+      .send({ title: "A book", type: "book" });
+    const item = captured.body as ItemDetail;
+    const callsBefore = call.mock.calls.length;
+    const researched = await request(http.app)
+      .post(`/api/items/${item.id}/chapters/research`)
+      .set(TEST_USER_HEADER, user)
+      .send({});
+    expect(researched.body).toEqual({ ok: true, preview });
+    const before = await request(http.app)
+      .get(`/api/items/${item.id}`)
+      .set(TEST_USER_HEADER, user);
+    expect(before.body.parts).toEqual([]);
+    const payload = {
+      confirmationKey: "00000000-0000-4000-8000-000000000009",
+      titles: [
+        " User's correction ",
+        "",
+        ...preview.chapters.map((chapter) => chapter.title),
+      ],
+    };
+    const save = () =>
+      request(http.app)
+        .post(`/api/items/${item.id}/chapters/confirm`)
+        .set(TEST_USER_HEADER, user)
+        .send(payload);
+    const saved = await save();
+    expect(saved.status).toBe(200);
+    expect((saved.body as ItemDetail).parts.map((part) => part.title)).toEqual([
+      "User's correction",
+      ...preview.chapters.map((chapter) => chapter.title),
+    ]);
+    expect((await save()).body).toEqual(saved.body);
+    expect(call).toHaveBeenCalledTimes(callsBefore + 1);
+    expect(JSON.stringify(http.logger.records)).not.toContain(
+      "User's correction",
+    );
+  });
   it("aborts disconnected HTTP research and omits content from the terminal snapshot", async () => {
     const captured = await request(http.app)
       .post("/api/items")

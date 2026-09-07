@@ -943,3 +943,29 @@ export const chapterResearchAdmission = pgTable(
     ),
   ],
 );
+
+// Receipts outlive Parts so replay cannot recreate a subsequently removed list.
+export const partConfirmationReceipts = pgTable(
+  "part_confirmation_receipts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    itemId: uuid("item_id").notNull(),
+    confirmationKey: uuid("confirmation_key").notNull(),
+    payloadDigest: text("payload_digest").notNull(),
+    committedAt: timestamp("committed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.userId, table.itemId, table.confirmationKey],
+    }),
+    foreignKey({
+      name: "part_confirmation_item_owner_fk",
+      columns: [table.itemId, table.userId],
+      foreignColumns: [items.id, items.userId],
+    }).onDelete("cascade"),
+  ],
+);

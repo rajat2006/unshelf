@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { confirmChaptersRequestSchema } from "@unshelf/shared/validation";
 import { MemoryRouter } from "react-router";
 import {
   Status,
@@ -23,6 +24,7 @@ import {
   type UserId,
 } from "@unshelf/shared";
 import {
+  confirmChapters,
   applyLabelToItem,
   fetchItem,
   fetchLabels,
@@ -33,6 +35,7 @@ import { ItemSidebar } from "./ItemSidebar";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
+  confirmChapters: vi.fn(),
   applyLabelToItem: vi.fn(),
   fetchItem: vi.fn(),
   fetchLabels: vi.fn(),
@@ -109,6 +112,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -262,8 +266,27 @@ it("finds editable chapters on a saved empty book with evidence separate from ed
   expect(
     screen.getByText("Chapter 1", { exact: false, selector: "li" }),
   ).toBeVisible();
+  const saving = deferred<ItemDetail>();
+  vi.mocked(confirmChapters).mockReturnValue(saving.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Add chapters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Saving chapters…" }));
+  expect(confirmChapters).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(confirmChapters).mock.calls[0][0].request).toMatchObject({
+    titles: ["My edited chapter"],
+  });
+  expect(editor).toBeDisabled();
   expect(
-    screen.queryByRole("button", { name: "Add chapters" }),
+    screen.getByRole("button", { name: "Cancel research" }),
+  ).toBeDisabled();
+  saving.resolve({
+    ...item,
+    parts: [{ ...item.parts[0], title: "My edited chapter", completed: false }],
+  });
+  expect(
+    await screen.findByRole("checkbox", { name: "My edited chapter" }),
+  ).not.toBeChecked();
+  expect(
+    screen.queryByRole("textbox", { name: "Chapter preview" }),
   ).not.toBeInTheDocument();
 });
 
@@ -371,3 +394,101 @@ it("renders retrieved markup inertly and bounds waiting when the transport hangs
     vi.useRealTimers();
   }
 });
+
+it.each([400, 413, 500, "disconnect", "malformed"])(
+  "retains edits and safely retries a %s confirmation failure",
+  async (failure) => {
+    vi.mocked(fetchItem).mockResolvedValue({
+      ...item,
+      parts: [],
+      partPercentage: null,
+    });
+    resolveSupportingReads();
+    vi.mocked(researchChapters).mockResolvedValue({
+      ok: true,
+      preview: {
+        kind: "suggestions",
+        reason: null,
+        title: "Book",
+        author: null,
+        edition: null,
+        coverage: "unknown",
+        chapters: [{ title: "Chapter 1", evidence: ["toc"] }],
+        sources: [
+          { id: "toc", title: "Contents", url: "https://example.com/contents" },
+        ],
+      },
+    });
+    const actual = await vi.importActual<typeof import("../api")>("../api");
+    vi.mocked(confirmChapters).mockImplementation(actual.confirmChapters);
+    const transport = vi.fn<typeof fetch>();
+    if (failure === "disconnect")
+      transport.mockRejectedValueOnce(new TypeError("Lost connection"));
+    else
+      transport.mockResolvedValueOnce(
+        new Response(failure === "malformed" ? "{" : "{}", {
+          status: typeof failure === "number" ? failure : 200,
+        }),
+      );
+    transport.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...item,
+          parts: [{ ...item.parts[0], title: "Saved chapter" }],
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", transport);
+    renderSidebar();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Find chapters" }),
+    );
+    const editor = await screen.findByRole("textbox", {
+      name: "Chapter preview",
+    });
+    for (const value of [
+      " ",
+      "x".repeat(1001),
+      Array(201).fill("One").join("\n"),
+    ]) {
+      fireEvent.change(editor, { target: { value } });
+      fireEvent.click(screen.getByRole("button", { name: "Add chapters" }));
+      expect(screen.getByRole("alert")).toBeVisible();
+      expect(transport).not.toHaveBeenCalled();
+      expect(editor).toHaveValue(value);
+    }
+    fireEvent.change(editor, {
+      target: { value: "  Edited chapter\n\nEdited chapter" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add chapters" }));
+    await screen.findByRole("alert");
+    if (failure === 413)
+      expect(screen.getByRole("alert")).toHaveTextContent(/100 KB/);
+    expect(editor).toHaveValue("  Edited chapter\n\nEdited chapter");
+    const first = confirmChaptersRequestSchema.parse(
+      JSON.parse(transport.mock.calls[0][1]?.body as string),
+    );
+    if (failure === 400 || failure === 413) {
+      expect(editor).toBeEnabled();
+      fireEvent.change(editor, { target: { value: "Corrected" } });
+      fireEvent.click(screen.getByRole("button", { name: "Add chapters" }));
+    } else {
+      expect(editor).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Retry research" }),
+      ).toBeDisabled();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Retry saving chapters" }),
+      );
+    }
+    await screen.findByRole("checkbox", { name: "Saved chapter" });
+    const second = confirmChaptersRequestSchema.parse(
+      JSON.parse(transport.mock.calls[1][1]?.body as string),
+    );
+    if (failure === 400 || failure === 413) {
+      expect(second.confirmationKey).not.toBe(first.confirmationKey);
+      expect(second.titles).toEqual(["Corrected"]);
+    } else expect(second).toEqual(first);
+    expect(researchChapters).toHaveBeenCalledTimes(1);
+  },
+);

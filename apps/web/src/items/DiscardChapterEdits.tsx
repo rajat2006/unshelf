@@ -10,11 +10,13 @@ import {
 
 export function DiscardChapterEdits({
   dirty,
+  saving = false,
   open,
   onKeep,
   onDiscard,
 }: {
   dirty: boolean;
+  saving?: boolean;
   open: boolean;
   onKeep: () => void;
   onDiscard: () => void;
@@ -31,7 +33,9 @@ export function DiscardChapterEdits({
   const router = useContext(UNSAFE_DataRouterContext);
   return (
     <>
-      {router && dirty && <ChapterNavigationGuard dirty={dirty} />}
+      {router && dirty && (
+        <ChapterNavigationGuard dirty={dirty} saving={saving} />
+      )}
       <Dialog
         open={open}
         onOpenChange={(next) => {
@@ -41,7 +45,9 @@ export function DiscardChapterEdits({
         <DialogContent role="alertdialog" showCloseButton={false}>
           <DialogTitle>Discard edited chapters?</DialogTitle>
           <DialogDescription>
-            Your preview is temporary. Leaving will lose these edits.
+            {saving
+              ? "Saving cannot be canceled. Leaving may still save your chapters."
+              : "Your preview is temporary. Leaving will lose these edits."}
           </DialogDescription>
           <Button type="button" onClick={onKeep}>
             Keep editing
@@ -55,11 +61,18 @@ export function DiscardChapterEdits({
   );
 }
 
-function ChapterNavigationGuard({ dirty }: { dirty: boolean }) {
+function ChapterNavigationGuard({
+  dirty,
+  saving,
+}: {
+  dirty: boolean;
+  saving: boolean;
+}) {
   const blocker = useBlocker(dirty);
   return blocker.state === "blocked" ? (
     <DiscardChapterEdits
       dirty={false}
+      saving={saving}
       open
       onKeep={() => blocker.reset()}
       onDiscard={() => blocker.proceed()}

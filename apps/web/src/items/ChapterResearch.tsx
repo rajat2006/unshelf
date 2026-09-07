@@ -1,14 +1,23 @@
+import {
+  confirmChaptersRequestSchema,
+  type ConfirmChaptersRequest,
+} from "@unshelf/shared/validation";
 import { DiscardChapterEdits } from "./DiscardChapterEdits";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   ChapterDiscoveryResult,
   ChapterPreview,
   ItemId,
+  ItemDetail,
 } from "@unshelf/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
-import { researchChapters } from "../api";
+import {
+  confirmChapters,
+  ChapterConfirmationError,
+  researchChapters,
+} from "../api";
 import type { CurrentUser } from "../application-auth/types";
 
 const failures: Record<
@@ -38,12 +47,20 @@ const inconclusive = {
 export function ChapterResearch({
   itemId,
   user,
+  onChanged,
 }: {
   itemId: ItemId;
   user: CurrentUser;
+  onChanged: (item: ItemDetail) => void;
 }) {
   const [preview, setPreview] = useState<ChapterPreview | null>(null);
   const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [submission, setSubmission] = useState<ConfirmChaptersRequest | null>(
+    null,
+  );
+  const savingRef = useRef(false);
+  const mounted = useRef(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discardAction, setDiscardAction] = useState<"cancel" | "retry" | null>(
@@ -54,13 +71,63 @@ export function ChapterResearch({
     text !== preview.chapters.map((chapter) => chapter.title).join("\n");
   const attempt = useRef<{ controller: AbortController } | null>(null);
   const editorId = useId();
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       attempt.current?.controller.abort();
       attempt.current = null;
-    },
-    [],
-  );
+    };
+  }, []);
+  const save = async () => {
+    if (savingRef.current) return;
+    const parsed = confirmChaptersRequestSchema.safeParse(
+      submission ?? {
+        titles: text.split("\n"),
+        confirmationKey: crypto.randomUUID(),
+      },
+    );
+    if (!parsed.success) {
+      setError(parsed.error.issues[0].message);
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setSubmission(parsed.data);
+    setError(null);
+    try {
+      const item = await confirmChapters({
+        user,
+        itemId,
+        request: parsed.data,
+      });
+      if (!mounted.current) return;
+      setSubmission(null);
+      setPreview(null);
+      setText("");
+      onChanged(item);
+    } catch (failure) {
+      if (!mounted.current) return;
+      if (
+        failure instanceof ChapterConfirmationError &&
+        failure.kind !== "uncertain"
+      ) {
+        setSubmission(null);
+        setError(
+          failure.kind === "too_large"
+            ? "Chapters were not saved. The request must fit within 100 KB. Shorten the list or titles and try again."
+            : "Chapters were not saved. Your edits are still here; check the titles and try again.",
+        );
+      } else {
+        setError(
+          "The save could not be confirmed. Retry saving the same chapters to resolve it.",
+        );
+      }
+    } finally {
+      savingRef.current = false;
+      if (mounted.current) setSaving(false);
+    }
+  };
   const start = async () => {
     if (attempt.current) return;
     const active = { controller: new AbortController() };
@@ -123,7 +190,7 @@ export function ChapterResearch({
       <Button
         type="button"
         variant="secondary"
-        disabled={pending}
+        disabled={pending || saving || submission !== null}
         onClick={() => requestAction("retry")}
       >
         {error || preview ? "Retry research" : "Find chapters"}
@@ -156,9 +223,27 @@ export function ChapterResearch({
               <Textarea
                 id={editorId}
                 value={text}
+                disabled={saving || submission !== null}
                 onChange={(event) => setText(event.target.value)}
                 rows={10}
               />
+              <Button
+                type="button"
+                disabled={saving}
+                onClick={() => void save()}
+              >
+                {saving
+                  ? "Saving chapters…"
+                  : submission
+                    ? "Retry saving chapters"
+                    : "Add chapters"}
+              </Button>
+              {(saving || submission) && (
+                <p role="status">
+                  Saving cannot be canceled. Leaving this page may still save
+                  your chapters.
+                </p>
+              )}
               <p className="text-sm text-muted-foreground">
                 Evidence supports the original suggestions below. Your edits are
                 not source-verified.
@@ -195,13 +280,15 @@ export function ChapterResearch({
         <Button
           type="button"
           variant="quiet"
+          disabled={saving || submission !== null}
           onClick={() => requestAction("cancel")}
         >
           Cancel research
         </Button>
       )}
       <DiscardChapterEdits
-        dirty={dirty}
+        dirty={dirty || submission !== null}
+        saving={saving || submission !== null}
         open={discardAction !== null}
         onKeep={() => setDiscardAction(null)}
         onDiscard={() => {

@@ -804,3 +804,38 @@ export function researchChapters({
     signal,
   });
 }
+
+export class ChapterConfirmationError extends Error {
+  constructor(readonly kind: "rejected" | "too_large" | "uncertain") {
+    super("Chapter confirmation failed");
+  }
+}
+
+export async function confirmChapters(input: {
+  user: CurrentUser;
+  itemId: ItemId;
+  request: import("@unshelf/shared/validation").ConfirmChaptersRequest;
+}): Promise<ItemDetail> {
+  try {
+    return await requestJson(
+      input.user,
+      `/api/items/${input.itemId}/chapters/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input.request),
+      },
+    );
+  } catch (error) {
+    // Only explicit rejection responses establish non-commit. Transport, parsing,
+    // and server failures may have lost a response after the transaction committed.
+    throw new ChapterConfirmationError(
+      error instanceof ApiResponseError && error.status === 413
+        ? "too_large"
+        : error instanceof ApiResponseError &&
+            [400, 401, 403, 404, 409, 422].includes(error.status)
+          ? "rejected"
+          : "uncertain",
+    );
+  }
+}

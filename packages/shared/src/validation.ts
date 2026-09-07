@@ -105,6 +105,23 @@ export const createPartsRequestSchema = z.strictObject({
     }),
 });
 
+export const confirmChaptersRequestSchema = z.strictObject({
+  titles: z
+    .array(z.string().max(1000, "Each line must be at most 1,000 characters"))
+    .max(1000, "Use at most 1,000 lines, including blank lines")
+    .transform((titles) => titles.map((title) => title.trim()).filter(Boolean))
+    .pipe(
+      z
+        .array(z.string())
+        .min(1, "Enter at least one chapter title")
+        .max(200, "Use at most 200 chapters"),
+    ),
+  confirmationKey: z.uuid(),
+});
+export type ConfirmChaptersRequest = z.infer<
+  typeof confirmChaptersRequestSchema
+>;
+
 export const updatePartRequestSchema = z.strictObject({ title: titleSchema });
 
 export const updatePartCompletionRequestSchema = z.strictObject({

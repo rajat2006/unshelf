@@ -163,6 +163,7 @@ export function ItemSidebar({
             <ChapterResearch
               key={visibleItem.id}
               itemId={visibleItem.id}
+              onChanged={replaceItem}
               user={user}
             />
           )}
