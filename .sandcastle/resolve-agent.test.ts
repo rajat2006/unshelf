@@ -15,28 +15,28 @@ import {
 } from "./resolve-agent";
 
 /**
- * The capability policy, restated here from issue #88's table as the independent
- * source of truth the resolver is checked against. Table-driven so a missing
+ * The expected policy keeps Claude's capability tiers while applying the requested
+ * Astra medium configuration to every Codex capability. Table-driven so a missing
  * policy entry or an accidental fallback is visible: every capability names its
  * exact Claude and Codex model + effort.
  */
 const build = {
   claudeModel: "claude-opus-4-8",
   claudeEffort: "medium",
-  codexModel: "gpt-5.6-sol",
+  codexModel: "gpt-6-astra",
   codexEffort: "medium",
 };
 const thinkLight = {
   claudeModel: "claude-fable-5",
   claudeEffort: "medium",
-  codexModel: "gpt-5.6-sol",
+  codexModel: "gpt-6-astra",
   codexEffort: "medium",
 };
 const thinkHeavy = {
   claudeModel: "claude-fable-5",
   claudeEffort: "high",
-  codexModel: "gpt-5.6-sol",
-  codexEffort: "xhigh",
+  codexModel: "gpt-6-astra",
+  codexEffort: "medium",
 };
 const POLICY: Record<
   Capability,

@@ -38,8 +38,8 @@ propagating the provider label — can never drift from it.
 A provider label selects the provider **only**; the **model and reasoning effort are
 chosen per capability** by the policy in `.sandcastle/resolve-agent.ts` (issue #88) — a
 Build-tier capability runs Claude on `claude-opus-4-8`/`medium` (Codex
-`gpt-5.6-sol`/`medium`), a Think-tier capability runs Claude on `claude-fable-5` at
-`medium` or `high` (Codex `gpt-5.6-sol` at `medium` or `xhigh`).
+`gpt-6-astra`/`medium`), a Think-tier capability runs Claude on `claude-fable-5` at
+`medium` or `high`. Every Codex capability uses `gpt-6-astra` at `medium`.
 
 `agent-implement` / `agent-implement-prd` **propagate the resolved provider label onto the
 PR** they open (always explicitly — `agent:claude` or `agent:codex`), so the review runs on

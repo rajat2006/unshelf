@@ -149,9 +149,7 @@ describe("loadIssueCapabilityContext", () => {
     const ctx = loadIssueCapabilityContext("explore");
     expect(ctx.agent.name).toBe("codex");
     expect(ctx.model).toBe(CODEX_MODEL);
-    // explore's Codex entry, not the old uniform medium — proves the capability
-    // reached resolution on the Codex path too.
-    expect(ctx.effort).toBe("xhigh");
+    expect(ctx.effort).toBe("medium");
     expect(ctx.labels).toEqual(["agent:explore", "agent:codex"]);
   });
 });

@@ -23,7 +23,7 @@ fi
 # provider, and neither present means DEFAULT_PROVIDER (.sandcastle/resolve-agent.ts).
 labels=(
   "agent:claude|8250df|Provider (optional): pin this issue to Claude Code, whatever the default provider is"
-  "agent:codex|8250df|Provider (optional): pin this issue to Codex/gpt-5.6-sol, whatever the default provider is"
+  "agent:codex|8250df|Provider (optional): pin this issue to Codex/gpt-6-astra, whatever the default provider is"
   "agent:implement|0e8a16|Human trigger: start an autonomous implementation run on this issue"
   "agent:in-progress|fbca04|Machine: a run is actively working this issue (added on start, removed on finish)"
   "agent:review|1d76db|Machine: an implement run finished; fire the automated PR review"
