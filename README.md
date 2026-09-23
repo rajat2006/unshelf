@@ -1,5 +1,11 @@
 # unshelf
 
+## License
+
+Unshelf is licensed under the [MIT License](LICENSE). See
+[third-party notices](THIRD_PARTY_NOTICES.md) for upstream code included in the
+repository.
+
 ## Local development
 
 ```sh
