@@ -7,10 +7,11 @@ import {
 } from "./capability-context";
 import {
   BUILD_CLAUDE_MODEL,
+  BUILD_CODEX_MODEL,
   CLAUDE_LABEL,
-  CODEX_MODEL,
   DEFAULT_PROVIDER,
   THINK_CLAUDE_MODEL,
+  THINK_CODEX_MODEL,
 } from "./resolve-agent";
 
 /**
@@ -95,7 +96,7 @@ describe("loadCapabilityContext", () => {
     setEnv({ AGENT_LABELS: '["agent:codex","agent:implement"]' });
     const ctx = loadCapabilityContext("implement");
     expect(ctx.agent.name).toBe("codex");
-    expect(ctx.model).toBe(CODEX_MODEL);
+    expect(ctx.model).toBe(BUILD_CODEX_MODEL);
     expect(ctx.labels).toContain("agent:codex");
   });
 
@@ -148,7 +149,7 @@ describe("loadIssueCapabilityContext", () => {
 
     const ctx = loadIssueCapabilityContext("explore");
     expect(ctx.agent.name).toBe("codex");
-    expect(ctx.model).toBe(CODEX_MODEL);
+    expect(ctx.model).toBe(THINK_CODEX_MODEL);
     expect(ctx.effort).toBe("medium");
     expect(ctx.labels).toEqual(["agent:explore", "agent:codex"]);
   });
@@ -214,7 +215,7 @@ describe("loadPrdPrContext", () => {
     setPrdEnv({ AGENT_LABELS: '["agent:codex","agent:implement"]' });
     const ctx = loadPrdPrContext("write-prd-pr");
     expect(ctx.agent.name).toBe("codex");
-    expect(ctx.model).toBe(CODEX_MODEL);
+    expect(ctx.model).toBe(THINK_CODEX_MODEL);
   });
 
   it("forwards the capability into resolution (to-issues → Think tier, high)", () => {
