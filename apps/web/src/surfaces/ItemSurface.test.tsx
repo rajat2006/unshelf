@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -22,28 +16,19 @@ import {
   Type,
   type ItemDetail,
   type ItemId,
-  type ItemPlacementCatalog,
   type LearningPlanId,
-  type StageId,
   type UserId,
 } from "@unshelf/shared";
 import { ApplicationAuthProvider } from "../application-auth/ApplicationAuthProvider";
 import type { ApplicationAuth } from "../application-auth/types";
-import {
-  fetchItem,
-  fetchItemPlacements,
-  fetchLabels,
-  removeItemFromStage,
-} from "../api";
+import { fetchItem, fetchLabels } from "../api";
 import { itemDetailRouteState } from "../items/item-route-state";
 import { ItemSurface } from "./ItemSurface";
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   fetchItem: vi.fn(),
-  fetchItemPlacements: vi.fn(),
   fetchLabels: vi.fn(),
-  removeItemFromStage: vi.fn(),
 }));
 vi.mock("./LibrarySurface", () => ({
   LibrarySurface: () => <main>Library room</main>,
@@ -72,8 +57,6 @@ vi.mock("./LearningPlanSurface", () => ({
 const userId = "00000000-0000-0000-0000-000000000001" as UserId;
 const itemId = "00000000-0000-0000-0000-000000000002" as ItemId;
 const planId = "00000000-0000-0000-0000-000000000003" as LearningPlanId;
-const otherPlanId = "00000000-0000-0000-0000-000000000004" as LearningPlanId;
-const stageId = "00000000-0000-0000-0000-000000000005" as StageId;
 const item: ItemDetail = {
   id: itemId,
   userId,
@@ -124,14 +107,9 @@ function HistoryControls() {
 function renderItemSurface(
   initialEntries: Parameters<typeof MemoryRouter>[0]["initialEntries"],
   initialIndex?: number,
-  placementCatalog: ItemPlacementCatalog = {
-    itemId,
-    learningPlans: [],
-  },
 ) {
   vi.mocked(fetchItem).mockResolvedValue(item);
   vi.mocked(fetchLabels).mockResolvedValue([]);
-  vi.mocked(fetchItemPlacements).mockResolvedValue(placementCatalog);
 
   return render(
     <ApplicationAuthProvider auth={auth}>
@@ -173,6 +151,28 @@ describe("canonical Item route", () => {
     expect(
       detail.compareDocumentPosition(room) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("omits Learning Plan placement controls from Item details", async () => {
+    renderItemSurface([
+      {
+        pathname: `/items/${itemId}`,
+        state: itemDetailRouteState({
+          pathname: `/plans/${planId}`,
+          search: "",
+          hash: "",
+        }),
+      },
+    ]);
+
+    expect(
+      await screen.findByRole("complementary", {
+        name: `${item.title} details`,
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Learning Plan placements" }),
+    ).not.toBeInTheDocument();
   });
 
   it.each([
@@ -252,57 +252,6 @@ describe("canonical Item route", () => {
     );
   });
 
-  it("closes details after removing the Item from the retained Learning Plan", async () => {
-    const placement: ItemPlacementCatalog = {
-      itemId,
-      learningPlans: [
-        {
-          kind: "placed",
-          learningPlan: { id: planId, name: "Database internals" },
-          stage: { id: stageId, name: "Storage engines" },
-        },
-      ],
-    };
-    vi.mocked(removeItemFromStage).mockResolvedValue({
-      id: stageId,
-      userId,
-      learningPlanId: planId,
-      name: "Storage engines",
-      items: [],
-    });
-    renderItemSurface(
-      [
-        {
-          pathname: `/items/${itemId}`,
-          state: itemDetailRouteState({
-            pathname: `/plans/${planId}`,
-            search: "",
-            hash: "",
-          }),
-        },
-      ],
-      undefined,
-      placement,
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Remove from Database internals · Storage engines",
-      }),
-    );
-
-    await waitFor(() =>
-      expect(screen.getByLabelText("Test location")).toHaveTextContent(
-        `/plans/${planId}`,
-      ),
-    );
-    expect(
-      screen.queryByRole("complementary", {
-        name: `${item.title} details`,
-      }),
-    ).not.toBeInTheDocument();
-  });
-
   it("closes details when the Learning Plan sidebar removes the open Item", async () => {
     renderItemSurface([
       {
@@ -334,55 +283,5 @@ describe("canonical Item route", () => {
         name: `${item.title} details`,
       }),
     ).not.toBeInTheDocument();
-  });
-
-  it("keeps details open after removing the Item from another Learning Plan", async () => {
-    const placement: ItemPlacementCatalog = {
-      itemId,
-      learningPlans: [
-        {
-          kind: "placed",
-          learningPlan: { id: otherPlanId, name: "System design" },
-          stage: { id: stageId, name: "Storage engines" },
-        },
-      ],
-    };
-    vi.mocked(removeItemFromStage).mockResolvedValue({
-      id: stageId,
-      userId,
-      learningPlanId: otherPlanId,
-      name: "Storage engines",
-      items: [],
-    });
-    renderItemSurface(
-      [
-        {
-          pathname: `/items/${itemId}`,
-          state: itemDetailRouteState({
-            pathname: `/plans/${planId}`,
-            search: "",
-            hash: "",
-          }),
-        },
-      ],
-      undefined,
-      placement,
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Remove from System design · Storage engines",
-      }),
-    );
-
-    await waitFor(() => expect(removeItemFromStage).toHaveBeenCalledOnce());
-    expect(
-      await screen.findByRole("complementary", {
-        name: `${item.title} details`,
-      }),
-    ).toBeVisible();
-    expect(screen.getByLabelText("Test location")).toHaveTextContent(
-      `/items/${itemId}`,
-    );
   });
 });

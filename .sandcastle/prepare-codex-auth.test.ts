@@ -68,13 +68,13 @@ describe("prepareCodexAuth — materialise the Codex subscription seat before ru
   it("preserves existing config.toml content while adding the store line", () => {
     fs.writeFileSync(
       path.join(codexHome, "config.toml"),
-      'model = "gpt-5.6-sol"\n',
+      'model = "gpt-6-astra"\n',
     );
 
     prepareCodexAuth("codex", env);
 
     const config = fs.readFileSync(path.join(codexHome, "config.toml"), "utf8");
-    expect(config).toContain('model = "gpt-5.6-sol"');
+    expect(config).toContain('model = "gpt-6-astra"');
     expect(config).toContain(CREDENTIALS_STORE_LINE);
   });
 

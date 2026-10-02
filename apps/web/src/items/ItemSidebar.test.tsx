@@ -18,16 +18,10 @@ import {
   type ItemId,
   type Label,
   type LabelId,
-  type LearningPlanId,
   type PartId,
   type UserId,
 } from "@unshelf/shared";
-import {
-  applyLabelToItem,
-  fetchItem,
-  fetchItemPlacements,
-  fetchLabels,
-} from "../api";
+import { applyLabelToItem, fetchItem, fetchLabels } from "../api";
 import type { CurrentUser } from "../application-auth/types";
 import { ItemSidebar } from "./ItemSidebar";
 
@@ -35,7 +29,6 @@ vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
   applyLabelToItem: vi.fn(),
   fetchItem: vi.fn(),
-  fetchItemPlacements: vi.fn(),
   fetchLabels: vi.fn(),
 }));
 
@@ -101,18 +94,6 @@ function renderSidebar() {
 
 function resolveSupportingReads() {
   vi.mocked(fetchLabels).mockResolvedValue([label, availableLabel]);
-  vi.mocked(fetchItemPlacements).mockResolvedValue({
-    itemId,
-    learningPlans: [
-      {
-        kind: "placed_direct",
-        learningPlan: {
-          id: "00000000-0000-0000-0000-000000000006" as LearningPlanId,
-          name: "Distributed systems",
-        },
-      },
-    ],
-  });
 }
 
 beforeAll(() => {

@@ -5,38 +5,38 @@ import { describe, expect, it } from "vitest";
 import {
   type Capability,
   BUILD_CLAUDE_MODEL,
+  BUILD_CODEX_MODEL,
   CLAUDE_LABEL,
   CODEX_LABEL,
-  CODEX_MODEL,
   DEFAULT_PROVIDER,
   THINK_CLAUDE_MODEL,
+  THINK_CODEX_MODEL,
   resolveAgent,
   resolveProvider,
 } from "./resolve-agent";
 
 /**
- * The capability policy, restated here from issue #88's table as the independent
- * source of truth the resolver is checked against. Table-driven so a missing
+ * The expected policy keeps each provider's capability tiers. Table-driven so a missing
  * policy entry or an accidental fallback is visible: every capability names its
  * exact Claude and Codex model + effort.
  */
 const build = {
   claudeModel: "claude-opus-4-8",
   claudeEffort: "medium",
-  codexModel: "gpt-5.6-sol",
+  codexModel: "gpt-6-sol",
   codexEffort: "medium",
 };
 const thinkLight = {
   claudeModel: "claude-fable-5",
   claudeEffort: "medium",
-  codexModel: "gpt-5.6-sol",
+  codexModel: "gpt-6-astra",
   codexEffort: "medium",
 };
 const thinkHeavy = {
   claudeModel: "claude-fable-5",
   claudeEffort: "high",
-  codexModel: "gpt-5.6-sol",
-  codexEffort: "xhigh",
+  codexModel: "gpt-6-astra",
+  codexEffort: "medium",
 };
 const POLICY: Record<
   Capability,
@@ -124,10 +124,9 @@ describe("resolveAgent — capability-specific model and effort policy", () => {
     expect(effort).toBe("high");
   });
 
-  it("keeps every capability on the one Codex model", () => {
-    for (const capability of CAPABILITIES) {
-      expect(resolveAgent(["agent:codex"], capability).model).toBe(CODEX_MODEL);
-    }
+  it("uses Sol for implementation and Astra for judgement", () => {
+    expect(resolveAgent([CODEX_LABEL], "implement").model).toBe(BUILD_CODEX_MODEL);
+    expect(resolveAgent([CODEX_LABEL], "review").model).toBe(THINK_CODEX_MODEL);
   });
 
   it("treats an empty label set as the default provider", () => {

@@ -3,6 +3,7 @@ import {
   DigestFailure,
   type AIPresentationFailureReason,
 } from "./failures.js";
+import type { AIPresentationFactId } from "./ai-presentation-facts.js";
 import { asRecord } from "./provider-support.js";
 
 export type DiscordPayload = {
@@ -41,6 +42,7 @@ export type PullRequestEvidence = {
   headContainsMain: boolean;
   blockedBy: DependencyEvidence[];
   closingIssues: ClosingIssueEvidence[];
+  body?: string | null;
 };
 
 export type DeploymentEvidence = {
@@ -71,6 +73,7 @@ export type WayfinderMapEvidence = {
   closedAt: string | null;
   number: number;
   title: string;
+  body?: string | null;
   labels: string[];
   children: WayfinderRouteEvidence[];
 };
@@ -100,7 +103,7 @@ export type OpenAIPresentationInput = {
     subjectId: string;
     kind: "pull-request" | "wayfinder-map";
     facts: Array<{
-      id: string;
+      id: AIPresentationFactId;
       value: string;
       source: "github_untrusted";
     }>;
@@ -151,6 +154,10 @@ type DigestSubject = {
   number: number;
   title: string;
   lifecycle: DigestLifecycle;
+  description?: {
+    summary: string;
+    verification?: string;
+  };
 };
 
 type PresentedSubject = DigestSubject & {
@@ -172,6 +179,7 @@ const discordLimits = {
   footer: 2_048,
   aggregateEmbedText: 6_000,
 } as const;
+const aiFactMaxCharacters = 1_200;
 const digestRepository = {
   nameWithOwner: "rajat2006/unshelf",
   webUrl: "https://github.com/rajat2006/unshelf",
@@ -388,17 +396,36 @@ function toFailedAIPresentationOutcome({
 function toOpenAIInput(subjects: DigestSubject[]): OpenAIPresentationInput {
   return {
     schemaVersion: aiSchemaVersion,
-    subjects: subjects.map((subject) => ({
-      subjectId: subjectId(subject),
-      kind: subject.kind,
-      facts: [
-        {
+    subjects: subjects.map((subject) => {
+      const facts: OpenAIPresentationInput["subjects"][number]["facts"] = [];
+      const title = sanitizeAndCompactFactLines([subject.title]);
+      if (title !== undefined) {
+        facts.push({
           id: "title",
-          value: subject.title,
+          value: title,
           source: "github_untrusted",
-        },
-      ],
-    })),
+        });
+      }
+      if (subject.description !== undefined) {
+        facts.push({
+          id: "summary",
+          value: subject.description.summary,
+          source: "github_untrusted",
+        });
+        if (subject.description.verification !== undefined) {
+          facts.push({
+            id: "verification",
+            value: subject.description.verification,
+            source: "github_untrusted",
+          });
+        }
+      }
+      return {
+        subjectId: subjectId(subject),
+        kind: subject.kind,
+        facts,
+      };
+    }),
   };
 }
 
@@ -428,7 +455,7 @@ function applyOpenAIPresentation({
   const factsBySubject = new Map(
     input.subjects.map((subject) => [
       subject.subjectId,
-      new Set(subject.facts.map((fact) => fact.id)),
+      new Set<string>(subject.facts.map((fact) => fact.id)),
     ]),
   );
   const presentationBySubject = new Map<
@@ -644,6 +671,7 @@ function toDigestSubject({
             number: pullRequest.number,
           }),
           lifecycle: "completed",
+          description: selectDigestDescription(pullRequest.body),
         }
       : undefined;
   }
@@ -665,6 +693,7 @@ function toDigestSubject({
       number: pullRequest.number,
     }),
     lifecycle: isBlocked ? "blocked" : "in-progress",
+    description: selectDigestDescription(pullRequest.body),
   };
 }
 
@@ -707,7 +736,138 @@ function toReleasedSubjects({
         number: pullRequest.number,
       }),
       lifecycle: "released",
+      description: selectDigestDescription(pullRequest.body),
     }));
+}
+
+function selectDigestDescription(
+  body: string | null | undefined,
+): DigestSubject["description"] {
+  if (body === null || body === undefined) return undefined;
+  const sections = new Map<string, string[]>();
+  const preamble: string[] = [];
+  let currentSection: string | undefined;
+  for (const line of body.split(/\r?\n/)) {
+    const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
+    if (heading !== null) {
+      currentSection = heading[1].toLowerCase().replace(/:$/, "");
+      sections.set(currentSection, []);
+      continue;
+    }
+    if (currentSection !== undefined) {
+      sections.get(currentSection)?.push(line);
+    } else {
+      preamble.push(line);
+    }
+  }
+  const summary = sanitizeAndCompactFactLines(
+    firstDescriptionSection(sections, [
+      "summary",
+      "what changed",
+      "description",
+      "what to build",
+      "solution",
+      "outcome",
+      "destination",
+      "problem statement",
+      "question",
+    ]) ?? preamble,
+  );
+  if (summary === undefined) return undefined;
+  const verification = sanitizeAndCompactFactLines(
+    firstDescriptionSection(sections, [
+      "validation",
+      "testing",
+      "test plan",
+      "tests",
+      "verification",
+      "acceptance criteria",
+    ]),
+  );
+  return {
+    summary,
+    ...(verification === undefined ? {} : { verification }),
+  };
+}
+
+function firstDescriptionSection(
+  sections: Map<string, string[]>,
+  names: string[],
+): string[] | undefined {
+  for (const name of names) {
+    const section = sections.get(name);
+    if (section !== undefined) return section;
+  }
+  return undefined;
+}
+
+function sanitizeAndCompactFactLines(
+  lines: string[] | undefined,
+): string | undefined {
+  if (lines === undefined) return undefined;
+  const compacted: string[] = [];
+  let insideCodeFence = false;
+  let insideSensitiveBlock = false;
+  let insideRawPatch = false;
+  for (const sourceLine of lines) {
+    const trimmed = sourceLine.trim();
+    const proseLine = trimmed.replace(/^[-*+]\s+/, "");
+    if (/^(?:```|~~~)/.test(trimmed)) {
+      insideCodeFence = !insideCodeFence;
+      continue;
+    }
+    if (/^-----BEGIN .*PRIVATE KEY-----$/.test(trimmed)) {
+      insideSensitiveBlock = true;
+      continue;
+    }
+    if (/^-----END .*PRIVATE KEY-----$/.test(trimmed)) {
+      insideSensitiveBlock = false;
+      continue;
+    }
+    if (/^(?:diff --git\b|---\s+\S|@@(?:\s|$))/.test(trimmed)) {
+      insideRawPatch = true;
+      continue;
+    }
+    if (
+      insideCodeFence ||
+      insideSensitiveBlock ||
+      insideRawPatch ||
+      trimmed === "" ||
+      /\b[\w-]*(?:secret|token|password|api[_-]?key|private[_-]?key)[\w-]*\s*[:=]/i.test(
+        trimmed,
+      ) ||
+      /^(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:/i.test(
+        proseLine,
+      ) ||
+      /^(?:index [\da-f]+\.\.[\da-f]+|@@|--- |\+\+\+ |[+-](?!\s))/i.test(
+        trimmed,
+      )
+    ) {
+      continue;
+    }
+    const line = proseLine
+      .replace(/\[([^\]]+)]\([^\s)]+\)/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (
+      line === "" ||
+      /(?:\b[a-z][a-z\d+.-]*:\/\/|www\.|(?:\b[\w-]+\.)+[a-z]{2,63}\b)/i.test(
+        line,
+      ) ||
+      /\beyJ[A-Za-z\d_-]+\.eyJ[A-Za-z\d_-]+\.[A-Za-z\d_-]+\b/.test(line) ||
+      /\b(?:sk-[\w-]{12,}|gh[pousr]_[A-Za-z\d_]{20,}|[A-Za-z\d+/_=-]{32,})\b/.test(
+        line,
+      )
+    ) {
+      continue;
+    }
+    compacted.push(line);
+  }
+  const value = compacted.join(" ");
+  if (value === "") return undefined;
+  return value.length <= aiFactMaxCharacters
+    ? value
+    : `${value.slice(0, aiFactMaxCharacters - 1).trimEnd()}…`;
 }
 
 function toWayfinderSubject({
@@ -766,6 +926,7 @@ function wayfinderSubject({
       number: wayfinderMap.number,
     }),
     lifecycle,
+    description: selectDigestDescription(wayfinderMap.body),
   };
 }
 
