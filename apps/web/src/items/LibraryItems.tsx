@@ -1,7 +1,7 @@
 import type { Item } from "@unshelf/shared";
 import { Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ItemSummary } from "./ItemSummary";
+import { ItemDetailLink, ItemSummary } from "./ItemSummary";
 
 interface LibraryItemsProps {
   items: Item[];
@@ -25,6 +25,8 @@ export function LibraryItems({
           <ItemSummary
             item={item}
             presentation="catalog"
+            onSelect={() => onPreview(item)}
+            selected={selectedItemId === item.id}
             className={
               selectedItemId === item.id
                 ? "bg-accent/65 shadow-[inset_3px_0_0_var(--primary)]"
@@ -32,16 +34,15 @@ export function LibraryItems({
             }
             actions={
               <Button
-                type="button"
+                asChild
                 variant="secondary"
                 size="compact"
                 className="w-fit min-h-11 sm:min-h-8"
-                aria-pressed={selectedItemId === item.id}
-                onClick={() => onPreview(item)}
-                aria-label={`Edit ${item.title}`}
               >
-                <Eye aria-hidden="true" />
-                {selectedItemId === item.id ? "Editing" : "Edit details"}
+                <ItemDetailLink item={item} aria-label={`Edit ${item.title}`}>
+                  <Eye aria-hidden="true" />
+                  Edit details
+                </ItemDetailLink>
               </Button>
             }
           />

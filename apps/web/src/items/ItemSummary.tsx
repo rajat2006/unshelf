@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { ListChecks } from "lucide-react";
 import type { Item } from "@unshelf/shared";
 import { Link, useLocation } from "react-router";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
@@ -24,6 +25,9 @@ interface ItemSummaryProps {
   editableFacts?: ReactNode;
   /** Compact catalog rows preserve the Library and sidecar density. */
   presentation?: "card" | "catalog";
+  /** Select this row in a catalog without leaving its current surface. */
+  onSelect?: () => void;
+  selected?: boolean;
 }
 
 /** Shared Item identity and facts for every recurring row. */
@@ -34,13 +38,9 @@ export function ItemSummary({
   detailBackgroundLocation,
   editableFacts,
   presentation = "card",
+  onSelect,
+  selected = false,
 }: ItemSummaryProps) {
-  const location = useLocation();
-  const backgroundLocation = itemLinkBackgroundLocation(
-    location,
-    detailBackgroundLocation,
-  );
-
   if (presentation === "catalog") {
     return (
       <article
@@ -54,13 +54,26 @@ export function ItemSummary({
         </p>
         <div className="min-w-0">
           <h3 className="m-0 truncate text-sm leading-snug font-semibold">
-            <Link
-              className="text-foreground underline-offset-4 hover:text-primary hover:underline"
-              to={`/items/${item.id}`}
-              state={itemDetailRouteState(backgroundLocation)}
-            >
-              {item.title}
-            </Link>
+            {onSelect ? (
+              <Button
+                type="button"
+                variant="quiet"
+                size="compact"
+                className="h-auto max-w-full justify-start rounded-none p-0 text-left whitespace-normal underline-offset-4 hover:bg-transparent hover:text-primary hover:underline"
+                onClick={onSelect}
+                aria-pressed={selected}
+              >
+                {item.title}
+              </Button>
+            ) : (
+              <ItemDetailLink
+                item={item}
+                detailBackgroundLocation={detailBackgroundLocation}
+                className="text-foreground underline-offset-4 hover:text-primary hover:underline"
+              >
+                {item.title}
+              </ItemDetailLink>
+            )}
           </h3>
         </div>
         <p className="m-0 truncate text-xs text-muted-foreground">
@@ -88,13 +101,13 @@ export function ItemSummary({
             {TYPE_LABELS[item.type]}
           </p>
           <h3 className="m-0 text-base leading-snug font-semibold break-words">
-            <Link
+            <ItemDetailLink
+              item={item}
+              detailBackgroundLocation={detailBackgroundLocation}
               className="text-foreground underline-offset-4 hover:text-primary hover:underline"
-              to={`/items/${item.id}`}
-              state={itemDetailRouteState(backgroundLocation)}
             >
               {item.title}
-            </Link>
+            </ItemDetailLink>
           </h3>
         </div>
         {!editableFacts && <ItemStatusBadge status={item.status} />}
@@ -150,6 +163,32 @@ export function ItemSummary({
       </div>
       {actions}
     </article>
+  );
+}
+
+type ItemDetailLinkProps = Omit<ComponentProps<typeof Link>, "state" | "to"> & {
+  item: Item;
+  detailBackgroundLocation?: ItemBackgroundLocation;
+};
+
+/** Link to canonical Item detail while retaining the current surface beneath it. */
+export function ItemDetailLink({
+  item,
+  detailBackgroundLocation,
+  ...props
+}: ItemDetailLinkProps) {
+  const location = useLocation();
+  const backgroundLocation = itemLinkBackgroundLocation(
+    location,
+    detailBackgroundLocation,
+  );
+
+  return (
+    <Link
+      to={`/items/${item.id}`}
+      state={itemDetailRouteState(backgroundLocation)}
+      {...props}
+    />
   );
 }
 
