@@ -183,6 +183,12 @@ specific placement as origin context. The current day is editable, while a past
 day preserves its membership and each Item's day-end Status as history.
 _Avoid_: Task list, Learning Plan, Status
 
+**Suggestion**:
+A date-specific, explained prompt inside Today for the User to consider adding one
+existing Library Item to current Daily Focus. It is passive and carries no
+commitment or membership until the User explicitly adds the Item.
+_Avoid_: Recommendation, Reminder, automatic selection
+
 **Label**:
 A free-text marker a User optionally applies to Items as durable, many-to-many
 categorisation across the **Library**. A Label carries no order, commitment,
