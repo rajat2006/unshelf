@@ -1,3 +1,4 @@
+import type { ConfirmChaptersRequest } from "@unshelf/shared/validation";
 import type {
   CreatePartsRequest,
   ItemId,
@@ -53,3 +54,14 @@ export async function reorderParts(input: {
     ? { ok: true as const, item }
     : { ok: false as const, error: "not_found" as const };
 }
+
+export const confirmChapters = (input: {
+  db: Database;
+  userId: UserId;
+  itemId: ItemId;
+  request: ConfirmChaptersRequest;
+}) =>
+  partsRepository.createPartsAtomically(input.db, {
+    ...input,
+    confirmationKey: input.request.confirmationKey,
+  });

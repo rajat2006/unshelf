@@ -52,6 +52,7 @@ function resolveDeploymentCompose(): ResolvedCompose {
         CLERK_SECRET_KEY: "test-clerk-secret",
         CLERK_PUBLISHABLE_KEY: "test-clerk-publishable",
         YOUTUBE_API_KEY: "test-youtube-api-key",
+        OPENAI_API_KEY: "test-openai-key",
         MIGRATION_MODE: "apply",
       },
     },
@@ -121,6 +122,7 @@ describe("deployment Compose contract", () => {
       PORT: "3001",
       PUBLIC_ORIGIN: "https://generated.example.com",
       YOUTUBE_API_KEY: "test-youtube-api-key",
+      OPENAI_API_KEY: "test-openai-key",
     });
     expect(services.web?.environment).toBeUndefined();
   });

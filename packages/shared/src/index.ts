@@ -566,3 +566,24 @@ export interface HealthResponse {
   /** Server/database timestamp, ISO-8601. */
   time: string;
 }
+
+/** Ephemeral research evidence; never a persisted Part list. */
+export type ChapterPreview = import("zod").infer<
+  typeof import("./validation").chapterPreviewSchema
+>;
+export type ChapterDiscoveryResult =
+  | { ok: true; preview: ChapterPreview }
+  | {
+      ok: false;
+      error:
+        | "not_found"
+        | "ineligible"
+        | "missing_configuration"
+        | "usage_limit"
+        | "timeout"
+        | "cancelled"
+        | "provider_failure"
+        | "provider_refusal"
+        | "malformed_output"
+        | "incomplete_output";
+    };

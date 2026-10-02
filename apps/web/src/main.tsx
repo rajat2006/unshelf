@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import { App } from "./App";
 import { AuthProvider } from "./auth";
 import { initializeThemePreference } from "./themePreference";
@@ -13,12 +13,13 @@ if (!rootElement) {
   throw new Error("#root element not found");
 }
 
+// A data router supplies navigation blocking for temporary edited chapter previews.
+const router = createBrowserRouter([{ path: "*", element: <App /> }]);
+
 createRoot(rootElement).render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </AuthProvider>
   </StrictMode>,
 );

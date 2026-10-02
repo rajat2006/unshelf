@@ -1,3 +1,5 @@
+import { Type } from "@unshelf/shared";
+import { ChapterResearch } from "./ChapterResearch";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { Item, ItemDetail, ItemId, Label } from "@unshelf/shared";
@@ -157,6 +159,14 @@ export function ItemSidebar({
               )}
             </div>
           </section>
+          {visibleItem.type === Type.Book && visibleItem.parts.length === 0 && (
+            <ChapterResearch
+              key={visibleItem.id}
+              itemId={visibleItem.id}
+              onChanged={replaceItem}
+              user={user}
+            />
+          )}
           <PartChecklist
             item={visibleItem}
             user={user}

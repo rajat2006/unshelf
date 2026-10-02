@@ -1,3 +1,7 @@
+import {
+  createChapterDiscovery,
+  type ModelCall,
+} from "../src/chapter-discovery";
 import { fileURLToPath } from "node:url";
 import {
   PostgreSqlContainer,
@@ -143,11 +147,13 @@ export async function seedLegacyLearningPlanFixture(
 }
 
 export async function startTestApp({
+  chapterModelCall,
   identify = identifyFromTestHeader,
   timeZone = "UTC",
   youtubeClient = unavailableYouTubeClient,
   now = () => new Date("2026-08-23T00:00:00.000Z"),
 }: {
+  chapterModelCall?: ModelCall;
   identify?: Identify;
   timeZone?: string;
   youtubeClient?: YouTubeClient;
@@ -173,6 +179,7 @@ export async function startTestApp({
     identify,
     youtubeClient,
     now,
+    chapterModelCall,
     stop: () => stopIsolatedTestDatabase({ pool: testPool, database }),
   });
 }
@@ -234,12 +241,14 @@ async function applyMigrationFiles(
 }
 
 function runningTestApp({
+  chapterModelCall,
   db,
   identify,
   youtubeClient,
   now,
   stop,
 }: {
+  chapterModelCall?: ModelCall;
   db: DatabaseWithClient;
   identify: Identify;
   youtubeClient: YouTubeClient;
@@ -254,7 +263,17 @@ function runningTestApp({
     now,
     logger,
   });
-  const app = createApp(db, [auth], { logger, discoverModule });
+  const chapterDiscovery = createChapterDiscovery({
+    db,
+    logger,
+    apiKey: chapterModelCall ? "test-key" : undefined,
+    modelCall: chapterModelCall,
+  });
+  const app = createApp(db, [auth], {
+    logger,
+    discoverModule,
+    chapterDiscovery,
+  });
 
   return {
     app,
